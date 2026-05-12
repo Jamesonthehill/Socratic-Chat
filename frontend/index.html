@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My RAG Chatbot</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div>
+          <p class="eyebrow">Personal RAG Workspace</p>
+          <h1>My RAG Chatbot</h1>
+        </div>
+
+        <div class="sidebar-actions">
+          <button id="newChatButton">New chat</button>
+          <button id="scanButton" class="secondary-button">Attach documents</button>
+        </div>
+        <input id="fileInput" class="file-input" type="file" accept=".txt,.md,.pdf" multiple />
+        <div id="scanStatus" class="status"></div>
+
+        <section class="thread-section">
+          <h2>Chats</h2>
+          <div id="threadList" class="thread-list"></div>
+        </section>
+      </aside>
+
+      <section class="chat-panel">
+        <div id="messages" class="messages"></div>
+        <form id="chatForm" class="composer">
+          <textarea id="messageInput" rows="2" placeholder="Ask your documents a question"></textarea>
+          <button id="sendButton" type="submit">Send</button>
+        </form>
+      </section>
+    </main>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
+

@@ -1,0 +1,282 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f6f5f2;
+  color: #1d2433;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+}
+
+.sidebar {
+  padding: 28px;
+  background: #1f2937;
+  color: #f9fafb;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: #9dd6c5;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+h1,
+h2 {
+  margin: 0;
+}
+
+h1 {
+  font-size: 2rem;
+  line-height: 1.05;
+}
+
+h2 {
+  font-size: 1rem;
+}
+
+.sidebar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+input,
+textarea {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  padding: 11px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  outline: none;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(255, 255, 255, 0.58);
+}
+
+button {
+  border: 0;
+  border-radius: 8px;
+  padding: 11px 16px;
+  background: #18866f;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.secondary-button {
+  background: #344256;
+}
+
+.file-input {
+  display: none;
+}
+
+.status {
+  min-height: 22px;
+  color: #c7d2fe;
+  font-size: 0.9rem;
+}
+
+.thread-section {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.thread-list {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.thread-row {
+  position: relative;
+  min-height: 62px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.thread-item {
+  min-width: 0;
+  width: 100%;
+  min-height: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 11px 42px 11px 12px;
+  background: transparent;
+  text-align: left;
+}
+
+.thread-settings {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 1;
+}
+
+.thread-settings:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.thread-row.is-active {
+  background: rgba(157, 214, 197, 0.2);
+  border-color: rgba(157, 214, 197, 0.5);
+}
+
+.thread-menu {
+  position: absolute;
+  z-index: 2;
+  top: 38px;
+  right: 7px;
+  display: none;
+  min-width: 132px;
+  padding: 6px;
+  background: #111827;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+}
+
+.thread-row.is-menu-open .thread-menu {
+  display: block;
+}
+
+.thread-delete {
+  width: 100%;
+  padding: 8px 10px;
+  background: #7f1d1d;
+  color: #fff;
+  text-align: left;
+}
+
+.thread-title {
+  max-width: 100%;
+  overflow: hidden;
+  color: #fff;
+  font-size: 0.94rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-meta,
+.thread-empty {
+  color: rgba(249, 250, 251, 0.65);
+  font-size: 0.78rem;
+}
+
+.chat-panel {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  background: #fbfaf8;
+}
+
+.messages {
+  overflow: auto;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.message {
+  max-width: 820px;
+  padding: 16px 18px;
+  border-radius: 8px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.message.user {
+  align-self: flex-end;
+  background: #dff3ed;
+}
+
+.message.assistant {
+  align-self: flex-start;
+  background: #ffffff;
+  border: 1px solid #e6e2da;
+}
+
+.sources {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e6e2da;
+  color: #667085;
+  font-size: 0.86rem;
+}
+
+.composer {
+  padding: 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  border-top: 1px solid #e6e2da;
+  background: #ffffff;
+}
+
+.composer textarea {
+  color: #1d2433;
+  background: #f9fafb;
+  border-color: #d0d5dd;
+  resize: vertical;
+}
+
+.composer textarea::placeholder {
+  color: #667085;
+}
+
+@media (max-width: 820px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    min-height: auto;
+  }
+}
+

@@ -7,12 +7,59 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main class="app-shell">
-      <aside class="sidebar">
-        <div>
-          <p class="eyebrow">Personal RAG Workspace</p>
-          <h1>My RAG Chatbot</h1>
+    <section id="authScreen" class="auth-screen">
+      <div class="auth-card">
+        <p class="eyebrow">Personal RAG Workspace</p>
+        <h1>Welcome back</h1>
+        <p class="auth-copy">Sign in or create an account so your chats and uploaded files stay connected to you.</p>
+
+        <div class="auth-tabs" role="tablist" aria-label="Authentication">
+          <button id="showLoginButton" class="auth-tab is-active" type="button">Login</button>
+          <button id="showRegisterButton" class="auth-tab" type="button">Register</button>
         </div>
+
+        <form id="loginForm" class="auth-form">
+          <label>
+            Email or username
+            <input id="loginIdentifier" type="text" autocomplete="username" required />
+          </label>
+          <label>
+            Password
+            <input id="loginPassword" type="password" autocomplete="current-password" required />
+          </label>
+          <button type="submit">Login</button>
+        </form>
+
+        <form id="registerForm" class="auth-form is-hidden">
+          <label>
+            Username
+            <input id="registerUsername" type="text" autocomplete="username" required minlength="2" />
+          </label>
+          <label>
+            Email
+            <input id="registerEmail" type="email" autocomplete="email" required />
+          </label>
+          <label>
+            Password
+            <input id="registerPassword" type="password" autocomplete="new-password" required minlength="6" />
+          </label>
+          <button type="submit">Create account</button>
+        </form>
+
+        <div id="authStatus" class="auth-status"></div>
+      </div>
+    </section>
+
+    <main id="appShell" class="app-shell is-hidden">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div>
+            <p class="eyebrow">Personal RAG Workspace</p>
+            <h1>My RAG Chatbot</h1>
+          </div>
+          <button id="logoutButton" class="icon-button" type="button" title="Log out" aria-label="Log out">↪</button>
+        </div>
+        <div id="userBadge" class="user-badge"></div>
 
         <div class="sidebar-actions">
           <button id="newChatButton">New chat</button>
@@ -27,9 +74,11 @@
         </section>
       </aside>
 
-      <section class="chat-panel">
+      <section id="chatPanel" class="chat-panel">
+        <div id="dropOverlay" class="drop-overlay">Drop documents to attach them to this chat</div>
         <div id="messages" class="messages"></div>
         <form id="chatForm" class="composer">
+          <div id="attachmentTray" class="attachment-tray"></div>
           <textarea id="messageInput" rows="2" placeholder="Ask your documents a question"></textarea>
           <button id="sendButton" type="submit">Send</button>
         </form>

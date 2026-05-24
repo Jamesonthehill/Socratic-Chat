@@ -13,6 +13,7 @@ from app.schemas import ChatMessage, Source
 
 
 WORD_PATTERN = re.compile(r"[a-zA-Z0-9']+")
+PAGE_PATTERN = re.compile(r"\b(?:page|p\.?|pg\.?)\s*(\d{1,4})\b", re.IGNORECASE)
 STOP_WORDS = {
     "a", "an", "and", "are", "as", "at", "be", "but", "by", "can", "do", "does",
     "for", "from", "had", "has", "have", "he", "her", "here", "his", "how", "i",
@@ -30,6 +31,16 @@ def tokenize(text: str) -> list[str]:
         for token in (match.group(0).lower() for match in WORD_PATTERN.finditer(text))
         if len(token) > 2 and token not in STOP_WORDS
     ]
+
+
+def requested_page_number(query: str) -> int | None:
+    match = PAGE_PATTERN.search(query)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return None
 
 
 def chunk_text(text: str, chunk_size: int = 850, overlap: int = 140) -> list[str]:
@@ -87,11 +98,59 @@ def ingest_text(title: str, text: str, conversation_id: str | None = None) -> tu
             {
                 "document_id": doc_id,
                 "chunk_id": chunk_id,
+                "conversation_id": conversation_id,
                 "title": title,
                 "text": chunk,
                 "tokens": tokenize(chunk),
             }
         )
+
+    if conversation_id:
+        for item in existing:
+            if item.get("chunk_id", "").startswith(f"{doc_id}:") and not item.get("conversation_id"):
+                item["conversation_id"] = conversation_id
+
+    save_index([*existing, *new_items])
+    return doc_id, len(new_items)
+
+
+def read_pdf_pages(path: Path) -> list[tuple[int, str]]:
+    try:
+        from PyPDF2 import PdfReader
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("PDF support needs PyPDF2. Run: python -m pip install PyPDF2") from exc
+
+    reader = PdfReader(str(path))
+    return [
+        (page_number, page.extract_text() or "")
+        for page_number, page in enumerate(reader.pages, start=1)
+    ]
+
+
+def ingest_pdf_file(path: Path, conversation_id: str | None = None) -> tuple[str, int]:
+    pages = read_pdf_pages(path)
+    full_text = "\n".join(text for _, text in pages)
+    doc_id = document_id(path.name, full_text, conversation_id)
+    existing = load_index()
+    existing_ids = {item["chunk_id"] for item in existing}
+    new_items = []
+
+    for page_number, page_text in pages:
+        for chunk_index, chunk in enumerate(chunk_text(page_text)):
+            chunk_id = f"{doc_id}:p{page_number}:{chunk_index}"
+            if chunk_id in existing_ids:
+                continue
+            new_items.append(
+                {
+                    "document_id": doc_id,
+                    "chunk_id": chunk_id,
+                    "conversation_id": conversation_id,
+                    "page_number": page_number,
+                    "title": path.name,
+                    "text": f"Page {page_number}: {chunk}",
+                    "tokens": tokenize(chunk),
+                }
+            )
 
     save_index([*existing, *new_items])
     return doc_id, len(new_items)
@@ -99,18 +158,14 @@ def ingest_text(title: str, text: str, conversation_id: str | None = None) -> tu
 
 def read_document(path: Path) -> str:
     if path.suffix.lower() == ".pdf":
-        try:
-            from PyPDF2 import PdfReader
-        except ModuleNotFoundError as exc:
-            raise RuntimeError("PDF support needs PyPDF2. Run: python -m pip install PyPDF2") from exc
-
-        reader = PdfReader(str(path))
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
+        return "\n".join(text for _, text in read_pdf_pages(path))
 
     return path.read_text(encoding="utf-8", errors="ignore")
 
 
 def ingest_file(path: Path, conversation_id: str | None = None) -> tuple[str, int]:
+    if path.suffix.lower() == ".pdf":
+        return ingest_pdf_file(path, conversation_id)
     text = read_document(path)
     return ingest_text(path.name, text, conversation_id)
 
@@ -156,14 +211,60 @@ def score(query_tokens: list[str], chunk_tokens: list[str]) -> float:
 
 def retrieve(query: str, top_k: int = 4, conversation_id: str | None = None) -> list[Source]:
     query_tokens = tokenize(query)
+    requested_page = requested_page_number(query)
     ranked = []
+    page_ranked = []
 
     for item in load_index():
         if conversation_id and item.get("conversation_id") != conversation_id:
             continue
+
         item_score = score(query_tokens, item.get("tokens", []))
         if item_score < MIN_RELEVANCE_SCORE:
             continue
+
+        if requested_page and item.get("page_number") == requested_page:
+            page_ranked.append((item_score + 1.0, item))
+        elif not requested_page:
+            ranked.append((item_score, item))
+
+    ranked = page_ranked or ranked
+    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    return [
+        Source(
+            document_id=item["document_id"],
+            chunk_id=item["chunk_id"],
+            title=f"{item['title']} p. {item['page_number']}" if item.get("page_number") else item["title"],
+            text=item["text"],
+            score=float(item_score),
+        )
+        for item_score, item in ranked[:top_k]
+    ]
+
+
+def retrieve_by_titles(query: str, titles: list[str], top_k: int = 4) -> list[Source]:
+    title_set = {title for title in titles if title}
+    if not title_set:
+        return []
+
+    query_tokens = tokenize(query)
+    ranked = []
+
+    for item in load_index():
+        if item.get("title") not in title_set:
+            continue
+
+        item_score = score(query_tokens, item.get("tokens", []))
+
+        # Short concept questions like "what is regression?" can produce a
+        # score below the normal threshold because there is only one useful
+        # query token. Keep exact term hits as a low-confidence fallback.
+        if item_score < MIN_RELEVANCE_SCORE:
+            shared = set(query_tokens) & set(item.get("tokens", []))
+            if not shared:
+                continue
+            item_score = 0.13
+
         ranked.append((item_score, item))
 
     ranked.sort(key=lambda pair: pair[0], reverse=True)
@@ -171,11 +272,33 @@ def retrieve(query: str, top_k: int = 4, conversation_id: str | None = None) -> 
         Source(
             document_id=item["document_id"],
             chunk_id=item["chunk_id"],
-            title=item["title"],
+            title=f"{item['title']} p. {item['page_number']}" if item.get("page_number") else item["title"],
             text=item["text"],
             score=float(item_score),
         )
         for item_score, item in ranked[:top_k]
+    ]
+
+
+def retrieve_overview(conversation_id: str | None, top_k: int = 4) -> list[Source]:
+    if not conversation_id:
+        return []
+
+    matches = [
+        item
+        for item in load_index()
+        if item.get("conversation_id") == conversation_id
+    ]
+
+    return [
+        Source(
+            document_id=item["document_id"],
+            chunk_id=item["chunk_id"],
+            title=item["title"],
+            text=item["text"],
+            score=1.0,
+        )
+        for item in matches[:top_k]
     ]
 
 

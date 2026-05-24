@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>My RAG Chatbot</title>
     <link rel="stylesheet" href="/styles.css" />
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
     <section id="authScreen" class="auth-screen">
@@ -12,6 +13,12 @@
         <p class="eyebrow">Personal RAG Workspace</p>
         <h1>Welcome back</h1>
         <p class="auth-copy">Sign in or create an account so your chats and uploaded files stay connected to you.</p>
+
+        <div id="googleSignInWrap" class="google-signin-wrap">
+          <div id="googleSignInButton"></div>
+        </div>
+
+        <div class="auth-divider"><span>or use email</span></div>
 
         <div class="auth-tabs" role="tablist" aria-label="Authentication">
           <button id="showLoginButton" class="auth-tab is-active" type="button">Login</button>
@@ -37,7 +44,14 @@
           </label>
           <label>
             Email
-            <input id="registerEmail" type="email" autocomplete="email" required />
+            <div class="email-code-row">
+              <input id="registerEmail" type="email" autocomplete="email" required />
+              <button id="sendEmailCodeButton" class="secondary-auth-button" type="button">Send code</button>
+            </div>
+          </label>
+          <label>
+            Verification code
+            <input id="registerVerificationCode" type="text" inputmode="numeric" autocomplete="one-time-code" required minlength="6" maxlength="6" placeholder="6-digit code" />
           </label>
           <label>
             Password
@@ -60,10 +74,17 @@
           <button id="logoutButton" class="icon-button" type="button" title="Log out" aria-label="Log out">↪</button>
         </div>
         <div id="userBadge" class="user-badge"></div>
+        <div id="sessionWarning" class="session-warning" aria-live="assertive">
+          <div class="session-warning-title">Session ending soon</div>
+          <div id="sessionWarningText">Do you need more time?</div>
+          <div class="session-warning-actions">
+            <button id="extendSessionButton" class="session-extend-button" type="button">Keep me signed in</button>
+            <button id="sessionLogoutButton" class="session-logout-button" type="button">Log out</button>
+          </div>
+        </div>
 
         <div class="sidebar-actions">
           <button id="newChatButton">New chat</button>
-          <button id="scanButton" class="secondary-button">Attach documents</button>
         </div>
         <input id="fileInput" class="file-input" type="file" accept=".txt,.md,.pdf" multiple />
         <div id="scanStatus" class="status"></div>
@@ -76,10 +97,12 @@
 
       <section id="chatPanel" class="chat-panel">
         <div id="dropOverlay" class="drop-overlay">Drop documents to attach them to this chat</div>
+        <aside id="chatFilePanel" class="chat-file-panel" aria-live="polite"></aside>
         <div id="messages" class="messages"></div>
         <form id="chatForm" class="composer">
           <div id="attachmentTray" class="attachment-tray"></div>
           <textarea id="messageInput" rows="2" placeholder="Ask your documents a question"></textarea>
+          <button id="composerAttachButton" class="composer-attach-button" type="button" title="Attach documents" aria-label="Attach documents">+</button>
           <button id="sendButton" type="submit">Send</button>
         </form>
       </section>

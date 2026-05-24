@@ -58,6 +58,36 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS auth_provider TEXT NOT NULL DEFAULT 'password'
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS google_sub TEXT UNIQUE
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS email_verification_codes (
+                    id UUID PRIMARY KEY,
+                    email TEXT NOT NULL,
+                    code_hash TEXT NOT NULL,
+                    expires_at TIMESTAMPTZ NOT NULL,
+                    used_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_email_verification_codes_email_created_at
+                ON email_verification_codes(email, created_at DESC)
+                """
+            )
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS conversations (
                     id UUID PRIMARY KEY,
                     title TEXT NOT NULL DEFAULT 'New conversation',
@@ -128,6 +158,22 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                ALTER TABLE rag_files
+                ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE
+                """
+            )
+            cur.execute(
+                """
+                UPDATE rag_files rf
+                SET user_id = c.user_id
+                FROM conversations c
+                WHERE rf.conversation_id = c.id
+                  AND rf.user_id IS NULL
+                  AND c.user_id IS NOT NULL
+                """
+            )
+            cur.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_rag_files_created_at
                 ON rag_files(created_at DESC)
                 """
@@ -138,7 +184,70 @@ def init_db() -> None:
                 ON rag_files(conversation_id, created_at DESC)
                 """
             )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_rag_files_user_id_created_at
+                ON rag_files(user_id, created_at DESC)
+                """
+            )
         conn.commit()
+
+
+def _hash_email_code(email: str, code: str) -> str:
+    normalized_email = email.strip().lower()
+    normalized_code = code.strip()
+    return hashlib.sha256(f"{normalized_email}:{normalized_code}".encode("utf-8")).hexdigest()
+
+
+def save_email_verification_code(email: str, code: str, expires_in_minutes: int = 10) -> None:
+    init_db()
+    normalized_email = email.strip().lower()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO email_verification_codes (id, email, code_hash, expires_at)
+                VALUES (%s, %s, %s, NOW() + (%s || ' minutes')::interval)
+                """,
+                (str(uuid.uuid4()), normalized_email, _hash_email_code(normalized_email, code), expires_in_minutes),
+            )
+        conn.commit()
+
+
+def verify_email_code(email: str, code: str) -> bool:
+    init_db()
+    normalized_email = email.strip().lower()
+    code_hash = _hash_email_code(normalized_email, code)
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id
+                FROM email_verification_codes
+                WHERE email = %s
+                  AND code_hash = %s
+                  AND used_at IS NULL
+                  AND expires_at > NOW()
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (normalized_email, code_hash),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return False
+
+            cur.execute(
+                """
+                UPDATE email_verification_codes
+                SET used_at = NOW()
+                WHERE id = %s
+                """,
+                (row[0],),
+            )
+        conn.commit()
+
+    return True
 
 
 def check_status() -> tuple[bool, str]:
@@ -171,6 +280,64 @@ def ensure_conversation(conversation_id: str | None, title: str = "New conversat
         conn.commit()
 
     return resolved_id
+
+
+def set_conversation_title(conversation_id: str, title: str, user_id: str | None = None) -> None:
+    init_db()
+    clean_title = title.strip()[:120] or "New conversation"
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            if user_id:
+                cur.execute(
+                    """
+                    UPDATE conversations
+                    SET title = %s,
+                        updated_at = NOW()
+                    WHERE id = %s
+                      AND user_id = %s
+                    """,
+                    (clean_title, conversation_id, user_id),
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE conversations
+                    SET title = %s,
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (clean_title, conversation_id),
+                )
+        conn.commit()
+
+
+def rename_uploaded_document_chats() -> int:
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                WITH first_files AS (
+                    SELECT DISTINCT ON (conversation_id)
+                        conversation_id,
+                        filename
+                    FROM rag_files
+                    WHERE conversation_id IS NOT NULL
+                    ORDER BY conversation_id, created_at ASC
+                )
+                UPDATE conversations c
+                SET title = LEFT(first_files.filename, 120),
+                    updated_at = NOW()
+                FROM first_files
+                WHERE c.id = first_files.conversation_id
+                  AND c.title IN ('New conversation', 'Uploaded documents')
+                """
+            )
+            updated = cur.rowcount
+        conn.commit()
+
+    return updated
 
 
 def add_message(conversation_id: str, role: str, content: str) -> None:
@@ -287,7 +454,13 @@ def delete_conversation(conversation_id: str) -> bool:
     return deleted
 
 
-def save_rag_file(filename: str, content_type: str, content: bytes, conversation_id: str | None = None) -> str | None:
+def save_rag_file(
+    filename: str,
+    content_type: str,
+    content: bytes,
+    conversation_id: str | None = None,
+    user_id: str | None = None,
+) -> str | None:
     if not is_enabled():
         return None
 
@@ -297,41 +470,47 @@ def save_rag_file(filename: str, content_type: str, content: bytes, conversation
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO rag_files (id, conversation_id, filename, content_type, file_size, content)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO rag_files (id, conversation_id, user_id, filename, content_type, file_size, content)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
-                (file_id, conversation_id, filename, content_type or "application/octet-stream", len(content), content),
+                (file_id, conversation_id, user_id, filename, content_type or "application/octet-stream", len(content), content),
             )
         conn.commit()
 
     return file_id
 
 
-def list_rag_files(limit: int = 50, conversation_id: str | None = None) -> list[dict[str, object]]:
+def list_rag_files(
+    limit: int = 50,
+    conversation_id: str | None = None,
+    user_id: str | None = None,
+) -> list[dict[str, object]]:
     init_db()
     with get_connection() as conn:
         with conn.cursor() as cur:
+            conditions: list[str] = []
+            params: list[object] = []
+
             if conversation_id:
-                cur.execute(
-                    """
-                    SELECT id::text, filename, content_type, file_size, created_at::text
-                    FROM rag_files
-                    WHERE conversation_id = %s
-                    ORDER BY created_at DESC
-                    LIMIT %s
-                    """,
-                    (conversation_id, limit),
-                )
-            else:
-                cur.execute(
-                    """
-                    SELECT id::text, filename, content_type, file_size, created_at::text
-                    FROM rag_files
-                    ORDER BY created_at DESC
-                    LIMIT %s
-                    """,
-                    (limit,),
-                )
+                conditions.append("rf.conversation_id = %s")
+                params.append(conversation_id)
+
+            if user_id:
+                conditions.append("(rf.user_id = %s OR c.user_id = %s)")
+                params.extend([user_id, user_id])
+
+            where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            cur.execute(
+                f"""
+                SELECT rf.id::text, rf.filename, rf.content_type, rf.file_size, rf.created_at::text
+                FROM rag_files rf
+                LEFT JOIN conversations c ON c.id = rf.conversation_id
+                {where_clause}
+                ORDER BY rf.created_at DESC
+                LIMIT %s
+                """,
+                (*params, limit),
+            )
             rows = cur.fetchall()
 
     return [
@@ -345,6 +524,40 @@ def list_rag_files(limit: int = 50, conversation_id: str | None = None) -> list[
         for row in rows
     ]
 
+
+def get_rag_file(file_id: str, user_id: str | None = None) -> dict[str, object] | None:
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            conditions = ["rf.id = %s"]
+            params: list[object] = [file_id]
+
+            if user_id:
+                conditions.append("(rf.user_id = %s OR c.user_id = %s)")
+                params.extend([user_id, user_id])
+
+            where_clause = " AND ".join(conditions)
+            cur.execute(
+                f"""
+                SELECT rf.id::text, rf.filename, rf.content_type, rf.file_size, rf.content
+                FROM rag_files rf
+                LEFT JOIN conversations c ON c.id = rf.conversation_id
+                WHERE {where_clause}
+                """,
+                tuple(params),
+            )
+            row = cur.fetchone()
+
+    if row is None:
+        return None
+
+    return {
+        "file_id": row[0],
+        "filename": row[1],
+        "content_type": row[2],
+        "file_size": row[3],
+        "content": bytes(row[4]),
+    }
 
 
 def conversation_belongs_to(conversation_id: str, user_id: str | None) -> bool:
@@ -362,6 +575,100 @@ def conversation_belongs_to(conversation_id: str, user_id: str | None) -> bool:
                 (conversation_id, user_id),
             )
             return cur.fetchone() is not None
+
+
+def get_user_by_email(email: str) -> dict[str, str] | None:
+    init_db()
+    normalized_email = email.strip().lower()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id::text, username, email
+                FROM users
+                WHERE lower(email) = %s
+                """,
+                (normalized_email,),
+            )
+            row = cur.fetchone()
+
+    if row is None:
+        return None
+    return {"user_id": row[0], "username": row[1], "email": row[2]}
+
+
+def get_user_by_google_sub(google_sub: str) -> dict[str, str] | None:
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id::text, username, email
+                FROM users
+                WHERE google_sub = %s
+                """,
+                (google_sub,),
+            )
+            row = cur.fetchone()
+
+    if row is None:
+        return None
+    return {"user_id": row[0], "username": row[1], "email": row[2]}
+
+
+def _unique_username(cur: object, desired: str) -> str:
+    base = "".join(ch for ch in desired.strip().lower() if ch.isalnum() or ch in {"_", "-", "."})
+    base = (base or "google_user")[:60]
+    candidate = base
+    suffix = 1
+    while True:
+        cur.execute("SELECT 1 FROM users WHERE lower(username) = %s", (candidate.lower(),))
+        if cur.fetchone() is None:
+            return candidate
+        suffix += 1
+        candidate = f"{base[:54]}{suffix}"
+
+
+def find_or_create_google_user(email: str, google_sub: str, name: str | None = None) -> dict[str, str]:
+    init_db()
+    normalized_email = email.strip().lower()
+
+    existing = get_user_by_google_sub(google_sub) or get_user_by_email(normalized_email)
+    if existing:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET google_sub = COALESCE(google_sub, %s),
+                        auth_provider = CASE
+                            WHEN auth_provider = 'password' THEN 'password_google'
+                            ELSE auth_provider
+                        END
+                    WHERE id = %s
+                    """,
+                    (google_sub, existing["user_id"]),
+                )
+            conn.commit()
+        return existing
+
+    user_id = str(uuid.uuid4())
+    salt, password_hash = _hash_password(secrets.token_urlsafe(32))
+    desired_username = name or normalized_email.split("@", 1)[0]
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            username = _unique_username(cur, desired_username)
+            cur.execute(
+                """
+                INSERT INTO users (id, username, email, password_salt, password_hash, auth_provider, google_sub)
+                VALUES (%s, %s, %s, %s, %s, 'google', %s)
+                """,
+                (user_id, username, normalized_email, salt, password_hash, google_sub),
+            )
+        conn.commit()
+
+    return {"user_id": user_id, "username": username, "email": normalized_email}
 
 
 def create_user(username: str, email: str, password: str) -> dict[str, str]:

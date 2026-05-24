@@ -5,13 +5,20 @@ const registerForm = document.querySelector("#registerForm");
 const showLoginButton = document.querySelector("#showLoginButton");
 const showRegisterButton = document.querySelector("#showRegisterButton");
 const authStatus = document.querySelector("#authStatus");
+const sendEmailCodeButton = document.querySelector("#sendEmailCodeButton");
+const googleSignInWrap = document.querySelector("#googleSignInWrap");
+const googleSignInButton = document.querySelector("#googleSignInButton");
 const logoutButton = document.querySelector("#logoutButton");
 const userBadge = document.querySelector("#userBadge");
+const sessionWarning = document.querySelector("#sessionWarning");
+const sessionWarningText = document.querySelector("#sessionWarningText");
+const extendSessionButton = document.querySelector("#extendSessionButton");
+const sessionLogoutButton = document.querySelector("#sessionLogoutButton");
 const messagesEl = document.querySelector("#messages");
 const formEl = document.querySelector("#chatForm");
 const inputEl = document.querySelector("#messageInput");
 const sendButton = document.querySelector("#sendButton");
-const scanButton = document.querySelector("#scanButton");
+const composerAttachButton = document.querySelector("#composerAttachButton");
 const newChatButton = document.querySelector("#newChatButton");
 const scanStatus = document.querySelector("#scanStatus");
 const fileInput = document.querySelector("#fileInput");
@@ -19,10 +26,12 @@ const attachmentTray = document.querySelector("#attachmentTray");
 const chatPanel = document.querySelector("#chatPanel");
 const dropOverlay = document.querySelector("#dropOverlay");
 const threadList = document.querySelector("#threadList");
+const chatFilePanel = document.querySelector("#chatFilePanel");
 
 const CONVERSATION_KEY = "my_rag_chatbot_conversation_id";
 const AUTH_USER_KEY = "my_rag_chatbot_user";
 const AUTH_SESSION_MS = 60 * 60 * 1000;
+const SESSION_WARNING_MS = 5 * 60 * 1000;
 let currentUser = readStoredUser();
 let conversationId = localStorage.getItem(CONVERSATION_KEY) || createConversationId();
 localStorage.setItem(CONVERSATION_KEY, conversationId);
@@ -30,6 +39,54 @@ localStorage.setItem(CONVERSATION_KEY, conversationId);
 const history = [];
 const pendingFiles = [];
 
+
+function formatSessionTime(milliseconds) {
+  const safeMilliseconds = Math.max(0, milliseconds);
+  const totalSeconds = Math.ceil(safeMilliseconds / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes >= 60) {
+    const hours = Math.floor(minutes / 60);
+    const restMinutes = minutes % 60;
+    return `${hours}h ${restMinutes}m`;
+  }
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function persistCurrentUser() {
+  if (currentUser) {
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(currentUser));
+  }
+}
+
+function extendSession() {
+  if (!currentUser) return;
+  currentUser.expires_at = Date.now() + AUTH_SESSION_MS;
+  persistCurrentUser();
+  updateSessionStatus();
+}
+
+function updateSessionStatus() {
+  if (!sessionWarning) return;
+
+  if (!currentUser) {
+    userBadge.textContent = "";
+    sessionWarning.classList.remove("is-visible");
+    sessionWarning.hidden = true;
+    return;
+  }
+
+  const remaining = currentUser.expires_at - Date.now();
+  const shouldWarn = remaining > 0 && remaining <= SESSION_WARNING_MS;
+  userBadge.textContent = `Signed in as ${currentUser.username} · ${formatSessionTime(remaining)} left`;
+  userBadge.classList.toggle("is-warning", shouldWarn);
+
+  sessionWarning.hidden = !shouldWarn;
+  sessionWarning.classList.toggle("is-visible", shouldWarn);
+  if (sessionWarningText) {
+    sessionWarningText.textContent = `${formatSessionTime(remaining)} left. Do you need more time?`;
+  }
+}
 
 function readStoredUser() {
   try {
@@ -89,13 +146,14 @@ function setAuthMode(mode) {
 function showAuthenticatedApp() {
   authScreen.classList.add("is-hidden");
   appShell.classList.remove("is-hidden");
-  userBadge.textContent = currentUser ? `Signed in as ${currentUser.username}` : "";
+  updateSessionStatus();
 }
 
 function showSignedOut() {
   appShell.classList.add("is-hidden");
   authScreen.classList.remove("is-hidden");
   authStatus.textContent = "";
+  updateSessionStatus();
   setAuthMode("login");
 }
 
@@ -211,6 +269,103 @@ function renderAttachmentTray() {
   });
 }
 
+
+
+
+async function downloadChatFile(file) {
+  if (!requireActiveSession()) return;
+
+  const response = await fetch(`/api/documents/files/${encodeURIComponent(file.file_id)}/download`, {
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = file.filename || "download";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function renderChatFiles(files = []) {
+  chatFilePanel.replaceChildren();
+
+  const header = document.createElement("div");
+  header.className = "chat-file-header";
+
+  const title = document.createElement("span");
+  title.textContent = "Files";
+
+  const count = document.createElement("span");
+  count.className = "chat-file-count";
+  count.textContent = String(files.length);
+
+  header.append(title, count);
+  chatFilePanel.appendChild(header);
+
+  if (!files.length) {
+    const empty = document.createElement("div");
+    empty.className = "chat-file-empty";
+    empty.textContent = "No files in this chat";
+    chatFilePanel.appendChild(empty);
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "chat-file-list";
+
+  files.slice(0, 6).forEach((file) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "chat-file-item";
+    item.title = `Download ${file.filename}`;
+    item.setAttribute("aria-label", `Download ${file.filename}`);
+
+    const icon = document.createElement("span");
+    icon.className = "chat-file-icon";
+    icon.textContent = (file.filename.split(".").pop() || "file").slice(0, 3).toUpperCase();
+
+    const name = document.createElement("span");
+    name.className = "chat-file-name";
+    name.textContent = file.filename;
+
+    item.append(icon, name);
+    item.addEventListener("click", async () => {
+      scanStatus.textContent = `Downloading ${file.filename}...`;
+      try {
+        await downloadChatFile(file);
+        scanStatus.textContent = `Downloaded ${file.filename}.`;
+      } catch (error) {
+        scanStatus.textContent = `Download failed: ${error.message}`;
+      }
+    });
+    list.appendChild(item);
+  });
+
+  chatFilePanel.appendChild(list);
+}
+
+async function loadChatFiles() {
+  if (!currentUser || !conversationId) {
+    renderChatFiles([]);
+    return;
+  }
+
+  try {
+    const data = await getJson(`/api/documents/files?conversation_id=${encodeURIComponent(conversationId)}`);
+    renderChatFiles(data.files || []);
+  } catch {
+    renderChatFiles([]);
+  }
+}
+
 function formatThreadDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
@@ -294,6 +449,7 @@ async function selectConversation(nextConversationId) {
   localStorage.setItem(CONVERSATION_KEY, conversationId);
   scanStatus.textContent = "";
   await loadConversation();
+  await loadChatFiles();
   await loadThreadList();
   inputEl.focus();
 }
@@ -428,7 +584,7 @@ async function uploadPendingFiles() {
   if (!pendingFiles.length) return null;
   if (!requireActiveSession()) return null;
 
-  scanButton.disabled = true;
+  composerAttachButton.disabled = true;
   scanStatus.textContent = "Uploading and indexing...";
 
   const formData = new FormData();
@@ -442,10 +598,12 @@ async function uploadPendingFiles() {
       : "";
     scanStatus.textContent = `${data.message} Processed ${data.documents_scanned} file(s), stored ${data.files_stored || 0} in PostgreSQL, added ${data.chunks_added} chunk(s).${skipped}`;
     clearPendingFiles();
+    await loadChatFiles();
+    await loadThreadList();
     return data;
   } finally {
     fileInput.value = "";
-    scanButton.disabled = false;
+    composerAttachButton.disabled = false;
   }
 }
 
@@ -461,7 +619,7 @@ async function uploadFiles(files) {
     return;
   }
 
-  scanButton.disabled = true;
+  composerAttachButton.disabled = true;
   scanStatus.textContent = "Uploading and indexing...";
 
   const formData = new FormData();
@@ -474,11 +632,13 @@ async function uploadFiles(files) {
       ? ` Skipped unsupported file(s): ${data.skipped_files.join(", ")}.`
       : "";
     scanStatus.textContent = `${data.message} Processed ${data.documents_scanned} file(s), stored ${data.files_stored || 0} in PostgreSQL, added ${data.chunks_added} chunk(s).${skipped}`;
+    await loadChatFiles();
+    await loadThreadList();
   } catch (error) {
     scanStatus.textContent = `Upload failed: ${error.message}`;
   } finally {
     fileInput.value = "";
-    scanButton.disabled = false;
+    composerAttachButton.disabled = false;
   }
 }
 
@@ -519,7 +679,10 @@ async function startNewChat() {
   localStorage.setItem(CONVERSATION_KEY, conversationId);
   scanStatus.textContent = "New chat started.";
   clearMessages();
+  clearPendingFiles();
+  renderChatFiles([]);
   showWelcome();
+  await loadChatFiles();
   await loadThreadList();
   inputEl.focus();
 }
@@ -527,6 +690,58 @@ async function startNewChat() {
 
 showLoginButton.addEventListener("click", () => setAuthMode("login"));
 showRegisterButton.addEventListener("click", () => setAuthMode("register"));
+
+async function finishAuth(data) {
+  saveUser(data.user);
+  await loadConversation();
+  await loadChatFiles();
+  await loadThreadList();
+  inputEl.focus();
+}
+
+async function handleGoogleCredential(response) {
+  authStatus.textContent = "Signing in with Google...";
+  try {
+    const data = await postJson("/api/auth/google", { credential: response.credential });
+    await finishAuth(data);
+  } catch (error) {
+    authStatus.textContent = `Google sign-in failed: ${error.message}`;
+  }
+}
+
+async function setupGoogleSignIn() {
+  if (!googleSignInWrap || !googleSignInButton) return;
+
+  try {
+    const config = await getJson("/api/auth/google/config");
+    if (!config.client_id) {
+      googleSignInWrap.classList.add("is-hidden");
+      return;
+    }
+
+    const render = () => {
+      if (!window.google?.accounts?.id) {
+        window.setTimeout(render, 200);
+        return;
+      }
+
+      window.google.accounts.id.initialize({
+        client_id: config.client_id,
+        callback: handleGoogleCredential,
+      });
+      window.google.accounts.id.renderButton(googleSignInButton, {
+        theme: "outline",
+        size: "large",
+        width: 360,
+        text: "continue_with",
+        shape: "rectangular",
+      });
+    };
+    render();
+  } catch {
+    googleSignInWrap.classList.add("is-hidden");
+  }
+}
 
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -536,14 +751,33 @@ loginForm.addEventListener("submit", async (event) => {
       identifier: document.querySelector("#loginIdentifier").value.trim(),
       password: document.querySelector("#loginPassword").value,
     });
-    saveUser(data.user);
-    await loadConversation();
-    await loadThreadList();
-    inputEl.focus();
+    await finishAuth(data);
   } catch (error) {
     authStatus.textContent = `Login failed: ${error.message}`;
   }
 });
+
+async function requestEmailVerificationCode() {
+  const email = document.querySelector("#registerEmail").value.trim();
+  if (!email) {
+    authStatus.textContent = "Enter your email first.";
+    return;
+  }
+
+  sendEmailCodeButton.disabled = true;
+  authStatus.textContent = "Sending verification code...";
+  try {
+    const data = await postJson("/api/auth/send-verification-code", { email });
+    authStatus.textContent = `${data.message} It expires in ${data.expires_in_minutes} minutes.`;
+    document.querySelector("#registerVerificationCode").focus();
+  } catch (error) {
+    authStatus.textContent = `Could not send code: ${error.message}`;
+  } finally {
+    sendEmailCodeButton.disabled = false;
+  }
+}
+
+sendEmailCodeButton?.addEventListener("click", requestEmailVerificationCode);
 
 registerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -553,6 +787,7 @@ registerForm.addEventListener("submit", async (event) => {
       username: document.querySelector("#registerUsername").value.trim(),
       email: document.querySelector("#registerEmail").value.trim(),
       password: document.querySelector("#registerPassword").value,
+      verification_code: document.querySelector("#registerVerificationCode").value.trim(),
     });
     saveUser(data.user);
     await startNewChat();
@@ -562,6 +797,15 @@ registerForm.addEventListener("submit", async (event) => {
 });
 
 logoutButton.addEventListener("click", () => {
+  expireSession("");
+});
+
+extendSessionButton?.addEventListener("click", () => {
+  extendSession();
+  scanStatus.textContent = "Session extended for 1 hour.";
+});
+
+sessionLogoutButton?.addEventListener("click", () => {
   expireSession("");
 });
 
@@ -622,12 +866,13 @@ formEl.addEventListener("submit", async (event) => {
   }
 });
 
-scanButton.addEventListener("click", () => {
+composerAttachButton.addEventListener("click", () => {
   fileInput.click();
 });
 
-fileInput.addEventListener("change", async () => {
-  await uploadFiles(fileInput.files || []);
+fileInput.addEventListener("change", () => {
+  addPendingFiles(fileInput.files || []);
+  fileInput.value = "";
 });
 
 chatPanel.addEventListener("dragover", (event) => {
@@ -641,7 +886,7 @@ chatPanel.addEventListener("dragleave", (event) => {
   }
 });
 
-chatPanel.addEventListener("drop", async (event) => {
+chatPanel.addEventListener("drop", (event) => {
   event.preventDefault();
   chatPanel.classList.remove("is-dragging");
   addPendingFiles(event.dataTransfer?.files || []);
@@ -650,14 +895,20 @@ chatPanel.addEventListener("drop", async (event) => {
 setInterval(() => {
   if (currentUser && isSessionExpired()) {
     expireSession();
+    return;
   }
-}, 30 * 1000);
+  updateSessionStatus();
+}, 1000);
+
+await setupGoogleSignIn();
 
 if (currentUser) {
   showAuthenticatedApp();
   await loadConversation();
+  await loadChatFiles();
   await loadThreadList();
 } else {
+  renderChatFiles([]);
   showSignedOut();
 }
 

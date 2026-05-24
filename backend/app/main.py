@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
+import secrets
+import smtplib
+from email.message import EmailMessage
+from urllib.parse import quote, urlencode
+from urllib.request import urlopen
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app import db, settings
 from app.classifier import classify_message
-from app.rag import generate_answer, ingest_file, ingest_text, retrieve, scan_raw_docs
-from app.schemas import AuthResponse, ChatRequest, ChatResponse, ConversationListResponse, ConversationResponse, DatabaseStatus, IngestResponse, LoginRequest, RagFileListResponse, RegisterRequest, TextDocumentRequest
+from app.rag import generate_answer, ingest_file, ingest_text, retrieve, retrieve_by_titles, retrieve_overview, scan_raw_docs
+from app.schemas import AuthResponse, ChatRequest, ChatResponse, ConversationListResponse, ConversationResponse, DatabaseStatus, EmailCodeRequest, EmailCodeResponse, GoogleAuthRequest, GoogleClientConfigResponse, IngestResponse, LoginRequest, RagFileListResponse, RegisterRequest, TextDocumentRequest
 
 
 app = FastAPI(title="My RAG Chatbot")
@@ -44,10 +50,53 @@ def _current_user_id(request: Request) -> str | None:
     return user_id.strip() if user_id else None
 
 
+def _send_verification_email(email: str, code: str) -> None:
+    if not settings.SMTP_HOST or not settings.SMTP_FROM_EMAIL:
+        raise HTTPException(
+            status_code=503,
+            detail="Email verification is not configured. Add SMTP settings to .env.",
+        )
+
+    message = EmailMessage()
+    message["Subject"] = "Your RAG Chatbot verification code"
+    message["From"] = settings.SMTP_FROM_EMAIL
+    message["To"] = email
+    message.set_content(
+        f"Your verification code is {code}.\n\n"
+        f"This code expires in {settings.EMAIL_CODE_EXPIRY_MINUTES} minutes."
+    )
+
+    try:
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as smtp:
+            if settings.SMTP_USE_TLS:
+                smtp.starttls()
+            if settings.SMTP_USERNAME:
+                smtp.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+            smtp.send_message(message)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not send verification email: {exc}") from exc
+
+
+@app.post("/api/auth/send-verification-code", response_model=EmailCodeResponse)
+async def send_verification_code(payload: EmailCodeRequest) -> EmailCodeResponse:
+    if not db.is_enabled():
+        raise HTTPException(status_code=503, detail="PostgreSQL is not connected.")
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    db.save_email_verification_code(payload.email, code, settings.EMAIL_CODE_EXPIRY_MINUTES)
+    _send_verification_email(payload.email, code)
+    return EmailCodeResponse(
+        message="Verification code sent. Please check your email.",
+        expires_in_minutes=settings.EMAIL_CODE_EXPIRY_MINUTES,
+    )
+
+
 @app.post("/api/auth/register", response_model=AuthResponse)
 async def register(payload: RegisterRequest) -> AuthResponse:
     if not db.is_enabled():
         raise HTTPException(status_code=503, detail="PostgreSQL is not connected.")
+    if not db.verify_email_code(payload.email, payload.verification_code):
+        raise HTTPException(status_code=400, detail="Verification code is wrong or expired.")
     try:
         user = db.create_user(payload.username, payload.email, payload.password)
     except Exception as exc:
@@ -55,6 +104,42 @@ async def register(payload: RegisterRequest) -> AuthResponse:
         if "users_username_key" in detail or "users_email_key" in detail or "duplicate key" in detail:
             raise HTTPException(status_code=409, detail="That username or email is already registered.") from exc
         raise
+    return AuthResponse(user=user)
+
+
+@app.get("/api/auth/google/config", response_model=GoogleClientConfigResponse)
+async def google_client_config() -> GoogleClientConfigResponse:
+    return GoogleClientConfigResponse(client_id=settings.GOOGLE_CLIENT_ID)
+
+
+def _verify_google_credential(credential: str) -> dict[str, str]:
+    if not settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured.")
+
+    query = urlencode({"id_token": credential})
+    try:
+        with urlopen(f"https://oauth2.googleapis.com/tokeninfo?{query}", timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail=f"Could not verify Google sign-in: {exc}") from exc
+
+    if data.get("aud") != settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=401, detail="Google sign-in audience does not match this app.")
+    if data.get("email_verified") not in {"true", True}:
+        raise HTTPException(status_code=401, detail="Google email is not verified.")
+    if not data.get("email") or not data.get("sub"):
+        raise HTTPException(status_code=401, detail="Google sign-in response is missing account details.")
+
+    return {"email": data["email"], "sub": data["sub"], "name": data.get("name") or data["email"].split("@", 1)[0]}
+
+
+@app.post("/api/auth/google", response_model=AuthResponse)
+async def google_auth(payload: GoogleAuthRequest) -> AuthResponse:
+    if not db.is_enabled():
+        raise HTTPException(status_code=503, detail="PostgreSQL is not connected.")
+
+    profile = _verify_google_credential(payload.credential)
+    user = db.find_or_create_google_user(profile["email"], profile["sub"], profile.get("name"))
     return AuthResponse(user=user)
 
 
@@ -100,7 +185,33 @@ async def delete_conversation(conversation_id: str, request: Request) -> dict[st
 async def list_uploaded_files(request: Request) -> RagFileListResponse:
     if not db.is_enabled():
         return RagFileListResponse(files=[])
-    return RagFileListResponse(files=db.list_rag_files())
+    user_id = _current_user_id(request)
+    conversation_id = request.query_params.get("conversation_id")
+    try:
+        files = db.list_rag_files(conversation_id=conversation_id, user_id=user_id)
+    except TypeError:
+        files = db.list_rag_files(conversation_id=conversation_id)
+    return RagFileListResponse(files=files)
+
+
+@app.get("/api/documents/files/{file_id}/download")
+async def download_uploaded_file(file_id: str, request: Request) -> Response:
+    if not db.is_enabled():
+        raise HTTPException(status_code=503, detail="PostgreSQL is not connected.")
+
+    user_id = _current_user_id(request)
+    file = db.get_rag_file(file_id, user_id=user_id)
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found.")
+
+    filename = str(file["filename"])
+    content_type = str(file["content_type"] or "application/octet-stream")
+    quoted_filename = quote(filename)
+    headers = {
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}",
+        "Content-Length": str(file["file_size"]),
+    }
+    return Response(content=file["content"], media_type=content_type, headers=headers)
 
 
 @app.post("/api/documents/text", response_model=IngestResponse)
@@ -127,6 +238,25 @@ async def scan_documents() -> IngestResponse:
     )
 
 
+def _chat_title_from_uploads(files: list[object]) -> str:
+    filenames: list[str] = []
+    seen = set()
+    for upload in files:
+        filename = Path(getattr(upload, "filename", "") or "upload.txt").name
+        if not filename or filename in seen:
+            continue
+        seen.add(filename)
+        filenames.append(filename)
+
+    if not filenames:
+        return "Uploaded documents"
+
+    if len(filenames) == 1:
+        return filenames[0]
+
+    return f"{filenames[0]} + {len(filenames) - 1} more"
+
+
 @app.post("/api/documents/upload", response_model=IngestResponse)
 async def upload_document(request: Request) -> IngestResponse:
     try:
@@ -140,8 +270,11 @@ async def upload_document(request: Request) -> IngestResponse:
 
     conversation_id = form.get("conversation_id")
     user_id = _current_user_id(request)
+    chat_title = _chat_title_from_uploads(files)
     if conversation_id and db.is_enabled():
-        db.ensure_conversation(str(conversation_id), "Uploaded documents", user_id=user_id)
+        db.ensure_conversation(str(conversation_id), chat_title, user_id=user_id)
+        if hasattr(db, "set_conversation_title"):
+            db.set_conversation_title(str(conversation_id), chat_title, user_id=user_id)
 
     settings.RAW_DOCS_DIR.mkdir(parents=True, exist_ok=True)
     chunks_added = 0
@@ -164,7 +297,13 @@ async def upload_document(request: Request) -> IngestResponse:
         target.write_bytes(content)
 
         if db.is_enabled():
-            db.save_rag_file(filename, getattr(upload, "content_type", "") or "application/octet-stream", content, str(conversation_id) if conversation_id else None)
+            db.save_rag_file(
+                filename,
+                getattr(upload, "content_type", "") or "application/octet-stream",
+                content,
+                str(conversation_id) if conversation_id else None,
+                user_id=user_id,
+            )
             files_stored += 1
 
         added = 0
@@ -224,6 +363,14 @@ def _is_file_status_question(message: str) -> bool:
         "which documents",
         "what pdf",
         "which pdf",
+        "file name",
+        "filename",
+        "name of the file",
+        "what is the file name",
+        "what's the file name",
+        "which file name",
+        "file we looked at",
+        "file we are looking at",
         "what kind of list",
         "what kind of lists",
         "what list",
@@ -246,6 +393,9 @@ def _is_file_status_question(message: str) -> bool:
         "can you see the file",
         "can you see my file",
         "can you read the file",
+        "what is the file name",
+        "what's the file name",
+        "what file are we looking at",
         "what file did i upload",
         "what files did i upload",
         "what documents did i upload",
@@ -298,6 +448,30 @@ def _unique_file_names(files: list[dict[str, object]]) -> list[str]:
     return names
 
 
+
+
+def _small_status_answer(files: list[dict[str, object]], message: str) -> str | None:
+    text = _normalise_text(message)
+    status_patterns = [
+        "is it going well",
+        "it's going well",
+        "is this working",
+        "does it work",
+        "are we good",
+        "are you ready",
+    ]
+    if not any(pattern in text for pattern in status_patterns):
+        return None
+
+    names = _unique_file_names(files)
+    if not names:
+        return "Not yet. I do not see an uploaded file in this chat."
+
+    if len(names) == 1:
+        return f"Yes. I can see {names[0]} in this chat. Ask me a specific question about it, or ask for a summary."
+
+    return f"Yes. I can see {len(names)} files in this chat: {', '.join(names[:5])}."
+
 def _file_state_answer(files: list[dict[str, object]], message: str) -> str | None:
     wants_status = _is_file_status_question(message)
     wants_study_start = _is_start_study_request(message)
@@ -322,6 +496,38 @@ def _file_state_answer(files: list[dict[str, object]], message: str) -> str | No
 
 
 
+def _is_document_overview_question(message: str) -> bool:
+    text = _normalise_text(message)
+    overview_patterns = [
+        "topic",
+        "main topic",
+        "main idea",
+        "what is this about",
+        "what's this about",
+        "what is the document about",
+        "what is this document about",
+        "what is this paper about",
+        "what's the paper about",
+        "summarize",
+        "summary",
+        "overview",
+    ]
+    return any(pattern in text for pattern in overview_patterns)
+
+
+OFF_TOPIC_TERMS = {"messi", "ronaldo", "soccer", "football", "nba", "weather", "movie", "restaurant"}
+
+
+def _off_topic_answer(message: str) -> str | None:
+    words = set(_normalise_text(message).replace("?", "").split())
+    if not words.intersection(OFF_TOPIC_TERMS):
+        return None
+    return (
+        "That question is outside the uploaded documents for this chat, "
+        "so I should not answer it from the RAG workspace."
+    )
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
     conversation_id = payload.conversation_id
@@ -333,6 +539,13 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
         stored_history = db.get_messages(conversation_id, limit=8)
         history = stored_history or payload.history
         db.add_message(conversation_id, "user", payload.message)
+
+        off_topic_answer = _off_topic_answer(payload.message)
+        if off_topic_answer:
+            if hasattr(db, "clear_pending_clarification"):
+                db.clear_pending_clarification(conversation_id)
+            db.add_message(conversation_id, "assistant", off_topic_answer)
+            return ChatResponse(answer=off_topic_answer, conversation_id=conversation_id, sources=[])
 
         pending = db.get_pending_clarification(conversation_id) if hasattr(db, "get_pending_clarification") else None
         if pending:
@@ -347,7 +560,7 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
             return ChatResponse(answer=answer, conversation_id=conversation_id, sources=sources)
 
     current_files = db.list_rag_files(conversation_id=conversation_id, user_id=user_id) if db.is_enabled() and conversation_id else []
-    file_state_answer = _file_state_answer(current_files, payload.message)
+    file_state_answer = _file_state_answer(current_files, payload.message) or _small_status_answer(current_files, payload.message)
     if file_state_answer:
         if db.is_enabled() and conversation_id:
             if hasattr(db, "clear_pending_clarification"):
@@ -375,6 +588,11 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
 
     query = classification.rewritten_query or payload.message
     sources = retrieve(query, top_k=payload.top_k, conversation_id=conversation_id)
+    if not sources and current_files:
+        file_names = _unique_file_names(current_files)
+        sources = retrieve_by_titles(query, file_names, top_k=payload.top_k)
+    if not sources and current_files and _is_document_overview_question(payload.message):
+        sources = retrieve_overview(conversation_id=conversation_id, top_k=payload.top_k)
     answer = await generate_answer(query, history, sources)
     if answer.lower().startswith("i do not know from your uploaded notes"):
         sources = []

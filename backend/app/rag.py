@@ -52,8 +52,9 @@ def chunk_text(text: str, chunk_size: int = 850, overlap: int = 140) -> list[str
     return chunks
 
 
-def document_id(title: str, text: str) -> str:
-    digest = hashlib.sha256(f"{title}\n{text[:1200]}".encode("utf-8")).hexdigest()
+def document_id(title: str, text: str, conversation_id: str | None = None) -> str:
+    scope = conversation_id or "global"
+    digest = hashlib.sha256(f"{scope}\n{title}\n{text[:1200]}".encode("utf-8")).hexdigest()
     return digest[:16]
 
 
@@ -72,8 +73,8 @@ def save_index(items: list[dict[str, Any]]) -> None:
     settings.INDEX_PATH.write_text(json.dumps(items, indent=2), encoding="utf-8")
 
 
-def ingest_text(title: str, text: str) -> tuple[str, int]:
-    doc_id = document_id(title, text)
+def ingest_text(title: str, text: str, conversation_id: str | None = None) -> tuple[str, int]:
+    doc_id = document_id(title, text, conversation_id)
     existing = load_index()
     existing_ids = {item["chunk_id"] for item in existing}
     new_items = []
@@ -109,9 +110,9 @@ def read_document(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="ignore")
 
 
-def ingest_file(path: Path) -> tuple[str, int]:
+def ingest_file(path: Path, conversation_id: str | None = None) -> tuple[str, int]:
     text = read_document(path)
-    return ingest_text(path.name, text)
+    return ingest_text(path.name, text, conversation_id)
 
 
 def scan_raw_docs() -> tuple[int, int, list[str]]:
@@ -153,11 +154,13 @@ def score(query_tokens: list[str], chunk_tokens: list[str]) -> float:
     return numerator / (query_norm * chunk_norm)
 
 
-def retrieve(query: str, top_k: int = 4) -> list[Source]:
+def retrieve(query: str, top_k: int = 4, conversation_id: str | None = None) -> list[Source]:
     query_tokens = tokenize(query)
     ranked = []
 
     for item in load_index():
+        if conversation_id and item.get("conversation_id") != conversation_id:
+            continue
         item_score = score(query_tokens, item.get("tokens", []))
         if item_score < MIN_RELEVANCE_SCORE:
             continue

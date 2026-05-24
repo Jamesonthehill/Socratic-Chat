@@ -81,3 +81,24 @@ class RagFileSummary(BaseModel):
 
 class RagFileListResponse(BaseModel):
     files: list[RagFileSummary] = Field(default_factory=list)
+
+class RegisterRequest(BaseModel):
+    username: str = Field(min_length=2, max_length=80)
+    email: str = Field(min_length=3, max_length=255)
+    password: str = Field(min_length=6, max_length=200)
+
+
+class LoginRequest(BaseModel):
+    identifier: str = Field(min_length=2, max_length=255)
+    password: str = Field(min_length=1, max_length=200)
+
+
+class UserProfile(BaseModel):
+    user_id: str
+    username: str
+    email: str
+
+
+class AuthResponse(BaseModel):
+    user: UserProfile
+

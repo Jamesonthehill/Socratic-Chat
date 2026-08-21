@@ -28,6 +28,14 @@ const dropOverlay = document.querySelector("#dropOverlay");
 const threadList = document.querySelector("#threadList");
 const chatFilePanel = document.querySelector("#chatFilePanel");
 
+const API_BASE_URL = (window.SOCRATIC_CONFIG?.API_BASE_URL || "").replace(/\/+$/, "");
+
+function apiUrl(path) {
+  if (/^https?:\/\//i.test(path)) return path;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${API_BASE_URL}${normalizedPath}`;
+}
+
 const CONVERSATION_KEY = "my_rag_chatbot_conversation_id";
 const AUTH_USER_KEY = "my_rag_chatbot_user";
 const AUTH_SESSION_MS = 60 * 60 * 1000;
@@ -275,7 +283,7 @@ function renderAttachmentTray() {
 async function downloadChatFile(file) {
   if (!requireActiveSession()) return;
 
-  const response = await fetch(`/api/documents/files/${encodeURIComponent(file.file_id)}/download`, {
+  const response = await fetch(apiUrl(`/api/documents/files/${encodeURIComponent(file.file_id)}/download`), {
     headers: authHeaders(),
   });
 
@@ -543,7 +551,7 @@ function setBusy(isBusy) {
 }
 
 async function getJson(url) {
-  const response = await fetch(url, { headers: authHeaders() });
+  const response = await fetch(apiUrl(url), { headers: authHeaders() });
 
   if (!response.ok) {
     throw new Error(await response.text());
@@ -553,7 +561,7 @@ async function getJson(url) {
 }
 
 async function postJson(url, payload = {}) {
-  const response = await fetch(url, {
+  const response = await fetch(apiUrl(url), {
     method: "POST",
     headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
@@ -567,7 +575,7 @@ async function postJson(url, payload = {}) {
 }
 
 async function postForm(url, formData) {
-  const response = await fetch(url, {
+  const response = await fetch(apiUrl(url), {
     method: "POST",
     headers: authHeaders(),
     body: formData,
@@ -643,7 +651,7 @@ async function uploadFiles(files) {
 }
 
 async function deleteJson(url) {
-  const response = await fetch(url, { method: "DELETE", headers: authHeaders() });
+  const response = await fetch(apiUrl(url), { method: "DELETE", headers: authHeaders() });
 
   if (!response.ok) {
     throw new Error(await response.text());
@@ -911,4 +919,3 @@ if (currentUser) {
   renderChatFiles([]);
   showSignedOut();
 }
-

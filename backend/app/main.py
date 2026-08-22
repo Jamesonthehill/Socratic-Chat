@@ -2,12 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
-import secrets
-import smtplib
-from email.message import EmailMessage
 from urllib.parse import quote, urlencode
-from urllib.error import HTTPError, URLError
-from urllib.request import Request as UrlRequest, urlopen
+from urllib.request import urlopen
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app import db, settings
 from app.classifier import classify_message
 from app.rag import generate_answer, ingest_file, ingest_text, retrieve, retrieve_by_titles, retrieve_overview, scan_raw_docs
-from app.schemas import AuthResponse, ChatRequest, ChatResponse, ConversationListResponse, ConversationResponse, DatabaseStatus, EmailCodeRequest, EmailCodeResponse, GoogleAuthRequest, GoogleClientConfigResponse, IngestResponse, LoginRequest, RagFileListResponse, RegisterRequest, TextDocumentRequest
+from app.schemas import AuthResponse, ChatRequest, ChatResponse, ConversationListResponse, ConversationResponse, DatabaseStatus, GoogleAuthRequest, GoogleClientConfigResponse, IngestResponse, LoginRequest, RagFileListResponse, RegisterRequest, TextDocumentRequest
 
 app = FastAPI(title="My RAG Chatbot")
 
@@ -50,82 +46,10 @@ def _current_user_id(request: Request) -> str | None:
     return user_id.strip() if user_id else None
 
 
-def _send_verification_email(email: str, code: str) -> None:
-    email_text = (
-        f"Your verification code is {code}.\n\n"
-        f"This code expires in {settings.EMAIL_CODE_EXPIRY_MINUTES} minutes."
-    )
-
-    if settings.RESEND_API_KEY:
-        payload = json.dumps(
-            {
-                "from": settings.RESEND_FROM_EMAIL,
-                "to": [email],
-                "subject": "Your RAG Chatbot verification code",
-                "text": email_text,
-            }
-        ).encode("utf-8")
-        request = UrlRequest(
-            "https://api.resend.com/emails",
-            data=payload,
-            headers={
-                "Authorization": f"Bearer {settings.RESEND_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        try:
-            with urlopen(request, timeout=15):
-                return
-        except HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise HTTPException(status_code=502, detail=f"Could not send verification email: {detail}") from exc
-        except URLError as exc:
-            raise HTTPException(status_code=502, detail=f"Could not reach the email service: {exc.reason}") from exc
-
-    if not settings.SMTP_HOST or not settings.SMTP_FROM_EMAIL:
-        raise HTTPException(
-            status_code=503,
-            detail="Email verification is not configured. Add RESEND_API_KEY or SMTP settings.",
-        )
-
-    message = EmailMessage()
-    message["Subject"] = "Your RAG Chatbot verification code"
-    message["From"] = settings.SMTP_FROM_EMAIL
-    message["To"] = email
-    message.set_content(email_text)
-
-    try:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as smtp:
-            if settings.SMTP_USE_TLS:
-                smtp.starttls()
-            if settings.SMTP_USERNAME:
-                smtp.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
-            smtp.send_message(message)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Could not send verification email: {exc}") from exc
-
-
-@app.post("/api/auth/send-verification-code", response_model=EmailCodeResponse)
-async def send_verification_code(payload: EmailCodeRequest) -> EmailCodeResponse:
-    if not db.is_enabled():
-        raise HTTPException(status_code=503, detail="PostgreSQL is not connected.")
-
-    code = f"{secrets.randbelow(1_000_000):06d}"
-    db.save_email_verification_code(payload.email, code, settings.EMAIL_CODE_EXPIRY_MINUTES)
-    _send_verification_email(payload.email, code)
-    return EmailCodeResponse(
-        message="Verification code sent. Please check your email.",
-        expires_in_minutes=settings.EMAIL_CODE_EXPIRY_MINUTES,
-    )
-
-
 @app.post("/api/auth/register", response_model=AuthResponse)
 async def register(payload: RegisterRequest) -> AuthResponse:
     if not db.is_enabled():
         raise HTTPException(status_code=503, detail="PostgreSQL is not connected.")
-    if not db.verify_email_code(payload.email, payload.verification_code):
-        raise HTTPException(status_code=400, detail="Verification code is wrong or expired.")
     try:
         user = db.create_user(payload.username, payload.email, payload.password)
     except Exception as exc:

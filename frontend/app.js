@@ -5,7 +5,6 @@ const registerForm = document.querySelector("#registerForm");
 const showLoginButton = document.querySelector("#showLoginButton");
 const showRegisterButton = document.querySelector("#showRegisterButton");
 const authStatus = document.querySelector("#authStatus");
-const sendEmailCodeButton = document.querySelector("#sendEmailCodeButton");
 const googleSignInWrap = document.querySelector("#googleSignInWrap");
 const googleSignInButton = document.querySelector("#googleSignInButton");
 const logoutButton = document.querySelector("#logoutButton");
@@ -765,28 +764,6 @@ loginForm.addEventListener("submit", async (event) => {
   }
 });
 
-async function requestEmailVerificationCode() {
-  const email = document.querySelector("#registerEmail").value.trim();
-  if (!email) {
-    authStatus.textContent = "Enter your email first.";
-    return;
-  }
-
-  sendEmailCodeButton.disabled = true;
-  authStatus.textContent = "Sending verification code...";
-  try {
-    const data = await postJson("/api/auth/send-verification-code", { email });
-    authStatus.textContent = `${data.message} It expires in ${data.expires_in_minutes} minutes.`;
-    document.querySelector("#registerVerificationCode").focus();
-  } catch (error) {
-    authStatus.textContent = `Could not send code: ${error.message}`;
-  } finally {
-    sendEmailCodeButton.disabled = false;
-  }
-}
-
-sendEmailCodeButton?.addEventListener("click", requestEmailVerificationCode);
-
 registerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   authStatus.textContent = "Creating account...";
@@ -795,7 +772,6 @@ registerForm.addEventListener("submit", async (event) => {
       username: document.querySelector("#registerUsername").value.trim(),
       email: document.querySelector("#registerEmail").value.trim(),
       password: document.querySelector("#registerPassword").value,
-      verification_code: document.querySelector("#registerVerificationCode").value.trim(),
     });
     saveUser(data.user);
     await startNewChat();

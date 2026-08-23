@@ -47,3 +47,9 @@ CORS_ALLOWED_ORIGINS = [
     for origin in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(",")
     if origin.strip()
 ]
+
+REQUIRE_GITHUB_ACCOUNT = os.getenv("REQUIRE_GITHUB_ACCOUNT", "false").lower() in {"1", "true", "yes"}
+GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
+GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
+GITHUB_CALLBACK_URL = os.getenv("GITHUB_CALLBACK_URL", "")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://jamesonthehill.com/Socratic-Chat/")

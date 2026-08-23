@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>My RAG Chatbot</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=20260823-2" />
     <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
@@ -16,6 +16,11 @@
 
         <div id="googleSignInWrap" class="google-signin-wrap">
           <div id="googleSignInButton"></div>
+        </div>
+
+        <div id="githubConnectWrap" class="github-connect-wrap is-hidden">
+          <p id="githubConnectMessage">School account verified. Connect GitHub to finish signing in.</p>
+          <button id="connectGithubButton" type="button">Continue with GitHub</button>
         </div>
 
         <div id="emailAuthDivider" class="auth-divider"><span>or use email</span></div>
@@ -107,7 +112,7 @@
         </form>
       </section>
     </main>
-    <script src="./config.js"></script>
-    <script src="./app.js" type="module"></script>
+    <script src="./config.js?v=20260823-2"></script>
+    <script src="./app.js?v=20260823-2" type="module"></script>
   </body>
 </html>

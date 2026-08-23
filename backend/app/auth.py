@@ -37,6 +37,7 @@ def issue_session(user_id: str) -> tuple[str, int]:
     now = int(time.time())
     expires_in_seconds = max(1, settings.AUTH_SESSION_MINUTES) * 60
     payload = {
+        "typ": "session",
         "sub": user_id,
         "iat": now,
         "exp": now + expires_in_seconds,
@@ -61,12 +62,13 @@ def verify_session(token: str) -> dict[str, Any]:
 
     try:
         payload = json.loads(_decode(encoded_payload))
+        token_type = str(payload["typ"])
         user_id = str(payload["sub"]).strip()
         expires_at = int(payload["exp"])
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         raise HTTPException(status_code=401, detail="Session token is invalid.") from None
 
-    if not user_id or expires_at <= int(time.time()):
+    if token_type != "session" or not user_id or expires_at <= int(time.time()):
         raise HTTPException(status_code=401, detail="Session has expired.")
     return payload
 

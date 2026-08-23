@@ -88,6 +88,8 @@ class AuthConfigResponse(BaseModel):
     auth_mode: str
     password_auth_enabled: bool
     school_domain: str | None = None
+    github_account_required: bool = False
+    github_oauth_configured: bool = False
 
 
 class EmailCodeRequest(BaseModel):
@@ -124,6 +126,8 @@ class UserProfile(BaseModel):
     user_id: str
     username: str
     email: str
+    github_connected: bool = False
+    github_username: str | None = None
 
 
 class AuthResponse(BaseModel):
@@ -137,3 +141,11 @@ class SessionRefreshResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in_seconds: int
+
+
+class CurrentUserResponse(BaseModel):
+    user: UserProfile
+
+
+class GitHubAuthorizeResponse(BaseModel):
+    authorize_url: str

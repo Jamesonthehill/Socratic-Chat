@@ -13,6 +13,9 @@ const verificationCodeField = document.querySelector("#verificationCodeField");
 const registerVerificationCode = document.querySelector("#registerVerificationCode");
 const googleSignInWrap = document.querySelector("#googleSignInWrap");
 const googleSignInButton = document.querySelector("#googleSignInButton");
+const githubConnectWrap = document.querySelector("#githubConnectWrap");
+const githubConnectMessage = document.querySelector("#githubConnectMessage");
+const connectGithubButton = document.querySelector("#connectGithubButton");
 const logoutButton = document.querySelector("#logoutButton");
 const userBadge = document.querySelector("#userBadge");
 const sessionWarning = document.querySelector("#sessionWarning");
@@ -50,6 +53,8 @@ let conversationId = localStorage.getItem(CONVERSATION_KEY) || createConversatio
 localStorage.setItem(CONVERSATION_KEY, conversationId);
 let emailVerificationRequired = true;
 let authMode = "open";
+let githubAccountRequired = false;
+let githubOauthConfigured = false;
 
 const history = [];
 const pendingFiles = [];
@@ -152,6 +157,13 @@ function requireActiveSession() {
 }
 
 function setAuthMode(mode) {
+  if (authMode === "school_google" || authMode === "unavailable") {
+    loginForm.classList.add("is-hidden");
+    registerForm.classList.add("is-hidden");
+    showLoginButton.classList.remove("is-active");
+    showRegisterButton.classList.remove("is-active");
+    return;
+  }
   const isLogin = mode === "login";
   loginForm.classList.toggle("is-hidden", !isLogin);
   registerForm.classList.toggle("is-hidden", isLogin);
@@ -166,10 +178,36 @@ function showAuthenticatedApp() {
   updateSessionStatus();
 }
 
+function showGithubConnection() {
+  appShell.classList.add("is-hidden");
+  authScreen.classList.remove("is-hidden");
+  googleSignInWrap?.classList.add("is-hidden");
+  githubConnectWrap?.classList.remove("is-hidden");
+  if (authCopy) authCopy.textContent = "Step 2 of 2: connect the GitHub account you want linked to this school account.";
+  if (githubConnectMessage) {
+    githubConnectMessage.textContent = githubOauthConfigured
+      ? `School account ${currentUser?.email || "verified"} is verified. Connect GitHub to continue.`
+      : "GitHub authentication is not configured on the server yet.";
+  }
+  if (connectGithubButton) connectGithubButton.disabled = !githubOauthConfigured;
+}
+
+function enterAuthenticatedApp() {
+  githubConnectWrap?.classList.add("is-hidden");
+  if (githubAccountRequired && !currentUser?.github_connected) {
+    showGithubConnection();
+    return false;
+  }
+  showAuthenticatedApp();
+  return true;
+}
+
 function showSignedOut() {
   appShell.classList.add("is-hidden");
   authScreen.classList.remove("is-hidden");
   authStatus.textContent = "";
+  githubConnectWrap?.classList.add("is-hidden");
+  googleSignInWrap?.classList.remove("is-hidden");
   updateSessionStatus();
   setAuthMode("login");
 }
@@ -181,7 +219,6 @@ function saveUser(user, accessToken, expiresInSeconds = AUTH_SESSION_MS / 1000) 
     expires_at: Date.now() + (expiresInSeconds * 1000),
   };
   localStorage.setItem(AUTH_USER_KEY, JSON.stringify(currentUser));
-  showAuthenticatedApp();
 }
 
 function authHeaders(headers = {}) {
@@ -713,11 +750,30 @@ showRegisterButton.addEventListener("click", () => setAuthMode("register"));
 
 async function finishAuth(data) {
   saveUser(data.user, data.access_token, data.expires_in_seconds);
+  if (!enterAuthenticatedApp()) return;
   await loadConversation();
   await loadChatFiles();
   await loadThreadList();
   inputEl.focus();
 }
+
+async function connectGitHubAccount() {
+  if (!currentUser?.access_token) {
+    expireSession("Sign in with your school account first.");
+    return;
+  }
+  connectGithubButton.disabled = true;
+  authStatus.textContent = "Opening GitHub...";
+  try {
+    const data = await postJson("/api/auth/github/start");
+    window.location.assign(data.authorize_url);
+  } catch (error) {
+    connectGithubButton.disabled = false;
+    authStatus.textContent = `GitHub connection failed: ${error.message}`;
+  }
+}
+
+connectGithubButton?.addEventListener("click", connectGitHubAccount);
 
 async function handleGoogleCredential(response) {
   authStatus.textContent = "Signing in with Google...";
@@ -781,6 +837,8 @@ loginForm.addEventListener("submit", async (event) => {
 function applyAuthenticationMode(config) {
   const required = Boolean(config.email_verification_required);
   authMode = config.auth_mode || "open";
+  githubAccountRequired = Boolean(config.github_account_required);
+  githubOauthConfigured = Boolean(config.github_oauth_configured);
   emailVerificationRequired = required;
   sendEmailCodeButton?.classList.toggle("is-hidden", !required);
   verificationCodeField?.classList.toggle("is-hidden", !required);
@@ -800,7 +858,11 @@ function applyAuthenticationMode(config) {
 
   if (!passwordAuthEnabled) {
     const domain = config.school_domain || "your school";
-    if (authCopy) authCopy.textContent = `Sign in with your ${domain} Google account to use the chatbot.`;
+    if (authCopy) {
+      authCopy.textContent = githubAccountRequired
+        ? `Step 1 of 2: verify your ${domain} Google account, then connect GitHub.`
+        : `Sign in with your ${domain} Google account to use the chatbot.`;
+    }
   }
 }
 
@@ -814,8 +876,21 @@ async function setupAuthenticationMode() {
       auth_mode: "unavailable",
       password_auth_enabled: false,
       school_domain: "charlotte.edu",
+      github_account_required: false,
+      github_oauth_configured: false,
     });
     authStatus.textContent = "Authentication server unavailable. Check the Render API address.";
+  }
+}
+
+async function restoreLinkedAccount() {
+  if (!currentUser?.access_token) return;
+  try {
+    const data = await getJson("/api/auth/me");
+    currentUser = { ...currentUser, ...data.user };
+    persistCurrentUser();
+  } catch {
+    expireSession("Your session ended. Please sign in again.");
   }
 }
 
@@ -968,11 +1043,22 @@ setInterval(() => {
 await setupAuthenticationMode();
 await setupGoogleSignIn();
 
+const githubResult = new URLSearchParams(window.location.search).get("github");
+if (githubResult) {
+  window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+  if (githubResult !== "connected") {
+    authStatus.textContent = "GitHub connection was not completed. Please try again.";
+  }
+}
+
+await restoreLinkedAccount();
+
 if (currentUser) {
-  showAuthenticatedApp();
-  await loadConversation();
-  await loadChatFiles();
-  await loadThreadList();
+  if (enterAuthenticatedApp()) {
+    await loadConversation();
+    await loadChatFiles();
+    await loadThreadList();
+  }
 } else {
   renderChatFiles([]);
   showSignedOut();

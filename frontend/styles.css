@@ -714,6 +714,35 @@ h2 {
   line-height: 1.5;
 }
 
+.github-connect-wrap {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffdf8;
+}
+
+.github-connect-wrap.is-hidden {
+  display: none;
+}
+
+.github-connect-wrap p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.github-connect-wrap button {
+  min-height: 44px;
+  background: #24292f;
+  color: #ffffff;
+}
+
+.github-connect-wrap button:not(:disabled):hover {
+  background: #15191d;
+}
+
 .auth-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1013,4 +1042,3 @@ h2 {
   flex: 1;
   background: var(--line);
 }
-

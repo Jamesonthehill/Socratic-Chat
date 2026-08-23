@@ -1,12 +1,26 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import HTTPException
+from starlette.requests import Request
 
-from app import auth, settings
+from app import auth, main, settings
 from app.main import _verify_google_credential
+
+
+def _request_with_token(token: str) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [(b"authorization", f"Bearer {token}".encode("ascii"))],
+        }
+    )
 
 
 class SessionTokenTests(unittest.TestCase):
@@ -71,6 +85,61 @@ class SchoolGoogleAccountTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as context:
             _verify_google_credential("credential")
         self.assertEqual(context.exception.status_code, 403)
+
+
+class GitHubAccountRequirementTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.original_secret = settings.AUTH_SESSION_SECRET
+        self.original_required = settings.REQUIRE_GITHUB_ACCOUNT
+        self.original_client_id = settings.GITHUB_CLIENT_ID
+        self.original_client_secret = settings.GITHUB_CLIENT_SECRET
+        self.original_callback_url = settings.GITHUB_CALLBACK_URL
+        settings.AUTH_SESSION_SECRET = "test-secret-that-is-not-used-outside-tests"
+        settings.REQUIRE_GITHUB_ACCOUNT = True
+        settings.GITHUB_CLIENT_ID = "github-client-id"
+        settings.GITHUB_CLIENT_SECRET = "github-client-secret"
+        settings.GITHUB_CALLBACK_URL = "https://api.example.com/api/auth/github/callback"
+
+    def tearDown(self) -> None:
+        settings.AUTH_SESSION_SECRET = self.original_secret
+        settings.REQUIRE_GITHUB_ACCOUNT = self.original_required
+        settings.GITHUB_CLIENT_ID = self.original_client_id
+        settings.GITHUB_CLIENT_SECRET = self.original_client_secret
+        settings.GITHUB_CALLBACK_URL = self.original_callback_url
+
+    @patch("app.main.db.user_has_github", return_value=False)
+    def test_unlinked_github_account_cannot_use_protected_routes(self, _has_github) -> None:
+        token, _ = auth.issue_session("school-user-1")
+        with self.assertRaises(HTTPException) as context:
+            main._current_user_id(_request_with_token(token))
+        self.assertEqual(context.exception.status_code, 403)
+
+    @patch("app.main.db.user_has_github", return_value=True)
+    def test_linked_github_account_can_use_protected_routes(self, _has_github) -> None:
+        token, _ = auth.issue_session("school-user-1")
+        user_id = main._current_user_id(_request_with_token(token))
+        self.assertEqual(user_id, "school-user-1")
+
+    @patch("app.main.db.create_github_oauth_state", return_value="one-time-state")
+    def test_github_start_uses_callback_and_state(self, create_state) -> None:
+        token, _ = auth.issue_session("school-user-1")
+        response = asyncio.run(main.github_start(_request_with_token(token)))
+        parsed = urlparse(response.authorize_url)
+        query = parse_qs(parsed.query)
+
+        self.assertEqual(parsed.netloc, "github.com")
+        self.assertEqual(query["client_id"], ["github-client-id"])
+        self.assertEqual(query["redirect_uri"], [settings.GITHUB_CALLBACK_URL])
+        self.assertEqual(query["state"], ["one-time-state"])
+        self.assertNotIn("scope", query)
+        create_state.assert_called_once_with("school-user-1")
+
+    @patch("app.main.requests.post")
+    @patch("app.main.db.consume_github_oauth_state", return_value=None)
+    def test_invalid_github_state_is_rejected_before_token_exchange(self, _consume_state, post) -> None:
+        response = asyncio.run(main.github_callback(code="code", state="invalid-state"))
+        self.assertIn("github=invalid_state", response.headers["location"])
+        post.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -4,10 +4,12 @@ from pathlib import Path
 import secrets
 import smtplib
 from email.message import EmailMessage
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
+import requests
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
@@ -15,7 +17,7 @@ from google.oauth2 import id_token as google_id_token
 from app import auth, db, settings
 from app.classifier import classify_message
 from app.rag import generate_answer, ingest_file, ingest_text, retrieve, retrieve_by_titles, retrieve_overview, scan_raw_docs
-from app.schemas import AuthConfigResponse, AuthResponse, ChatRequest, ChatResponse, ConversationListResponse, ConversationResponse, DatabaseStatus, EmailCodeRequest, EmailCodeResponse, GoogleAuthRequest, GoogleClientConfigResponse, IngestResponse, LoginRequest, RagFileListResponse, RegisterRequest, SessionRefreshResponse, TextDocumentRequest
+from app.schemas import AuthConfigResponse, AuthResponse, ChatRequest, ChatResponse, ConversationListResponse, ConversationResponse, CurrentUserResponse, DatabaseStatus, EmailCodeRequest, EmailCodeResponse, GitHubAuthorizeResponse, GoogleAuthRequest, GoogleClientConfigResponse, IngestResponse, LoginRequest, RagFileListResponse, RegisterRequest, SessionRefreshResponse, TextDocumentRequest
 
 app = FastAPI(title="My RAG Chatbot")
 
@@ -30,16 +32,23 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup() -> None:
+    missing = []
     if settings.SCHOOL_GOOGLE_AUTH_ENABLED:
-        missing = []
         if not settings.GOOGLE_CLIENT_ID:
             missing.append("GOOGLE_CLIENT_ID")
         if not settings.ALLOWED_GOOGLE_DOMAINS:
             missing.append("ALLOWED_GOOGLE_DOMAINS")
         if not settings.AUTH_SESSION_SECRET:
             missing.append("AUTH_SESSION_SECRET")
-        if missing:
-            raise RuntimeError(f"School authentication is enabled, but {', '.join(missing)} is not configured.")
+    if settings.REQUIRE_GITHUB_ACCOUNT:
+        if not settings.GITHUB_CLIENT_ID:
+            missing.append("GITHUB_CLIENT_ID")
+        if not settings.GITHUB_CLIENT_SECRET:
+            missing.append("GITHUB_CLIENT_SECRET")
+        if not settings.GITHUB_CALLBACK_URL:
+            missing.append("GITHUB_CALLBACK_URL")
+    if missing:
+        raise RuntimeError(f"Authentication is enabled, but {', '.join(missing)} is not configured.")
     db.init_db()
 
 
@@ -54,12 +63,19 @@ async def database_status() -> DatabaseStatus:
     return DatabaseStatus(enabled=db.is_enabled(), connected=connected, message=message)
 
 
-def _current_user_id(request: Request) -> str:
+def _session_user_id(request: Request) -> str:
     return auth.current_user_id(request, required=True) or ""
 
 
-def _auth_response(user: dict[str, str]) -> AuthResponse:
-    access_token, expires_in_seconds = auth.issue_session(user["user_id"])
+def _current_user_id(request: Request) -> str:
+    user_id = _session_user_id(request)
+    if settings.REQUIRE_GITHUB_ACCOUNT and not db.user_has_github(user_id):
+        raise HTTPException(status_code=403, detail="Connect your GitHub account to continue.")
+    return user_id
+
+
+def _auth_response(user: dict[str, object]) -> AuthResponse:
+    access_token, expires_in_seconds = auth.issue_session(str(user["user_id"]))
     return AuthResponse(
         user=user,
         access_token=access_token,
@@ -77,6 +93,8 @@ async def auth_config() -> AuthConfigResponse:
         auth_mode=settings.AUTH_MODE,
         password_auth_enabled=not settings.SCHOOL_GOOGLE_AUTH_ENABLED,
         school_domain=school_domain,
+        github_account_required=settings.REQUIRE_GITHUB_ACCOUNT,
+        github_oauth_configured=bool(settings.GITHUB_CLIENT_ID and settings.GITHUB_CLIENT_SECRET),
     )
 
 
@@ -206,9 +224,85 @@ async def login(payload: LoginRequest) -> AuthResponse:
 
 @app.post("/api/auth/session/refresh", response_model=SessionRefreshResponse)
 async def refresh_session(request: Request) -> SessionRefreshResponse:
-    user_id = _current_user_id(request)
+    user_id = _session_user_id(request)
     access_token, expires_in_seconds = auth.issue_session(user_id)
     return SessionRefreshResponse(access_token=access_token, expires_in_seconds=expires_in_seconds)
+
+
+@app.get("/api/auth/me", response_model=CurrentUserResponse)
+async def current_user(request: Request) -> CurrentUserResponse:
+    user_id = _session_user_id(request)
+    user = db.get_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Account was not found.")
+    return CurrentUserResponse(user=user)
+
+
+@app.post("/api/auth/github/start", response_model=GitHubAuthorizeResponse)
+async def github_start(request: Request) -> GitHubAuthorizeResponse:
+    user_id = _session_user_id(request)
+    if not settings.GITHUB_CLIENT_ID or not settings.GITHUB_CLIENT_SECRET or not settings.GITHUB_CALLBACK_URL:
+        raise HTTPException(status_code=503, detail="GitHub sign-in is not configured.")
+    state = db.create_github_oauth_state(user_id)
+    query = urlencode(
+        {
+            "client_id": settings.GITHUB_CLIENT_ID,
+            "redirect_uri": settings.GITHUB_CALLBACK_URL,
+            "state": state,
+        }
+    )
+    return GitHubAuthorizeResponse(authorize_url=f"https://github.com/login/oauth/authorize?{query}")
+
+
+def _frontend_github_redirect(result: str) -> RedirectResponse:
+    separator = "&" if "?" in settings.FRONTEND_URL else "?"
+    return RedirectResponse(f"{settings.FRONTEND_URL}{separator}github={quote(result)}", status_code=303)
+
+
+@app.get("/api/auth/github/callback")
+async def github_callback(code: str = "", state: str = "", error: str = "") -> RedirectResponse:
+    if error or not code or not state:
+        return _frontend_github_redirect("cancelled")
+
+    user_id = db.consume_github_oauth_state(state)
+    if not user_id:
+        return _frontend_github_redirect("invalid_state")
+
+    try:
+        token_response = requests.post(
+            "https://github.com/login/oauth/access_token",
+            data={
+                "client_id": settings.GITHUB_CLIENT_ID,
+                "client_secret": settings.GITHUB_CLIENT_SECRET,
+                "code": code,
+                "redirect_uri": settings.GITHUB_CALLBACK_URL,
+            },
+            headers={"Accept": "application/json"},
+            timeout=15,
+        )
+        token_response.raise_for_status()
+        access_token = token_response.json().get("access_token")
+        if not access_token:
+            return _frontend_github_redirect("token_error")
+
+        profile_response = requests.get(
+            "https://api.github.com/user",
+            headers={
+                "Accept": "application/vnd.github+json",
+                "Authorization": f"Bearer {access_token}",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            timeout=15,
+        )
+        profile_response.raise_for_status()
+        profile = profile_response.json()
+        github_id = int(profile["id"])
+        github_username = str(profile["login"])
+        db.link_github_account(user_id, github_id, github_username)
+    except (KeyError, TypeError, ValueError, requests.RequestException):
+        return _frontend_github_redirect("error")
+
+    return _frontend_github_redirect("connected")
 
 
 @app.get("/api/conversations", response_model=ConversationListResponse)

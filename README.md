@@ -122,4 +122,30 @@ Render's environment settings or a local `.env`; never commit its value.
 The GitHub Pages frontend reads the Render API address from
 `frontend/config.js`. The backend verifies the Google ID token, issues a signed
 session, and requires that session on chat, file, and conversation endpoints.
+
+### Require both UNC Charlotte and GitHub
+
+Create a GitHub OAuth App under **GitHub Settings → Developer settings → OAuth
+Apps** with:
+
+```text
+Homepage URL: https://jamesonthehill.com/Socratic-Chat/
+Authorization callback URL: https://socratic-chat-api.onrender.com/api/auth/github/callback
+```
+
+Add the generated credentials to Render and enable the requirement only after
+both values are present:
+
+```text
+GITHUB_CLIENT_ID=YOUR_GITHUB_OAUTH_CLIENT_ID
+GITHUB_CLIENT_SECRET=YOUR_GITHUB_OAUTH_CLIENT_SECRET
+REQUIRE_GITHUB_ACCOUNT=true
+GITHUB_CALLBACK_URL=https://socratic-chat-api.onrender.com/api/auth/github/callback
+FRONTEND_URL=https://jamesonthehill.com/Socratic-Chat/
+```
+
+The user must first pass the `charlotte.edu` Google Workspace check and then
+authorize GitHub. Each GitHub numeric user ID can be linked to only one school
+account. The app requests no repository access. Until both identities are
+present, protected chatbot APIs return 403.
 # RAG_Chatbot

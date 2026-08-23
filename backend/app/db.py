@@ -70,6 +70,24 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS github_id BIGINT UNIQUE
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS github_username TEXT
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS github_linked_at TIMESTAMPTZ
+                """
+            )
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS email_verification_codes (
                     id UUID PRIMARY KEY,
                     email TEXT NOT NULL,
@@ -84,6 +102,17 @@ def init_db() -> None:
                 """
                 CREATE INDEX IF NOT EXISTS idx_email_verification_codes_email_created_at
                 ON email_verification_codes(email, created_at DESC)
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS github_oauth_states (
+                    state_hash TEXT PRIMARY KEY,
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    expires_at TIMESTAMPTZ NOT NULL,
+                    used_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
                 """
             )
             cur.execute(
@@ -577,14 +606,42 @@ def conversation_belongs_to(conversation_id: str, user_id: str | None) -> bool:
             return cur.fetchone() is not None
 
 
-def get_user_by_email(email: str) -> dict[str, str] | None:
+def _user_profile(row: tuple[object, ...] | None) -> dict[str, object] | None:
+    if row is None:
+        return None
+    return {
+        "user_id": str(row[0]),
+        "username": str(row[1]),
+        "email": str(row[2]),
+        "github_connected": row[3] is not None,
+        "github_username": str(row[4]) if row[4] else None,
+    }
+
+
+def get_user_by_id(user_id: str) -> dict[str, object] | None:
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id::text, username, email, github_id, github_username
+                FROM users
+                WHERE id = %s
+                """,
+                (user_id,),
+            )
+            row = cur.fetchone()
+    return _user_profile(row)
+
+
+def get_user_by_email(email: str) -> dict[str, object] | None:
     init_db()
     normalized_email = email.strip().lower()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id::text, username, email
+                SELECT id::text, username, email, github_id, github_username
                 FROM users
                 WHERE lower(email) = %s
                 """,
@@ -592,18 +649,16 @@ def get_user_by_email(email: str) -> dict[str, str] | None:
             )
             row = cur.fetchone()
 
-    if row is None:
-        return None
-    return {"user_id": row[0], "username": row[1], "email": row[2]}
+    return _user_profile(row)
 
 
-def get_user_by_google_sub(google_sub: str) -> dict[str, str] | None:
+def get_user_by_google_sub(google_sub: str) -> dict[str, object] | None:
     init_db()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id::text, username, email
+                SELECT id::text, username, email, github_id, github_username
                 FROM users
                 WHERE google_sub = %s
                 """,
@@ -611,9 +666,85 @@ def get_user_by_google_sub(google_sub: str) -> dict[str, str] | None:
             )
             row = cur.fetchone()
 
-    if row is None:
-        return None
-    return {"user_id": row[0], "username": row[1], "email": row[2]}
+    return _user_profile(row)
+
+
+def user_has_github(user_id: str) -> bool:
+    user = get_user_by_id(user_id)
+    return bool(user and user["github_connected"])
+
+
+def link_github_account(user_id: str, github_id: int, github_username: str) -> dict[str, object]:
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id::text
+                FROM users
+                WHERE github_id = %s AND id <> %s
+                """,
+                (github_id, user_id),
+            )
+            if cur.fetchone() is not None:
+                raise ValueError("That GitHub account is already linked to another user.")
+
+            cur.execute(
+                """
+                UPDATE users
+                SET github_id = %s,
+                    github_username = %s,
+                    github_linked_at = NOW()
+                WHERE id = %s
+                """,
+                (github_id, github_username, user_id),
+            )
+            if cur.rowcount != 1:
+                raise ValueError("School account was not found.")
+        conn.commit()
+
+    user = get_user_by_id(user_id)
+    if user is None:
+        raise ValueError("School account was not found.")
+    return user
+
+
+def create_github_oauth_state(user_id: str, expires_in_minutes: int = 10) -> str:
+    init_db()
+    state = secrets.token_urlsafe(32)
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO github_oauth_states (state_hash, user_id, expires_at)
+                VALUES (%s, %s, NOW() + (%s * INTERVAL '1 minute'))
+                """,
+                (state_hash, user_id, expires_in_minutes),
+            )
+        conn.commit()
+    return state
+
+
+def consume_github_oauth_state(state: str) -> str | None:
+    init_db()
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE github_oauth_states
+                SET used_at = NOW()
+                WHERE state_hash = %s
+                  AND used_at IS NULL
+                  AND expires_at > NOW()
+                RETURNING user_id::text
+                """,
+                (state_hash,),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    return str(row[0]) if row else None
 
 
 def _unique_username(cur: object, desired: str) -> str:
@@ -629,7 +760,7 @@ def _unique_username(cur: object, desired: str) -> str:
         candidate = f"{base[:54]}{suffix}"
 
 
-def find_or_create_google_user(email: str, google_sub: str, name: str | None = None) -> dict[str, str]:
+def find_or_create_google_user(email: str, google_sub: str, name: str | None = None) -> dict[str, object]:
     init_db()
     normalized_email = email.strip().lower()
 
@@ -668,10 +799,16 @@ def find_or_create_google_user(email: str, google_sub: str, name: str | None = N
             )
         conn.commit()
 
-    return {"user_id": user_id, "username": username, "email": normalized_email}
+    return {
+        "user_id": user_id,
+        "username": username,
+        "email": normalized_email,
+        "github_connected": False,
+        "github_username": None,
+    }
 
 
-def create_user(username: str, email: str, password: str) -> dict[str, str]:
+def create_user(username: str, email: str, password: str) -> dict[str, object]:
     init_db()
     user_id = str(uuid.uuid4())
     salt, password_hash = _hash_password(password)
@@ -689,17 +826,23 @@ def create_user(username: str, email: str, password: str) -> dict[str, str]:
             )
         conn.commit()
 
-    return {"user_id": user_id, "username": normalized_username, "email": normalized_email}
+    return {
+        "user_id": user_id,
+        "username": normalized_username,
+        "email": normalized_email,
+        "github_connected": False,
+        "github_username": None,
+    }
 
 
-def authenticate_user(identifier: str, password: str) -> dict[str, str] | None:
+def authenticate_user(identifier: str, password: str) -> dict[str, object] | None:
     init_db()
     normalized = identifier.strip().lower()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id::text, username, email, password_salt, password_hash
+                SELECT id::text, username, email, password_salt, password_hash, github_id, github_username
                 FROM users
                 WHERE lower(email) = %s OR lower(username) = %s
                 """,
@@ -711,7 +854,13 @@ def authenticate_user(identifier: str, password: str) -> dict[str, str] | None:
         return None
     if not _password_matches(password, row[3], row[4]):
         return None
-    return {"user_id": row[0], "username": row[1], "email": row[2]}
+    return {
+        "user_id": row[0],
+        "username": row[1],
+        "email": row[2],
+        "github_connected": row[5] is not None,
+        "github_username": row[6],
+    }
 
 
 def set_pending_clarification(conversation_id: str, original_question: str, missing_target: str | None = None) -> None:

@@ -85,7 +85,7 @@ function applyTheme(preference, persist = true) {
     select.value = safePreference;
   });
   if (themeColorMeta) {
-    themeColorMeta.content = resolvedTheme === "dark" ? "#15191f" : "#ffffff";
+    themeColorMeta.content = resolvedTheme === "dark" ? "#0d1117" : "#ffffff";
   }
   if (persist) localStorage.setItem(THEME_KEY, safePreference);
   renderGoogleSignInButton?.();
@@ -391,7 +391,7 @@ async function downloadChatFile(file) {
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new Error(await responseErrorMessage(response));
   }
 
   const blob = await response.blob();
@@ -653,11 +653,28 @@ function setBusy(isBusy) {
   inputEl.disabled = isBusy;
 }
 
+async function responseErrorMessage(response) {
+  const rawMessage = (await response.text()).trim();
+  if (!rawMessage) return `The request could not be completed (${response.status}).`;
+
+  try {
+    const payload = JSON.parse(rawMessage);
+    if (typeof payload.detail === "string") return payload.detail;
+    if (typeof payload.message === "string") return payload.message;
+  } catch {
+    if (rawMessage.startsWith("<")) {
+      return "The server could not complete the request. Please try again.";
+    }
+  }
+
+  return rawMessage;
+}
+
 async function getJson(url) {
   const response = await fetch(apiUrl(url), { headers: authHeaders() });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new Error(await responseErrorMessage(response));
   }
 
   return response.json();
@@ -671,7 +688,7 @@ async function postJson(url, payload = {}) {
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new Error(await responseErrorMessage(response));
   }
 
   return response.json();
@@ -685,7 +702,7 @@ async function postForm(url, formData) {
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new Error(await responseErrorMessage(response));
   }
 
   return response.json();
@@ -757,7 +774,7 @@ async function deleteJson(url) {
   const response = await fetch(apiUrl(url), { method: "DELETE", headers: authHeaders() });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new Error(await responseErrorMessage(response));
   }
 
   return response.json();
@@ -835,7 +852,9 @@ async function handleGoogleCredential(response) {
     const data = await postJson("/api/auth/google", { credential: response.credential });
     await finishAuth(data);
   } catch (error) {
-    authStatus.textContent = `Google sign-in failed: ${error.message}`;
+    authStatus.textContent = error.message.includes("UNC Charlotte")
+      ? error.message
+      : `We couldn't complete Google sign-in. ${error.message}`;
   }
 }
 

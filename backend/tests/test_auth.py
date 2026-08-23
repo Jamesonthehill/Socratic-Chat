@@ -93,6 +93,8 @@ class SchoolGoogleAccountTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as context:
             _verify_google_credential("credential")
         self.assertEqual(context.exception.status_code, 403)
+        self.assertIn("UNC Charlotte Google account", context.exception.detail)
+        self.assertIn("@charlotte.edu", context.exception.detail)
 
 
 class GitHubAccountRequirementTests(unittest.TestCase):

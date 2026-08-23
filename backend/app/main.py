@@ -190,8 +190,14 @@ def _verify_google_credential(credential: str) -> dict[str, str]:
 
     hosted_domain = str(data.get("hd") or "").lower()
     if settings.SCHOOL_GOOGLE_AUTH_ENABLED and hosted_domain not in settings.ALLOWED_GOOGLE_DOMAINS:
-        allowed = ", ".join(sorted(settings.ALLOWED_GOOGLE_DOMAINS))
-        raise HTTPException(status_code=403, detail=f"Use a school Google account from {allowed}.")
+        allowed = " or ".join(f"@{domain}" for domain in sorted(settings.ALLOWED_GOOGLE_DOMAINS))
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Please choose your UNC Charlotte Google account ({allowed}). "
+                "Personal Google accounts cannot access Socratic-Chat."
+            ),
+        )
 
     return {
         "email": str(data["email"]),

@@ -100,6 +100,7 @@ JavaScript origins:
 
 ```text
 https://jamesonthehill.github.io
+https://jamesonthehill.com
 http://127.0.0.1:8001
 http://localhost:8001
 ```
@@ -112,7 +113,7 @@ AUTH_MODE=school_google
 ALLOWED_GOOGLE_DOMAINS=charlotte.edu
 AUTH_SESSION_SECRET=A_LONG_RANDOM_SECRET
 AUTH_SESSION_MINUTES=60
-CORS_ALLOWED_ORIGINS=https://jamesonthehill.github.io
+CORS_ALLOWED_ORIGINS=https://jamesonthehill.github.io,https://jamesonthehill.com
 ```
 
 Generate `AUTH_SESSION_SECRET` with `openssl rand -hex 32`. Keep it only in

@@ -25,4 +25,4 @@ services:
       - key: AUTH_SESSION_MINUTES
         value: "60"
       - key: CORS_ALLOWED_ORIGINS
-        value: https://jamesonthehill.github.io
+        value: "https://jamesonthehill.github.io,https://jamesonthehill.com"

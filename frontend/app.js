@@ -810,10 +810,12 @@ async function setupAuthenticationMode() {
     applyAuthenticationMode(config);
   } catch {
     applyAuthenticationMode({
-      email_verification_required: true,
-      auth_mode: "open",
-      password_auth_enabled: true,
+      email_verification_required: false,
+      auth_mode: "unavailable",
+      password_auth_enabled: false,
+      school_domain: "charlotte.edu",
     });
+    authStatus.textContent = "Authentication server unavailable. Check the Render API address.";
   }
 }
 

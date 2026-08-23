@@ -2,5 +2,5 @@
 // replace the empty value with its public URL, such as:
 // "https://socratic-chat.onrender.com"
 window.SOCRATIC_CONFIG = {
-  API_BASE_URL: "https://socratic-chat-api-ab12.onrender.com",
+  API_BASE_URL: "https://socratic-chat-api.onrender.com",
 };

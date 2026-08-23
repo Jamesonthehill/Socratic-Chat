@@ -1,25 +1,28 @@
 from __future__ import annotations
 
 from pathlib import Path
-import json
-from urllib.parse import quote, urlencode
-from urllib.request import urlopen
+import secrets
+import smtplib
+from email.message import EmailMessage
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 
-from app import db, settings
+from app import auth, db, settings
 from app.classifier import classify_message
 from app.rag import generate_answer, ingest_file, ingest_text, retrieve, retrieve_by_titles, retrieve_overview, scan_raw_docs
-from app.schemas import AuthResponse, ChatRequest, ChatResponse, ConversationListResponse, ConversationResponse, DatabaseStatus, GoogleAuthRequest, GoogleClientConfigResponse, IngestResponse, LoginRequest, RagFileListResponse, RegisterRequest, TextDocumentRequest
+from app.schemas import AuthConfigResponse, AuthResponse, ChatRequest, ChatResponse, ConversationListResponse, ConversationResponse, DatabaseStatus, EmailCodeRequest, EmailCodeResponse, GoogleAuthRequest, GoogleClientConfigResponse, IngestResponse, LoginRequest, RagFileListResponse, RegisterRequest, SessionRefreshResponse, TextDocumentRequest
 
 app = FastAPI(title="My RAG Chatbot")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=settings.CORS_ALLOWED_ORIGINS or ["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -27,6 +30,16 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup() -> None:
+    if settings.SCHOOL_GOOGLE_AUTH_ENABLED:
+        missing = []
+        if not settings.GOOGLE_CLIENT_ID:
+            missing.append("GOOGLE_CLIENT_ID")
+        if not settings.ALLOWED_GOOGLE_DOMAINS:
+            missing.append("ALLOWED_GOOGLE_DOMAINS")
+        if not settings.AUTH_SESSION_SECRET:
+            missing.append("AUTH_SESSION_SECRET")
+        if missing:
+            raise RuntimeError(f"School authentication is enabled, but {', '.join(missing)} is not configured.")
     db.init_db()
 
 
@@ -41,15 +54,86 @@ async def database_status() -> DatabaseStatus:
     return DatabaseStatus(enabled=db.is_enabled(), connected=connected, message=message)
 
 
-def _current_user_id(request: Request) -> str | None:
-    user_id = request.headers.get("x-user-id")
-    return user_id.strip() if user_id else None
+def _current_user_id(request: Request) -> str:
+    return auth.current_user_id(request, required=True) or ""
+
+
+def _auth_response(user: dict[str, str]) -> AuthResponse:
+    access_token, expires_in_seconds = auth.issue_session(user["user_id"])
+    return AuthResponse(
+        user=user,
+        access_token=access_token,
+        expires_in_seconds=expires_in_seconds,
+    )
+
+
+@app.get("/api/auth/config", response_model=AuthConfigResponse)
+async def auth_config() -> AuthConfigResponse:
+    school_domain = sorted(settings.ALLOWED_GOOGLE_DOMAINS)[0] if settings.ALLOWED_GOOGLE_DOMAINS else None
+    return AuthConfigResponse(
+        email_verification_required=(
+            settings.REQUIRE_EMAIL_VERIFICATION and not settings.SCHOOL_GOOGLE_AUTH_ENABLED
+        ),
+        auth_mode=settings.AUTH_MODE,
+        password_auth_enabled=not settings.SCHOOL_GOOGLE_AUTH_ENABLED,
+        school_domain=school_domain,
+    )
+
+
+def _send_verification_email(email: str, code: str) -> None:
+    if not settings.SMTP_HOST or not settings.SMTP_FROM_EMAIL:
+        raise HTTPException(
+            status_code=503,
+            detail="Email verification is enabled, but SMTP is not configured.",
+        )
+
+    message = EmailMessage()
+    message["Subject"] = "Your RAG Chatbot verification code"
+    message["From"] = settings.SMTP_FROM_EMAIL
+    message["To"] = email
+    message.set_content(
+        f"Your verification code is {code}.\n\n"
+        f"This code expires in {settings.EMAIL_CODE_EXPIRY_MINUTES} minutes."
+    )
+
+    try:
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as smtp:
+            if settings.SMTP_USE_TLS:
+                smtp.starttls()
+            if settings.SMTP_USERNAME:
+                smtp.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+            smtp.send_message(message)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not send verification email: {exc}") from exc
+
+
+@app.post("/api/auth/send-verification-code", response_model=EmailCodeResponse)
+async def send_verification_code(payload: EmailCodeRequest) -> EmailCodeResponse:
+    if settings.SCHOOL_GOOGLE_AUTH_ENABLED:
+        raise HTTPException(status_code=403, detail="Use your school Google account to sign in.")
+    if not settings.REQUIRE_EMAIL_VERIFICATION:
+        raise HTTPException(status_code=409, detail="Email verification is disabled.")
+    if not db.is_enabled():
+        raise HTTPException(status_code=503, detail="PostgreSQL is not connected.")
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    db.save_email_verification_code(payload.email, code, settings.EMAIL_CODE_EXPIRY_MINUTES)
+    _send_verification_email(payload.email, code)
+    return EmailCodeResponse(
+        message="Verification code sent. Please check your email.",
+        expires_in_minutes=settings.EMAIL_CODE_EXPIRY_MINUTES,
+    )
 
 
 @app.post("/api/auth/register", response_model=AuthResponse)
 async def register(payload: RegisterRequest) -> AuthResponse:
+    if settings.SCHOOL_GOOGLE_AUTH_ENABLED:
+        raise HTTPException(status_code=403, detail="Registration is limited to school Google accounts.")
     if not db.is_enabled():
         raise HTTPException(status_code=503, detail="PostgreSQL is not connected.")
+    if settings.REQUIRE_EMAIL_VERIFICATION:
+        if not payload.verification_code or not db.verify_email_code(payload.email, payload.verification_code):
+            raise HTTPException(status_code=400, detail="Verification code is wrong or expired.")
     try:
         user = db.create_user(payload.username, payload.email, payload.password)
     except Exception as exc:
@@ -57,33 +141,45 @@ async def register(payload: RegisterRequest) -> AuthResponse:
         if "users_username_key" in detail or "users_email_key" in detail or "duplicate key" in detail:
             raise HTTPException(status_code=409, detail="That username or email is already registered.") from exc
         raise
-    return AuthResponse(user=user)
+    return _auth_response(user)
 
 
 @app.get("/api/auth/google/config", response_model=GoogleClientConfigResponse)
 async def google_client_config() -> GoogleClientConfigResponse:
-    return GoogleClientConfigResponse(client_id=settings.GOOGLE_CLIENT_ID)
+    hosted_domain = sorted(settings.ALLOWED_GOOGLE_DOMAINS)[0] if settings.ALLOWED_GOOGLE_DOMAINS else None
+    return GoogleClientConfigResponse(client_id=settings.GOOGLE_CLIENT_ID, hosted_domain=hosted_domain)
 
 
 def _verify_google_credential(credential: str) -> dict[str, str]:
     if not settings.GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=503, detail="Google sign-in is not configured.")
 
-    query = urlencode({"id_token": credential})
     try:
-        with urlopen(f"https://oauth2.googleapis.com/tokeninfo?{query}", timeout=10) as response:
-            data = json.loads(response.read().decode("utf-8"))
+        data = google_id_token.verify_oauth2_token(
+            credential,
+            google_requests.Request(),
+            settings.GOOGLE_CLIENT_ID,
+        )
     except Exception as exc:
-        raise HTTPException(status_code=401, detail=f"Could not verify Google sign-in: {exc}") from exc
+        raise HTTPException(status_code=401, detail="Could not verify Google sign-in.") from exc
 
-    if data.get("aud") != settings.GOOGLE_CLIENT_ID:
-        raise HTTPException(status_code=401, detail="Google sign-in audience does not match this app.")
-    if data.get("email_verified") not in {"true", True}:
+    if data.get("iss") not in {"accounts.google.com", "https://accounts.google.com"}:
+        raise HTTPException(status_code=401, detail="Google sign-in issuer is invalid.")
+    if data.get("email_verified") is not True:
         raise HTTPException(status_code=401, detail="Google email is not verified.")
     if not data.get("email") or not data.get("sub"):
         raise HTTPException(status_code=401, detail="Google sign-in response is missing account details.")
 
-    return {"email": data["email"], "sub": data["sub"], "name": data.get("name") or data["email"].split("@", 1)[0]}
+    hosted_domain = str(data.get("hd") or "").lower()
+    if settings.SCHOOL_GOOGLE_AUTH_ENABLED and hosted_domain not in settings.ALLOWED_GOOGLE_DOMAINS:
+        allowed = ", ".join(sorted(settings.ALLOWED_GOOGLE_DOMAINS))
+        raise HTTPException(status_code=403, detail=f"Use a school Google account from {allowed}.")
+
+    return {
+        "email": str(data["email"]),
+        "sub": str(data["sub"]),
+        "name": str(data.get("name") or str(data["email"]).split("@", 1)[0]),
+    }
 
 
 @app.post("/api/auth/google", response_model=AuthResponse)
@@ -93,32 +189,41 @@ async def google_auth(payload: GoogleAuthRequest) -> AuthResponse:
 
     profile = _verify_google_credential(payload.credential)
     user = db.find_or_create_google_user(profile["email"], profile["sub"], profile.get("name"))
-    return AuthResponse(user=user)
+    return _auth_response(user)
 
 
 @app.post("/api/auth/login", response_model=AuthResponse)
 async def login(payload: LoginRequest) -> AuthResponse:
+    if settings.SCHOOL_GOOGLE_AUTH_ENABLED:
+        raise HTTPException(status_code=403, detail="Use your school Google account to sign in.")
     if not db.is_enabled():
         raise HTTPException(status_code=503, detail="PostgreSQL is not connected.")
     user = db.authenticate_user(payload.identifier, payload.password)
     if not user:
         raise HTTPException(status_code=401, detail="Email/username or password is wrong.")
-    return AuthResponse(user=user)
+    return _auth_response(user)
+
+
+@app.post("/api/auth/session/refresh", response_model=SessionRefreshResponse)
+async def refresh_session(request: Request) -> SessionRefreshResponse:
+    user_id = _current_user_id(request)
+    access_token, expires_in_seconds = auth.issue_session(user_id)
+    return SessionRefreshResponse(access_token=access_token, expires_in_seconds=expires_in_seconds)
 
 
 @app.get("/api/conversations", response_model=ConversationListResponse)
 async def list_conversations(request: Request) -> ConversationListResponse:
+    user_id = _current_user_id(request)
     if not db.is_enabled():
         return ConversationListResponse(conversations=[])
-    user_id = _current_user_id(request)
     return ConversationListResponse(conversations=db.list_conversations(user_id=user_id))
 
 
 @app.get("/api/conversations/{conversation_id}", response_model=ConversationResponse)
 async def get_conversation(conversation_id: str, request: Request) -> ConversationResponse:
+    user_id = _current_user_id(request)
     if not db.is_enabled():
         return ConversationResponse(conversation_id=conversation_id, messages=[])
-    user_id = _current_user_id(request)
     if not db.conversation_belongs_to(conversation_id, user_id):
         raise HTTPException(status_code=404, detail="Chat not found.")
     return ConversationResponse(conversation_id=conversation_id, messages=db.get_messages(conversation_id))
@@ -126,9 +231,9 @@ async def get_conversation(conversation_id: str, request: Request) -> Conversati
 
 @app.delete("/api/conversations/{conversation_id}")
 async def delete_conversation(conversation_id: str, request: Request) -> dict[str, bool]:
+    user_id = _current_user_id(request)
     if not db.is_enabled():
         return {"deleted": False}
-    user_id = _current_user_id(request)
     if not db.conversation_belongs_to(conversation_id, user_id):
         return {"deleted": False}
     return {"deleted": db.delete_conversation(conversation_id)}
@@ -136,9 +241,9 @@ async def delete_conversation(conversation_id: str, request: Request) -> dict[st
 
 @app.get("/api/documents/files", response_model=RagFileListResponse)
 async def list_uploaded_files(request: Request) -> RagFileListResponse:
+    user_id = _current_user_id(request)
     if not db.is_enabled():
         return RagFileListResponse(files=[])
-    user_id = _current_user_id(request)
     conversation_id = request.query_params.get("conversation_id")
     try:
         files = db.list_rag_files(conversation_id=conversation_id, user_id=user_id)
@@ -149,10 +254,10 @@ async def list_uploaded_files(request: Request) -> RagFileListResponse:
 
 @app.get("/api/documents/files/{file_id}/download")
 async def download_uploaded_file(file_id: str, request: Request) -> Response:
+    user_id = _current_user_id(request)
     if not db.is_enabled():
         raise HTTPException(status_code=503, detail="PostgreSQL is not connected.")
 
-    user_id = _current_user_id(request)
     file = db.get_rag_file(file_id, user_id=user_id)
     if not file:
         raise HTTPException(status_code=404, detail="File not found.")
@@ -168,14 +273,16 @@ async def download_uploaded_file(file_id: str, request: Request) -> Response:
 
 
 @app.post("/api/documents/text", response_model=IngestResponse)
-async def add_text_document(payload: TextDocumentRequest) -> IngestResponse:
+async def add_text_document(payload: TextDocumentRequest, request: Request) -> IngestResponse:
+    _current_user_id(request)
     doc_id, chunks_added = ingest_text(payload.title, payload.text)
     message = "Text added to the knowledge base." if chunks_added else "That text was already indexed."
     return IngestResponse(document_id=doc_id, chunks_added=chunks_added, documents_scanned=1, message=message)
 
 
 @app.post("/api/documents/scan", response_model=IngestResponse)
-async def scan_documents() -> IngestResponse:
+async def scan_documents(request: Request) -> IngestResponse:
+    _current_user_id(request)
     documents_scanned, chunks_added, skipped_files = scan_raw_docs()
     if documents_scanned == 0:
         message = "No .txt, .md, or .pdf files found in backend/data/raw_docs."
@@ -212,6 +319,7 @@ def _chat_title_from_uploads(files: list[object]) -> str:
 
 @app.post("/api/documents/upload", response_model=IngestResponse)
 async def upload_document(request: Request) -> IngestResponse:
+    user_id = _current_user_id(request)
     try:
         form = await request.form()
     except (AssertionError, RuntimeError) as exc:
@@ -222,7 +330,6 @@ async def upload_document(request: Request) -> IngestResponse:
         raise HTTPException(status_code=400, detail="Choose at least one file to upload.")
 
     conversation_id = form.get("conversation_id")
-    user_id = _current_user_id(request)
     chat_title = _chat_title_from_uploads(files)
     if conversation_id and db.is_enabled():
         db.ensure_conversation(str(conversation_id), chat_title, user_id=user_id)

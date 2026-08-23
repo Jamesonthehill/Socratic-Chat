@@ -82,14 +82,33 @@ class RagFileSummary(BaseModel):
 class RagFileListResponse(BaseModel):
     files: list[RagFileSummary] = Field(default_factory=list)
 
+
+class AuthConfigResponse(BaseModel):
+    email_verification_required: bool
+    auth_mode: str
+    password_auth_enabled: bool
+    school_domain: str | None = None
+
+
+class EmailCodeRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+
+
+class EmailCodeResponse(BaseModel):
+    message: str
+    expires_in_minutes: int
+
+
 class RegisterRequest(BaseModel):
     username: str = Field(min_length=2, max_length=80)
     email: str = Field(min_length=3, max_length=255)
     password: str = Field(min_length=6, max_length=200)
+    verification_code: str | None = Field(default=None, min_length=6, max_length=6)
 
 
 class GoogleClientConfigResponse(BaseModel):
     client_id: str
+    hosted_domain: str | None = None
 
 
 class GoogleAuthRequest(BaseModel):
@@ -109,3 +128,12 @@ class UserProfile(BaseModel):
 
 class AuthResponse(BaseModel):
     user: UserProfile
+    access_token: str
+    token_type: str = "bearer"
+    expires_in_seconds: int
+
+
+class SessionRefreshResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in_seconds: int

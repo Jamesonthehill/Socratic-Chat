@@ -88,4 +88,37 @@ Check the connection:
 ```text
 http://127.0.0.1:8000/api/db/status
 ```
+
+## UNC Charlotte account access
+
+The deployed app can be limited to UNC Charlotte Google Workspace accounts. In
+this mode, email/password registration is disabled and Google must return the
+verified hosted-domain claim `charlotte.edu`.
+
+Create a Google OAuth 2.0 **Web application** client and add these authorized
+JavaScript origins:
+
+```text
+https://jamesonthehill.github.io
+http://127.0.0.1:8001
+http://localhost:8001
+```
+
+Configure these environment variables on the Render backend:
+
+```text
+GOOGLE_CLIENT_ID=YOUR_CLIENT_ID.apps.googleusercontent.com
+AUTH_MODE=school_google
+ALLOWED_GOOGLE_DOMAINS=charlotte.edu
+AUTH_SESSION_SECRET=A_LONG_RANDOM_SECRET
+AUTH_SESSION_MINUTES=60
+CORS_ALLOWED_ORIGINS=https://jamesonthehill.github.io
+```
+
+Generate `AUTH_SESSION_SECRET` with `openssl rand -hex 32`. Keep it only in
+Render's environment settings or a local `.env`; never commit its value.
+
+The GitHub Pages frontend reads the Render API address from
+`frontend/config.js`. The backend verifies the Google ID token, issues a signed
+session, and requires that session on chat, file, and conversation endpoints.
 # RAG_Chatbot

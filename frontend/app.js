@@ -5,6 +5,12 @@ const registerForm = document.querySelector("#registerForm");
 const showLoginButton = document.querySelector("#showLoginButton");
 const showRegisterButton = document.querySelector("#showRegisterButton");
 const authStatus = document.querySelector("#authStatus");
+const authCopy = document.querySelector("#authCopy");
+const emailAuthDivider = document.querySelector("#emailAuthDivider");
+const authTabs = document.querySelector("#authTabs");
+const sendEmailCodeButton = document.querySelector("#sendEmailCodeButton");
+const verificationCodeField = document.querySelector("#verificationCodeField");
+const registerVerificationCode = document.querySelector("#registerVerificationCode");
 const googleSignInWrap = document.querySelector("#googleSignInWrap");
 const googleSignInButton = document.querySelector("#googleSignInButton");
 const logoutButton = document.querySelector("#logoutButton");
@@ -42,6 +48,8 @@ const SESSION_WARNING_MS = 5 * 60 * 1000;
 let currentUser = readStoredUser();
 let conversationId = localStorage.getItem(CONVERSATION_KEY) || createConversationId();
 localStorage.setItem(CONVERSATION_KEY, conversationId);
+let emailVerificationRequired = true;
+let authMode = "open";
 
 const history = [];
 const pendingFiles = [];
@@ -66,9 +74,11 @@ function persistCurrentUser() {
   }
 }
 
-function extendSession() {
+async function extendSession() {
   if (!currentUser) return;
-  currentUser.expires_at = Date.now() + AUTH_SESSION_MS;
+  const data = await postJson("/api/auth/session/refresh");
+  currentUser.access_token = data.access_token;
+  currentUser.expires_at = Date.now() + (data.expires_in_seconds * 1000);
   persistCurrentUser();
   updateSessionStatus();
 }
@@ -164,10 +174,11 @@ function showSignedOut() {
   setAuthMode("login");
 }
 
-function saveUser(user) {
+function saveUser(user, accessToken, expiresInSeconds = AUTH_SESSION_MS / 1000) {
   currentUser = {
     ...user,
-    expires_at: Date.now() + AUTH_SESSION_MS,
+    access_token: accessToken,
+    expires_at: Date.now() + (expiresInSeconds * 1000),
   };
   localStorage.setItem(AUTH_USER_KEY, JSON.stringify(currentUser));
   showAuthenticatedApp();
@@ -175,7 +186,9 @@ function saveUser(user) {
 
 function authHeaders(headers = {}) {
   const nextHeaders = { ...headers };
-  if (currentUser?.user_id) {
+  if (currentUser?.access_token) {
+    nextHeaders.Authorization = `Bearer ${currentUser.access_token}`;
+  } else if (currentUser?.user_id) {
     nextHeaders["X-User-Id"] = currentUser.user_id;
   }
   return nextHeaders;
@@ -699,7 +712,7 @@ showLoginButton.addEventListener("click", () => setAuthMode("login"));
 showRegisterButton.addEventListener("click", () => setAuthMode("register"));
 
 async function finishAuth(data) {
-  saveUser(data.user);
+  saveUser(data.user, data.access_token, data.expires_in_seconds);
   await loadConversation();
   await loadChatFiles();
   await loadThreadList();
@@ -735,6 +748,7 @@ async function setupGoogleSignIn() {
       window.google.accounts.id.initialize({
         client_id: config.client_id,
         callback: handleGoogleCredential,
+        hd: config.hosted_domain || undefined,
       });
       window.google.accounts.id.renderButton(googleSignInButton, {
         theme: "outline",
@@ -764,6 +778,67 @@ loginForm.addEventListener("submit", async (event) => {
   }
 });
 
+function applyAuthenticationMode(config) {
+  const required = Boolean(config.email_verification_required);
+  authMode = config.auth_mode || "open";
+  emailVerificationRequired = required;
+  sendEmailCodeButton?.classList.toggle("is-hidden", !required);
+  verificationCodeField?.classList.toggle("is-hidden", !required);
+  if (registerVerificationCode) {
+    registerVerificationCode.required = required;
+    if (!required) registerVerificationCode.value = "";
+  }
+
+  const passwordAuthEnabled = config.password_auth_enabled !== false;
+  if (!passwordAuthEnabled && currentUser && !currentUser.access_token) {
+    expireSession("Please sign in again with your school Google account.");
+  }
+  emailAuthDivider?.classList.toggle("is-hidden", !passwordAuthEnabled);
+  authTabs?.classList.toggle("is-hidden", !passwordAuthEnabled);
+  loginForm?.classList.toggle("is-hidden", !passwordAuthEnabled);
+  registerForm?.classList.add("is-hidden");
+
+  if (!passwordAuthEnabled) {
+    const domain = config.school_domain || "your school";
+    if (authCopy) authCopy.textContent = `Sign in with your ${domain} Google account to use the chatbot.`;
+  }
+}
+
+async function setupAuthenticationMode() {
+  try {
+    const config = await getJson("/api/auth/config");
+    applyAuthenticationMode(config);
+  } catch {
+    applyAuthenticationMode({
+      email_verification_required: true,
+      auth_mode: "open",
+      password_auth_enabled: true,
+    });
+  }
+}
+
+async function requestEmailVerificationCode() {
+  const email = document.querySelector("#registerEmail").value.trim();
+  if (!email) {
+    authStatus.textContent = "Enter your email first.";
+    return;
+  }
+
+  sendEmailCodeButton.disabled = true;
+  authStatus.textContent = "Sending verification code...";
+  try {
+    const data = await postJson("/api/auth/send-verification-code", { email });
+    authStatus.textContent = `${data.message} It expires in ${data.expires_in_minutes} minutes.`;
+    registerVerificationCode?.focus();
+  } catch (error) {
+    authStatus.textContent = `Could not send code: ${error.message}`;
+  } finally {
+    sendEmailCodeButton.disabled = false;
+  }
+}
+
+sendEmailCodeButton?.addEventListener("click", requestEmailVerificationCode);
+
 registerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   authStatus.textContent = "Creating account...";
@@ -772,9 +847,9 @@ registerForm.addEventListener("submit", async (event) => {
       username: document.querySelector("#registerUsername").value.trim(),
       email: document.querySelector("#registerEmail").value.trim(),
       password: document.querySelector("#registerPassword").value,
+      verification_code: emailVerificationRequired ? registerVerificationCode.value.trim() : null,
     });
-    saveUser(data.user);
-    await startNewChat();
+    await finishAuth(data);
   } catch (error) {
     authStatus.textContent = `Register failed: ${error.message}`;
   }
@@ -784,9 +859,13 @@ logoutButton.addEventListener("click", () => {
   expireSession("");
 });
 
-extendSessionButton?.addEventListener("click", () => {
-  extendSession();
-  scanStatus.textContent = "Session extended for 1 hour.";
+extendSessionButton?.addEventListener("click", async () => {
+  try {
+    await extendSession();
+    scanStatus.textContent = "Session extended.";
+  } catch {
+    expireSession("Your session ended. Please sign in again.");
+  }
 });
 
 sessionLogoutButton?.addEventListener("click", () => {
@@ -884,6 +963,7 @@ setInterval(() => {
   updateSessionStatus();
 }, 1000);
 
+await setupAuthenticationMode();
 await setupGoogleSignIn();
 
 if (currentUser) {

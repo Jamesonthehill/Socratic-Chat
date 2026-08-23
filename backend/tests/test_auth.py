@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, urlparse
 from fastapi import HTTPException
 from starlette.requests import Request
 
-from app import auth, main, settings
+from app import auth, db, main, settings
 from app.main import _verify_google_credential
 
 
@@ -46,6 +46,14 @@ class SessionTokenTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as context:
             auth.verify_session(modified)
         self.assertEqual(context.exception.status_code, 401)
+
+
+class UserProfileTests(unittest.TestCase):
+    def test_profile_includes_display_name(self) -> None:
+        profile = db._user_profile(("user-123", "student", "student@charlotte.edu", "Student Name", 42, "student-gh"))
+        self.assertIsNotNone(profile)
+        self.assertEqual(profile["display_name"], "Student Name")
+        self.assertEqual(profile["github_username"], "student-gh")
 
 
 class SchoolGoogleAccountTests(unittest.TestCase):

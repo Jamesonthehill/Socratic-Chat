@@ -1,4 +1,4 @@
-# My RAG Chatbot
+# Socratic-Chat
 
 A clean personal workspace for a retrieval-augmented chatbot.
 
@@ -7,7 +7,7 @@ The backend indexes local Markdown/text notes, retrieves relevant chunks, and an
 ## Setup
 
 ```bash
-cd my-rag-chatbot
+cd Socratic-Chat
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -r backend/requirements.txt
@@ -148,4 +148,3 @@ The user must first pass the `charlotte.edu` Google Workspace check and then
 authorize GitHub. Each GitHub numeric user ID can be linked to only one school
 account. The app requests no repository access. Until both identities are
 present, protected chatbot APIs return 403.
-# RAG_Chatbot

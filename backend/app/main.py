@@ -19,7 +19,7 @@ from app.classifier import classify_message
 from app.rag import generate_answer, ingest_file, ingest_text, retrieve, retrieve_by_titles, retrieve_overview, scan_raw_docs
 from app.schemas import AuthConfigResponse, AuthResponse, ChatRequest, ChatResponse, ConversationListResponse, ConversationResponse, CurrentUserResponse, DatabaseStatus, EmailCodeRequest, EmailCodeResponse, GitHubAuthorizeResponse, GoogleAuthRequest, GoogleClientConfigResponse, IngestResponse, LoginRequest, RagFileListResponse, RegisterRequest, SessionRefreshResponse, TextDocumentRequest
 
-app = FastAPI(title="My RAG Chatbot")
+app = FastAPI(title="Socratic-Chat")
 
 app.add_middleware(
     CORSMiddleware,
@@ -106,7 +106,7 @@ def _send_verification_email(email: str, code: str) -> None:
         )
 
     message = EmailMessage()
-    message["Subject"] = "Your RAG Chatbot verification code"
+    message["Subject"] = "Your Socratic-Chat verification code"
     message["From"] = settings.SMTP_FROM_EMAIL
     message["To"] = email
     message.set_content(

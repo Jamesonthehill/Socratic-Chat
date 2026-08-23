@@ -49,6 +49,7 @@ def init_db() -> None:
                 CREATE TABLE IF NOT EXISTS users (
                     id UUID PRIMARY KEY,
                     username TEXT NOT NULL UNIQUE,
+                    display_name TEXT,
                     email TEXT NOT NULL UNIQUE,
                     password_salt TEXT NOT NULL,
                     password_hash TEXT NOT NULL,
@@ -66,6 +67,12 @@ def init_db() -> None:
                 """
                 ALTER TABLE users
                 ADD COLUMN IF NOT EXISTS google_sub TEXT UNIQUE
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS display_name TEXT
                 """
             )
             cur.execute(
@@ -613,8 +620,9 @@ def _user_profile(row: tuple[object, ...] | None) -> dict[str, object] | None:
         "user_id": str(row[0]),
         "username": str(row[1]),
         "email": str(row[2]),
-        "github_connected": row[3] is not None,
-        "github_username": str(row[4]) if row[4] else None,
+        "display_name": str(row[3]) if row[3] else str(row[1]),
+        "github_connected": row[4] is not None,
+        "github_username": str(row[5]) if row[5] else None,
     }
 
 
@@ -624,7 +632,7 @@ def get_user_by_id(user_id: str) -> dict[str, object] | None:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id::text, username, email, github_id, github_username
+                SELECT id::text, username, email, display_name, github_id, github_username
                 FROM users
                 WHERE id = %s
                 """,
@@ -641,7 +649,7 @@ def get_user_by_email(email: str) -> dict[str, object] | None:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id::text, username, email, github_id, github_username
+                SELECT id::text, username, email, display_name, github_id, github_username
                 FROM users
                 WHERE lower(email) = %s
                 """,
@@ -658,7 +666,7 @@ def get_user_by_google_sub(google_sub: str) -> dict[str, object] | None:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id::text, username, email, github_id, github_username
+                SELECT id::text, username, email, display_name, github_id, github_username
                 FROM users
                 WHERE google_sub = %s
                 """,
@@ -763,6 +771,7 @@ def _unique_username(cur: object, desired: str) -> str:
 def find_or_create_google_user(email: str, google_sub: str, name: str | None = None) -> dict[str, object]:
     init_db()
     normalized_email = email.strip().lower()
+    display_name = (name or normalized_email.split("@", 1)[0]).strip()[:120]
 
     existing = get_user_by_google_sub(google_sub) or get_user_by_email(normalized_email)
     if existing:
@@ -772,36 +781,39 @@ def find_or_create_google_user(email: str, google_sub: str, name: str | None = N
                     """
                     UPDATE users
                     SET google_sub = COALESCE(google_sub, %s),
+                        display_name = COALESCE(NULLIF(%s, ''), display_name, username),
                         auth_provider = CASE
                             WHEN auth_provider = 'password' THEN 'password_google'
                             ELSE auth_provider
                         END
                     WHERE id = %s
                     """,
-                    (google_sub, existing["user_id"]),
+                    (google_sub, display_name, existing["user_id"]),
                 )
             conn.commit()
-        return existing
+        refreshed = get_user_by_id(str(existing["user_id"]))
+        return refreshed or existing
 
     user_id = str(uuid.uuid4())
     salt, password_hash = _hash_password(secrets.token_urlsafe(32))
-    desired_username = name or normalized_email.split("@", 1)[0]
+    desired_username = display_name
 
     with get_connection() as conn:
         with conn.cursor() as cur:
             username = _unique_username(cur, desired_username)
             cur.execute(
                 """
-                INSERT INTO users (id, username, email, password_salt, password_hash, auth_provider, google_sub)
-                VALUES (%s, %s, %s, %s, %s, 'google', %s)
+                INSERT INTO users (id, username, display_name, email, password_salt, password_hash, auth_provider, google_sub)
+                VALUES (%s, %s, %s, %s, %s, %s, 'google', %s)
                 """,
-                (user_id, username, normalized_email, salt, password_hash, google_sub),
+                (user_id, username, display_name, normalized_email, salt, password_hash, google_sub),
             )
         conn.commit()
 
     return {
         "user_id": user_id,
         "username": username,
+        "display_name": display_name,
         "email": normalized_email,
         "github_connected": False,
         "github_username": None,
@@ -819,16 +831,17 @@ def create_user(username: str, email: str, password: str) -> dict[str, object]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO users (id, username, email, password_salt, password_hash)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO users (id, username, display_name, email, password_salt, password_hash)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 """,
-                (user_id, normalized_username, normalized_email, salt, password_hash),
+                (user_id, normalized_username, normalized_username, normalized_email, salt, password_hash),
             )
         conn.commit()
 
     return {
         "user_id": user_id,
         "username": normalized_username,
+        "display_name": normalized_username,
         "email": normalized_email,
         "github_connected": False,
         "github_username": None,
@@ -842,7 +855,7 @@ def authenticate_user(identifier: str, password: str) -> dict[str, object] | Non
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id::text, username, email, password_salt, password_hash, github_id, github_username
+                SELECT id::text, username, email, password_salt, password_hash, display_name, github_id, github_username
                 FROM users
                 WHERE lower(email) = %s OR lower(username) = %s
                 """,
@@ -858,8 +871,9 @@ def authenticate_user(identifier: str, password: str) -> dict[str, object] | Non
         "user_id": row[0],
         "username": row[1],
         "email": row[2],
-        "github_connected": row[5] is not None,
-        "github_username": row[6],
+        "display_name": row[5] or row[1],
+        "github_connected": row[6] is not None,
+        "github_username": row[7],
     }
 
 

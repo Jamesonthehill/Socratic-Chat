@@ -17,6 +17,9 @@ const githubConnectWrap = document.querySelector("#githubConnectWrap");
 const githubConnectMessage = document.querySelector("#githubConnectMessage");
 const connectGithubButton = document.querySelector("#connectGithubButton");
 const logoutButton = document.querySelector("#logoutButton");
+const userIdentity = document.querySelector("#userIdentity");
+const userInitial = document.querySelector("#userInitial");
+const userName = document.querySelector("#userName");
 const userBadge = document.querySelector("#userBadge");
 const sessionWarning = document.querySelector("#sessionWarning");
 const sessionWarningText = document.querySelector("#sessionWarningText");
@@ -35,6 +38,8 @@ const chatPanel = document.querySelector("#chatPanel");
 const dropOverlay = document.querySelector("#dropOverlay");
 const threadList = document.querySelector("#threadList");
 const chatFilePanel = document.querySelector("#chatFilePanel");
+const themeSelects = [...document.querySelectorAll(".theme-select")];
+const themeColorMeta = document.querySelector('meta[name="theme-color"]');
 
 const API_BASE_URL = (window.SOCRATIC_CONFIG?.API_BASE_URL || "").replace(/\/+$/, "");
 
@@ -46,8 +51,11 @@ function apiUrl(path) {
 
 const CONVERSATION_KEY = "my_rag_chatbot_conversation_id";
 const AUTH_USER_KEY = "my_rag_chatbot_user";
+const THEME_KEY = "socratic_chat_theme";
 const AUTH_SESSION_MS = 60 * 60 * 1000;
 const SESSION_WARNING_MS = 5 * 60 * 1000;
+const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+let renderGoogleSignInButton = null;
 let currentUser = readStoredUser();
 let conversationId = localStorage.getItem(CONVERSATION_KEY) || createConversationId();
 localStorage.setItem(CONVERSATION_KEY, conversationId);
@@ -58,6 +66,44 @@ let githubOauthConfigured = false;
 
 const history = [];
 const pendingFiles = [];
+
+
+function getThemePreference() {
+  const storedTheme = localStorage.getItem(THEME_KEY);
+  return ["light", "dark", "system"].includes(storedTheme) ? storedTheme : "light";
+}
+
+function applyTheme(preference, persist = true) {
+  const safePreference = ["light", "dark", "system"].includes(preference) ? preference : "light";
+  const resolvedTheme = safePreference === "system"
+    ? (systemTheme.matches ? "dark" : "light")
+    : safePreference;
+
+  document.documentElement.dataset.theme = resolvedTheme;
+  document.documentElement.dataset.themePreference = safePreference;
+  themeSelects.forEach((select) => {
+    select.value = safePreference;
+  });
+  if (themeColorMeta) {
+    themeColorMeta.content = resolvedTheme === "dark" ? "#15191f" : "#ffffff";
+  }
+  if (persist) localStorage.setItem(THEME_KEY, safePreference);
+  renderGoogleSignInButton?.();
+}
+
+themeSelects.forEach((select) => {
+  select.addEventListener("change", () => applyTheme(select.value));
+});
+systemTheme.addEventListener("change", () => {
+  if (getThemePreference() === "system") applyTheme("system", false);
+});
+applyTheme(getThemePreference(), false);
+
+
+function getDisplayName(user = currentUser) {
+  const preferredName = user?.display_name || user?.username || user?.email?.split("@", 1)[0];
+  return String(preferredName || "Student").trim();
+}
 
 
 function formatSessionTime(milliseconds) {
@@ -92,6 +138,9 @@ function updateSessionStatus() {
   if (!sessionWarning) return;
 
   if (!currentUser) {
+    if (userIdentity) userIdentity.classList.add("is-hidden");
+    if (userName) userName.textContent = "";
+    if (userInitial) userInitial.textContent = "";
     userBadge.textContent = "";
     sessionWarning.classList.remove("is-visible");
     sessionWarning.hidden = true;
@@ -100,7 +149,11 @@ function updateSessionStatus() {
 
   const remaining = currentUser.expires_at - Date.now();
   const shouldWarn = remaining > 0 && remaining <= SESSION_WARNING_MS;
-  userBadge.textContent = `Signed in as ${currentUser.username} · ${formatSessionTime(remaining)} left`;
+  const displayName = getDisplayName();
+  if (userIdentity) userIdentity.classList.remove("is-hidden");
+  if (userName) userName.textContent = displayName;
+  if (userInitial) userInitial.textContent = displayName.charAt(0).toUpperCase();
+  userBadge.textContent = `${currentUser.email || "Signed in"} · ${formatSessionTime(remaining)} left`;
   userBadge.classList.toggle("is-warning", shouldWarn);
 
   sessionWarning.hidden = !shouldWarn;
@@ -241,7 +294,8 @@ function clearMessages() {
 }
 
 function showWelcome() {
-  appendMessage("assistant", "Attach documents, then ask me a question about them.");
+  const greeting = currentUser ? `Hi ${getDisplayName()}, ` : "";
+  appendMessage("assistant", `${greeting}attach documents, then ask me a question about them.`);
 }
 
 function formatFileSize(bytes) {
@@ -795,9 +849,9 @@ async function setupGoogleSignIn() {
       return;
     }
 
-    const render = () => {
+    const initialize = () => {
       if (!window.google?.accounts?.id) {
-        window.setTimeout(render, 200);
+        window.setTimeout(initialize, 200);
         return;
       }
 
@@ -806,15 +860,20 @@ async function setupGoogleSignIn() {
         callback: handleGoogleCredential,
         hd: config.hosted_domain || undefined,
       });
-      window.google.accounts.id.renderButton(googleSignInButton, {
-        theme: "outline",
-        size: "large",
-        width: 360,
-        text: "continue_with",
-        shape: "rectangular",
-      });
+
+      renderGoogleSignInButton = () => {
+        googleSignInButton.replaceChildren();
+        window.google.accounts.id.renderButton(googleSignInButton, {
+          theme: document.documentElement.dataset.theme === "dark" ? "filled_black" : "outline",
+          size: "large",
+          width: 360,
+          text: "continue_with",
+          shape: "rectangular",
+        });
+      };
+      renderGoogleSignInButton();
     };
-    render();
+    initialize();
   } catch {
     googleSignInWrap.classList.add("is-hidden");
   }

@@ -125,6 +125,7 @@ class LoginRequest(BaseModel):
 class UserProfile(BaseModel):
     user_id: str
     username: str
+    display_name: str | None = None
     email: str
     github_connected: bool = False
     github_username: str | None = None

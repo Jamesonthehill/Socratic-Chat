@@ -3,15 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My RAG Chatbot</title>
-    <link rel="stylesheet" href="./styles.css?v=20260823-2" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>Socratic-Chat</title>
+    <script>
+      (() => {
+        const preference = localStorage.getItem("socratic_chat_theme") || "light";
+        const useDark = preference === "dark"
+          || (preference === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = useDark ? "dark" : "light";
+        document.documentElement.dataset.themePreference = preference;
+      })();
+    </script>
+    <link rel="stylesheet" href="./styles.css?v=20260823-3" />
     <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
     <section id="authScreen" class="auth-screen">
       <div class="auth-card">
-        <p class="eyebrow">Personal RAG Workspace</p>
-        <h1>Welcome back</h1>
+        <div class="auth-card-header">
+          <div>
+            <p class="eyebrow">UNC Charlotte learning workspace</p>
+            <h1>Socratic-Chat</h1>
+          </div>
+          <label class="theme-picker">
+            <span>Theme</span>
+            <select class="theme-select" aria-label="Choose color theme">
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+              <option value="system">System</option>
+            </select>
+          </label>
+        </div>
         <p id="authCopy" class="auth-copy">Sign in or create an account so your chats and uploaded files stay connected to you.</p>
 
         <div id="googleSignInWrap" class="google-signin-wrap">
@@ -73,12 +95,28 @@
       <aside class="sidebar">
         <div class="sidebar-header">
           <div>
-            <p class="eyebrow">Personal RAG Workspace</p>
-            <h1>My RAG Chatbot</h1>
+            <p class="eyebrow">Learning workspace</p>
+            <h1>Socratic-Chat</h1>
           </div>
-          <button id="logoutButton" class="icon-button" type="button" title="Log out" aria-label="Log out">↪</button>
+          <div class="sidebar-header-actions">
+            <label class="theme-picker theme-picker-compact">
+              <span>Theme</span>
+              <select class="theme-select" aria-label="Choose color theme">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="system">System</option>
+              </select>
+            </label>
+            <button id="logoutButton" class="icon-button" type="button" title="Log out" aria-label="Log out">↪</button>
+          </div>
         </div>
-        <div id="userBadge" class="user-badge"></div>
+        <div id="userIdentity" class="user-identity" aria-live="polite">
+          <span id="userInitial" class="user-initial" aria-hidden="true"></span>
+          <div>
+            <div id="userName" class="user-name"></div>
+            <div id="userBadge" class="user-badge"></div>
+          </div>
+        </div>
         <div id="sessionWarning" class="session-warning" aria-live="assertive">
           <div class="session-warning-title">Session ending soon</div>
           <div id="sessionWarningText">Do you need more time?</div>
@@ -112,7 +150,7 @@
         </form>
       </section>
     </main>
-    <script src="./config.js?v=20260823-2"></script>
-    <script src="./app.js?v=20260823-2" type="module"></script>
+    <script src="./config.js?v=20260823-3"></script>
+    <script src="./app.js?v=20260823-3" type="module"></script>
   </body>
 </html>

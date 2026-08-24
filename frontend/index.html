@@ -14,7 +14,7 @@
         document.documentElement.dataset.themePreference = preference;
       })();
     </script>
-    <link rel="stylesheet" href="./styles.css?v=20260823-4" />
+    <link rel="stylesheet" href="./styles.css?v=20260824-1" />
     <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
@@ -91,6 +91,110 @@
       </div>
     </section>
 
+    <section id="onboardingScreen" class="flow-screen is-hidden">
+      <div class="flow-card onboarding-card">
+        <div class="flow-card-header">
+          <div>
+            <p class="eyebrow">One-time account setup</p>
+            <h1>Welcome to Socratic-Chat</h1>
+          </div>
+          <label class="theme-picker">
+            <span>Theme</span>
+            <select class="theme-select" aria-label="Choose color theme">
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+              <option value="system">System</option>
+            </select>
+          </label>
+        </div>
+        <p class="flow-copy">Your UNC Charlotte account is verified. Create your Socratic-Chat ID and choose your position.</p>
+        <div id="onboardingIdentity" class="verified-identity"></div>
+
+        <form id="onboardingForm" class="onboarding-form">
+          <label>
+            Socratic-Chat ID
+            <input id="onboardingUsername" type="text" autocomplete="username" minlength="3" maxlength="80" pattern="[A-Za-z0-9][A-Za-z0-9_.-]{2,79}" required />
+            <span class="field-help">Use letters, numbers, periods, underscores, or hyphens.</span>
+          </label>
+
+          <div class="password-grid">
+            <label>
+              Password
+              <input id="onboardingPassword" type="password" autocomplete="new-password" minlength="8" required />
+            </label>
+            <label>
+              Confirm password
+              <input id="onboardingPasswordConfirmation" type="password" autocomplete="new-password" minlength="8" required />
+            </label>
+          </div>
+
+          <fieldset class="position-fieldset">
+            <legend>Choose your position</legend>
+            <label class="position-option">
+              <input type="radio" name="position" value="student" checked />
+              <span>
+                <strong>Student</strong>
+                <small>Ask questions and use the learning workspace.</small>
+              </span>
+            </label>
+            <label class="position-option">
+              <input type="radio" name="position" value="instructor" />
+              <span>
+                <strong>Instructor</strong>
+                <small>Request permission to manage course materials. An admin must approve it.</small>
+              </span>
+            </label>
+          </fieldset>
+
+          <button type="submit">Finish account setup</button>
+        </form>
+        <div id="onboardingStatus" class="auth-status" aria-live="polite"></div>
+        <button id="onboardingLogoutButton" class="text-button" type="button">Use a different Google account</button>
+      </div>
+    </section>
+
+    <section id="dashboardScreen" class="flow-screen is-hidden">
+      <div class="flow-card dashboard-card">
+        <div class="flow-card-header">
+          <div>
+            <p class="eyebrow">Course dashboard</p>
+            <h1 id="dashboardGreeting">Welcome</h1>
+          </div>
+          <div class="dashboard-header-actions">
+            <label class="theme-picker">
+              <span>Theme</span>
+              <select class="theme-select" aria-label="Choose color theme">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="system">System</option>
+              </select>
+            </label>
+            <button id="dashboardLogoutButton" class="text-button" type="button">Log out</button>
+          </div>
+        </div>
+
+        <article class="role-card">
+          <div class="role-card-topline">
+            <span id="dashboardRoleBadge" class="role-badge">Student</span>
+            <span id="dashboardAuthorityLevel" class="authority-level">Level 2</span>
+          </div>
+          <h2 id="dashboardRoleTitle">Student learning workspace</h2>
+          <p id="dashboardRoleDescription">Ask questions and continue your saved conversations.</p>
+          <div id="dashboardPendingNotice" class="pending-notice is-hidden"></div>
+          <button id="openWorkspaceButton" type="button">Open chatbot</button>
+        </article>
+
+        <section id="adminRequestsSection" class="admin-requests is-hidden">
+          <div>
+            <p class="eyebrow">Administrator</p>
+            <h2>Instructor requests</h2>
+          </div>
+          <div id="adminRequestsList" class="admin-requests-list"></div>
+          <div id="adminRequestsStatus" class="status" aria-live="polite"></div>
+        </section>
+      </div>
+    </section>
+
     <main id="appShell" class="app-shell is-hidden">
       <aside class="sidebar">
         <div class="sidebar-header">
@@ -115,6 +219,7 @@
           <div>
             <div id="userName" class="user-name"></div>
             <div id="userBadge" class="user-badge"></div>
+            <div id="workspaceRole" class="workspace-role"></div>
           </div>
         </div>
         <div id="sessionWarning" class="session-warning" aria-live="assertive">
@@ -128,6 +233,7 @@
 
         <div class="sidebar-actions">
           <button id="newChatButton">New chat</button>
+          <button id="dashboardButton" class="secondary-button" type="button">Course dashboard</button>
         </div>
         <input id="fileInput" class="file-input" type="file" accept=".txt,.md,.pdf" multiple />
         <div id="scanStatus" class="status"></div>
@@ -139,18 +245,18 @@
       </aside>
 
       <section id="chatPanel" class="chat-panel">
-        <div id="dropOverlay" class="drop-overlay">Drop documents to attach them to this chat</div>
-        <aside id="chatFilePanel" class="chat-file-panel" aria-live="polite"></aside>
+        <div id="dropOverlay" class="drop-overlay instructor-only">Drop course documents to attach them to this chat</div>
+        <aside id="chatFilePanel" class="chat-file-panel instructor-only" aria-live="polite"></aside>
         <div id="messages" class="messages"></div>
         <form id="chatForm" class="composer">
           <div id="attachmentTray" class="attachment-tray"></div>
           <textarea id="messageInput" rows="2" placeholder="Ask your documents a question"></textarea>
-          <button id="composerAttachButton" class="composer-attach-button" type="button" title="Attach documents" aria-label="Attach documents">+</button>
+          <button id="composerAttachButton" class="composer-attach-button instructor-only" type="button" title="Attach course documents" aria-label="Attach course documents">+</button>
           <button id="sendButton" type="submit">Send</button>
         </form>
       </section>
     </main>
-    <script src="./config.js?v=20260823-4"></script>
-    <script src="./app.js?v=20260823-4" type="module"></script>
+    <script src="./config.js?v=20260824-1"></script>
+    <script src="./app.js?v=20260824-1" type="module"></script>
   </body>
 </html>

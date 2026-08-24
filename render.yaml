@@ -34,5 +34,7 @@ services:
         generateValue: true
       - key: AUTH_SESSION_MINUTES
         value: "60"
+      - key: ADMIN_EMAILS
+        sync: false
       - key: CORS_ALLOWED_ORIGINS
         value: "https://jamesonthehill.github.io,https://jamesonthehill.com"

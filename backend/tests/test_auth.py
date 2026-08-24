@@ -55,6 +55,16 @@ class UserProfileTests(unittest.TestCase):
         self.assertEqual(profile["display_name"], "Student Name")
         self.assertEqual(profile["github_username"], "student-gh")
 
+    def test_profile_includes_authority_and_pending_role(self) -> None:
+        profile = db._user_profile(
+            ("user-123", "student", "student@charlotte.edu", "Student Name", None, None, 2, 1, object())
+        )
+        self.assertEqual(profile["authority_level"], 2)
+        self.assertEqual(profile["role"], "student")
+        self.assertEqual(profile["requested_role"], "instructor")
+        self.assertEqual(profile["role_status"], "pending")
+        self.assertTrue(profile["onboarding_complete"])
+
 
 class SchoolGoogleAccountTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -117,15 +127,17 @@ class GitHubAccountRequirementTests(unittest.TestCase):
         settings.GITHUB_CLIENT_SECRET = self.original_client_secret
         settings.GITHUB_CALLBACK_URL = self.original_callback_url
 
+    @patch("app.main.db.get_user_by_id", return_value={"onboarding_complete": True})
     @patch("app.main.db.user_has_github", return_value=False)
-    def test_unlinked_github_account_cannot_use_protected_routes(self, _has_github) -> None:
+    def test_unlinked_github_account_cannot_use_protected_routes(self, _has_github, _get_user) -> None:
         token, _ = auth.issue_session("school-user-1")
         with self.assertRaises(HTTPException) as context:
             main._current_user_id(_request_with_token(token))
         self.assertEqual(context.exception.status_code, 403)
 
+    @patch("app.main.db.get_user_by_id", return_value={"onboarding_complete": True})
     @patch("app.main.db.user_has_github", return_value=True)
-    def test_linked_github_account_can_use_protected_routes(self, _has_github) -> None:
+    def test_linked_github_account_can_use_protected_routes(self, _has_github, _get_user) -> None:
         token, _ = auth.issue_session("school-user-1")
         user_id = main._current_user_id(_request_with_token(token))
         self.assertEqual(user_id, "school-user-1")

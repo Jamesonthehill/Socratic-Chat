@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 import secrets
 import uuid
 from contextlib import contextmanager
@@ -9,6 +10,9 @@ from typing import Iterator
 
 from app import settings
 from app.schemas import ChatMessage
+
+
+AUTHORITY_LABELS = {0: "admin", 1: "instructor", 2: "student"}
 
 
 @contextmanager
@@ -91,6 +95,67 @@ def init_db() -> None:
                 """
                 ALTER TABLE users
                 ADD COLUMN IF NOT EXISTS github_linked_at TIMESTAMPTZ
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS authority_level SMALLINT NOT NULL DEFAULT 2
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS requested_authority_level SMALLINT
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS onboarding_completed_at TIMESTAMPTZ
+                """
+            )
+            cur.execute(
+                """
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint WHERE conname = 'users_authority_level_check'
+                    ) THEN
+                        ALTER TABLE users
+                        ADD CONSTRAINT users_authority_level_check
+                        CHECK (authority_level IN (0, 1, 2));
+                    END IF;
+                END $$
+                """
+            )
+            cur.execute(
+                """
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint WHERE conname = 'users_requested_authority_level_check'
+                    ) THEN
+                        ALTER TABLE users
+                        ADD CONSTRAINT users_requested_authority_level_check
+                        CHECK (requested_authority_level IS NULL OR requested_authority_level IN (1, 2));
+                    END IF;
+                END $$
+                """
+            )
+            cur.execute(
+                """
+                UPDATE users
+                SET onboarding_completed_at = created_at
+                WHERE onboarding_completed_at IS NULL
+                  AND auth_provider LIKE 'password%'
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_users_pending_authority
+                ON users(requested_authority_level, created_at)
+                WHERE requested_authority_level IS NOT NULL
                 """
             )
             cur.execute(
@@ -616,6 +681,12 @@ def conversation_belongs_to(conversation_id: str, user_id: str | None) -> bool:
 def _user_profile(row: tuple[object, ...] | None) -> dict[str, object] | None:
     if row is None:
         return None
+    authority_level = int(row[6]) if len(row) > 6 and row[6] is not None else 2
+    requested_authority = int(row[7]) if len(row) > 7 and row[7] is not None else None
+    onboarding_complete = bool(row[8]) if len(row) > 8 else False
+    role_status = "onboarding_required"
+    if onboarding_complete:
+        role_status = "pending" if requested_authority == 1 and authority_level > 1 else "active"
     return {
         "user_id": str(row[0]),
         "username": str(row[1]),
@@ -623,7 +694,18 @@ def _user_profile(row: tuple[object, ...] | None) -> dict[str, object] | None:
         "display_name": str(row[3]) if row[3] else str(row[1]),
         "github_connected": row[4] is not None,
         "github_username": str(row[5]) if row[5] else None,
+        "authority_level": authority_level,
+        "role": AUTHORITY_LABELS.get(authority_level, "student"),
+        "requested_role": "instructor" if requested_authority == 1 else None,
+        "role_status": role_status,
+        "onboarding_complete": onboarding_complete,
     }
+
+
+USER_PROFILE_COLUMNS = """
+    id::text, username, email, display_name, github_id, github_username,
+    authority_level, requested_authority_level, onboarding_completed_at
+"""
 
 
 def get_user_by_id(user_id: str) -> dict[str, object] | None:
@@ -632,10 +714,10 @@ def get_user_by_id(user_id: str) -> dict[str, object] | None:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id::text, username, email, display_name, github_id, github_username
+                SELECT {USER_PROFILE_COLUMNS}
                 FROM users
                 WHERE id = %s
-                """,
+                """.format(USER_PROFILE_COLUMNS=USER_PROFILE_COLUMNS),
                 (user_id,),
             )
             row = cur.fetchone()
@@ -649,10 +731,10 @@ def get_user_by_email(email: str) -> dict[str, object] | None:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id::text, username, email, display_name, github_id, github_username
+                SELECT {USER_PROFILE_COLUMNS}
                 FROM users
                 WHERE lower(email) = %s
-                """,
+                """.format(USER_PROFILE_COLUMNS=USER_PROFILE_COLUMNS),
                 (normalized_email,),
             )
             row = cur.fetchone()
@@ -666,10 +748,10 @@ def get_user_by_google_sub(google_sub: str) -> dict[str, object] | None:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id::text, username, email, display_name, github_id, github_username
+                SELECT {USER_PROFILE_COLUMNS}
                 FROM users
                 WHERE google_sub = %s
-                """,
+                """.format(USER_PROFILE_COLUMNS=USER_PROFILE_COLUMNS),
                 (google_sub,),
             )
             row = cur.fetchone()
@@ -775,6 +857,7 @@ def find_or_create_google_user(email: str, google_sub: str, name: str | None = N
 
     existing = get_user_by_google_sub(google_sub) or get_user_by_email(normalized_email)
     if existing:
+        is_configured_admin = normalized_email in settings.ADMIN_EMAILS
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -782,13 +865,15 @@ def find_or_create_google_user(email: str, google_sub: str, name: str | None = N
                     UPDATE users
                     SET google_sub = COALESCE(google_sub, %s),
                         display_name = COALESCE(NULLIF(%s, ''), display_name, username),
+                        authority_level = CASE WHEN %s THEN 0 ELSE authority_level END,
+                        requested_authority_level = CASE WHEN %s THEN NULL ELSE requested_authority_level END,
                         auth_provider = CASE
                             WHEN auth_provider = 'password' THEN 'password_google'
                             ELSE auth_provider
                         END
                     WHERE id = %s
                     """,
-                    (google_sub, display_name, existing["user_id"]),
+                    (google_sub, display_name, is_configured_admin, is_configured_admin, existing["user_id"]),
                 )
             conn.commit()
         refreshed = get_user_by_id(str(existing["user_id"]))
@@ -798,26 +883,130 @@ def find_or_create_google_user(email: str, google_sub: str, name: str | None = N
     salt, password_hash = _hash_password(secrets.token_urlsafe(32))
     desired_username = display_name
 
+    authority_level = 0 if normalized_email in settings.ADMIN_EMAILS else 2
     with get_connection() as conn:
         with conn.cursor() as cur:
             username = _unique_username(cur, desired_username)
             cur.execute(
                 """
-                INSERT INTO users (id, username, display_name, email, password_salt, password_hash, auth_provider, google_sub)
-                VALUES (%s, %s, %s, %s, %s, %s, 'google', %s)
+                INSERT INTO users (
+                    id, username, display_name, email, password_salt, password_hash,
+                    auth_provider, google_sub, authority_level
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, 'google', %s, %s)
                 """,
-                (user_id, username, display_name, normalized_email, salt, password_hash, google_sub),
+                (user_id, username, display_name, normalized_email, salt, password_hash, google_sub, authority_level),
+            )
+        conn.commit()
+    user = get_user_by_id(user_id)
+    if user is None:
+        raise RuntimeError("Google account could not be created.")
+    return user
+
+
+def complete_onboarding(user_id: str, username: str, password: str, position: str) -> dict[str, object]:
+    init_db()
+    normalized_username = username.strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{2,79}", normalized_username):
+        raise ValueError("Username must start with a letter or number and use only letters, numbers, ., _, or -.")
+
+    requested_authority = 1 if position == "instructor" else None
+    salt, password_hash = _hash_password(password)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT onboarding_completed_at, authority_level
+                FROM users
+                WHERE id = %s
+                FOR UPDATE
+                """,
+                (user_id,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise ValueError("Account was not found.")
+            if row[0] is not None:
+                raise ValueError("Account setup has already been completed.")
+
+            cur.execute(
+                """
+                SELECT 1 FROM users
+                WHERE lower(username) = lower(%s) AND id <> %s
+                """,
+                (normalized_username, user_id),
+            )
+            if cur.fetchone() is not None:
+                raise ValueError("That username is already in use.")
+
+            is_admin = int(row[1]) == 0
+            cur.execute(
+                """
+                UPDATE users
+                SET username = %s,
+                    password_salt = %s,
+                    password_hash = %s,
+                    auth_provider = CASE
+                        WHEN auth_provider = 'google' THEN 'google_password'
+                        ELSE auth_provider
+                    END,
+                    requested_authority_level = CASE WHEN %s THEN NULL ELSE %s END,
+                    onboarding_completed_at = NOW()
+                WHERE id = %s
+                """,
+                (normalized_username, salt, password_hash, is_admin, requested_authority, user_id),
             )
         conn.commit()
 
-    return {
-        "user_id": user_id,
-        "username": username,
-        "display_name": display_name,
-        "email": normalized_email,
-        "github_connected": False,
-        "github_username": None,
-    }
+    user = get_user_by_id(user_id)
+    if user is None:
+        raise ValueError("Account was not found.")
+    return user
+
+
+def list_pending_instructor_requests() -> list[dict[str, object]]:
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT {USER_PROFILE_COLUMNS}
+                FROM users
+                WHERE requested_authority_level = 1
+                  AND authority_level = 2
+                  AND onboarding_completed_at IS NOT NULL
+                ORDER BY created_at ASC
+                """.format(USER_PROFILE_COLUMNS=USER_PROFILE_COLUMNS)
+            )
+            rows = cur.fetchall()
+    return [profile for row in rows if (profile := _user_profile(row)) is not None]
+
+
+def set_user_authority(user_id: str, authority_level: int) -> dict[str, object]:
+    if authority_level not in {1, 2}:
+        raise ValueError("Authority level must be instructor (1) or student (2).")
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE users
+                SET authority_level = %s,
+                    requested_authority_level = NULL
+                WHERE id = %s
+                  AND authority_level <> 0
+                """,
+                (authority_level, user_id),
+            )
+            if cur.rowcount != 1:
+                raise ValueError("User was not found or is an administrator.")
+        conn.commit()
+
+    user = get_user_by_id(user_id)
+    if user is None:
+        raise ValueError("Account was not found.")
+    return user
 
 
 def create_user(username: str, email: str, password: str) -> dict[str, object]:
@@ -831,21 +1020,19 @@ def create_user(username: str, email: str, password: str) -> dict[str, object]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO users (id, username, display_name, email, password_salt, password_hash)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO users (
+                    id, username, display_name, email, password_salt, password_hash,
+                    onboarding_completed_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, NOW())
                 """,
                 (user_id, normalized_username, normalized_username, normalized_email, salt, password_hash),
             )
         conn.commit()
-
-    return {
-        "user_id": user_id,
-        "username": normalized_username,
-        "display_name": normalized_username,
-        "email": normalized_email,
-        "github_connected": False,
-        "github_username": None,
-    }
+    user = get_user_by_id(user_id)
+    if user is None:
+        raise RuntimeError("Account could not be created.")
+    return user
 
 
 def authenticate_user(identifier: str, password: str) -> dict[str, object] | None:
@@ -855,7 +1042,7 @@ def authenticate_user(identifier: str, password: str) -> dict[str, object] | Non
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id::text, username, email, password_salt, password_hash, display_name, github_id, github_username
+                SELECT id::text, username, email, password_salt, password_hash
                 FROM users
                 WHERE lower(email) = %s OR lower(username) = %s
                 """,
@@ -867,14 +1054,7 @@ def authenticate_user(identifier: str, password: str) -> dict[str, object] | Non
         return None
     if not _password_matches(password, row[3], row[4]):
         return None
-    return {
-        "user_id": row[0],
-        "username": row[1],
-        "email": row[2],
-        "display_name": row[5] or row[1],
-        "github_connected": row[6] is not None,
-        "github_username": row[7],
-    }
+    return get_user_by_id(str(row[0]))
 
 
 def set_pending_clarification(conversation_id: str, original_question: str, missing_target: str | None = None) -> None:

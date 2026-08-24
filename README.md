@@ -123,6 +123,35 @@ The GitHub Pages frontend reads the Render API address from
 `frontend/config.js`. The backend verifies the Google ID token, issues a signed
 session, and requires that session on chat, file, and conversation endpoints.
 
+## Roles and one-time account setup
+
+After the first successful school Google sign-in, a user completes one account
+setup form with a Socratic-Chat username, matching password confirmation, and a
+requested position. The password is stored as a salted PBKDF2 hash; it is never
+stored as plain text. School Google remains the deployed sign-in method, so the
+setup form is shown only once and does not replace Google authentication.
+
+The `users.authority_level` column controls backend authorization:
+
+- `0` — administrator
+- `1` — instructor
+- `2` — student
+
+Students become active immediately. Choosing instructor creates a pending
+request while the account remains at student authority. An administrator can
+approve or reject the request from the course dashboard. Users cannot grant
+themselves instructor or administrator access.
+
+Set at least one administrator in the Render environment before deployment:
+
+```text
+ADMIN_EMAILS=admin-account@charlotte.edu
+```
+
+Multiple administrator emails may be separated with commas. The backend adds
+the role and onboarding columns automatically during startup. Instructor-only
+document APIs are also protected by the backend, not only hidden in the UI.
+
 ### Require both UNC Charlotte and GitHub
 
 Create a GitHub OAuth App under **GitHub Settings → Developer settings → OAuth

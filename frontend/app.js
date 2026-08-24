@@ -1,4 +1,21 @@
 const authScreen = document.querySelector("#authScreen");
+const onboardingScreen = document.querySelector("#onboardingScreen");
+const onboardingForm = document.querySelector("#onboardingForm");
+const onboardingIdentity = document.querySelector("#onboardingIdentity");
+const onboardingStatus = document.querySelector("#onboardingStatus");
+const onboardingLogoutButton = document.querySelector("#onboardingLogoutButton");
+const dashboardScreen = document.querySelector("#dashboardScreen");
+const dashboardGreeting = document.querySelector("#dashboardGreeting");
+const dashboardRoleBadge = document.querySelector("#dashboardRoleBadge");
+const dashboardAuthorityLevel = document.querySelector("#dashboardAuthorityLevel");
+const dashboardRoleTitle = document.querySelector("#dashboardRoleTitle");
+const dashboardRoleDescription = document.querySelector("#dashboardRoleDescription");
+const dashboardPendingNotice = document.querySelector("#dashboardPendingNotice");
+const dashboardLogoutButton = document.querySelector("#dashboardLogoutButton");
+const openWorkspaceButton = document.querySelector("#openWorkspaceButton");
+const adminRequestsSection = document.querySelector("#adminRequestsSection");
+const adminRequestsList = document.querySelector("#adminRequestsList");
+const adminRequestsStatus = document.querySelector("#adminRequestsStatus");
 const appShell = document.querySelector("#appShell");
 const loginForm = document.querySelector("#loginForm");
 const registerForm = document.querySelector("#registerForm");
@@ -21,6 +38,7 @@ const userIdentity = document.querySelector("#userIdentity");
 const userInitial = document.querySelector("#userInitial");
 const userName = document.querySelector("#userName");
 const userBadge = document.querySelector("#userBadge");
+const workspaceRole = document.querySelector("#workspaceRole");
 const sessionWarning = document.querySelector("#sessionWarning");
 const sessionWarningText = document.querySelector("#sessionWarningText");
 const extendSessionButton = document.querySelector("#extendSessionButton");
@@ -31,6 +49,7 @@ const inputEl = document.querySelector("#messageInput");
 const sendButton = document.querySelector("#sendButton");
 const composerAttachButton = document.querySelector("#composerAttachButton");
 const newChatButton = document.querySelector("#newChatButton");
+const dashboardButton = document.querySelector("#dashboardButton");
 const scanStatus = document.querySelector("#scanStatus");
 const fileInput = document.querySelector("#fileInput");
 const attachmentTray = document.querySelector("#attachmentTray");
@@ -105,6 +124,22 @@ function getDisplayName(user = currentUser) {
   return String(preferredName || "Student").trim();
 }
 
+function getRole(user = currentUser) {
+  const level = Number(user?.authority_level ?? 2);
+  if (level === 0) return "admin";
+  if (level === 1) return "instructor";
+  return "student";
+}
+
+function getRoleLabel(user = currentUser) {
+  const role = getRole(user);
+  return role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+function canManageCourseMaterials(user = currentUser) {
+  return Boolean(user?.onboarding_complete) && Number(user?.authority_level ?? 2) <= 1;
+}
+
 
 function formatSessionTime(milliseconds) {
   const safeMilliseconds = Math.max(0, milliseconds);
@@ -142,6 +177,7 @@ function updateSessionStatus() {
     if (userName) userName.textContent = "";
     if (userInitial) userInitial.textContent = "";
     userBadge.textContent = "";
+    if (workspaceRole) workspaceRole.textContent = "";
     sessionWarning.classList.remove("is-visible");
     sessionWarning.hidden = true;
     return;
@@ -154,6 +190,7 @@ function updateSessionStatus() {
   if (userName) userName.textContent = displayName;
   if (userInitial) userInitial.textContent = displayName.charAt(0).toUpperCase();
   userBadge.textContent = `${currentUser.email || "Signed in"} · ${formatSessionTime(remaining)} left`;
+  if (workspaceRole) workspaceRole.textContent = `${getRoleLabel()} · Authority ${currentUser.authority_level ?? 2}`;
   userBadge.classList.toggle("is-warning", shouldWarn);
 
   sessionWarning.hidden = !shouldWarn;
@@ -227,12 +264,75 @@ function setAuthMode(mode) {
 
 function showAuthenticatedApp() {
   authScreen.classList.add("is-hidden");
+  onboardingScreen?.classList.add("is-hidden");
+  dashboardScreen?.classList.add("is-hidden");
   appShell.classList.remove("is-hidden");
+  appShell.dataset.role = canManageCourseMaterials() ? "instructor" : "student";
+  inputEl.placeholder = canManageCourseMaterials()
+    ? "Ask a question or attach course documents"
+    : "Ask a question about your course materials";
+  updateSessionStatus();
+}
+
+function showOnboarding() {
+  authScreen.classList.add("is-hidden");
+  dashboardScreen?.classList.add("is-hidden");
+  appShell.classList.add("is-hidden");
+  onboardingScreen?.classList.remove("is-hidden");
+  if (onboardingIdentity) {
+    onboardingIdentity.textContent = `Verified school account: ${currentUser?.email || "UNC Charlotte account"}`;
+  }
+  const usernameInput = document.querySelector("#onboardingUsername");
+  if (usernameInput && !usernameInput.value) usernameInput.value = currentUser?.username || "";
+  onboardingStatus.textContent = "";
+  usernameInput?.focus();
+}
+
+function renderDashboard() {
+  const role = getRole();
+  const isPending = currentUser?.role_status === "pending";
+  dashboardGreeting.textContent = `Welcome, ${getDisplayName()}`;
+  dashboardRoleBadge.textContent = getRoleLabel();
+  dashboardAuthorityLevel.textContent = `Authority level ${currentUser?.authority_level ?? 2}`;
+  dashboardPendingNotice.classList.toggle("is-hidden", !isPending);
+  dashboardPendingNotice.textContent = isPending
+    ? "Your instructor request is waiting for administrator approval. You currently have student access."
+    : "";
+
+  const copy = {
+    admin: {
+      title: "Administration and instructor workspace",
+      description: "Review instructor requests, manage course materials, and test the chatbot.",
+    },
+    instructor: {
+      title: "Instructor course workspace",
+      description: "Upload course materials, define the discussion scope, and test student questions.",
+    },
+    student: {
+      title: "Student learning workspace",
+      description: "Ask questions, review course concepts, and continue your saved conversations.",
+    },
+  };
+  dashboardRoleTitle.textContent = copy[role].title;
+  dashboardRoleDescription.textContent = copy[role].description;
+  openWorkspaceButton.textContent = role === "student" ? "Open student chatbot" : "Open instructor chatbot";
+  adminRequestsSection.classList.toggle("is-hidden", role !== "admin");
+  if (role === "admin") loadInstructorRequests();
+}
+
+function showDashboard() {
+  authScreen.classList.add("is-hidden");
+  onboardingScreen?.classList.add("is-hidden");
+  appShell.classList.add("is-hidden");
+  dashboardScreen?.classList.remove("is-hidden");
+  renderDashboard();
   updateSessionStatus();
 }
 
 function showGithubConnection() {
   appShell.classList.add("is-hidden");
+  onboardingScreen?.classList.add("is-hidden");
+  dashboardScreen?.classList.add("is-hidden");
   authScreen.classList.remove("is-hidden");
   googleSignInWrap?.classList.add("is-hidden");
   githubConnectWrap?.classList.remove("is-hidden");
@@ -245,18 +345,24 @@ function showGithubConnection() {
   if (connectGithubButton) connectGithubButton.disabled = !githubOauthConfigured;
 }
 
-function enterAuthenticatedApp() {
+function routeAuthenticatedUser() {
   githubConnectWrap?.classList.add("is-hidden");
+  if (!currentUser?.onboarding_complete) {
+    showOnboarding();
+    return "onboarding";
+  }
   if (githubAccountRequired && !currentUser?.github_connected) {
     showGithubConnection();
-    return false;
+    return "github";
   }
-  showAuthenticatedApp();
-  return true;
+  showDashboard();
+  return "dashboard";
 }
 
 function showSignedOut() {
   appShell.classList.add("is-hidden");
+  onboardingScreen?.classList.add("is-hidden");
+  dashboardScreen?.classList.add("is-hidden");
   authScreen.classList.remove("is-hidden");
   authStatus.textContent = "";
   githubConnectWrap?.classList.add("is-hidden");
@@ -295,7 +401,10 @@ function clearMessages() {
 
 function showWelcome() {
   const greeting = currentUser ? `Hi ${getDisplayName()}, ` : "";
-  appendMessage("assistant", `${greeting}attach documents, then ask me a question about them.`);
+  const guidance = canManageCourseMaterials()
+    ? "upload course documents or ask a question to test the learning experience."
+    : "ask a question about the course materials prepared by your instructor.";
+  appendMessage("assistant", `${greeting}${guidance}`);
 }
 
 function formatFileSize(bytes) {
@@ -711,6 +820,11 @@ async function postForm(url, formData) {
 async function uploadPendingFiles() {
   if (!pendingFiles.length) return null;
   if (!requireActiveSession()) return null;
+  if (!canManageCourseMaterials()) {
+    clearPendingFiles();
+    scanStatus.textContent = "Only instructors can upload course materials.";
+    return null;
+  }
 
   composerAttachButton.disabled = true;
   scanStatus.textContent = "Uploading and indexing...";
@@ -741,6 +855,10 @@ function supportedFiles(files) {
 
 async function uploadFiles(files) {
   if (!requireActiveSession()) return;
+  if (!canManageCourseMaterials()) {
+    scanStatus.textContent = "Only instructors can upload course materials.";
+    return;
+  }
   const accepted = supportedFiles(files);
   if (!accepted.length) {
     scanStatus.textContent = "Use .txt, .md, or .pdf files.";
@@ -821,12 +939,115 @@ showRegisterButton.addEventListener("click", () => setAuthMode("register"));
 
 async function finishAuth(data) {
   saveUser(data.user, data.access_token, data.expires_in_seconds);
-  if (!enterAuthenticatedApp()) return;
+  routeAuthenticatedUser();
+}
+
+async function openChatWorkspace() {
+  if (!requireActiveSession()) return;
+  showAuthenticatedApp();
   await loadConversation();
   await loadChatFiles();
   await loadThreadList();
   inputEl.focus();
 }
+
+async function loadInstructorRequests() {
+  if (getRole() !== "admin") return;
+  adminRequestsStatus.textContent = "Loading instructor requests...";
+  try {
+    const requests = await getJson("/api/admin/instructor-requests");
+    adminRequestsList.replaceChildren();
+    if (!requests.length) {
+      const empty = document.createElement("div");
+      empty.className = "admin-request-empty";
+      empty.textContent = "No pending instructor requests.";
+      adminRequestsList.appendChild(empty);
+    }
+
+    requests.forEach((user) => {
+      const row = document.createElement("div");
+      row.className = "admin-request-row";
+
+      const identity = document.createElement("div");
+      const name = document.createElement("div");
+      name.className = "admin-request-name";
+      name.textContent = user.display_name || user.username;
+      const email = document.createElement("div");
+      email.className = "admin-request-email";
+      email.textContent = user.email;
+      identity.append(name, email);
+
+      const actions = document.createElement("div");
+      actions.className = "admin-request-actions";
+      const approve = document.createElement("button");
+      approve.type = "button";
+      approve.textContent = "Approve";
+      const reject = document.createElement("button");
+      reject.type = "button";
+      reject.className = "reject-button";
+      reject.textContent = "Keep as student";
+
+      const updateAuthority = async (authorityLevel) => {
+        approve.disabled = true;
+        reject.disabled = true;
+        adminRequestsStatus.textContent = authorityLevel === 1
+          ? `Approving ${user.email}...`
+          : `Keeping ${user.email} as a student...`;
+        try {
+          await postJson(`/api/admin/users/${encodeURIComponent(user.user_id)}/authority`, {
+            authority_level: authorityLevel,
+          });
+          await loadInstructorRequests();
+        } catch (error) {
+          approve.disabled = false;
+          reject.disabled = false;
+          adminRequestsStatus.textContent = error.message;
+        }
+      };
+      approve.addEventListener("click", () => updateAuthority(1));
+      reject.addEventListener("click", () => updateAuthority(2));
+      actions.append(approve, reject);
+      row.append(identity, actions);
+      adminRequestsList.appendChild(row);
+    });
+    adminRequestsStatus.textContent = "";
+  } catch (error) {
+    adminRequestsStatus.textContent = `Could not load requests: ${error.message}`;
+  }
+}
+
+onboardingForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const password = document.querySelector("#onboardingPassword").value;
+  const passwordConfirmation = document.querySelector("#onboardingPasswordConfirmation").value;
+  if (password !== passwordConfirmation) {
+    onboardingStatus.textContent = "Password and password confirmation must match.";
+    return;
+  }
+
+  const submitButton = onboardingForm.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+  onboardingStatus.textContent = "Saving your account...";
+  try {
+    const data = await postJson("/api/auth/onboarding", {
+      username: document.querySelector("#onboardingUsername").value.trim(),
+      password,
+      password_confirmation: passwordConfirmation,
+      position: onboardingForm.elements.position.value,
+    });
+    currentUser = { ...currentUser, ...data.user };
+    persistCurrentUser();
+    onboardingForm.reset();
+    routeAuthenticatedUser();
+  } catch (error) {
+    onboardingStatus.textContent = `Account setup failed: ${error.message}`;
+  } finally {
+    submitButton.disabled = false;
+  }
+});
+
+openWorkspaceButton?.addEventListener("click", openChatWorkspace);
+dashboardButton?.addEventListener("click", showDashboard);
 
 async function connectGitHubAccount() {
   if (!currentUser?.access_token) {
@@ -1014,6 +1235,9 @@ logoutButton.addEventListener("click", () => {
   expireSession("");
 });
 
+dashboardLogoutButton?.addEventListener("click", () => expireSession(""));
+onboardingLogoutButton?.addEventListener("click", () => expireSession(""));
+
 extendSessionButton?.addEventListener("click", async () => {
   try {
     await extendSession();
@@ -1085,6 +1309,10 @@ formEl.addEventListener("submit", async (event) => {
 });
 
 composerAttachButton.addEventListener("click", () => {
+  if (!canManageCourseMaterials()) {
+    scanStatus.textContent = "Only instructors can upload course materials.";
+    return;
+  }
   fileInput.click();
 });
 
@@ -1094,6 +1322,7 @@ fileInput.addEventListener("change", () => {
 });
 
 chatPanel.addEventListener("dragover", (event) => {
+  if (!canManageCourseMaterials()) return;
   event.preventDefault();
   chatPanel.classList.add("is-dragging");
 });
@@ -1105,6 +1334,7 @@ chatPanel.addEventListener("dragleave", (event) => {
 });
 
 chatPanel.addEventListener("drop", (event) => {
+  if (!canManageCourseMaterials()) return;
   event.preventDefault();
   chatPanel.classList.remove("is-dragging");
   addPendingFiles(event.dataTransfer?.files || []);
@@ -1132,11 +1362,7 @@ if (githubResult) {
 await restoreLinkedAccount();
 
 if (currentUser) {
-  if (enterAuthenticatedApp()) {
-    await loadConversation();
-    await loadChatFiles();
-    await loadThreadList();
-  }
+  routeAuthenticatedUser();
 } else {
   renderChatFiles([]);
   showSignedOut();

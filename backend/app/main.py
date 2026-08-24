@@ -17,7 +17,7 @@ from google.oauth2 import id_token as google_id_token
 from app import auth, db, settings
 from app.classifier import classify_message
 from app.rag import generate_answer, ingest_file, ingest_text, retrieve, retrieve_by_titles, retrieve_overview, scan_raw_docs
-from app.schemas import AuthConfigResponse, AuthResponse, ChatRequest, ChatResponse, ConversationListResponse, ConversationResponse, CurrentUserResponse, DatabaseStatus, EmailCodeRequest, EmailCodeResponse, GitHubAuthorizeResponse, GoogleAuthRequest, GoogleClientConfigResponse, IngestResponse, LoginRequest, RagFileListResponse, RegisterRequest, SessionRefreshResponse, TextDocumentRequest
+from app.schemas import AuthorityUpdateRequest, AuthConfigResponse, AuthResponse, ChatRequest, ChatResponse, ConversationListResponse, ConversationResponse, CurrentUserResponse, DatabaseStatus, EmailCodeRequest, EmailCodeResponse, GitHubAuthorizeResponse, GoogleAuthRequest, GoogleClientConfigResponse, IngestResponse, LoginRequest, OnboardingRequest, RagFileListResponse, RegisterRequest, SessionRefreshResponse, TextDocumentRequest, UserProfile
 
 app = FastAPI(title="Socratic-Chat")
 
@@ -69,9 +69,25 @@ def _session_user_id(request: Request) -> str:
 
 def _current_user_id(request: Request) -> str:
     user_id = _session_user_id(request)
+    user = db.get_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Account was not found.")
+    if not user.get("onboarding_complete"):
+        raise HTTPException(status_code=403, detail="Complete your one-time account setup to continue.")
     if settings.REQUIRE_GITHUB_ACCOUNT and not db.user_has_github(user_id):
         raise HTTPException(status_code=403, detail="Connect your GitHub account to continue.")
     return user_id
+
+
+def _require_authority(request: Request, highest_level: int) -> dict[str, object]:
+    user_id = _current_user_id(request)
+    user = db.get_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Account was not found.")
+    if int(user.get("authority_level", 2)) > highest_level:
+        role = "administrator" if highest_level == 0 else "instructor"
+        raise HTTPException(status_code=403, detail=f"This action requires {role} permission.")
+    return user
 
 
 def _auth_response(user: dict[str, object]) -> AuthResponse:
@@ -235,12 +251,46 @@ async def refresh_session(request: Request) -> SessionRefreshResponse:
     return SessionRefreshResponse(access_token=access_token, expires_in_seconds=expires_in_seconds)
 
 
+@app.post("/api/auth/onboarding", response_model=CurrentUserResponse)
+async def complete_account_setup(payload: OnboardingRequest, request: Request) -> CurrentUserResponse:
+    user_id = _session_user_id(request)
+    if payload.password != payload.password_confirmation:
+        raise HTTPException(status_code=400, detail="Password and password confirmation must match.")
+    try:
+        user = db.complete_onboarding(user_id, payload.username, payload.password, payload.position)
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 409 if "already" in detail.lower() or "in use" in detail.lower() else 400
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+    return CurrentUserResponse(user=user)
+
+
 @app.get("/api/auth/me", response_model=CurrentUserResponse)
 async def current_user(request: Request) -> CurrentUserResponse:
     user_id = _session_user_id(request)
     user = db.get_user_by_id(user_id)
     if user is None:
         raise HTTPException(status_code=401, detail="Account was not found.")
+    return CurrentUserResponse(user=user)
+
+
+@app.get("/api/admin/instructor-requests", response_model=list[UserProfile])
+async def instructor_requests(request: Request) -> list[dict[str, object]]:
+    _require_authority(request, 0)
+    return db.list_pending_instructor_requests()
+
+
+@app.post("/api/admin/users/{user_id}/authority", response_model=CurrentUserResponse)
+async def update_user_authority(
+    user_id: str, payload: AuthorityUpdateRequest, request: Request
+) -> CurrentUserResponse:
+    admin = _require_authority(request, 0)
+    if str(admin["user_id"]) == user_id:
+        raise HTTPException(status_code=400, detail="Administrators cannot change their own authority here.")
+    try:
+        user = db.set_user_authority(user_id, payload.authority_level)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return CurrentUserResponse(user=user)
 
 
@@ -374,7 +424,7 @@ async def download_uploaded_file(file_id: str, request: Request) -> Response:
 
 @app.post("/api/documents/text", response_model=IngestResponse)
 async def add_text_document(payload: TextDocumentRequest, request: Request) -> IngestResponse:
-    _current_user_id(request)
+    _require_authority(request, 1)
     doc_id, chunks_added = ingest_text(payload.title, payload.text)
     message = "Text added to the knowledge base." if chunks_added else "That text was already indexed."
     return IngestResponse(document_id=doc_id, chunks_added=chunks_added, documents_scanned=1, message=message)
@@ -382,7 +432,7 @@ async def add_text_document(payload: TextDocumentRequest, request: Request) -> I
 
 @app.post("/api/documents/scan", response_model=IngestResponse)
 async def scan_documents(request: Request) -> IngestResponse:
-    _current_user_id(request)
+    _require_authority(request, 1)
     documents_scanned, chunks_added, skipped_files = scan_raw_docs()
     if documents_scanned == 0:
         message = "No .txt, .md, or .pdf files found in backend/data/raw_docs."
@@ -419,7 +469,8 @@ def _chat_title_from_uploads(files: list[object]) -> str:
 
 @app.post("/api/documents/upload", response_model=IngestResponse)
 async def upload_document(request: Request) -> IngestResponse:
-    user_id = _current_user_id(request)
+    user = _require_authority(request, 1)
+    user_id = str(user["user_id"])
     try:
         form = await request.form()
     except (AssertionError, RuntimeError) as exc:

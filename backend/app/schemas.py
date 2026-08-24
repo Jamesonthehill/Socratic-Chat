@@ -122,6 +122,17 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=200)
 
 
+class OnboardingRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=80)
+    password: str = Field(min_length=8, max_length=200)
+    password_confirmation: str = Field(min_length=8, max_length=200)
+    position: Literal["student", "instructor"]
+
+
+class AuthorityUpdateRequest(BaseModel):
+    authority_level: int = Field(ge=1, le=2)
+
+
 class UserProfile(BaseModel):
     user_id: str
     username: str
@@ -129,6 +140,11 @@ class UserProfile(BaseModel):
     email: str
     github_connected: bool = False
     github_username: str | None = None
+    authority_level: int = 2
+    role: Literal["admin", "instructor", "student"] = "student"
+    requested_role: Literal["instructor"] | None = None
+    role_status: Literal["active", "pending", "onboarding_required"] = "onboarding_required"
+    onboarding_complete: bool = False
 
 
 class AuthResponse(BaseModel):

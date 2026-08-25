@@ -15,10 +15,10 @@ from app.schemas import ChatMessage, Source
 WORD_PATTERN = re.compile(r"[a-zA-Z0-9']+")
 PAGE_PATTERN = re.compile(r"\b(?:page|p\.?|pg\.?)\s*(\d{1,4})\b", re.IGNORECASE)
 STOP_WORDS = {
-    "a", "an", "and", "are", "as", "at", "be", "but", "by", "can", "do", "does",
+    "a", "about", "an", "and", "are", "as", "at", "be", "but", "by", "can", "do", "does",
     "for", "from", "had", "has", "have", "he", "her", "here", "his", "how", "i",
-    "in", "is", "it", "its", "me", "my", "of", "on", "or", "our", "she", "so",
-    "that", "the", "their", "them", "then", "there", "these", "they", "this", "to",
+    "in", "is", "it", "its", "me", "my", "name", "of", "on", "or", "our", "she", "so",
+    "tell", "that", "the", "their", "them", "then", "there", "these", "they", "this", "to",
     "was", "we", "what", "when", "where", "which", "who", "why", "with", "you", "your",
 }
 RAG_DOCUMENT_SUFFIXES = {".txt", ".md", ".pdf", ".tex"}
@@ -30,8 +30,15 @@ def tokenize(text: str) -> list[str]:
     return [
         token
         for token in (match.group(0).lower() for match in WORD_PATTERN.finditer(text))
-        if len(token) > 2 and token not in STOP_WORDS
+        if (len(token) > 2 or token.isdigit()) and token not in STOP_WORDS
     ]
+
+
+def requested_numbered_item(query: str) -> str | None:
+    match = re.search(r"\b(?:assignment|project(?:\s+part)?)\s+\d+\b", query, re.IGNORECASE)
+    if not match:
+        return None
+    return " ".join(match.group(0).lower().split())
 
 
 def requested_page_number(query: str) -> int | None:
@@ -270,6 +277,7 @@ def retrieve(
 ) -> list[Source]:
     query_tokens = tokenize(query)
     requested_page = requested_page_number(query)
+    numbered_item = requested_numbered_item(query)
     ranked = []
     page_ranked = []
 
@@ -280,6 +288,10 @@ def retrieve(
             continue
 
         item_score = score(query_tokens, item.get("tokens", []))
+        if numbered_item:
+            normalized_item_text = " ".join(str(item.get("text", "")).lower().split())
+            if re.search(rf"\b{re.escape(numbered_item)}\b", normalized_item_text):
+                item_score = max(item_score, 1.0)
         if item_score < MIN_RELEVANCE_SCORE:
             continue
 
@@ -408,6 +420,23 @@ def fallback_answer(question: str, sources: list[Source]) -> str:
     )
 
 
+def answer_format_instruction(question: str) -> str:
+    query_tokens = set(tokenize(question))
+    if "assignment" in query_tokens:
+        return (
+            "Format an assignment answer as one compact Markdown table with columns 'Field' and 'Details'. "
+            "Use rows such as Assignment, Objective, Requirements, Submission, Points, and Due date, but include "
+            "only rows supported by the retrieved context. Use plain text inside cells, concise phrases, and no "
+            "paragraph before the table."
+        )
+    if "project" in query_tokens:
+        return (
+            "Format project information as a compact Markdown table. Use plain text inside cells, distinguish project "
+            "parts when present, and include only facts supported by the retrieved context."
+        )
+    return "Prefer short paragraphs and bullets when they improve readability."
+
+
 async def generate_answer(question: str, history: list[ChatMessage], sources: list[Source]) -> str:
     if not settings.OPENAI_API_KEY:
         return fallback_answer(question, sources)
@@ -424,6 +453,7 @@ async def generate_answer(question: str, history: list[ChatMessage], sources: li
                 "'I do not know from your uploaded notes.' Do not answer from general knowledge unless the user asks for that."
             ),
         },
+        {"role": "system", "content": answer_format_instruction(question)},
         {"role": "system", "content": f"Retrieved context:\n{context or 'No context retrieved.'}"},
         *[{"role": item.role, "content": item.content} for item in history[-8:]],
         {"role": "user", "content": question},

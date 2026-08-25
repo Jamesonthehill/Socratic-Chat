@@ -1077,10 +1077,85 @@ async function deleteConversation(targetConversationId) {
   }
 }
 
+function markdownTableCells(line) {
+  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+}
+
+function isMarkdownTableSeparator(line) {
+  const cells = markdownTableCells(line);
+  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function appendAssistantContent(container, content) {
+  const lines = String(content || "").split("\n");
+  let index = 0;
+  let textLines = [];
+
+  const flushText = () => {
+    if (!textLines.length) return;
+    const textBlock = document.createElement("div");
+    textBlock.className = "message-text";
+    textBlock.textContent = textLines.join("\n").trim();
+    if (textBlock.textContent) container.appendChild(textBlock);
+    textLines = [];
+  };
+
+  while (index < lines.length) {
+    const headerCells = markdownTableCells(lines[index]);
+    const hasTable = lines[index].includes("|")
+      && index + 1 < lines.length
+      && isMarkdownTableSeparator(lines[index + 1]);
+    if (!hasTable) {
+      textLines.push(lines[index]);
+      index += 1;
+      continue;
+    }
+
+    flushText();
+    const wrapper = document.createElement("div");
+    wrapper.className = "message-table-wrap";
+    const table = document.createElement("table");
+    table.className = "message-table";
+    const head = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    headerCells.forEach((cell) => {
+      const heading = document.createElement("th");
+      heading.scope = "col";
+      heading.textContent = cell;
+      headRow.appendChild(heading);
+    });
+    head.appendChild(headRow);
+    table.appendChild(head);
+
+    const body = document.createElement("tbody");
+    index += 2;
+    while (index < lines.length && lines[index].includes("|")) {
+      const rowCells = markdownTableCells(lines[index]);
+      if (rowCells.length !== headerCells.length) break;
+      const row = document.createElement("tr");
+      rowCells.forEach((cell) => {
+        const data = document.createElement("td");
+        data.textContent = cell;
+        row.appendChild(data);
+      });
+      body.appendChild(row);
+      index += 1;
+    }
+    table.appendChild(body);
+    wrapper.appendChild(table);
+    container.appendChild(wrapper);
+  }
+  flushText();
+}
+
 function appendMessage(role, content, sources = []) {
   const item = document.createElement("article");
   item.className = `message ${role}`;
-  item.textContent = content;
+  if (role === "assistant") {
+    appendAssistantContent(item, content);
+  } else {
+    item.textContent = content;
+  }
 
   if (sources.length) {
     const sourceBlock = document.createElement("div");

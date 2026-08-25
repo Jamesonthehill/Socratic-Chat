@@ -115,6 +115,41 @@ class CourseAuthorizationTests(unittest.TestCase):
 
 
 class CourseRagIsolationTests(unittest.TestCase):
+    def test_numbered_assignment_tokens_keep_the_identifier(self) -> None:
+        self.assertEqual(rag.tokenize("Tell me about Assignment 2"), ["assignment", "2"])
+
+    @patch("app.rag.load_index")
+    def test_exact_assignment_number_is_boosted_even_with_an_old_index(self, load_index) -> None:
+        load_index.return_value = [
+            {
+                "document_id": "assignment-1",
+                "chunk_id": "assignment-1:0",
+                "course_id": "course-a",
+                "title": "course.tex",
+                "text": "Assignment 1 - Sandwich Maker. Build an interactive sandwich machine.",
+                "tokens": ["assignment", "sandwich", "maker"],
+            },
+            {
+                "document_id": "assignment-2",
+                "chunk_id": "assignment-2:0",
+                "course_id": "course-a",
+                "title": "course.tex",
+                "text": "Assignment 2 - Modular Sandwich Maker. Convert the code into modules.",
+                "tokens": ["assignment", "modular", "sandwich", "maker"],
+            },
+        ]
+
+        sources = rag.retrieve("Tell me about Assignment 2", course_id="course-a")
+
+        self.assertEqual(sources[0].document_id, "assignment-2")
+        self.assertEqual(sources[0].score, 1.0)
+
+    def test_assignment_answers_request_a_compact_table(self) -> None:
+        instruction = rag.answer_format_instruction("Explain Assignment 1")
+        self.assertIn("Markdown table", instruction)
+        self.assertIn("Assignment", instruction)
+        self.assertIn("Requirements", instruction)
+
     @patch("app.rag.save_index")
     @patch("app.rag.load_index", return_value=[])
     def test_latex_document_is_cleaned_and_chunked(self, _load_index, save_index) -> None:

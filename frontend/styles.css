@@ -486,6 +486,55 @@ h2 {
   box-shadow: 0 8px 20px rgba(72, 55, 35, 0.05);
 }
 
+.message.assistant {
+  white-space: normal;
+}
+
+.message-text {
+  white-space: pre-wrap;
+}
+
+.message-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.message-text + .message-table-wrap,
+.message-table-wrap + .message-text,
+.message-table-wrap + .message-table-wrap {
+  margin-top: 12px;
+}
+
+.message-table {
+  width: 100%;
+  min-width: 480px;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.message-table th,
+.message-table td {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.message-table th {
+  background: var(--control);
+  color: var(--ink);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.message-table td:first-child {
+  width: 28%;
+  color: var(--ink);
+  font-weight: 800;
+}
+
 .sources {
   margin-top: 12px;
   padding-top: 12px;

@@ -189,6 +189,49 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                CREATE TABLE IF NOT EXISTS courses (
+                    id UUID PRIMARY KEY,
+                    course_code TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    instructor_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    is_discoverable BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE (instructor_id, course_code)
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS course_memberships (
+                    id UUID PRIMARY KEY,
+                    course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    course_role TEXT NOT NULL CHECK (course_role IN ('instructor', 'student')),
+                    status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')),
+                    requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    reviewed_at TIMESTAMPTZ,
+                    reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                    rejection_reason TEXT,
+                    UNIQUE (course_id, user_id)
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_course_memberships_user_status
+                ON course_memberships(user_id, status, course_id)
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_course_memberships_course_status
+                ON course_memberships(course_id, status, requested_at)
+                """
+            )
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS conversations (
                     id UUID PRIMARY KEY,
                     title TEXT NOT NULL DEFAULT 'New conversation',
@@ -206,8 +249,20 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                ALTER TABLE conversations
+                ADD COLUMN IF NOT EXISTS course_id UUID REFERENCES courses(id) ON DELETE CASCADE
+                """
+            )
+            cur.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_conversations_user_id_updated_at
                 ON conversations(user_id, updated_at DESC)
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_conversations_user_course_updated_at
+                ON conversations(user_id, course_id, updated_at DESC)
                 """
             )
             cur.execute(
@@ -265,6 +320,24 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                ALTER TABLE rag_files
+                ADD COLUMN IF NOT EXISTS course_id UUID REFERENCES courses(id) ON DELETE CASCADE
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE rag_files
+                ADD COLUMN IF NOT EXISTS document_id TEXT
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE rag_files
+                ADD COLUMN IF NOT EXISTS is_published BOOLEAN NOT NULL DEFAULT TRUE
+                """
+            )
+            cur.execute(
+                """
                 UPDATE rag_files rf
                 SET user_id = c.user_id
                 FROM conversations c
@@ -289,6 +362,12 @@ def init_db() -> None:
                 """
                 CREATE INDEX IF NOT EXISTS idx_rag_files_user_id_created_at
                 ON rag_files(user_id, created_at DESC)
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_rag_files_course_id_created_at
+                ON rag_files(course_id, created_at DESC)
                 """
             )
         conn.commit()
@@ -362,7 +441,12 @@ def check_status() -> tuple[bool, str]:
         return False, str(exc)
 
 
-def ensure_conversation(conversation_id: str | None, title: str = "New conversation", user_id: str | None = None) -> str:
+def ensure_conversation(
+    conversation_id: str | None,
+    title: str = "New conversation",
+    user_id: str | None = None,
+    course_id: str | None = None,
+) -> str:
     init_db()
     resolved_id = conversation_id or str(uuid.uuid4())
 
@@ -370,13 +454,14 @@ def ensure_conversation(conversation_id: str | None, title: str = "New conversat
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO conversations (id, title, user_id)
-                VALUES (%s, %s, %s)
+                INSERT INTO conversations (id, title, user_id, course_id)
+                VALUES (%s, %s, %s, %s)
                 ON CONFLICT (id) DO UPDATE SET
                     updated_at = NOW(),
-                    user_id = COALESCE(conversations.user_id, EXCLUDED.user_id)
+                    user_id = COALESCE(conversations.user_id, EXCLUDED.user_id),
+                    course_id = COALESCE(conversations.course_id, EXCLUDED.course_id)
                 """,
-                (resolved_id, title[:120] or "New conversation", user_id),
+                (resolved_id, title[:120] or "New conversation", user_id, course_id),
             )
         conn.commit()
 
@@ -482,15 +567,40 @@ def get_messages(conversation_id: str, limit: int = 50) -> list[ChatMessage]:
     return [ChatMessage(role=role, content=content) for role, content in reversed(rows)]
 
 
-def list_conversations(limit: int = 50, user_id: str | None = None) -> list[dict[str, object]]:
+def list_conversations(
+    limit: int = 50,
+    user_id: str | None = None,
+    course_id: str | None = None,
+) -> list[dict[str, object]]:
     init_db()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            if user_id:
+            if user_id and course_id:
                 cur.execute(
                     """
                     SELECT
                         c.id::text,
+                        c.course_id::text,
+                        c.title,
+                        c.created_at::text,
+                        c.updated_at::text,
+                        COUNT(m.id)::int AS message_count
+                    FROM conversations c
+                    LEFT JOIN conversation_messages m ON m.conversation_id = c.id
+                    WHERE c.user_id = %s AND c.course_id = %s
+                    GROUP BY c.id, c.course_id, c.title, c.created_at, c.updated_at
+                    HAVING COUNT(m.id) > 0
+                    ORDER BY c.updated_at DESC
+                    LIMIT %s
+                    """,
+                    (user_id, course_id, limit),
+                )
+            elif user_id:
+                cur.execute(
+                    """
+                    SELECT
+                        c.id::text,
+                        c.course_id::text,
                         c.title,
                         c.created_at::text,
                         c.updated_at::text,
@@ -498,7 +608,7 @@ def list_conversations(limit: int = 50, user_id: str | None = None) -> list[dict
                     FROM conversations c
                     LEFT JOIN conversation_messages m ON m.conversation_id = c.id
                     WHERE c.user_id = %s
-                    GROUP BY c.id, c.title, c.created_at, c.updated_at
+                    GROUP BY c.id, c.course_id, c.title, c.created_at, c.updated_at
                     HAVING COUNT(m.id) > 0
                     ORDER BY c.updated_at DESC
                     LIMIT %s
@@ -510,13 +620,14 @@ def list_conversations(limit: int = 50, user_id: str | None = None) -> list[dict
                     """
                     SELECT
                         c.id::text,
+                        c.course_id::text,
                         c.title,
                         c.created_at::text,
                         c.updated_at::text,
                         COUNT(m.id)::int AS message_count
                     FROM conversations c
                     LEFT JOIN conversation_messages m ON m.conversation_id = c.id
-                    GROUP BY c.id, c.title, c.created_at, c.updated_at
+                    GROUP BY c.id, c.course_id, c.title, c.created_at, c.updated_at
                     HAVING COUNT(m.id) > 0
                     ORDER BY c.updated_at DESC
                     LIMIT %s
@@ -528,10 +639,11 @@ def list_conversations(limit: int = 50, user_id: str | None = None) -> list[dict
     return [
         {
             "conversation_id": row[0],
-            "title": row[1],
-            "created_at": row[2],
-            "updated_at": row[3],
-            "message_count": row[4],
+            "course_id": row[1],
+            "title": row[2],
+            "created_at": row[3],
+            "updated_at": row[4],
+            "message_count": row[5],
         }
         for row in rows
     ]
@@ -561,6 +673,8 @@ def save_rag_file(
     content: bytes,
     conversation_id: str | None = None,
     user_id: str | None = None,
+    course_id: str | None = None,
+    document_id: str | None = None,
 ) -> str | None:
     if not is_enabled():
         return None
@@ -571,10 +685,16 @@ def save_rag_file(
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO rag_files (id, conversation_id, user_id, filename, content_type, file_size, content)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO rag_files (
+                    id, conversation_id, user_id, course_id, document_id,
+                    filename, content_type, file_size, content
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (file_id, conversation_id, user_id, filename, content_type or "application/octet-stream", len(content), content),
+                (
+                    file_id, conversation_id, user_id, course_id, document_id,
+                    filename, content_type or "application/octet-stream", len(content), content,
+                ),
             )
         conn.commit()
 
@@ -585,6 +705,7 @@ def list_rag_files(
     limit: int = 50,
     conversation_id: str | None = None,
     user_id: str | None = None,
+    course_id: str | None = None,
 ) -> list[dict[str, object]]:
     init_db()
     with get_connection() as conn:
@@ -600,10 +721,14 @@ def list_rag_files(
                 conditions.append("(rf.user_id = %s OR c.user_id = %s)")
                 params.extend([user_id, user_id])
 
+            if course_id:
+                conditions.append("rf.course_id = %s")
+                params.append(course_id)
+
             where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
             cur.execute(
                 f"""
-                SELECT rf.id::text, rf.filename, rf.content_type, rf.file_size, rf.created_at::text
+                SELECT rf.id::text, rf.document_id, rf.filename, rf.content_type, rf.file_size, rf.created_at::text
                 FROM rag_files rf
                 LEFT JOIN conversations c ON c.id = rf.conversation_id
                 {where_clause}
@@ -617,10 +742,11 @@ def list_rag_files(
     return [
         {
             "file_id": row[0],
-            "filename": row[1],
-            "content_type": row[2],
-            "file_size": row[3],
-            "created_at": row[4],
+            "document_id": row[1],
+            "filename": row[2],
+            "content_type": row[3],
+            "file_size": row[4],
+            "created_at": row[5],
         }
         for row in rows
     ]
@@ -676,6 +802,323 @@ def conversation_belongs_to(conversation_id: str, user_id: str | None) -> bool:
                 (conversation_id, user_id),
             )
             return cur.fetchone() is not None
+
+
+def conversation_belongs_to_course(conversation_id: str, user_id: str, course_id: str) -> bool:
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1
+                FROM conversations
+                WHERE id = %s AND user_id = %s AND course_id = %s
+                """,
+                (conversation_id, user_id, course_id),
+            )
+            return cur.fetchone() is not None
+
+
+def create_course(instructor_id: str, course_code: str, title: str, description: str = "") -> dict[str, object]:
+    init_db()
+    course_id = str(uuid.uuid4())
+    membership_id = str(uuid.uuid4())
+    normalized_code = " ".join(course_code.upper().split())
+    clean_title = " ".join(title.split())
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO courses (id, course_code, title, description, instructor_id)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (course_id, normalized_code, clean_title, description.strip(), instructor_id),
+            )
+            cur.execute(
+                """
+                INSERT INTO course_memberships (id, course_id, user_id, course_role, status, reviewed_at, reviewed_by)
+                VALUES (%s, %s, %s, 'instructor', 'approved', NOW(), %s)
+                """,
+                (membership_id, course_id, instructor_id, instructor_id),
+            )
+        conn.commit()
+    return get_course(course_id) or {}
+
+
+def get_course(course_id: str) -> dict[str, object] | None:
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    c.id::text,
+                    c.course_code,
+                    c.title,
+                    c.description,
+                    c.instructor_id::text,
+                    COALESCE(NULLIF(u.display_name, ''), u.username),
+                    (SELECT COUNT(*)::int FROM rag_files rf WHERE rf.course_id = c.id AND rf.is_published),
+                    (SELECT COUNT(*)::int FROM course_memberships cm WHERE cm.course_id = c.id AND cm.status = 'pending')
+                FROM courses c
+                JOIN users u ON u.id = c.instructor_id
+                WHERE c.id = %s
+                """,
+                (course_id,),
+            )
+            row = cur.fetchone()
+    if row is None:
+        return None
+    return {
+        "course_id": row[0],
+        "course_code": row[1],
+        "title": row[2],
+        "description": row[3] or "",
+        "instructor_id": row[4],
+        "instructor_name": row[5],
+        "membership_role": None,
+        "membership_status": None,
+        "document_count": row[6],
+        "pending_request_count": row[7],
+    }
+
+
+def list_courses_for_user(user_id: str) -> list[dict[str, object]]:
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    c.id::text,
+                    c.course_code,
+                    c.title,
+                    c.description,
+                    c.instructor_id::text,
+                    COALESCE(NULLIF(instructor.display_name, ''), instructor.username),
+                    cm.course_role,
+                    cm.status,
+                    (SELECT COUNT(*)::int FROM rag_files rf WHERE rf.course_id = c.id AND rf.is_published),
+                    (SELECT COUNT(*)::int FROM course_memberships pending WHERE pending.course_id = c.id AND pending.status = 'pending')
+                FROM courses c
+                JOIN users instructor ON instructor.id = c.instructor_id
+                LEFT JOIN course_memberships cm
+                    ON cm.course_id = c.id AND cm.user_id = %s
+                WHERE c.is_discoverable OR c.instructor_id = %s OR cm.user_id IS NOT NULL
+                ORDER BY
+                    CASE cm.status WHEN 'approved' THEN 0 WHEN 'pending' THEN 1 WHEN 'rejected' THEN 2 ELSE 3 END,
+                    c.course_code,
+                    c.title
+                """,
+                (user_id, user_id),
+            )
+            rows = cur.fetchall()
+    return [
+        {
+            "course_id": row[0],
+            "course_code": row[1],
+            "title": row[2],
+            "description": row[3] or "",
+            "instructor_id": row[4],
+            "instructor_name": row[5],
+            "membership_role": row[6],
+            "membership_status": row[7],
+            "document_count": row[8],
+            "pending_request_count": row[9],
+        }
+        for row in rows
+    ]
+
+
+def _course_membership_profile(row: tuple[object, ...] | None) -> dict[str, object] | None:
+    if row is None:
+        return None
+    return {
+        "membership_id": row[0],
+        "course_id": row[1],
+        "user_id": row[2],
+        "display_name": row[3],
+        "email": row[4],
+        "course_role": row[5],
+        "status": row[6],
+        "requested_at": row[7],
+    }
+
+
+def get_course_membership(course_id: str, user_id: str) -> dict[str, object] | None:
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    cm.id::text,
+                    cm.course_id::text,
+                    cm.user_id::text,
+                    COALESCE(NULLIF(u.display_name, ''), u.username),
+                    u.email,
+                    cm.course_role,
+                    cm.status,
+                    cm.requested_at::text
+                FROM course_memberships cm
+                JOIN users u ON u.id = cm.user_id
+                WHERE cm.course_id = %s AND cm.user_id = %s
+                """,
+                (course_id, user_id),
+            )
+            row = cur.fetchone()
+    return _course_membership_profile(row)
+
+
+def user_can_access_course(course_id: str, user_id: str) -> bool:
+    membership = get_course_membership(course_id, user_id)
+    return bool(membership and membership["status"] == "approved")
+
+
+def user_manages_course(course_id: str, user_id: str) -> bool:
+    membership = get_course_membership(course_id, user_id)
+    return bool(
+        membership
+        and membership["course_role"] == "instructor"
+        and membership["status"] == "approved"
+    )
+
+
+def request_course_access(course_id: str, user_id: str) -> dict[str, object]:
+    init_db()
+    membership_id = str(uuid.uuid4())
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT instructor_id::text, is_discoverable FROM courses WHERE id = %s",
+                (course_id,),
+            )
+            course = cur.fetchone()
+            if course is None or not course[1]:
+                raise ValueError("Course was not found.")
+            if course[0] == user_id:
+                raise ValueError("The course instructor already has access.")
+            cur.execute(
+                """
+                INSERT INTO course_memberships (id, course_id, user_id, course_role, status)
+                VALUES (%s, %s, %s, 'student', 'pending')
+                ON CONFLICT (course_id, user_id) DO UPDATE SET
+                    status = CASE
+                        WHEN course_memberships.status = 'approved' THEN 'approved'
+                        ELSE 'pending'
+                    END,
+                    requested_at = CASE
+                        WHEN course_memberships.status = 'approved' THEN course_memberships.requested_at
+                        ELSE NOW()
+                    END,
+                    reviewed_at = CASE
+                        WHEN course_memberships.status = 'approved' THEN course_memberships.reviewed_at
+                        ELSE NULL
+                    END,
+                    reviewed_by = CASE
+                        WHEN course_memberships.status = 'approved' THEN course_memberships.reviewed_by
+                        ELSE NULL
+                    END,
+                    rejection_reason = NULL
+                """,
+                (membership_id, course_id, user_id),
+            )
+        conn.commit()
+    membership = get_course_membership(course_id, user_id)
+    if membership is None:
+        raise RuntimeError("Course request could not be saved.")
+    return membership
+
+
+def list_pending_course_requests(instructor_id: str, course_id: str | None = None) -> list[dict[str, object]]:
+    init_db()
+    params: list[object] = [instructor_id]
+    course_filter = ""
+    if course_id:
+        course_filter = "AND cm.course_id = %s"
+        params.append(course_id)
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT
+                    cm.id::text,
+                    cm.course_id::text,
+                    cm.user_id::text,
+                    COALESCE(NULLIF(u.display_name, ''), u.username),
+                    u.email,
+                    cm.course_role,
+                    cm.status,
+                    cm.requested_at::text
+                FROM course_memberships cm
+                JOIN courses c ON c.id = cm.course_id
+                JOIN users u ON u.id = cm.user_id
+                WHERE c.instructor_id = %s
+                  AND cm.course_role = 'student'
+                  AND cm.status = 'pending'
+                  {course_filter}
+                ORDER BY cm.requested_at ASC
+                """,
+                tuple(params),
+            )
+            rows = cur.fetchall()
+    return [_course_membership_profile(row) for row in rows if row is not None]
+
+
+def review_course_request(
+    instructor_id: str,
+    membership_id: str,
+    decision: str,
+    rejection_reason: str | None = None,
+) -> dict[str, object]:
+    if decision not in {"approved", "rejected"}:
+        raise ValueError("Decision must be approved or rejected.")
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE course_memberships cm
+                SET status = %s,
+                    reviewed_at = NOW(),
+                    reviewed_by = %s,
+                    rejection_reason = %s
+                FROM courses c
+                WHERE cm.id = %s
+                  AND cm.course_id = c.id
+                  AND c.instructor_id = %s
+                  AND cm.course_role = 'student'
+                RETURNING cm.course_id::text, cm.user_id::text
+                """,
+                (decision, instructor_id, rejection_reason, membership_id, instructor_id),
+            )
+            updated = cur.fetchone()
+        conn.commit()
+    if updated is None:
+        raise ValueError("Access request was not found for one of your courses.")
+    membership = get_course_membership(updated[0], updated[1])
+    if membership is None:
+        raise RuntimeError("Updated membership could not be loaded.")
+    return membership
+
+
+def delete_course_document(file_id: str, course_id: str) -> dict[str, object] | None:
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM rag_files
+                WHERE id = %s AND course_id = %s
+                RETURNING document_id, filename
+                """,
+                (file_id, course_id),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    if row is None:
+        return None
+    return {"document_id": row[0], "filename": row[1]}
 
 
 def _user_profile(row: tuple[object, ...] | None) -> dict[str, object] | None:

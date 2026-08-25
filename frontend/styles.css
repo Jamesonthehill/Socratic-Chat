@@ -1389,6 +1389,243 @@ h2 {
   font-size: 0.88rem;
 }
 
+.course-section {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.section-heading-row,
+.management-card-heading,
+.course-card-topline,
+.course-card-actions,
+.management-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-heading-row {
+  align-items: flex-start;
+}
+
+.section-heading-row h2,
+.management-card h3 {
+  margin: 0;
+}
+
+.section-heading-row p:not(.eyebrow),
+.management-card > p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.course-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.course-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 17px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper-strong);
+}
+
+.course-card.is-selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.course-code {
+  color: var(--accent-dark);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.course-card h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.course-card p,
+.course-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.membership-badge,
+.count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 850;
+}
+
+.membership-badge {
+  padding: 5px 8px;
+  background: var(--control);
+  color: var(--muted);
+}
+
+.membership-badge.approved {
+  background: #dff3e9;
+  color: #126044;
+}
+
+.membership-badge.pending {
+  background: #fff1d5;
+  color: #71470d;
+}
+
+.membership-badge.rejected {
+  background: #f8e3df;
+  color: #8a2e24;
+}
+
+.count-badge {
+  min-width: 25px;
+  min-height: 25px;
+  background: var(--accent);
+  color: var(--button-text);
+}
+
+.course-card-actions {
+  justify-content: flex-start;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.course-card-actions button,
+.management-list-row button {
+  padding: 8px 11px;
+  font-size: 0.78rem;
+}
+
+.course-create-form {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.7fr) minmax(220px, 1.3fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.course-create-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.course-description-field {
+  grid-column: 1 / -1;
+}
+
+.course-create-form button {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.selected-course-panel {
+  display: grid;
+  gap: 18px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.instructor-management-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.management-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper-strong);
+}
+
+.document-upload-form {
+  display: grid;
+  gap: 9px;
+  margin: 15px 0;
+}
+
+.document-upload-form input {
+  padding: 9px;
+  font-size: 0.8rem;
+}
+
+.management-list {
+  display: grid;
+  gap: 8px;
+}
+
+.management-list-row {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.management-list-primary {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.management-list-secondary {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.management-list-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.management-list-actions .reject-button,
+.management-list-actions .delete-button {
+  border: 1px solid var(--line);
+  background: var(--control);
+  color: var(--ink);
+}
+
+.course-empty {
+  grid-column: 1 / -1;
+  padding: 18px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  text-align: center;
+}
+
 .app-shell[data-role="student"] .instructor-only {
   display: none !important;
 }
@@ -1401,7 +1638,11 @@ html[data-theme="dark"] .flow-card,
 html[data-theme="dark"] .position-option,
 html[data-theme="dark"] .role-card,
 html[data-theme="dark"] .admin-requests,
-html[data-theme="dark"] .admin-request-row {
+html[data-theme="dark"] .admin-request-row,
+html[data-theme="dark"] .course-section,
+html[data-theme="dark"] .course-card,
+html[data-theme="dark"] .management-card,
+html[data-theme="dark"] .management-list-row {
   border-color: var(--line);
   background: var(--paper);
 }
@@ -1414,6 +1655,21 @@ html[data-theme="dark"] .pending-notice {
   border-color: #74552d;
   background: #3c3020;
   color: #ffd99c;
+}
+
+html[data-theme="dark"] .membership-badge.approved {
+  background: #173c30;
+  color: #9ee6c8;
+}
+
+html[data-theme="dark"] .membership-badge.pending {
+  background: #41351d;
+  color: #ffd991;
+}
+
+html[data-theme="dark"] .membership-badge.rejected {
+  background: #432623;
+  color: #ffb3aa;
 }
 
 @media (max-width: 700px) {
@@ -1436,8 +1692,22 @@ html[data-theme="dark"] .pending-notice {
   }
 
   .password-grid,
-  .position-fieldset {
+  .position-fieldset,
+  .course-grid,
+  .instructor-management-grid,
+  .course-create-form {
     grid-template-columns: 1fr;
+  }
+
+  .course-create-form button {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .section-heading-row,
+  .management-list-row {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .admin-request-row {

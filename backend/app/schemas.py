@@ -24,6 +24,7 @@ class Source(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
     conversation_id: str | None = None
+    course_id: str | None = None
     history: list[ChatMessage] = Field(default_factory=list)
     top_k: int = Field(default=4, ge=1, le=10)
 
@@ -50,6 +51,7 @@ class IngestResponse(BaseModel):
 
 class ConversationSummary(BaseModel):
     conversation_id: str
+    course_id: str | None = None
     title: str
     created_at: str
     updated_at: str
@@ -73,6 +75,7 @@ class DatabaseStatus(BaseModel):
 
 class RagFileSummary(BaseModel):
     file_id: str
+    document_id: str | None = None
     filename: str
     content_type: str
     file_size: int
@@ -132,6 +135,50 @@ class OnboardingRequest(BaseModel):
 
 class AuthorityUpdateRequest(BaseModel):
     authority_level: int = Field(ge=1, le=2)
+
+
+class CourseCreateRequest(BaseModel):
+    course_code: str = Field(min_length=2, max_length=40)
+    title: str = Field(min_length=2, max_length=160)
+    description: str = Field(default="", max_length=2000)
+
+
+class CourseSummary(BaseModel):
+    course_id: str
+    course_code: str
+    title: str
+    description: str = ""
+    instructor_id: str
+    instructor_name: str
+    membership_role: Literal["instructor", "student"] | None = None
+    membership_status: Literal["pending", "approved", "rejected"] | None = None
+    document_count: int = 0
+    pending_request_count: int = 0
+
+
+class CourseListResponse(BaseModel):
+    courses: list[CourseSummary] = Field(default_factory=list)
+
+
+class CourseMembership(BaseModel):
+    membership_id: str
+    course_id: str
+    user_id: str
+    display_name: str
+    email: str
+    course_role: Literal["instructor", "student"]
+    status: Literal["pending", "approved", "rejected"]
+    requested_at: str
+
+
+class CourseAccessRequestResponse(BaseModel):
+    membership: CourseMembership
+    message: str
+
+
+class CourseAccessReviewRequest(BaseModel):
+    decision: Literal["approved", "rejected"]
+    rejection_reason: str | None = Field(default=None, max_length=500)
 
 
 class UserProfile(BaseModel):

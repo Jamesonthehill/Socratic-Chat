@@ -13,6 +13,25 @@ const dashboardRoleDescription = document.querySelector("#dashboardRoleDescripti
 const dashboardPendingNotice = document.querySelector("#dashboardPendingNotice");
 const dashboardLogoutButton = document.querySelector("#dashboardLogoutButton");
 const openWorkspaceButton = document.querySelector("#openWorkspaceButton");
+const studentCoursesSection = document.querySelector("#studentCoursesSection");
+const studentCoursesList = document.querySelector("#studentCoursesList");
+const studentCoursesStatus = document.querySelector("#studentCoursesStatus");
+const refreshStudentCoursesButton = document.querySelector("#refreshStudentCoursesButton");
+const instructorWorkspaceSection = document.querySelector("#instructorWorkspaceSection");
+const courseCreateForm = document.querySelector("#courseCreateForm");
+const instructorCoursesList = document.querySelector("#instructorCoursesList");
+const instructorCoursesStatus = document.querySelector("#instructorCoursesStatus");
+const selectedCoursePanel = document.querySelector("#selectedCoursePanel");
+const selectedCourseCode = document.querySelector("#selectedCourseCode");
+const selectedCourseTitle = document.querySelector("#selectedCourseTitle");
+const previewCourseButton = document.querySelector("#previewCourseButton");
+const courseDocumentForm = document.querySelector("#courseDocumentForm");
+const courseDocumentInput = document.querySelector("#courseDocumentInput");
+const courseDocumentsList = document.querySelector("#courseDocumentsList");
+const courseDocumentsStatus = document.querySelector("#courseDocumentsStatus");
+const courseAccessRequestsList = document.querySelector("#courseAccessRequestsList");
+const courseAccessRequestsStatus = document.querySelector("#courseAccessRequestsStatus");
+const pendingStudentCount = document.querySelector("#pendingStudentCount");
 const adminRequestsSection = document.querySelector("#adminRequestsSection");
 const adminRequestsList = document.querySelector("#adminRequestsList");
 const adminRequestsStatus = document.querySelector("#adminRequestsStatus");
@@ -71,6 +90,7 @@ function apiUrl(path) {
 const CONVERSATION_KEY = "my_rag_chatbot_conversation_id";
 const AUTH_USER_KEY = "my_rag_chatbot_user";
 const THEME_KEY = "socratic_chat_theme";
+const ACTIVE_COURSE_KEY = "socratic_chat_active_course";
 const AUTH_SESSION_MS = 60 * 60 * 1000;
 const SESSION_WARNING_MS = 5 * 60 * 1000;
 const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
@@ -83,6 +103,10 @@ let authMode = "open";
 let registrationEnabled = true;
 let githubAccountRequired = false;
 let githubOauthConfigured = false;
+let courses = [];
+let selectedInstructorCourse = null;
+let activeCourse = null;
+let isInstructorPreview = false;
 
 const history = [];
 const pendingFiles = [];
@@ -191,7 +215,13 @@ function updateSessionStatus() {
   if (userName) userName.textContent = displayName;
   if (userInitial) userInitial.textContent = displayName.charAt(0).toUpperCase();
   userBadge.textContent = `${currentUser.email || "Signed in"} · ${formatSessionTime(remaining)} left`;
-  if (workspaceRole) workspaceRole.textContent = `${getRoleLabel()} · Authority ${currentUser.authority_level ?? 2}`;
+  if (workspaceRole) {
+    workspaceRole.textContent = activeCourse
+      ? (isInstructorPreview
+        ? `Instructor preview · ${activeCourse.course_code}`
+        : `Student · ${activeCourse.course_code}`)
+      : `${getRoleLabel()} · Authority ${currentUser.authority_level ?? 2}`;
+  }
   userBadge.classList.toggle("is-warning", shouldWarn);
 
   sessionWarning.hidden = !shouldWarn;
@@ -224,6 +254,9 @@ function expireSession(message = "Session expired. Please login again.") {
   localStorage.removeItem(AUTH_USER_KEY);
   localStorage.removeItem(CONVERSATION_KEY);
   currentUser = null;
+  activeCourse = null;
+  selectedInstructorCourse = null;
+  isInstructorPreview = false;
   conversationId = createConversationId();
   localStorage.setItem(CONVERSATION_KEY, conversationId);
   clearMessages();
@@ -268,11 +301,16 @@ function showAuthenticatedApp() {
   onboardingScreen?.classList.add("is-hidden");
   dashboardScreen?.classList.add("is-hidden");
   appShell.classList.remove("is-hidden");
-  appShell.dataset.role = canManageCourseMaterials() ? "instructor" : "student";
-  inputEl.placeholder = canManageCourseMaterials()
-    ? "Ask a question or attach course documents"
-    : "Ask a question about your course materials";
+  appShell.dataset.role = "student";
+  inputEl.placeholder = activeCourse
+    ? `Ask a question about ${activeCourse.course_code}`
+    : "Choose an approved course from the dashboard";
   updateSessionStatus();
+  if (workspaceRole && activeCourse) {
+    workspaceRole.textContent = isInstructorPreview
+      ? `Instructor preview · ${activeCourse.course_code}`
+      : `Student · ${activeCourse.course_code}`;
+  }
 }
 
 function showOnboarding() {
@@ -302,12 +340,12 @@ function renderDashboard() {
 
   const copy = {
     admin: {
-      title: "Administration and instructor workspace",
-      description: "Review instructor requests, manage course materials, and test the chatbot.",
+      title: "Administration and course management",
+      description: "Review instructor requests and manage courses without entering the student chatbot.",
     },
     instructor: {
-      title: "Instructor course workspace",
-      description: "Upload course materials, define the discussion scope, and test student questions.",
+      title: "Instructor course management",
+      description: "Create courses, publish materials, and approve student access requests.",
     },
     student: {
       title: "Student learning workspace",
@@ -316,9 +354,12 @@ function renderDashboard() {
   };
   dashboardRoleTitle.textContent = copy[role].title;
   dashboardRoleDescription.textContent = copy[role].description;
-  openWorkspaceButton.textContent = role === "student" ? "Open student chatbot" : "Open instructor chatbot";
+  openWorkspaceButton.textContent = role === "student" ? "View available classes" : "Manage my courses";
+  studentCoursesSection?.classList.toggle("is-hidden", role !== "student");
+  instructorWorkspaceSection?.classList.toggle("is-hidden", role === "student");
   adminRequestsSection.classList.toggle("is-hidden", role !== "admin");
   if (role === "admin") loadInstructorRequests();
+  loadCourses();
 }
 
 function showDashboard() {
@@ -328,6 +369,270 @@ function showDashboard() {
   dashboardScreen?.classList.remove("is-hidden");
   renderDashboard();
   updateSessionStatus();
+}
+
+function courseConversationKey(courseId) {
+  return `${CONVERSATION_KEY}:${courseId}`;
+}
+
+function emptyState(message) {
+  const empty = document.createElement("div");
+  empty.className = "course-empty";
+  empty.textContent = message;
+  return empty;
+}
+
+function courseBadge(status) {
+  const badge = document.createElement("span");
+  badge.className = `membership-badge ${status || "available"}`;
+  badge.textContent = status ? status.charAt(0).toUpperCase() + status.slice(1) : "Available";
+  return badge;
+}
+
+function courseCard(course, instructorView = false) {
+  const card = document.createElement("article");
+  card.className = "course-card";
+  if (selectedInstructorCourse?.course_id === course.course_id) card.classList.add("is-selected");
+
+  const topline = document.createElement("div");
+  topline.className = "course-card-topline";
+  const code = document.createElement("span");
+  code.className = "course-code";
+  code.textContent = course.course_code;
+  topline.append(code, courseBadge(instructorView ? "approved" : course.membership_status));
+
+  const title = document.createElement("h3");
+  title.textContent = course.title;
+  const description = document.createElement("p");
+  description.textContent = course.description || "No course description has been added yet.";
+  const meta = document.createElement("div");
+  meta.className = "course-meta";
+  meta.textContent = instructorView
+    ? `${course.document_count} document(s) · ${course.pending_request_count} pending request(s)`
+    : `Instructor: ${course.instructor_name} · ${course.document_count} document(s)`;
+
+  const actions = document.createElement("div");
+  actions.className = "course-card-actions";
+  const action = document.createElement("button");
+  action.type = "button";
+
+  if (instructorView) {
+    action.textContent = "Manage course";
+    action.addEventListener("click", () => selectInstructorCourse(course));
+  } else if (course.membership_status === "approved") {
+    action.textContent = "Open chatbot";
+    action.addEventListener("click", () => openCourseChat(course, false));
+  } else if (course.membership_status === "pending") {
+    action.textContent = "Waiting for approval";
+    action.disabled = true;
+  } else {
+    action.textContent = course.membership_status === "rejected" ? "Request again" : "Request access";
+    action.addEventListener("click", () => requestCoursePermission(course, action));
+  }
+
+  actions.appendChild(action);
+  card.append(topline, title, description, meta, actions);
+  return card;
+}
+
+function renderStudentCourses() {
+  if (!studentCoursesList) return;
+  studentCoursesList.replaceChildren();
+  if (!courses.length) {
+    studentCoursesList.appendChild(emptyState("No discoverable classes are available yet."));
+    return;
+  }
+  courses.forEach((course) => studentCoursesList.appendChild(courseCard(course)));
+}
+
+function renderInstructorCourses() {
+  if (!instructorCoursesList) return;
+  const managedCourses = courses.filter(
+    (course) => course.membership_role === "instructor" && course.membership_status === "approved",
+  );
+  instructorCoursesList.replaceChildren();
+  if (!managedCourses.length) {
+    instructorCoursesList.appendChild(emptyState("Create your first course to upload materials and invite students."));
+    selectedCoursePanel?.classList.add("is-hidden");
+    selectedInstructorCourse = null;
+    return;
+  }
+  managedCourses.forEach((course) => instructorCoursesList.appendChild(courseCard(course, true)));
+}
+
+async function loadCourses() {
+  const role = getRole();
+  const status = role === "student" ? studentCoursesStatus : instructorCoursesStatus;
+  if (status) status.textContent = "Loading courses...";
+  try {
+    const data = await getJson("/api/courses");
+    courses = data.courses || [];
+    if (role === "student") renderStudentCourses();
+    else renderInstructorCourses();
+    if (selectedInstructorCourse) {
+      const refreshed = courses.find((course) => course.course_id === selectedInstructorCourse.course_id);
+      if (refreshed) selectedInstructorCourse = refreshed;
+    }
+    if (status) status.textContent = "";
+  } catch (error) {
+    if (status) status.textContent = `Could not load courses: ${error.message}`;
+  }
+}
+
+async function requestCoursePermission(course, button) {
+  if (!requireActiveSession()) return;
+  button.disabled = true;
+  studentCoursesStatus.textContent = `Sending your request for ${course.course_code}...`;
+  try {
+    const data = await postJson(`/api/courses/${encodeURIComponent(course.course_id)}/request-access`);
+    studentCoursesStatus.textContent = data.message;
+    await loadCourses();
+  } catch (error) {
+    button.disabled = false;
+    studentCoursesStatus.textContent = `Request failed: ${error.message}`;
+  }
+}
+
+async function selectInstructorCourse(course) {
+  selectedInstructorCourse = course;
+  selectedCoursePanel?.classList.remove("is-hidden");
+  selectedCourseCode.textContent = course.course_code;
+  selectedCourseTitle.textContent = course.title;
+  renderInstructorCourses();
+  await Promise.all([loadCourseDocuments(), loadCourseAccessRequests()]);
+  selectedCoursePanel?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderCourseDocuments(files = []) {
+  courseDocumentsList.replaceChildren();
+  if (!files.length) {
+    courseDocumentsList.appendChild(emptyState("No documents have been published for this course."));
+    return;
+  }
+  files.forEach((file) => {
+    const row = document.createElement("div");
+    row.className = "management-list-row";
+    const info = document.createElement("div");
+    const name = document.createElement("div");
+    name.className = "management-list-primary";
+    name.textContent = file.filename;
+    const meta = document.createElement("div");
+    meta.className = "management-list-secondary";
+    meta.textContent = `${formatFileSize(file.file_size)} · Published`;
+    info.append(name, meta);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "delete-button";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", () => removeCourseDocument(file, remove));
+    row.append(info, remove);
+    courseDocumentsList.appendChild(row);
+  });
+}
+
+async function loadCourseDocuments() {
+  if (!selectedInstructorCourse) return;
+  courseDocumentsStatus.textContent = "Loading documents...";
+  try {
+    const data = await getJson(`/api/courses/${encodeURIComponent(selectedInstructorCourse.course_id)}/documents`);
+    renderCourseDocuments(data.files || []);
+    courseDocumentsStatus.textContent = "";
+  } catch (error) {
+    courseDocumentsStatus.textContent = `Could not load documents: ${error.message}`;
+  }
+}
+
+async function removeCourseDocument(file, button) {
+  if (!selectedInstructorCourse) return;
+  if (!confirm(`Delete ${file.filename} from this course?`)) return;
+  button.disabled = true;
+  courseDocumentsStatus.textContent = `Deleting ${file.filename}...`;
+  try {
+    await deleteJson(
+      `/api/courses/${encodeURIComponent(selectedInstructorCourse.course_id)}/documents/${encodeURIComponent(file.file_id)}`,
+    );
+    courseDocumentsStatus.textContent = `${file.filename} was deleted.`;
+    await Promise.all([loadCourseDocuments(), loadCourses()]);
+  } catch (error) {
+    button.disabled = false;
+    courseDocumentsStatus.textContent = `Delete failed: ${error.message}`;
+  }
+}
+
+function renderCourseAccessRequests(requests = []) {
+  courseAccessRequestsList.replaceChildren();
+  pendingStudentCount.textContent = String(requests.length);
+  if (!requests.length) {
+    courseAccessRequestsList.appendChild(emptyState("No students are waiting for access."));
+    return;
+  }
+
+  requests.forEach((membership) => {
+    const row = document.createElement("div");
+    row.className = "management-list-row";
+    const info = document.createElement("div");
+    const name = document.createElement("div");
+    name.className = "management-list-primary";
+    name.textContent = membership.display_name;
+    const email = document.createElement("div");
+    email.className = "management-list-secondary";
+    email.textContent = membership.email;
+    info.append(name, email);
+
+    const actions = document.createElement("div");
+    actions.className = "management-list-actions";
+    const approve = document.createElement("button");
+    approve.type = "button";
+    approve.textContent = "Approve";
+    const reject = document.createElement("button");
+    reject.type = "button";
+    reject.className = "reject-button";
+    reject.textContent = "Reject";
+    approve.addEventListener("click", () => reviewCoursePermission(membership, "approved", approve, reject));
+    reject.addEventListener("click", () => reviewCoursePermission(membership, "rejected", approve, reject));
+    actions.append(approve, reject);
+    row.append(info, actions);
+    courseAccessRequestsList.appendChild(row);
+  });
+}
+
+async function loadCourseAccessRequests() {
+  if (!selectedInstructorCourse) return;
+  courseAccessRequestsStatus.textContent = "Loading requests...";
+  try {
+    const requests = await getJson(
+      `/api/instructor/access-requests?course_id=${encodeURIComponent(selectedInstructorCourse.course_id)}`,
+    );
+    renderCourseAccessRequests(requests || []);
+    courseAccessRequestsStatus.textContent = "";
+  } catch (error) {
+    courseAccessRequestsStatus.textContent = `Could not load requests: ${error.message}`;
+  }
+}
+
+async function reviewCoursePermission(membership, decision, ...buttons) {
+  buttons.forEach((button) => { button.disabled = true; });
+  courseAccessRequestsStatus.textContent = `${decision === "approved" ? "Approving" : "Rejecting"} ${membership.email}...`;
+  try {
+    await postJson(`/api/instructor/access-requests/${encodeURIComponent(membership.membership_id)}/review`, {
+      decision,
+    });
+    await Promise.all([loadCourseAccessRequests(), loadCourses()]);
+  } catch (error) {
+    buttons.forEach((button) => { button.disabled = false; });
+    courseAccessRequestsStatus.textContent = `Review failed: ${error.message}`;
+  }
+}
+
+async function openCourseChat(course, preview = false) {
+  if (!requireActiveSession()) return;
+  activeCourse = course;
+  isInstructorPreview = preview;
+  localStorage.setItem(ACTIVE_COURSE_KEY, course.course_id);
+  conversationId = localStorage.getItem(courseConversationKey(course.course_id)) || createConversationId();
+  localStorage.setItem(courseConversationKey(course.course_id), conversationId);
+  localStorage.setItem(CONVERSATION_KEY, conversationId);
+  await openChatWorkspace();
 }
 
 function showGithubConnection() {
@@ -402,9 +707,10 @@ function clearMessages() {
 
 function showWelcome() {
   const greeting = currentUser ? `Hi ${getDisplayName()}, ` : "";
-  const guidance = canManageCourseMaterials()
-    ? "upload course documents or ask a question to test the learning experience."
-    : "ask a question about the course materials prepared by your instructor.";
+  const courseName = activeCourse ? `${activeCourse.course_code}: ${activeCourse.title}` : "this course";
+  const guidance = isInstructorPreview
+    ? `you are previewing ${courseName} as a student. Ask a question to verify the published materials.`
+    : `ask a question about ${courseName}. Answers use only materials published by your instructor.`;
   appendMessage("assistant", `${greeting}${guidance}`);
 }
 
@@ -574,17 +880,7 @@ function renderChatFiles(files = []) {
 }
 
 async function loadChatFiles() {
-  if (!currentUser || !conversationId) {
-    renderChatFiles([]);
-    return;
-  }
-
-  try {
-    const data = await getJson(`/api/documents/files?conversation_id=${encodeURIComponent(conversationId)}`);
-    renderChatFiles(data.files || []);
-  } catch {
-    renderChatFiles([]);
-  }
+  renderChatFiles([]);
 }
 
 function formatThreadDate(value) {
@@ -657,8 +953,12 @@ function renderThreadList(conversations = []) {
 }
 
 async function loadThreadList() {
+  if (!activeCourse) {
+    renderThreadList([]);
+    return;
+  }
   try {
-    const data = await getJson("/api/conversations");
+    const data = await getJson(`/api/conversations?course_id=${encodeURIComponent(activeCourse.course_id)}`);
     renderThreadList(data.conversations || []);
   } catch (error) {
     renderThreadList([]);
@@ -668,6 +968,7 @@ async function loadThreadList() {
 async function selectConversation(nextConversationId) {
   conversationId = nextConversationId;
   localStorage.setItem(CONVERSATION_KEY, conversationId);
+  if (activeCourse) localStorage.setItem(courseConversationKey(activeCourse.course_id), conversationId);
   scanStatus.textContent = "";
   await loadConversation();
   await loadChatFiles();
@@ -690,6 +991,7 @@ async function deleteConversation(targetConversationId) {
     if (targetConversationId === conversationId) {
       conversationId = createConversationId();
       localStorage.setItem(CONVERSATION_KEY, conversationId);
+      if (activeCourse) localStorage.setItem(courseConversationKey(activeCourse.course_id), conversationId);
       clearMessages();
       showWelcome();
     }
@@ -821,6 +1123,11 @@ async function postForm(url, formData) {
 async function uploadPendingFiles() {
   if (!pendingFiles.length) return null;
   if (!requireActiveSession()) return null;
+  if (activeCourse) {
+    clearPendingFiles();
+    scanStatus.textContent = "Course documents are managed from the instructor dashboard.";
+    return null;
+  }
   if (!canManageCourseMaterials()) {
     clearPendingFiles();
     scanStatus.textContent = "Only instructors can upload course materials.";
@@ -856,6 +1163,10 @@ function supportedFiles(files) {
 
 async function uploadFiles(files) {
   if (!requireActiveSession()) return;
+  if (activeCourse) {
+    scanStatus.textContent = "Return to the instructor dashboard to publish course documents.";
+    return;
+  }
   if (!canManageCourseMaterials()) {
     scanStatus.textContent = "Only instructors can upload course materials.";
     return;
@@ -921,9 +1232,10 @@ async function loadConversation() {
 }
 
 async function startNewChat() {
-  if (!requireActiveSession()) return;
+  if (!requireActiveSession() || !activeCourse) return;
   conversationId = createConversationId();
   localStorage.setItem(CONVERSATION_KEY, conversationId);
+  localStorage.setItem(courseConversationKey(activeCourse.course_id), conversationId);
   scanStatus.textContent = "New chat started.";
   clearMessages();
   clearPendingFiles();
@@ -944,7 +1256,10 @@ async function finishAuth(data) {
 }
 
 async function openChatWorkspace() {
-  if (!requireActiveSession()) return;
+  if (!requireActiveSession() || !activeCourse) {
+    showDashboard();
+    return;
+  }
   showAuthenticatedApp();
   await loadConversation();
   await loadChatFiles();
@@ -1047,8 +1362,63 @@ onboardingForm?.addEventListener("submit", async (event) => {
   }
 });
 
-openWorkspaceButton?.addEventListener("click", openChatWorkspace);
+openWorkspaceButton?.addEventListener("click", () => {
+  const target = getRole() === "student" ? studentCoursesSection : instructorWorkspaceSection;
+  target?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
 dashboardButton?.addEventListener("click", showDashboard);
+refreshStudentCoursesButton?.addEventListener("click", loadCourses);
+
+courseCreateForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!requireActiveSession()) return;
+  const submit = courseCreateForm.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  instructorCoursesStatus.textContent = "Creating course...";
+  try {
+    const course = await postJson("/api/courses", {
+      course_code: document.querySelector("#courseCodeInput").value.trim(),
+      title: document.querySelector("#courseTitleInput").value.trim(),
+      description: document.querySelector("#courseDescriptionInput").value.trim(),
+    });
+    courseCreateForm.reset();
+    instructorCoursesStatus.textContent = `${course.course_code} was created.`;
+    await loadCourses();
+    const created = courses.find((item) => item.course_id === course.course_id) || course;
+    await selectInstructorCourse(created);
+  } catch (error) {
+    instructorCoursesStatus.textContent = `Could not create course: ${error.message}`;
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+courseDocumentForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!selectedInstructorCourse || !courseDocumentInput.files?.length) return;
+  const submit = courseDocumentForm.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  courseDocumentsStatus.textContent = "Uploading and indexing course documents...";
+  const formData = new FormData();
+  Array.from(courseDocumentInput.files).forEach((file) => formData.append("files", file));
+  try {
+    const data = await postForm(
+      `/api/courses/${encodeURIComponent(selectedInstructorCourse.course_id)}/documents/upload`,
+      formData,
+    );
+    courseDocumentsStatus.textContent = data.message;
+    courseDocumentForm.reset();
+    await Promise.all([loadCourseDocuments(), loadCourses()]);
+  } catch (error) {
+    courseDocumentsStatus.textContent = `Upload failed: ${error.message}`;
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+previewCourseButton?.addEventListener("click", () => {
+  if (selectedInstructorCourse) openCourseChat(selectedInstructorCourse, true);
+});
 
 async function connectGitHubAccount() {
   if (!currentUser?.access_token) {
@@ -1265,6 +1635,10 @@ inputEl.addEventListener("keydown", (event) => {
 formEl.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!requireActiveSession()) return;
+  if (!activeCourse) {
+    showDashboard();
+    return;
+  }
   const message = inputEl.value.trim();
   if (!message && !pendingFiles.length) return;
 
@@ -1288,12 +1662,14 @@ formEl.addEventListener("submit", async (event) => {
     const data = await postJson("/api/chat", {
       message,
       conversation_id: conversationId,
+      course_id: activeCourse?.course_id || null,
       history: history.slice(-8),
       top_k: 4,
     });
     if (data.conversation_id) {
       conversationId = data.conversation_id;
       localStorage.setItem(CONVERSATION_KEY, conversationId);
+      if (activeCourse) localStorage.setItem(courseConversationKey(activeCourse.course_id), conversationId);
     }
     thinkingIndicator?.remove();
     thinkingIndicator = null;
@@ -1311,11 +1687,7 @@ formEl.addEventListener("submit", async (event) => {
 });
 
 composerAttachButton.addEventListener("click", () => {
-  if (!canManageCourseMaterials()) {
-    scanStatus.textContent = "Only instructors can upload course materials.";
-    return;
-  }
-  fileInput.click();
+  scanStatus.textContent = "Course documents are uploaded from the instructor dashboard.";
 });
 
 fileInput.addEventListener("change", () => {
@@ -1324,9 +1696,7 @@ fileInput.addEventListener("change", () => {
 });
 
 chatPanel.addEventListener("dragover", (event) => {
-  if (!canManageCourseMaterials()) return;
-  event.preventDefault();
-  chatPanel.classList.add("is-dragging");
+  if (activeCourse) return;
 });
 
 chatPanel.addEventListener("dragleave", (event) => {
@@ -1336,10 +1706,7 @@ chatPanel.addEventListener("dragleave", (event) => {
 });
 
 chatPanel.addEventListener("drop", (event) => {
-  if (!canManageCourseMaterials()) return;
-  event.preventDefault();
-  chatPanel.classList.remove("is-dragging");
-  addPendingFiles(event.dataTransfer?.files || []);
+  if (activeCourse) return;
 });
 
 setInterval(() => {

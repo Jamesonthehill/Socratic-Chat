@@ -14,7 +14,7 @@
         document.documentElement.dataset.themePreference = preference;
       })();
     </script>
-    <link rel="stylesheet" href="./styles.css?v=20260825-1" />
+    <link rel="stylesheet" href="./styles.css?v=20260825-3" />
     <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
@@ -184,6 +184,80 @@
           <button id="openWorkspaceButton" type="button">Open chatbot</button>
         </article>
 
+        <section id="studentCoursesSection" class="course-section is-hidden">
+          <div class="section-heading-row">
+            <div>
+              <p class="eyebrow">Student courses</p>
+              <h2>Classes</h2>
+              <p>Request permission from the instructor before entering a class.</p>
+            </div>
+            <button id="refreshStudentCoursesButton" class="secondary-button" type="button">Refresh</button>
+          </div>
+          <div id="studentCoursesList" class="course-grid"></div>
+          <div id="studentCoursesStatus" class="status" aria-live="polite"></div>
+        </section>
+
+        <section id="instructorWorkspaceSection" class="course-section is-hidden">
+          <div class="section-heading-row">
+            <div>
+              <p class="eyebrow">Instructor tools</p>
+              <h2>Manage courses</h2>
+              <p>Create a class, publish its documents, and decide who can enter it.</p>
+            </div>
+          </div>
+
+          <form id="courseCreateForm" class="course-create-form">
+            <label>
+              Course code
+              <input id="courseCodeInput" type="text" maxlength="40" placeholder="ITCS 3153" required />
+            </label>
+            <label>
+              Course title
+              <input id="courseTitleInput" type="text" maxlength="160" placeholder="Introduction to Artificial Intelligence" required />
+            </label>
+            <label class="course-description-field">
+              Description
+              <textarea id="courseDescriptionInput" rows="2" maxlength="2000" placeholder="What students will study in this class"></textarea>
+            </label>
+            <button type="submit">Create course</button>
+          </form>
+          <div id="instructorCoursesStatus" class="status" aria-live="polite"></div>
+          <div id="instructorCoursesList" class="course-grid"></div>
+
+          <article id="selectedCoursePanel" class="selected-course-panel is-hidden">
+            <div class="section-heading-row">
+              <div>
+                <p id="selectedCourseCode" class="eyebrow">Course</p>
+                <h2 id="selectedCourseTitle">Course management</h2>
+              </div>
+              <button id="previewCourseButton" type="button">Preview as student</button>
+            </div>
+
+            <div class="instructor-management-grid">
+              <section class="management-card">
+                <h3>Course documents</h3>
+                <p>Published files become the only knowledge source for this course chatbot.</p>
+                <form id="courseDocumentForm" class="document-upload-form">
+                  <input id="courseDocumentInput" type="file" accept=".txt,.md,.pdf" multiple required />
+                  <button type="submit">Upload documents</button>
+                </form>
+                <div id="courseDocumentsList" class="management-list"></div>
+                <div id="courseDocumentsStatus" class="status" aria-live="polite"></div>
+              </section>
+
+              <section class="management-card">
+                <div class="management-card-heading">
+                  <h3>Pending student requests</h3>
+                  <span id="pendingStudentCount" class="count-badge">0</span>
+                </div>
+                <p>Only approved students can open this course or query its documents.</p>
+                <div id="courseAccessRequestsList" class="management-list"></div>
+                <div id="courseAccessRequestsStatus" class="status" aria-live="polite"></div>
+              </section>
+            </div>
+          </article>
+        </section>
+
         <section id="adminRequestsSection" class="admin-requests is-hidden">
           <div>
             <p class="eyebrow">Administrator</p>
@@ -256,7 +330,7 @@
         </form>
       </section>
     </main>
-    <script src="./config.js?v=20260825-1"></script>
-    <script src="./app.js?v=20260825-1" type="module"></script>
+    <script src="./config.js?v=20260825-3"></script>
+    <script src="./app.js?v=20260825-3" type="module"></script>
   </body>
 </html>

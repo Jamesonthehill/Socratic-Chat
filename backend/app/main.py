@@ -16,8 +16,45 @@ from google.oauth2 import id_token as google_id_token
 
 from app import auth, db, settings
 from app.classifier import classify_message
-from app.rag import generate_answer, ingest_file, ingest_text, retrieve, retrieve_by_titles, retrieve_overview, scan_raw_docs
-from app.schemas import AuthorityUpdateRequest, AuthConfigResponse, AuthResponse, ChatRequest, ChatResponse, ConversationListResponse, ConversationResponse, CurrentUserResponse, DatabaseStatus, EmailCodeRequest, EmailCodeResponse, GitHubAuthorizeResponse, GoogleAuthRequest, GoogleClientConfigResponse, IngestResponse, LoginRequest, OnboardingRequest, RagFileListResponse, RegisterRequest, SessionRefreshResponse, TextDocumentRequest, UserProfile
+from app.rag import (
+    delete_document,
+    generate_answer,
+    ingest_file,
+    ingest_text,
+    retrieve,
+    retrieve_overview,
+    scan_raw_docs,
+)
+from app.schemas import (
+    AuthorityUpdateRequest,
+    AuthConfigResponse,
+    AuthResponse,
+    ChatRequest,
+    ChatResponse,
+    ConversationListResponse,
+    ConversationResponse,
+    CourseAccessRequestResponse,
+    CourseAccessReviewRequest,
+    CourseCreateRequest,
+    CourseListResponse,
+    CourseMembership,
+    CourseSummary,
+    CurrentUserResponse,
+    DatabaseStatus,
+    EmailCodeRequest,
+    EmailCodeResponse,
+    GitHubAuthorizeResponse,
+    GoogleAuthRequest,
+    GoogleClientConfigResponse,
+    IngestResponse,
+    LoginRequest,
+    OnboardingRequest,
+    RagFileListResponse,
+    RegisterRequest,
+    SessionRefreshResponse,
+    TextDocumentRequest,
+    UserProfile,
+)
 
 app = FastAPI(title="Socratic-Chat")
 
@@ -87,6 +124,26 @@ def _require_authority(request: Request, highest_level: int) -> dict[str, object
     if int(user.get("authority_level", 2)) > highest_level:
         role = "administrator" if highest_level == 0 else "instructor"
         raise HTTPException(status_code=403, detail=f"This action requires {role} permission.")
+    return user
+
+
+def _require_course_access(request: Request, course_id: str, manage: bool = False) -> dict[str, object]:
+    user_id = _current_user_id(request)
+    user = db.get_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Account was not found.")
+    allowed = (
+        db.user_manages_course(course_id, user_id)
+        if manage
+        else db.user_can_access_course(course_id, user_id)
+    )
+    if not allowed:
+        detail = (
+            "Only the instructor who manages this course can perform that action."
+            if manage
+            else "Your course access request must be approved before you can use this class."
+        )
+        raise HTTPException(status_code=403, detail=detail)
     return user
 
 
@@ -302,6 +359,72 @@ async def update_user_authority(
     return CurrentUserResponse(user=user)
 
 
+@app.get("/api/courses", response_model=CourseListResponse)
+async def list_courses(request: Request) -> CourseListResponse:
+    user_id = _current_user_id(request)
+    return CourseListResponse(courses=db.list_courses_for_user(user_id))
+
+
+@app.post("/api/courses", response_model=CourseSummary)
+async def create_course(payload: CourseCreateRequest, request: Request) -> CourseSummary:
+    instructor = _require_authority(request, 1)
+    try:
+        course = db.create_course(
+            str(instructor["user_id"]),
+            payload.course_code,
+            payload.title,
+            payload.description,
+        )
+    except Exception as exc:
+        detail = str(exc)
+        if "courses_instructor_id_course_code_key" in detail or "duplicate key" in detail:
+            raise HTTPException(status_code=409, detail="You already have a course with that code.") from exc
+        raise
+    course["membership_role"] = "instructor"
+    course["membership_status"] = "approved"
+    return CourseSummary(**course)
+
+
+@app.post("/api/courses/{course_id}/request-access", response_model=CourseAccessRequestResponse)
+async def request_course_access(course_id: str, request: Request) -> CourseAccessRequestResponse:
+    user_id = _current_user_id(request)
+    try:
+        membership = db.request_course_access(course_id, user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    message = (
+        "You already have access to this course."
+        if membership["status"] == "approved"
+        else "Access request sent to the instructor."
+    )
+    return CourseAccessRequestResponse(membership=membership, message=message)
+
+
+@app.get("/api/instructor/access-requests", response_model=list[CourseMembership])
+async def list_course_access_requests(request: Request, course_id: str | None = None) -> list[dict[str, object]]:
+    instructor = _require_authority(request, 1)
+    return db.list_pending_course_requests(str(instructor["user_id"]), course_id=course_id)
+
+
+@app.post("/api/instructor/access-requests/{membership_id}/review", response_model=CourseMembership)
+async def review_course_access_request(
+    membership_id: str,
+    payload: CourseAccessReviewRequest,
+    request: Request,
+) -> CourseMembership:
+    instructor = _require_authority(request, 1)
+    try:
+        membership = db.review_course_request(
+            str(instructor["user_id"]),
+            membership_id,
+            payload.decision,
+            payload.rejection_reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return CourseMembership(**membership)
+
+
 @app.post("/api/auth/github/start", response_model=GitHubAuthorizeResponse)
 async def github_start(request: Request) -> GitHubAuthorizeResponse:
     user_id = _session_user_id(request)
@@ -374,7 +497,12 @@ async def list_conversations(request: Request) -> ConversationListResponse:
     user_id = _current_user_id(request)
     if not db.is_enabled():
         return ConversationListResponse(conversations=[])
-    return ConversationListResponse(conversations=db.list_conversations(user_id=user_id))
+    course_id = request.query_params.get("course_id")
+    if course_id:
+        _require_course_access(request, course_id)
+    return ConversationListResponse(
+        conversations=db.list_conversations(user_id=user_id, course_id=course_id)
+    )
 
 
 @app.get("/api/conversations/{conversation_id}", response_model=ConversationResponse)
@@ -545,6 +673,85 @@ async def upload_document(request: Request) -> IngestResponse:
         skipped_files=skipped_files,
         message=message,
     )
+
+
+@app.get("/api/courses/{course_id}/documents", response_model=RagFileListResponse)
+async def list_course_documents(course_id: str, request: Request) -> RagFileListResponse:
+    _require_course_access(request, course_id, manage=True)
+    return RagFileListResponse(files=db.list_rag_files(course_id=course_id))
+
+
+@app.post("/api/courses/{course_id}/documents/upload", response_model=IngestResponse)
+async def upload_course_documents(course_id: str, request: Request) -> IngestResponse:
+    instructor = _require_course_access(request, course_id, manage=True)
+    instructor_id = str(instructor["user_id"])
+    try:
+        form = await request.form()
+    except (AssertionError, RuntimeError) as exc:
+        raise HTTPException(status_code=501, detail="Install python-multipart to upload files.") from exc
+
+    files = form.getlist("files") or form.getlist("file")
+    if not files:
+        raise HTTPException(status_code=400, detail="Choose at least one file to upload.")
+
+    chunks_added = 0
+    documents_scanned = 0
+    files_stored = 0
+    skipped_files: list[str] = []
+    supported_suffixes = {".txt", ".md", ".pdf"}
+
+    for upload in files:
+        filename = Path(getattr(upload, "filename", "") or "upload.txt").name
+        suffix = Path(filename).suffix.lower()
+        if suffix not in supported_suffixes:
+            skipped_files.append(filename)
+            continue
+
+        content = upload.file.read()
+        upload_dir = settings.RAW_DOCS_DIR / course_id / secrets.token_hex(8)
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        target = upload_dir / filename
+        target.write_bytes(content)
+
+        document_id, added = ingest_file(target, course_id=course_id)
+        db.save_rag_file(
+            filename,
+            getattr(upload, "content_type", "") or "application/octet-stream",
+            content,
+            user_id=instructor_id,
+            course_id=course_id,
+            document_id=document_id,
+        )
+        chunks_added += added
+        documents_scanned += 1
+        files_stored += 1
+
+    if documents_scanned == 0:
+        message = "No course documents were uploaded. Use .txt, .md, or .pdf files."
+    elif chunks_added == 0:
+        message = "The course documents were stored; matching content was already indexed."
+    else:
+        message = "Course documents were published to the student knowledge base."
+
+    return IngestResponse(
+        chunks_added=chunks_added,
+        documents_scanned=documents_scanned,
+        files_stored=files_stored,
+        skipped_files=skipped_files,
+        message=message,
+    )
+
+
+@app.delete("/api/courses/{course_id}/documents/{file_id}")
+async def delete_course_document(course_id: str, file_id: str, request: Request) -> dict[str, object]:
+    _require_course_access(request, course_id, manage=True)
+    removed = db.delete_course_document(file_id, course_id)
+    if removed is None:
+        raise HTTPException(status_code=404, detail="Course document was not found.")
+    chunks_removed = 0
+    if removed.get("document_id"):
+        chunks_removed = delete_document(str(removed["document_id"]), course_id=course_id)
+    return {"deleted": True, "filename": removed["filename"], "chunks_removed": chunks_removed}
 
 
 
@@ -750,11 +957,23 @@ def _off_topic_answer(message: str) -> str | None:
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
     conversation_id = payload.conversation_id
+    course_id = payload.course_id
     history = payload.history
     user_id = _current_user_id(request)
 
+    if not course_id:
+        raise HTTPException(status_code=400, detail="Choose an approved course before opening the chatbot.")
+    _require_course_access(request, course_id)
+
     if db.is_enabled():
-        conversation_id = db.ensure_conversation(payload.conversation_id, payload.message, user_id=user_id)
+        conversation_id = db.ensure_conversation(
+            payload.conversation_id,
+            payload.message,
+            user_id=user_id,
+            course_id=course_id,
+        )
+        if not db.conversation_belongs_to_course(conversation_id, user_id, course_id):
+            raise HTTPException(status_code=409, detail="This conversation belongs to a different course.")
         stored_history = db.get_messages(conversation_id, limit=8)
         history = stored_history or payload.history
         db.add_message(conversation_id, "user", payload.message)
@@ -771,14 +990,19 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
             combined_query = f"{pending['original_question']} {payload.message}".strip()
             if hasattr(db, "clear_pending_clarification"):
                 db.clear_pending_clarification(conversation_id)
-            sources = retrieve(combined_query, top_k=payload.top_k, conversation_id=conversation_id)
+            sources = retrieve(
+                combined_query,
+                top_k=payload.top_k,
+                conversation_id=conversation_id,
+                course_id=course_id,
+            )
             answer = await generate_answer(combined_query, history, sources)
             if answer.lower().startswith("i do not know from your uploaded notes"):
                 sources = []
             db.add_message(conversation_id, "assistant", answer)
             return ChatResponse(answer=answer, conversation_id=conversation_id, sources=sources)
 
-    current_files = db.list_rag_files(conversation_id=conversation_id, user_id=user_id) if db.is_enabled() and conversation_id else []
+    current_files = db.list_rag_files(course_id=course_id) if db.is_enabled() else []
     file_state_answer = _file_state_answer(current_files, payload.message) or _small_status_answer(current_files, payload.message)
     if file_state_answer:
         if db.is_enabled() and conversation_id:
@@ -806,12 +1030,18 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
         return ChatResponse(answer=answer, conversation_id=conversation_id or "local", sources=[])
 
     query = classification.rewritten_query or payload.message
-    sources = retrieve(query, top_k=payload.top_k, conversation_id=conversation_id)
-    if not sources and current_files:
-        file_names = _unique_file_names(current_files)
-        sources = retrieve_by_titles(query, file_names, top_k=payload.top_k)
+    sources = retrieve(
+        query,
+        top_k=payload.top_k,
+        conversation_id=conversation_id,
+        course_id=course_id,
+    )
     if not sources and current_files and _is_document_overview_question(payload.message):
-        sources = retrieve_overview(conversation_id=conversation_id, top_k=payload.top_k)
+        sources = retrieve_overview(
+            conversation_id=conversation_id,
+            top_k=payload.top_k,
+            course_id=course_id,
+        )
     answer = await generate_answer(query, history, sources)
     if answer.lower().startswith("i do not know from your uploaded notes"):
         sources = []

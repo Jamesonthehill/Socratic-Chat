@@ -32,6 +32,9 @@ const courseDocumentsStatus = document.querySelector("#courseDocumentsStatus");
 const courseAccessRequestsList = document.querySelector("#courseAccessRequestsList");
 const courseAccessRequestsStatus = document.querySelector("#courseAccessRequestsStatus");
 const pendingStudentCount = document.querySelector("#pendingStudentCount");
+const enrolledStudentsList = document.querySelector("#enrolledStudentsList");
+const enrolledStudentsStatus = document.querySelector("#enrolledStudentsStatus");
+const enrolledStudentCount = document.querySelector("#enrolledStudentCount");
 const adminRequestsSection = document.querySelector("#adminRequestsSection");
 const adminRequestsList = document.querySelector("#adminRequestsList");
 const adminRequestsStatus = document.querySelector("#adminRequestsStatus");
@@ -500,7 +503,7 @@ async function selectInstructorCourse(course) {
   selectedCourseCode.textContent = course.course_code;
   selectedCourseTitle.textContent = course.title;
   renderInstructorCourses();
-  await Promise.all([loadCourseDocuments(), loadCourseAccessRequests()]);
+  await Promise.all([loadCourseDocuments(), loadCourseAccessRequests(), loadEnrolledStudents()]);
   selectedCoursePanel?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -618,10 +621,74 @@ async function reviewCoursePermission(membership, decision, ...buttons) {
     await postJson(`/api/instructor/access-requests/${encodeURIComponent(membership.membership_id)}/review`, {
       decision,
     });
-    await Promise.all([loadCourseAccessRequests(), loadCourses()]);
+    await Promise.all([loadCourseAccessRequests(), loadEnrolledStudents(), loadCourses()]);
   } catch (error) {
     buttons.forEach((button) => { button.disabled = false; });
     courseAccessRequestsStatus.textContent = `Review failed: ${error.message}`;
+  }
+}
+
+function renderEnrolledStudents(students = []) {
+  enrolledStudentsList.replaceChildren();
+  enrolledStudentCount.textContent = String(students.length);
+  if (!students.length) {
+    enrolledStudentsList.appendChild(emptyState("No students currently have access to this course."));
+    return;
+  }
+
+  students.forEach((membership) => {
+    const row = document.createElement("div");
+    row.className = "management-list-row";
+    const info = document.createElement("div");
+    const name = document.createElement("div");
+    name.className = "management-list-primary";
+    name.textContent = membership.display_name;
+    const email = document.createElement("div");
+    email.className = "management-list-secondary";
+    email.textContent = membership.email;
+    info.append(name, email);
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "delete-button";
+    remove.textContent = "Remove access";
+    remove.addEventListener("click", () => removeEnrolledStudent(membership, remove));
+    row.append(info, remove);
+    enrolledStudentsList.appendChild(row);
+  });
+}
+
+async function loadEnrolledStudents() {
+  if (!selectedInstructorCourse) return;
+  enrolledStudentsStatus.textContent = "Loading enrolled students...";
+  try {
+    const students = await getJson(
+      `/api/instructor/enrolled-students?course_id=${encodeURIComponent(selectedInstructorCourse.course_id)}`,
+    );
+    renderEnrolledStudents(students || []);
+    enrolledStudentsStatus.textContent = "";
+  } catch (error) {
+    enrolledStudentsStatus.textContent = `Could not load enrolled students: ${error.message}`;
+  }
+}
+
+async function removeEnrolledStudent(membership, button) {
+  if (!selectedInstructorCourse) return;
+  const confirmed = confirm(
+    `Remove ${membership.display_name} from ${selectedInstructorCourse.course_code}? `
+      + "The student will lose course access and can request it again later.",
+  );
+  if (!confirmed) return;
+
+  button.disabled = true;
+  enrolledStudentsStatus.textContent = `Removing ${membership.email}...`;
+  try {
+    await deleteJson(`/api/instructor/enrolled-students/${encodeURIComponent(membership.membership_id)}`);
+    enrolledStudentsStatus.textContent = `${membership.display_name} no longer has access to this course.`;
+    await Promise.all([loadEnrolledStudents(), loadCourses()]);
+  } catch (error) {
+    button.disabled = false;
+    enrolledStudentsStatus.textContent = `Could not remove student: ${error.message}`;
   }
 }
 

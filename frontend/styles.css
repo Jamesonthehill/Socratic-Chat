@@ -1706,6 +1706,10 @@ body:has(.github-connect-wrap:not(.is-hidden)) .auth-card {
   background: var(--paper-strong);
 }
 
+.enrolled-students-card {
+  grid-column: 1 / -1;
+}
+
 .document-upload-form {
   display: grid;
   gap: 9px;

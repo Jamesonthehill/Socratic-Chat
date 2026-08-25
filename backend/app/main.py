@@ -426,6 +426,22 @@ async def review_course_access_request(
     return CourseMembership(**membership)
 
 
+@app.get("/api/instructor/enrolled-students", response_model=list[CourseMembership])
+async def list_enrolled_course_students(request: Request, course_id: str) -> list[dict[str, object]]:
+    instructor = _require_authority(request, 1)
+    return db.list_approved_course_students(str(instructor["user_id"]), course_id)
+
+
+@app.delete("/api/instructor/enrolled-students/{membership_id}", response_model=CourseMembership)
+async def remove_enrolled_course_student(membership_id: str, request: Request) -> CourseMembership:
+    instructor = _require_authority(request, 1)
+    try:
+        membership = db.remove_course_student(str(instructor["user_id"]), membership_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return CourseMembership(**membership)
+
+
 @app.post("/api/auth/github/start", response_model=GitHubAuthorizeResponse)
 async def github_start(request: Request) -> GitHubAuthorizeResponse:
     user_id = _session_user_id(request)

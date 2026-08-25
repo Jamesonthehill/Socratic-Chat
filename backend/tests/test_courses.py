@@ -4,12 +4,12 @@ import asyncio
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 from starlette.requests import Request
 
-from app import main, rag, settings
+from app import db, main, rag, settings
 from app.schemas import ChatRequest, CourseCreateRequest
 
 
@@ -66,6 +66,52 @@ class CourseAuthorizationTests(unittest.TestCase):
         )
         self.assertEqual(response.membership_role, "instructor")
         self.assertEqual(response.membership_status, "approved")
+
+    @patch("app.main.db.remove_course_student")
+    @patch("app.main._require_authority", return_value={"user_id": "instructor-1"})
+    def test_instructor_can_remove_approved_student(self, _require_authority, remove_student) -> None:
+        remove_student.return_value = {
+            "membership_id": "membership-1",
+            "course_id": "course-1",
+            "user_id": "student-1",
+            "display_name": "Student One",
+            "email": "student@charlotte.edu",
+            "course_role": "student",
+            "status": "approved",
+            "requested_at": "2026-08-25T12:00:00Z",
+        }
+
+        response = asyncio.run(main.remove_enrolled_course_student("membership-1", _request()))
+
+        remove_student.assert_called_once_with("instructor-1", "membership-1")
+        self.assertEqual(response.user_id, "student-1")
+        self.assertEqual(response.status, "approved")
+
+    @patch("app.db.get_connection")
+    @patch("app.db.init_db")
+    def test_student_removal_is_scoped_to_own_course(self, _init_db, get_connection) -> None:
+        cursor = MagicMock()
+        cursor.fetchone.return_value = (
+            "membership-1",
+            "course-1",
+            "student-1",
+            "Student One",
+            "student@charlotte.edu",
+            "student",
+            "approved",
+            "2026-08-25T12:00:00Z",
+        )
+        connection = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        get_connection.return_value.__enter__.return_value = connection
+
+        membership = db.remove_course_student("instructor-1", "membership-1")
+
+        delete_sql, delete_params = cursor.execute.call_args.args
+        self.assertIn("c.instructor_id = %s", delete_sql)
+        self.assertIn("cm.status = 'approved'", delete_sql)
+        self.assertEqual(delete_params, ("membership-1", "instructor-1"))
+        self.assertEqual(membership["user_id"], "student-1")
 
 
 class CourseRagIsolationTests(unittest.TestCase):

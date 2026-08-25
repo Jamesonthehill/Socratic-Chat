@@ -1065,6 +1065,70 @@ def list_pending_course_requests(instructor_id: str, course_id: str | None = Non
     return [_course_membership_profile(row) for row in rows if row is not None]
 
 
+def list_approved_course_students(instructor_id: str, course_id: str) -> list[dict[str, object]]:
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    cm.id::text,
+                    cm.course_id::text,
+                    cm.user_id::text,
+                    COALESCE(NULLIF(u.display_name, ''), u.username),
+                    u.email,
+                    cm.course_role,
+                    cm.status,
+                    cm.requested_at::text
+                FROM course_memberships cm
+                JOIN courses c ON c.id = cm.course_id
+                JOIN users u ON u.id = cm.user_id
+                WHERE c.instructor_id = %s
+                  AND cm.course_id = %s
+                  AND cm.course_role = 'student'
+                  AND cm.status = 'approved'
+                ORDER BY COALESCE(NULLIF(u.display_name, ''), u.username), u.email
+                """,
+                (instructor_id, course_id),
+            )
+            rows = cur.fetchall()
+    return [_course_membership_profile(row) for row in rows if row is not None]
+
+
+def remove_course_student(instructor_id: str, membership_id: str) -> dict[str, object]:
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM course_memberships cm
+                USING courses c, users u
+                WHERE cm.id = %s
+                  AND cm.course_id = c.id
+                  AND cm.user_id = u.id
+                  AND c.instructor_id = %s
+                  AND cm.course_role = 'student'
+                  AND cm.status = 'approved'
+                RETURNING
+                    cm.id::text,
+                    cm.course_id::text,
+                    cm.user_id::text,
+                    COALESCE(NULLIF(u.display_name, ''), u.username),
+                    u.email,
+                    cm.course_role,
+                    cm.status,
+                    cm.requested_at::text
+                """,
+                (membership_id, instructor_id),
+            )
+            removed = cur.fetchone()
+        conn.commit()
+    membership = _course_membership_profile(removed)
+    if membership is None:
+        raise ValueError("Approved student was not found for one of your courses.")
+    return membership
+
+
 def review_course_request(
     instructor_id: str,
     membership_id: str,

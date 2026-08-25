@@ -21,6 +21,7 @@ STOP_WORDS = {
     "that", "the", "their", "them", "then", "there", "these", "they", "this", "to",
     "was", "we", "what", "when", "where", "which", "who", "why", "with", "you", "your",
 }
+RAG_DOCUMENT_SUFFIXES = {".txt", ".md", ".pdf", ".tex"}
 MIN_RELEVANCE_SCORE = 0.12
 MIN_SHARED_TERMS = 2
 
@@ -172,9 +173,41 @@ def ingest_pdf_file(
     return doc_id, len(new_items)
 
 
+def read_latex_document(path: Path) -> str:
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    text = re.sub(r"(?<!\\)%[^\n]*", "", text)
+    text = re.sub(
+        r"\\(?:documentclass|usepackage|includegraphics|bibliography|bibliographystyle)"
+        r"\*?(?:\[[^\]]*\])?\{[^{}]*\}",
+        " ",
+        text,
+    )
+    text = re.sub(
+        r"\\(?:cite|citep|citet|ref|eqref|label|url|href)"
+        r"\*?(?:\[[^\]]*\])?\{[^{}]*\}(?:\{([^{}]*)\})?",
+        lambda match: f" {match.group(1) or ''} ",
+        text,
+    )
+    text = re.sub(
+        r"\\(?:part|chapter|section|subsection|subsubsection|paragraph|subparagraph|title|author|caption)"
+        r"\*?\{([^{}]*)\}",
+        r"\n\1\n",
+        text,
+    )
+    text = re.sub(r"\\(?:begin|end)\{[^{}]*\}", "\n", text)
+    text = re.sub(r"\\item(?:\[[^\]]*\])?", "\n- ", text)
+    text = re.sub(r"\\([%&#_$])", r"\1", text)
+    text = re.sub(r"\\[a-zA-Z@]+\*?(?:\[[^\]]*\])?", " ", text)
+    text = text.replace("\\\\", "\n")
+    text = re.sub(r"[{}$]", " ", text)
+    return re.sub(r"[ \t]+", " ", text).strip()
+
+
 def read_document(path: Path) -> str:
     if path.suffix.lower() == ".pdf":
         return "\n".join(text for _, text in read_pdf_pages(path))
+    if path.suffix.lower() == ".tex":
+        return read_latex_document(path)
 
     return path.read_text(encoding="utf-8", errors="ignore")
 
@@ -200,7 +233,7 @@ def scan_raw_docs() -> tuple[int, int, list[str]]:
         if not path.is_file() or path.name.startswith("."):
             continue
 
-        if path.suffix.lower() not in {".txt", ".md", ".pdf"}:
+        if path.suffix.lower() not in RAG_DOCUMENT_SUFFIXES:
             skipped_files.append(path.name)
             continue
 

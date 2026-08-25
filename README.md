@@ -18,7 +18,7 @@ Add an OpenAI key to `.env` if you want generated answers.
 
 ## Add Documents
 
-Put `.txt` or `.md` files in:
+Put `.txt`, `.md`, `.pdf`, or `.tex` files in:
 
 ```text
 backend/data/raw_docs/

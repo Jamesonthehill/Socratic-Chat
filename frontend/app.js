@@ -1232,7 +1232,7 @@ async function uploadPendingFiles() {
 }
 
 function supportedFiles(files) {
-  return Array.from(files || []).filter((file) => /\.(txt|md|pdf)$/i.test(file.name));
+  return Array.from(files || []).filter((file) => /\.(txt|md|pdf|tex)$/i.test(file.name));
 }
 
 async function uploadFiles(files) {
@@ -1247,7 +1247,7 @@ async function uploadFiles(files) {
   }
   const accepted = supportedFiles(files);
   if (!accepted.length) {
-    scanStatus.textContent = "Use .txt, .md, or .pdf files.";
+    scanStatus.textContent = "Use .txt, .md, .pdf, or .tex files.";
     return;
   }
 

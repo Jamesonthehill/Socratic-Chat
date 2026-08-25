@@ -115,6 +115,35 @@ class CourseAuthorizationTests(unittest.TestCase):
 
 
 class CourseRagIsolationTests(unittest.TestCase):
+    @patch("app.rag.save_index")
+    @patch("app.rag.load_index", return_value=[])
+    def test_latex_document_is_cleaned_and_chunked(self, _load_index, save_index) -> None:
+        latex = r"""
+        \documentclass{article}
+        % This comment must not enter the RAG index.
+        \title{Private Retrieval Systems}
+        \begin{document}
+        \section{Introduction}
+        Retrieval-augmented generation uses \textbf{external evidence}.
+        \begin{equation}
+        E = mc^2
+        \end{equation}
+        \end{document}
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "lecture.tex"
+            path.write_text(latex, encoding="utf-8")
+            _, chunks_added = rag.ingest_file(path, course_id="course-a")
+
+        indexed = save_index.call_args.args[0]
+        indexed_text = " ".join(item["text"] for item in indexed)
+        self.assertEqual(chunks_added, 1)
+        self.assertIn("Private Retrieval Systems", indexed_text)
+        self.assertIn("external evidence", indexed_text)
+        self.assertIn("E = mc^2", indexed_text)
+        self.assertNotIn("documentclass", indexed_text)
+        self.assertNotIn("This comment", indexed_text)
+
     def test_same_document_in_different_courses_gets_different_ids(self) -> None:
         first = rag.document_id("syllabus.pdf", "same text", course_id="course-a")
         second = rag.document_id("syllabus.pdf", "same text", course_id="course-b")

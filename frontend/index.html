@@ -14,7 +14,7 @@
         document.documentElement.dataset.themePreference = preference;
       })();
     </script>
-    <link rel="stylesheet" href="./styles.css?v=20260825-7" />
+    <link rel="stylesheet" href="./styles.css?v=20260825-8" />
     <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
@@ -269,7 +269,7 @@
                 <h3>Course documents</h3>
                 <p>Published files become the only knowledge source for this course chatbot.</p>
                 <form id="courseDocumentForm" class="document-upload-form">
-                  <input id="courseDocumentInput" type="file" accept=".txt,.md,.pdf" multiple required />
+                  <input id="courseDocumentInput" type="file" accept=".txt,.md,.pdf,.tex" multiple required />
                   <button type="submit">Upload documents</button>
                 </form>
                 <div id="courseDocumentsList" class="management-list"></div>
@@ -350,7 +350,7 @@
           <button id="newChatButton">New chat</button>
           <button id="dashboardButton" class="secondary-button" type="button">Course dashboard</button>
         </div>
-        <input id="fileInput" class="file-input" type="file" accept=".txt,.md,.pdf" multiple />
+        <input id="fileInput" class="file-input" type="file" accept=".txt,.md,.pdf,.tex" multiple />
         <div id="scanStatus" class="status"></div>
 
         <section class="thread-section">
@@ -371,7 +371,7 @@
         </form>
       </section>
     </main>
-    <script src="./config.js?v=20260825-7"></script>
-    <script src="./app.js?v=20260825-7" type="module"></script>
+    <script src="./config.js?v=20260825-8"></script>
+    <script src="./app.js?v=20260825-8" type="module"></script>
   </body>
 </html>

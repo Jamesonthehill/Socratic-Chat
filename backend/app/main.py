@@ -17,6 +17,7 @@ from google.oauth2 import id_token as google_id_token
 from app import auth, db, settings
 from app.classifier import classify_message
 from app.rag import (
+    RAG_DOCUMENT_SUFFIXES,
     course_document_ids,
     delete_document,
     generate_answer,
@@ -588,7 +589,7 @@ async def scan_documents(request: Request) -> IngestResponse:
     _require_authority(request, 1)
     documents_scanned, chunks_added, skipped_files = scan_raw_docs()
     if documents_scanned == 0:
-        message = "No .txt, .md, or .pdf files found in backend/data/raw_docs."
+        message = "No .txt, .md, .pdf, or .tex files found in backend/data/raw_docs."
     elif chunks_added == 0:
         message = "Documents were found, but no new chunks were added. They may already be indexed."
     else:
@@ -646,8 +647,8 @@ async def upload_document(request: Request) -> IngestResponse:
     files_stored = 0
     skipped_files: list[str] = []
 
-    store_suffixes = {".txt", ".md", ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
-    rag_suffixes = {".txt", ".md", ".pdf"}
+    store_suffixes = RAG_DOCUMENT_SUFFIXES | {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+    rag_suffixes = RAG_DOCUMENT_SUFFIXES
 
     for upload in files:
         filename = Path(getattr(upload, "filename", "") or "upload.txt").name
@@ -677,7 +678,7 @@ async def upload_document(request: Request) -> IngestResponse:
         chunks_added += added
 
     if documents_scanned == 0:
-        message = "No supported files were uploaded. Use .txt, .md, .pdf, or common image files."
+        message = "No supported files were uploaded. Use .txt, .md, .pdf, .tex, or common image files."
     elif chunks_added == 0:
         message = "Uploaded file(s) were already indexed."
     else:
@@ -715,7 +716,7 @@ async def upload_course_documents(course_id: str, request: Request) -> IngestRes
     documents_scanned = 0
     files_stored = 0
     skipped_files: list[str] = []
-    supported_suffixes = {".txt", ".md", ".pdf"}
+    supported_suffixes = RAG_DOCUMENT_SUFFIXES
 
     for upload in files:
         filename = Path(getattr(upload, "filename", "") or "upload.txt").name
@@ -744,7 +745,7 @@ async def upload_course_documents(course_id: str, request: Request) -> IngestRes
         files_stored += 1
 
     if documents_scanned == 0:
-        message = "No course documents were uploaded. Use .txt, .md, or .pdf files."
+        message = "No course documents were uploaded. Use .txt, .md, .pdf, or .tex files."
     elif chunks_added == 0:
         message = "The course documents were stored; matching content was already indexed."
     else:
@@ -901,7 +902,7 @@ def _restore_missing_course_chunks(course_id: str, files: list[dict[str, object]
             continue
 
         filename = Path(str(file.get("filename") or "document.txt")).name
-        if Path(filename).suffix.lower() not in {".txt", ".md", ".pdf"}:
+        if Path(filename).suffix.lower() not in RAG_DOCUMENT_SUFFIXES:
             continue
         stored = db.get_rag_file(str(file.get("file_id") or ""))
         if not stored:
@@ -1000,7 +1001,7 @@ def _file_state_answer(files: list[dict[str, object]], message: str) -> str | No
 
     names = _unique_file_names(files)
     if not names:
-        return "I do not see any uploaded files in this chat yet. Attach a .txt, .md, or .pdf file first."
+        return "I do not see any uploaded files in this chat yet. Attach a .txt, .md, .pdf, or .tex file first."
 
     if len(names) == 1:
         return (

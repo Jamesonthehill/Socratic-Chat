@@ -107,6 +107,38 @@ class SchoolGoogleAccountTests(unittest.TestCase):
         self.assertIn("@charlotte.edu", context.exception.detail)
 
 
+class PasswordLoginTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.original_secret = settings.AUTH_SESSION_SECRET
+        self.original_enabled = settings.ALLOW_PASSWORD_LOGIN
+        self.original_school_auth = settings.SCHOOL_GOOGLE_AUTH_ENABLED
+        settings.AUTH_SESSION_SECRET = "test-secret-that-is-not-used-outside-tests"
+        settings.ALLOW_PASSWORD_LOGIN = True
+        settings.SCHOOL_GOOGLE_AUTH_ENABLED = True
+
+    def tearDown(self) -> None:
+        settings.AUTH_SESSION_SECRET = self.original_secret
+        settings.ALLOW_PASSWORD_LOGIN = self.original_enabled
+        settings.SCHOOL_GOOGLE_AUTH_ENABLED = self.original_school_auth
+
+    @patch("app.main.db.is_enabled", return_value=True)
+    @patch("app.main.db.authenticate_user")
+    def test_verified_school_user_can_login_with_id_and_password(self, authenticate_user, _is_enabled) -> None:
+        authenticate_user.return_value = {
+            "user_id": "school-user-1",
+            "username": "student1",
+            "display_name": "Student One",
+            "email": "student@charlotte.edu",
+            "authority_level": 2,
+            "role": "student",
+            "role_status": "active",
+            "onboarding_complete": True,
+        }
+        response = asyncio.run(main.login(main.LoginRequest(identifier="student1", password="password123")))
+        self.assertEqual(response.user.username, "student1")
+        authenticate_user.assert_called_once_with("student1", "password123", require_google=True)
+
+
 class GitHubAccountRequirementTests(unittest.TestCase):
     def setUp(self) -> None:
         self.original_secret = settings.AUTH_SESSION_SECRET

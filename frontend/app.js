@@ -80,6 +80,7 @@ let conversationId = localStorage.getItem(CONVERSATION_KEY) || createConversatio
 localStorage.setItem(CONVERSATION_KEY, conversationId);
 let emailVerificationRequired = true;
 let authMode = "open";
+let registrationEnabled = true;
 let githubAccountRequired = false;
 let githubOauthConfigured = false;
 
@@ -247,14 +248,14 @@ function requireActiveSession() {
 }
 
 function setAuthMode(mode) {
-  if (authMode === "school_google" || authMode === "unavailable") {
+  if (authMode === "unavailable") {
     loginForm.classList.add("is-hidden");
     registerForm.classList.add("is-hidden");
     showLoginButton.classList.remove("is-active");
     showRegisterButton.classList.remove("is-active");
     return;
   }
-  const isLogin = mode === "login";
+  const isLogin = mode === "login" || !registrationEnabled;
   loginForm.classList.toggle("is-hidden", !isLogin);
   registerForm.classList.toggle("is-hidden", isLogin);
   showLoginButton.classList.toggle("is-active", isLogin);
@@ -1136,6 +1137,7 @@ loginForm.addEventListener("submit", async (event) => {
 function applyAuthenticationMode(config) {
   const required = Boolean(config.email_verification_required);
   authMode = config.auth_mode || "open";
+  registrationEnabled = config.registration_enabled !== false;
   githubAccountRequired = Boolean(config.github_account_required);
   githubOauthConfigured = Boolean(config.github_oauth_configured);
   emailVerificationRequired = required;
@@ -1152,16 +1154,15 @@ function applyAuthenticationMode(config) {
   }
   emailAuthDivider?.classList.toggle("is-hidden", !passwordAuthEnabled);
   authTabs?.classList.toggle("is-hidden", !passwordAuthEnabled);
+  showRegisterButton?.classList.toggle("is-hidden", !registrationEnabled);
   loginForm?.classList.toggle("is-hidden", !passwordAuthEnabled);
   registerForm?.classList.add("is-hidden");
 
-  if (!passwordAuthEnabled) {
-    const domain = config.school_domain || "your school";
-    if (authCopy) {
-      authCopy.textContent = githubAccountRequired
-        ? `Step 1 of 2: verify your ${domain} Google account, then connect GitHub.`
-        : `Sign in with your ${domain} Google account to use the chatbot.`;
-    }
+  const domain = config.school_domain || "your school";
+  if (authCopy && authMode === "school_google") {
+    authCopy.textContent = passwordAuthEnabled
+      ? `New users: verify your ${domain} Google account. Returning users: sign in with your Socratic-Chat ID and password.`
+      : `Sign in with your ${domain} Google account to use the chatbot.`;
   }
 }
 
@@ -1174,6 +1175,7 @@ async function setupAuthenticationMode() {
       email_verification_required: false,
       auth_mode: "unavailable",
       password_auth_enabled: false,
+      registration_enabled: false,
       school_domain: "charlotte.edu",
       github_account_required: false,
       github_oauth_configured: false,

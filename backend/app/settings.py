@@ -42,6 +42,7 @@ ALLOWED_GOOGLE_DOMAINS = {
 }
 AUTH_SESSION_SECRET = os.getenv("AUTH_SESSION_SECRET", "")
 AUTH_SESSION_MINUTES = int(os.getenv("AUTH_SESSION_MINUTES", "60"))
+ALLOW_PASSWORD_LOGIN = os.getenv("ALLOW_PASSWORD_LOGIN", "true").lower() in {"1", "true", "yes"}
 CORS_ALLOWED_ORIGINS = [
     origin.strip().rstrip("/")
     for origin in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(",")

@@ -107,7 +107,8 @@ async def auth_config() -> AuthConfigResponse:
             settings.REQUIRE_EMAIL_VERIFICATION and not settings.SCHOOL_GOOGLE_AUTH_ENABLED
         ),
         auth_mode=settings.AUTH_MODE,
-        password_auth_enabled=not settings.SCHOOL_GOOGLE_AUTH_ENABLED,
+        password_auth_enabled=settings.ALLOW_PASSWORD_LOGIN,
+        registration_enabled=not settings.SCHOOL_GOOGLE_AUTH_ENABLED,
         school_domain=school_domain,
         github_account_required=settings.REQUIRE_GITHUB_ACCOUNT,
         github_oauth_configured=bool(settings.GITHUB_CLIENT_ID and settings.GITHUB_CLIENT_SECRET),
@@ -234,13 +235,20 @@ async def google_auth(payload: GoogleAuthRequest) -> AuthResponse:
 
 @app.post("/api/auth/login", response_model=AuthResponse)
 async def login(payload: LoginRequest) -> AuthResponse:
-    if settings.SCHOOL_GOOGLE_AUTH_ENABLED:
-        raise HTTPException(status_code=403, detail="Use your school Google account to sign in.")
+    if not settings.ALLOW_PASSWORD_LOGIN:
+        raise HTTPException(status_code=403, detail="ID and password sign-in is disabled.")
     if not db.is_enabled():
         raise HTTPException(status_code=503, detail="PostgreSQL is not connected.")
-    user = db.authenticate_user(payload.identifier, payload.password)
+    user = db.authenticate_user(
+        payload.identifier,
+        payload.password,
+        require_google=settings.SCHOOL_GOOGLE_AUTH_ENABLED,
+    )
     if not user:
-        raise HTTPException(status_code=401, detail="Email/username or password is wrong.")
+        detail = "Socratic-Chat ID/email or password is incorrect."
+        if settings.SCHOOL_GOOGLE_AUTH_ENABLED:
+            detail += " New users must complete Google verification first."
+        raise HTTPException(status_code=401, detail=detail)
     return _auth_response(user)
 
 

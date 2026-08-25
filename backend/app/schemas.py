@@ -87,6 +87,7 @@ class AuthConfigResponse(BaseModel):
     email_verification_required: bool
     auth_mode: str
     password_auth_enabled: bool
+    registration_enabled: bool
     school_domain: str | None = None
     github_account_required: bool = False
     github_oauth_configured: bool = False

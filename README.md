@@ -128,8 +128,8 @@ session, and requires that session on chat, file, and conversation endpoints.
 After the first successful school Google sign-in, a user completes one account
 setup form with a Socratic-Chat username, matching password confirmation, and a
 requested position. The password is stored as a salted PBKDF2 hash; it is never
-stored as plain text. School Google remains the deployed sign-in method, so the
-setup form is shown only once and does not replace Google authentication.
+stored as plain text. The setup form is shown only once. Afterward, returning
+users may sign in with either Google or their Socratic-Chat ID and password.
 
 The `users.authority_level` column controls backend authorization:
 
@@ -141,6 +141,21 @@ Students become active immediately. Choosing instructor creates a pending
 request while the account remains at student authority. An administrator can
 approve or reject the request from the course dashboard. Users cannot grant
 themselves instructor or administrator access.
+
+The landing page keeps both authentication choices visible:
+
+- School Google is required for first-time verification and account setup.
+- Socratic-Chat ID/password is available only after Google verification and
+  onboarding have been completed.
+
+Control returning-user password login with:
+
+```text
+ALLOW_PASSWORD_LOGIN=true
+```
+
+Open registration remains disabled in `school_google` mode, so visitors cannot
+create password-only accounts without first verifying a school Google account.
 
 Set at least one administrator in the Render environment before deployment:
 

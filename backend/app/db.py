@@ -1035,7 +1035,11 @@ def create_user(username: str, email: str, password: str) -> dict[str, object]:
     return user
 
 
-def authenticate_user(identifier: str, password: str) -> dict[str, object] | None:
+def authenticate_user(
+    identifier: str,
+    password: str,
+    require_google: bool = False,
+) -> dict[str, object] | None:
     init_db()
     normalized = identifier.strip().lower()
     with get_connection() as conn:
@@ -1044,9 +1048,13 @@ def authenticate_user(identifier: str, password: str) -> dict[str, object] | Non
                 """
                 SELECT id::text, username, email, password_salt, password_hash
                 FROM users
-                WHERE lower(email) = %s OR lower(username) = %s
+                WHERE (lower(email) = %s OR lower(username) = %s)
+                  AND (
+                    NOT %s
+                    OR (google_sub IS NOT NULL AND onboarding_completed_at IS NOT NULL)
+                  )
                 """,
-                (normalized, normalized),
+                (normalized, normalized, require_google),
             )
             row = cur.fetchone()
 

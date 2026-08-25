@@ -51,6 +51,7 @@ const googleSignInWrap = document.querySelector("#googleSignInWrap");
 const googleSignInButton = document.querySelector("#googleSignInButton");
 const githubConnectWrap = document.querySelector("#githubConnectWrap");
 const githubConnectMessage = document.querySelector("#githubConnectMessage");
+const githubSchoolEmail = document.querySelector("#githubSchoolEmail");
 const connectGithubButton = document.querySelector("#connectGithubButton");
 const logoutButton = document.querySelector("#logoutButton");
 const userIdentity = document.querySelector("#userIdentity");
@@ -640,13 +641,18 @@ function showGithubConnection() {
   onboardingScreen?.classList.add("is-hidden");
   dashboardScreen?.classList.add("is-hidden");
   authScreen.classList.remove("is-hidden");
+  authScreen.classList.add("is-github-linking");
   googleSignInWrap?.classList.add("is-hidden");
   githubConnectWrap?.classList.remove("is-hidden");
+  authStatus.textContent = "";
   if (authCopy) authCopy.textContent = "Step 2 of 2: connect the GitHub account you want linked to this school account.";
   if (githubConnectMessage) {
     githubConnectMessage.textContent = githubOauthConfigured
-      ? `School account ${currentUser?.email || "verified"} is verified. Connect GitHub to continue.`
+      ? "Your school identity is verified. Link the GitHub account you want to use with Socratic-Chat."
       : "GitHub authentication is not configured on the server yet.";
+  }
+  if (githubSchoolEmail) {
+    githubSchoolEmail.textContent = currentUser?.email || "Verified charlotte.edu account";
   }
   if (connectGithubButton) connectGithubButton.disabled = !githubOauthConfigured;
 }
@@ -670,6 +676,7 @@ function showSignedOut() {
   onboardingScreen?.classList.add("is-hidden");
   dashboardScreen?.classList.add("is-hidden");
   authScreen.classList.remove("is-hidden");
+  authScreen.classList.remove("is-github-linking");
   authStatus.textContent = "";
   githubConnectWrap?.classList.add("is-hidden");
   googleSignInWrap?.classList.remove("is-hidden");

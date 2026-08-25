@@ -14,7 +14,7 @@
         document.documentElement.dataset.themePreference = preference;
       })();
     </script>
-    <link rel="stylesheet" href="./styles.css?v=20260825-3" />
+    <link rel="stylesheet" href="./styles.css?v=20260825-6" />
     <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
@@ -41,8 +41,39 @@
         </div>
 
         <div id="githubConnectWrap" class="github-connect-wrap is-hidden">
-          <p id="githubConnectMessage">School account verified. Connect GitHub to finish signing in.</p>
-          <button id="connectGithubButton" type="button">Continue with GitHub</button>
+          <div class="account-link-graphic" aria-hidden="true">
+            <div class="account-logo school-account-logo">CLT</div>
+            <div class="account-link-connector">
+              <span></span>
+              <strong>✓</strong>
+              <span></span>
+            </div>
+            <div class="account-logo github-account-logo">GH</div>
+          </div>
+          <div class="github-connect-heading">
+            <p class="eyebrow">Step 2 of 2</p>
+            <h2>Connect your GitHub account</h2>
+            <p id="githubConnectMessage">Your school account is verified. Link GitHub to finish signing in.</p>
+          </div>
+
+          <div class="verified-school-account">
+            <span class="verified-account-check" aria-hidden="true">✓</span>
+            <div>
+              <small>Verified UNC Charlotte account</small>
+              <strong id="githubSchoolEmail">charlotte.edu</strong>
+            </div>
+          </div>
+
+          <div class="github-permission-card">
+            <div class="permission-card-icon" aria-hidden="true">↗</div>
+            <div>
+              <strong>GitHub public identity</strong>
+              <p>Username and public profile only. Socratic-Chat does not request repository access.</p>
+            </div>
+          </div>
+
+          <button id="connectGithubButton" type="button">Authorize with GitHub</button>
+          <p class="github-redirect-note">You will continue securely to github.com and return here after authorization.</p>
         </div>
 
         <div id="emailAuthDivider" class="auth-divider"><span>or use your Socratic-Chat ID</span></div>
@@ -330,7 +361,7 @@
         </form>
       </section>
     </main>
-    <script src="./config.js?v=20260825-3"></script>
-    <script src="./app.js?v=20260825-3" type="module"></script>
+    <script src="./config.js?v=20260825-6"></script>
+    <script src="./app.js?v=20260825-6" type="module"></script>
   </body>
 </html>

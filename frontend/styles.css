@@ -842,21 +842,144 @@ h2 {
 
 .github-connect-wrap {
   display: grid;
-  gap: 12px;
-  padding: 16px;
+  gap: 16px;
+  padding: 20px;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--paper);
+  border-radius: 14px;
+  background: var(--surface-soft);
 }
 
 .github-connect-wrap.is-hidden {
   display: none;
 }
 
-.github-connect-wrap p {
+.github-connect-wrap p,
+.github-connect-wrap h2 {
   margin: 0;
+}
+
+.github-connect-wrap p {
   color: var(--muted);
   line-height: 1.45;
+}
+
+.account-link-graphic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 0 2px;
+}
+
+.account-logo {
+  display: grid;
+  place-items: center;
+  width: 66px;
+  height: 66px;
+  border-radius: 50%;
+  box-shadow: 0 8px 20px rgba(30, 37, 34, 0.12);
+  font-size: 0.9rem;
+  font-weight: 950;
+  letter-spacing: -0.03em;
+}
+
+.school-account-logo {
+  border: 1px solid #c6ddd6;
+  background: linear-gradient(145deg, #ffffff, #e7f6f1);
+  color: #00703c;
+}
+
+.github-account-logo {
+  border: 1px solid #24292f;
+  background: #24292f;
+  color: #ffffff;
+}
+
+.account-link-connector {
+  display: grid;
+  grid-template-columns: 34px 28px 34px;
+  align-items: center;
+}
+
+.account-link-connector span {
+  border-top: 2px dashed var(--line-strong);
+}
+
+.account-link-connector strong {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #087b42;
+  color: #ffffff;
+  font-size: 0.8rem;
+}
+
+.github-connect-heading {
+  display: grid;
+  gap: 7px;
+  text-align: center;
+}
+
+.github-connect-heading h2 {
+  color: var(--ink);
+  font-size: 1.3rem;
+}
+
+.verified-school-account,
+.github-permission-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper-strong);
+}
+
+.verified-account-check,
+.permission-card-icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-weight: 900;
+}
+
+.verified-account-check {
+  background: #dff3e9;
+  color: #087b42;
+}
+
+.permission-card-icon {
+  background: var(--control);
+  color: var(--ink);
+}
+
+.verified-school-account div,
+.github-permission-card div:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.verified-school-account small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.verified-school-account strong,
+.github-permission-card strong {
+  color: var(--ink);
+  font-size: 0.86rem;
+  overflow-wrap: anywhere;
+}
+
+.github-permission-card p {
+  font-size: 0.78rem;
 }
 
 .github-connect-wrap button {
@@ -867,6 +990,23 @@ h2 {
 
 .github-connect-wrap button:not(:disabled):hover {
   background: #15191d;
+}
+
+.github-connect-wrap .github-redirect-note {
+  margin-top: -6px;
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+body:has(.github-connect-wrap:not(.is-hidden)) .auth-card {
+  width: min(540px, 100%);
+}
+
+.auth-screen.is-github-linking .auth-copy,
+.auth-screen.is-github-linking .auth-divider,
+.auth-screen.is-github-linking .auth-tabs,
+.auth-screen.is-github-linking .auth-form {
+  display: none;
 }
 
 .auth-tabs {
@@ -1844,6 +1984,18 @@ html[data-theme="dark"] .github-connect-wrap button {
 
 html[data-theme="dark"] .github-connect-wrap button:not(:disabled):hover {
   background: #ffffff;
+}
+
+html[data-theme="dark"] .school-account-logo,
+html[data-theme="dark"] .verified-school-account,
+html[data-theme="dark"] .github-permission-card {
+  border-color: var(--line);
+  background: var(--paper-strong);
+}
+
+html[data-theme="dark"] .verified-account-check {
+  background: #173c30;
+  color: #9ee6c8;
 }
 
 @media (max-width: 520px) {

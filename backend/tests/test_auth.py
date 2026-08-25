@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
 from fastapi import HTTPException
@@ -137,6 +137,43 @@ class PasswordLoginTests(unittest.TestCase):
         response = asyncio.run(main.login(main.LoginRequest(identifier="student1", password="password123")))
         self.assertEqual(response.user.username, "student1")
         authenticate_user.assert_called_once_with("student1", "password123", require_google=True)
+
+
+class OnboardingTests(unittest.TestCase):
+    @patch("app.db.get_user_by_id")
+    @patch("app.db.get_connection")
+    @patch("app.db._hash_password", return_value=("salt", "hash"))
+    @patch("app.db.init_db")
+    def test_student_onboarding_casts_null_authority_as_smallint(
+        self,
+        _init_db,
+        _hash_password,
+        get_connection,
+        get_user_by_id,
+    ) -> None:
+        cursor = MagicMock()
+        cursor.fetchone.side_effect = [(None, 2), None]
+        connection = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        get_connection.return_value.__enter__.return_value = connection
+        get_user_by_id.return_value = {
+            "user_id": "student-user-1",
+            "username": "student1",
+            "display_name": "Student One",
+            "email": "student@charlotte.edu",
+            "authority_level": 2,
+            "role": "student",
+            "role_status": "active",
+            "onboarding_complete": True,
+        }
+
+        user = db.complete_onboarding("student-user-1", "student1", "password123", "student")
+
+        update_sql, update_params = cursor.execute.call_args_list[2].args
+        self.assertIn("NULL::SMALLINT", update_sql)
+        self.assertIn("%s::SMALLINT", update_sql)
+        self.assertIsNone(update_params[4])
+        self.assertEqual(user["role"], "student")
 
 
 class GitHubAccountRequirementTests(unittest.TestCase):

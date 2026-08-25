@@ -1394,7 +1394,10 @@ def complete_onboarding(user_id: str, username: str, password: str, position: st
                         WHEN auth_provider = 'google' THEN 'google_password'
                         ELSE auth_provider
                     END,
-                    requested_authority_level = CASE WHEN %s THEN NULL ELSE %s END,
+                    requested_authority_level = CASE
+                        WHEN %s THEN NULL::SMALLINT
+                        ELSE %s::SMALLINT
+                    END,
                     onboarding_completed_at = NOW()
                 WHERE id = %s
                 """,

@@ -17,6 +17,7 @@ from google.oauth2 import id_token as google_id_token
 from app import auth, db, settings
 from app.classifier import classify_message
 from app.rag import (
+    course_document_ids,
     delete_document,
     generate_answer,
     ingest_file,
@@ -874,6 +875,83 @@ def _unique_file_names(files: list[dict[str, object]]) -> list[str]:
     return names
 
 
+def _restore_missing_course_chunks(course_id: str, files: list[dict[str, object]]) -> int:
+    """Rebuild Render-local chunks from the durable PostgreSQL file copy."""
+    indexed_ids = course_document_ids(course_id)
+    restored_chunks = 0
+    for file in files:
+        expected_document_id = str(file.get("document_id") or "")
+        if expected_document_id and expected_document_id in indexed_ids:
+            continue
+
+        filename = Path(str(file.get("filename") or "document.txt")).name
+        if Path(filename).suffix.lower() not in {".txt", ".md", ".pdf"}:
+            continue
+        stored = db.get_rag_file(str(file.get("file_id") or ""))
+        if not stored:
+            continue
+
+        try:
+            restore_dir = settings.RAW_DOCS_DIR / course_id / "restored" / secrets.token_hex(8)
+            restore_dir.mkdir(parents=True, exist_ok=True)
+            target = restore_dir / filename
+            target.write_bytes(bytes(stored["content"]))
+            _, added = ingest_file(target, course_id=course_id)
+            restored_chunks += added
+        except Exception:
+            # A damaged document should not prevent the rest of the course chat
+            # or the course metadata answers from working.
+            continue
+    return restored_chunks
+
+
+def _course_context_answer(
+    course: dict[str, object],
+    files: list[dict[str, object]],
+    message: str,
+) -> str | None:
+    text = _normalise_text(message).rstrip("?.!")
+    instructor_questions = {
+        "what is the professor name",
+        "what's the professor name",
+        "who is the professor",
+        "what is the instructor name",
+        "what's the instructor name",
+        "who is the instructor",
+        "who teaches this course",
+    }
+    course_title_questions = {
+        "what is the course title",
+        "what's the course title",
+        "what is the class name",
+        "what's the class name",
+        "which course is this",
+        "which class is this",
+    }
+    scope_questions = {
+        "what do you know",
+        "what you know",
+        "what can i ask",
+        "what can you answer",
+        "what materials do you know",
+    }
+
+    if text in instructor_questions:
+        return f"The instructor for {course['course_code']} is {course['instructor_name']}."
+    if text in course_title_questions:
+        return f"This course is {course['course_code']}: {course['title']}."
+    if text in scope_questions:
+        names = _unique_file_names(files)
+        document_text = ", ".join(names) if names else "no published documents yet"
+        description = str(course.get("description") or "").strip()
+        description_text = f" The course scope is: {description}" if description else ""
+        return (
+            f"I can answer questions about {course['course_code']}: {course['title']}."
+            f"{description_text} Published materials: {document_text}."
+        )
+    return None
+
+
 
 
 def _small_status_answer(files: list[dict[str, object]], message: str) -> str | None:
@@ -934,6 +1012,10 @@ def _is_document_overview_question(message: str) -> bool:
         "what is this document about",
         "what is this paper about",
         "what's the paper about",
+        "what is the title",
+        "what's the title",
+        "document title",
+        "paper title",
         "summarize",
         "summary",
         "overview",
@@ -1003,6 +1085,18 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
             return ChatResponse(answer=answer, conversation_id=conversation_id, sources=sources)
 
     current_files = db.list_rag_files(course_id=course_id) if db.is_enabled() else []
+    if current_files:
+        _restore_missing_course_chunks(course_id, current_files)
+
+    course = db.get_course(course_id) if db.is_enabled() else None
+    course_answer = _course_context_answer(course, current_files, payload.message) if course else None
+    if course_answer:
+        if db.is_enabled() and conversation_id:
+            if hasattr(db, "clear_pending_clarification"):
+                db.clear_pending_clarification(conversation_id)
+            db.add_message(conversation_id, "assistant", course_answer)
+        return ChatResponse(answer=course_answer, conversation_id=conversation_id or "local", sources=[])
+
     file_state_answer = _file_state_answer(current_files, payload.message) or _small_status_answer(current_files, payload.message)
     if file_state_answer:
         if db.is_enabled() and conversation_id:

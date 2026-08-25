@@ -352,6 +352,14 @@ def delete_document(document_id: str, course_id: str | None = None) -> int:
     return removed
 
 
+def course_document_ids(course_id: str) -> set[str]:
+    return {
+        str(item["document_id"])
+        for item in load_index()
+        if item.get("course_id") == course_id and item.get("document_id")
+    }
+
+
 def fallback_answer(question: str, sources: list[Source]) -> str:
     if not sources:
         return (

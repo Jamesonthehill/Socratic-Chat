@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
 from fastapi import HTTPException
 from starlette.requests import Request
 
-from app import main, rag
+from app import main, rag, settings
 from app.schemas import ChatRequest, CourseCreateRequest
 
 
@@ -94,6 +96,44 @@ class CourseRagIsolationTests(unittest.TestCase):
         ]
         sources = rag.retrieve("linear regression", course_id="course-a")
         self.assertEqual([source.document_id for source in sources], ["doc-a"])
+
+    def test_course_metadata_answers_do_not_depend_on_document_search(self) -> None:
+        course = {
+            "course_code": "ITCS 3155",
+            "title": "Software Engineering",
+            "description": "Software design and teamwork",
+            "instructor_name": "Demo Instructor",
+        }
+        files = [{"filename": "course-paper.pdf"}]
+        self.assertEqual(
+            main._course_context_answer(course, files, "What is the professor name?"),
+            "The instructor for ITCS 3155 is Demo Instructor.",
+        )
+        scope = main._course_context_answer(course, files, "What do you know?")
+        self.assertIn("Software Engineering", scope)
+        self.assertIn("course-paper.pdf", scope)
+
+    @patch("app.main.ingest_file", return_value=("doc-a", 7))
+    @patch("app.main.db.get_rag_file", return_value={"content": b"course notes"})
+    @patch("app.main.course_document_ids", return_value=set())
+    def test_missing_render_index_is_rebuilt_from_postgres(
+        self,
+        _document_ids,
+        _get_file,
+        ingest_file,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            original_raw_docs = settings.RAW_DOCS_DIR
+            settings.RAW_DOCS_DIR = Path(directory)
+            try:
+                restored = main._restore_missing_course_chunks(
+                    "course-a",
+                    [{"file_id": "file-a", "document_id": "doc-a", "filename": "notes.txt"}],
+                )
+            finally:
+                settings.RAW_DOCS_DIR = original_raw_docs
+        self.assertEqual(restored, 7)
+        self.assertEqual(ingest_file.call_args.kwargs["course_id"], "course-a")
 
 
 if __name__ == "__main__":

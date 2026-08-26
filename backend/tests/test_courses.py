@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -149,6 +151,37 @@ class CourseRagIsolationTests(unittest.TestCase):
         self.assertIn("Markdown table", instruction)
         self.assertIn("Assignment", instruction)
         self.assertIn("Requirements", instruction)
+
+    def test_openai_failure_returns_grounded_fallback(self) -> None:
+        class FailingCompletions:
+            async def create(self, **kwargs):
+                self.kwargs = kwargs
+                raise RuntimeError("temporary API failure")
+
+        completions = FailingCompletions()
+
+        class FakeAsyncOpenAI:
+            def __init__(self, **_kwargs):
+                self.chat = SimpleNamespace(completions=completions)
+
+        source = rag.Source(
+            document_id="doc-a",
+            chunk_id="doc-a:0",
+            title="course-notes.txt",
+            text="The group project has three parts.",
+            score=1.0,
+        )
+        fake_openai = SimpleNamespace(AsyncOpenAI=FakeAsyncOpenAI)
+
+        with (
+            patch.object(settings, "OPENAI_API_KEY", "test-key"),
+            patch.dict(sys.modules, {"openai": fake_openai}),
+            self.assertLogs("app.rag", level="ERROR"),
+        ):
+            answer = asyncio.run(rag.generate_answer("Explain the group project", [], [source]))
+
+        self.assertIn("The group project has three parts.", answer)
+        self.assertNotIn("reasoning_effort", completions.kwargs)
 
     @patch("app.rag.save_index")
     @patch("app.rag.load_index", return_value=[])

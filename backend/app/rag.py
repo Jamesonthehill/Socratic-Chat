@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import re
 from collections import Counter
@@ -12,6 +13,7 @@ from app import settings
 from app.schemas import ChatMessage, Source
 
 
+LOGGER = logging.getLogger(__name__)
 WORD_PATTERN = re.compile(r"[a-zA-Z0-9']+")
 PAGE_PATTERN = re.compile(r"\b(?:page|p\.?|pg\.?)\s*(\d{1,4})\b", re.IGNORECASE)
 STOP_WORDS = {
@@ -459,10 +461,16 @@ async def generate_answer(question: str, history: list[ChatMessage], sources: li
         {"role": "user", "content": question},
     ]
 
-    client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-    response = await client.chat.completions.create(
-        model=settings.RAG_MODEL,
-        messages=messages,
-        temperature=settings.RAG_TEMPERATURE,
-    )
-    return response.choices[0].message.content or ""
+    try:
+        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        response = await client.chat.completions.create(
+            model=settings.RAG_MODEL,
+            messages=messages,
+            temperature=settings.RAG_TEMPERATURE,
+        )
+        return response.choices[0].message.content or fallback_answer(question, sources)
+    except Exception:
+        # Keep the course chatbot useful if OpenAI is temporarily unavailable,
+        # rate-limited, or rejects a model-specific option.
+        LOGGER.exception("OpenAI answer generation failed; returning the grounded fallback answer.")
+        return fallback_answer(question, sources)

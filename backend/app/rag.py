@@ -464,6 +464,5 @@ async def generate_answer(question: str, history: list[ChatMessage], sources: li
         model=settings.RAG_MODEL,
         messages=messages,
         temperature=settings.RAG_TEMPERATURE,
-        reasoning_effort="medium",
     )
     return response.choices[0].message.content or ""

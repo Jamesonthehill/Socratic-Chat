@@ -120,6 +120,23 @@ class CourseRagIsolationTests(unittest.TestCase):
     def test_numbered_assignment_tokens_keep_the_identifier(self) -> None:
         self.assertEqual(rag.tokenize("Tell me about Assignment 2"), ["assignment", "2"])
 
+    @patch("app.rag.ingest_file", return_value=("doc-a", 1))
+    def test_scan_raw_docs_honors_ragignore(self, ingest_file) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            raw_docs = Path(directory)
+            (raw_docs / "keep.txt").write_text("Keep this course content.", encoding="utf-8")
+            (raw_docs / "private-source.txt").write_text("Do not index this source.", encoding="utf-8")
+            (raw_docs / ".ragignore").write_text("private-source.txt\n", encoding="utf-8")
+            original_raw_docs = settings.RAW_DOCS_DIR
+            settings.RAW_DOCS_DIR = raw_docs
+            try:
+                documents, chunks, skipped = rag.scan_raw_docs()
+            finally:
+                settings.RAW_DOCS_DIR = original_raw_docs
+
+        self.assertEqual((documents, chunks, skipped), (1, 1, []))
+        self.assertEqual(ingest_file.call_args.args[0].name, "keep.txt")
+
     @patch("app.rag.load_index")
     def test_exact_assignment_number_is_boosted_even_with_an_old_index(self, load_index) -> None:
         load_index.return_value = [

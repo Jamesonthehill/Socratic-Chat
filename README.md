@@ -18,13 +18,51 @@ Add an OpenAI key to `.env` if you want generated answers.
 
 ## Add Documents
 
-Put `.txt`, `.md`, `.pdf`, or `.tex` files in:
+Put `.txt`, `.md`, `.pdf`, `.tex`, `.html`, or `.htm` files in:
 
 ```text
 backend/data/raw_docs/
 ```
 
 Then start the backend and press **Scan documents** in the UI.
+
+### Chunking behavior
+
+Instructor uploads are split by document structure before retrieval. HTML and
+Markdown headings become section boundaries, paragraphs remain intact, and each
+chunk receives a document-and-section breadcrumb plus retrieval metadata.
+
+- The Software Engineering 3155 core uses a 300-token target, a 500-token limit,
+  and up to 40 tokens of same-section overlap.
+- *Software Engineering at Google* chapters use a 650-token target, a 900-token
+  limit, and up to 100 tokens of same-section overlap.
+- Other documents use a 450-token target, a 700-token limit, and up to 80 tokens
+  of same-section overlap.
+
+Chunks never overlap across heading boundaries. Re-uploading a previously indexed
+document replaces its older chunk layout rather than retaining stale duplicates.
+
+### Software Engineering 3155 corpus
+
+The Fall 2026 Socratic tutoring corpus is generated from the course overview and
+Assignments 1–5. Human-readable and retrieval-ready artifacts are stored in:
+
+```text
+docs/rag/software-engineering-3155-fall-2026/
+```
+
+The current lexical RAG scanner reads the semantic Markdown units named
+`backend/data/raw_docs/se3155-*.md`. Regenerate every representation after
+editing the source structure:
+
+```bash
+python tools/build_se3155_corpus.py
+```
+
+The JSONL version preserves assignment, content-type, confidence, privacy, and
+verification metadata for a future vector-embedding pipeline. The corpus follows
+the course AI policy: no chatbot assistance on quizzes, no assignment code from
+scratch, and code-level help only for debugging a learner's own attempt.
 
 ## Run
 

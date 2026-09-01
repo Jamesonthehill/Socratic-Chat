@@ -678,7 +678,7 @@ async def upload_document(request: Request) -> IngestResponse:
         chunks_added += added
 
     if documents_scanned == 0:
-        message = "No supported files were uploaded. Use .txt, .md, .pdf, .tex, or common image files."
+        message = "No supported files were uploaded. Use .txt, .md, .pdf, .tex, .html, or common image files."
     elif chunks_added == 0:
         message = "Uploaded file(s) were already indexed."
     else:
@@ -745,7 +745,7 @@ async def upload_course_documents(course_id: str, request: Request) -> IngestRes
         files_stored += 1
 
     if documents_scanned == 0:
-        message = "No course documents were uploaded. Use .txt, .md, .pdf, or .tex files."
+        message = "No course documents were uploaded. Use .txt, .md, .pdf, .tex, or .html files."
     elif chunks_added == 0:
         message = "The course documents were stored; matching content was already indexed."
     else:

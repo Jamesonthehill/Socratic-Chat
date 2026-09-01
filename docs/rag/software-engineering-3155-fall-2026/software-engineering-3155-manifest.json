@@ -1,0 +1,76 @@
+{
+  "course_id": "software-engineering-3155-fall-2026",
+  "course_name": "Software Engineering 3155",
+  "term": "Fall 2026",
+  "audience": "Students and independent learners",
+  "assistant_mode": "Socratic tutoring",
+  "language": "English",
+  "schema_version": "1.0",
+  "generated_artifacts": [
+    "software-engineering-3155-core.md",
+    "software-engineering-3155-core.html",
+    "software-engineering-3155-rag.jsonl"
+  ],
+  "runtime_ingestion_files": "backend/data/raw_docs/se3155-*.md",
+  "chunk_count": 44,
+  "assignment_count": 5,
+  "privacy_exclusions": [
+    "Instructor and TA names and email addresses",
+    "Private Zoom links",
+    "Private collaboration identities",
+    "Semester-specific deadlines not present in the supplied sources"
+  ],
+  "raw_source_handling": {
+    "course_overview_pdf": "Preserved in backend/data/raw_docs and excluded through .ragignore after its non-private, instructionally relevant content was normalized into semantic chunks."
+  },
+  "retrieval_guidance": {
+    "preferred_source": "software-engineering-3155-rag.jsonl",
+    "current_app_compatible_source": "backend/data/raw_docs/se3155-*.md",
+    "recommended_chunking": "Use the pre-authored JSONL records as semantic units; do not split function contracts, rubric totals, or source-quality notes across chunks.",
+    "recommended_filters": [
+      "course_id",
+      "term",
+      "assignment_number",
+      "content_type",
+      "confidence"
+    ]
+  },
+  "source_quality_notes": [
+    {
+      "id": "se3155-source-note-001",
+      "severity": "high",
+      "scope": "Assignment 4",
+      "note": "The pasted Assignment 4 page omits the example Python code blocks and several example responses/images. The corpus states the observable endpoint requirements but does not invent the missing code. Obtain the original linked assignment document before using the chatbot for line-by-line implementation guidance."
+    },
+    {
+      "id": "se3155-source-note-002",
+      "severity": "medium",
+      "scope": "Assignment 4",
+      "note": "One sentence says Flask, while the title, package installation, Uvicorn command, interactive documentation, and remaining instructions consistently specify FastAPI. The corpus treats FastAPI as authoritative and records Flask as a likely source typo."
+    },
+    {
+      "id": "se3155-source-note-003",
+      "severity": "medium",
+      "scope": "Assignment 1",
+      "note": "The compact Part 1 function table assigns 4 points per function, but the detailed Canvas rubric assigns 8 points per function. The detailed rubric totals the stated 40 Part 1 points and is therefore used as the authoritative scoring interpretation."
+    },
+    {
+      "id": "se3155-source-note-004",
+      "severity": "low",
+      "scope": "Assignment 2",
+      "note": "The filename sandwich_makerr.py appears once with a doubled r. The surrounding instructions refer to the sandwich_maker module. The corpus uses sandwich_maker.py and flags the original spelling for instructor verification."
+    },
+    {
+      "id": "se3155-source-note-005",
+      "severity": "medium",
+      "scope": "Assignment 5",
+      "note": "The assignment says SQLAlchemy creates five tables and later names sandwiches, resources, recipes, orders, and order_details. The task text says the orders implementation is supplied as the example and students implement the other four controllers and endpoint groups."
+    },
+    {
+      "id": "se3155-source-note-006",
+      "severity": "medium",
+      "scope": "All assignments",
+      "note": "Deadlines, semester-specific Canvas identifiers, private repository invitations, instructor and TA contact details, and private meeting links are intentionally excluded from this learner corpus."
+    }
+  ]
+}

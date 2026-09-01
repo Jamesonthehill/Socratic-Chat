@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from app import settings
+from app.chunking import CHUNKING_VERSION, chunk_document
 from app.schemas import ChatMessage, Source
 
 
@@ -23,7 +24,7 @@ STOP_WORDS = {
     "tell", "that", "the", "their", "them", "then", "there", "these", "they", "this", "to",
     "was", "we", "what", "when", "where", "which", "who", "why", "with", "you", "your",
 }
-RAG_DOCUMENT_SUFFIXES = {".txt", ".md", ".pdf", ".tex"}
+RAG_DOCUMENT_SUFFIXES = {".txt", ".md", ".pdf", ".tex", ".html", ".htm"}
 MIN_RELEVANCE_SCORE = 0.12
 MIN_SHARED_TERMS = 2
 
@@ -53,24 +54,10 @@ def requested_page_number(query: str) -> int | None:
         return None
 
 
-def chunk_text(text: str, chunk_size: int = 850, overlap: int = 140) -> list[str]:
-    clean = re.sub(r"\s+", " ", text).strip()
-    if not clean:
-        return []
-
-    chunks: list[str] = []
-    start = 0
-    while start < len(clean):
-        end = min(start + chunk_size, len(clean))
-        if end < len(clean):
-            boundary = max(clean.rfind(".", start, end), clean.rfind("?", start, end), clean.rfind("!", start, end))
-            if boundary > start + chunk_size // 2:
-                end = boundary + 1
-        chunks.append(clean[start:end].strip())
-        if end >= len(clean):
-            break
-        start = max(0, end - overlap)
-    return chunks
+def chunk_text(text: str) -> list[str]:
+    # Compatibility wrapper for PDF pages and callers that expect plain strings;
+    # the implementation now preserves paragraphs instead of slicing characters.
+    return [chunk.text for chunk in chunk_document("Uploaded document", text)]
 
 
 def document_id(
@@ -107,13 +94,13 @@ def ingest_text(
 ) -> tuple[str, int]:
     doc_id = document_id(title, text, conversation_id, course_id)
     existing = load_index()
-    existing_ids = {item["chunk_id"] for item in existing}
     new_items = []
 
-    for index, chunk in enumerate(chunk_text(text)):
+    suffix = Path(title).suffix.lower()
+    semantic_chunks = chunk_document(title, text, source_format=suffix)
+    for index, semantic_chunk in enumerate(semantic_chunks):
+        chunk = semantic_chunk.text
         chunk_id = f"{doc_id}:{index}"
-        if chunk_id in existing_ids:
-            continue
         new_items.append(
             {
                 "document_id": doc_id,
@@ -123,15 +110,28 @@ def ingest_text(
                 "title": title,
                 "text": chunk,
                 "tokens": tokenize(chunk),
+                "metadata": {
+                    "section_path": list(semantic_chunk.section_path),
+                    "chunk_profile": semantic_chunk.profile,
+                    "approximate_token_count": semantic_chunk.token_count,
+                    "chunking_version": CHUNKING_VERSION,
+                },
             }
         )
 
-    if conversation_id:
-        for item in existing:
-            if item.get("chunk_id", "").startswith(f"{doc_id}:") and not item.get("conversation_id"):
-                item["conversation_id"] = conversation_id
+    previous = [item for item in existing if item.get("document_id") == doc_id]
+    is_current = len(previous) == len(new_items) and all(
+        old.get("text") == new.get("text")
+        and old.get("metadata", {}).get("chunking_version") == CHUNKING_VERSION
+        for old, new in zip(previous, new_items)
+    )
+    if is_current:
+        return doc_id, 0
 
-    save_index([*existing, *new_items])
+    # Replace an older chunk layout for this document instead of leaving stale
+    # character-sliced chunks beside the new semantic chunks.
+    unrelated = [item for item in existing if item.get("document_id") != doc_id]
+    save_index([*unrelated, *new_items])
     return doc_id, len(new_items)
 
 
@@ -237,9 +237,19 @@ def scan_raw_docs() -> tuple[int, int, list[str]]:
     documents_scanned = 0
     chunks_added = 0
     skipped_files: list[str] = []
+    ignore_path = settings.RAW_DOCS_DIR / ".ragignore"
+    ignored_names = set()
+    if ignore_path.exists():
+        ignored_names = {
+            line.strip()
+            for line in ignore_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        }
 
     for path in settings.RAW_DOCS_DIR.iterdir():
         if not path.is_file() or path.name.startswith("."):
+            continue
+        if path.name in ignored_names:
             continue
 
         if path.suffix.lower() not in RAG_DOCUMENT_SUFFIXES:
@@ -291,9 +301,16 @@ def retrieve(
 
         item_score = score(query_tokens, item.get("tokens", []))
         if numbered_item:
-            normalized_item_text = " ".join(str(item.get("text", "")).lower().split())
+            # Generated course documents place assignment scope near the start. Restrict
+            # matching to that header area so a later cross-reference such as
+            # "Prerequisite: Assignment 1" does not make an Assignment 2 chunk outrank
+            # the requested Assignment 1 material.
+            normalized_item_text = " ".join(str(item.get("text", ""))[:300].lower().split())
             if re.search(rf"\b{re.escape(numbered_item)}\b", normalized_item_text):
-                item_score = max(item_score, 1.0)
+                # Keep the strong assignment-number match while preserving semantic relevance
+                # inside that assignment. Otherwise every matching section ties at 1.0 and
+                # file order can outrank the section the learner actually asked for.
+                item_score += 1.0
         if item_score < MIN_RELEVANCE_SCORE:
             continue
 

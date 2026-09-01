@@ -589,7 +589,7 @@ async def scan_documents(request: Request) -> IngestResponse:
     _require_authority(request, 1)
     documents_scanned, chunks_added, skipped_files = scan_raw_docs()
     if documents_scanned == 0:
-        message = "No .txt, .md, .pdf, or .tex files found in backend/data/raw_docs."
+        message = "No .txt, .md, .pdf, .tex, .html, or .htm files found in backend/data/raw_docs."
     elif chunks_added == 0:
         message = "Documents were found, but no new chunks were added. They may already be indexed."
     else:
@@ -678,7 +678,7 @@ async def upload_document(request: Request) -> IngestResponse:
         chunks_added += added
 
     if documents_scanned == 0:
-        message = "No supported files were uploaded. Use .txt, .md, .pdf, .tex, .html, or common image files."
+        message = "No supported files were uploaded. Use .txt, .md, .pdf, .tex, .html, .htm, or common image files."
     elif chunks_added == 0:
         message = "Uploaded file(s) were already indexed."
     else:
@@ -745,7 +745,7 @@ async def upload_course_documents(course_id: str, request: Request) -> IngestRes
         files_stored += 1
 
     if documents_scanned == 0:
-        message = "No course documents were uploaded. Use .txt, .md, .pdf, .tex, or .html files."
+        message = "No course documents were uploaded. Use .txt, .md, .pdf, .tex, .html, or .htm files."
     elif chunks_added == 0:
         message = "The course documents were stored; matching content was already indexed."
     else:
@@ -1001,7 +1001,7 @@ def _file_state_answer(files: list[dict[str, object]], message: str) -> str | No
 
     names = _unique_file_names(files)
     if not names:
-        return "I do not see any uploaded files in this chat yet. Attach a .txt, .md, .pdf, or .tex file first."
+        return "I do not see any uploaded files in this chat yet. Attach a .txt, .md, .pdf, .tex, .html, or .htm file first."
 
     if len(names) == 1:
         return (

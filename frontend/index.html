@@ -268,8 +268,9 @@
               <section class="management-card">
                 <h3>Course documents</h3>
                 <p>Published files become the only knowledge source for this course chatbot.</p>
+                <p class="field-help">Supported formats: TXT, Markdown, PDF, LaTeX, HTML, and HTM.</p>
                 <form id="courseDocumentForm" class="document-upload-form">
-                  <input id="courseDocumentInput" type="file" accept=".txt,.md,.pdf,.tex" multiple required />
+                  <input id="courseDocumentInput" type="file" accept=".txt,.md,.pdf,.tex,.html,.htm,text/html" multiple required />
                   <button type="submit">Upload documents</button>
                 </form>
                 <div id="courseDocumentsList" class="management-list"></div>
@@ -350,7 +351,7 @@
           <button id="newChatButton">New chat</button>
           <button id="dashboardButton" class="secondary-button" type="button">Course dashboard</button>
         </div>
-        <input id="fileInput" class="file-input" type="file" accept=".txt,.md,.pdf,.tex" multiple />
+        <input id="fileInput" class="file-input" type="file" accept=".txt,.md,.pdf,.tex,.html,.htm,text/html" multiple />
         <div id="scanStatus" class="status"></div>
 
         <section class="thread-section">

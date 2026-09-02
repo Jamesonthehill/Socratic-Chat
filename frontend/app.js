@@ -1645,14 +1645,33 @@ function showThinkingIndicator() {
   const steps = [
     "Reading your question",
     "Searching uploaded documents",
-    "Checking the strongest sources",
-    "Writing an answer",
+    "Tracing the strongest evidence",
+    "Preparing your next question",
   ];
   let stepIndex = 0;
 
   const item = document.createElement("article");
   item.className = "message assistant thinking-message";
   item.setAttribute("aria-live", "polite");
+  item.setAttribute("aria-label", "Socratic tutor is thinking");
+
+  const mark = document.createElement("span");
+  mark.className = "thinking-mark";
+  mark.setAttribute("aria-hidden", "true");
+  mark.innerHTML = `
+    <svg viewBox="0 0 38 38" focusable="false">
+      <g class="thinking-mark-rays">
+        <rect class="thinking-mark-ray" x="17" y="1" width="4" height="12" rx="2"></rect>
+        <rect class="thinking-mark-ray" x="17" y="1" width="4" height="12" rx="2" transform="rotate(45 19 19)"></rect>
+        <rect class="thinking-mark-ray" x="17" y="1" width="4" height="12" rx="2" transform="rotate(90 19 19)"></rect>
+        <rect class="thinking-mark-ray" x="17" y="1" width="4" height="12" rx="2" transform="rotate(135 19 19)"></rect>
+        <rect class="thinking-mark-ray" x="17" y="1" width="4" height="12" rx="2" transform="rotate(180 19 19)"></rect>
+        <rect class="thinking-mark-ray" x="17" y="1" width="4" height="12" rx="2" transform="rotate(225 19 19)"></rect>
+        <rect class="thinking-mark-ray" x="17" y="1" width="4" height="12" rx="2" transform="rotate(270 19 19)"></rect>
+        <rect class="thinking-mark-ray" x="17" y="1" width="4" height="12" rx="2" transform="rotate(315 19 19)"></rect>
+      </g>
+      <circle class="thinking-mark-core" cx="19" cy="19" r="4.5"></circle>
+    </svg>`;
 
   const statusWrap = document.createElement("div");
   statusWrap.className = "thinking-copy";
@@ -1663,12 +1682,7 @@ function showThinkingIndicator() {
   status.textContent = steps[stepIndex];
   statusWrap.append(tutor, status);
 
-  const dots = document.createElement("span");
-  dots.className = "thinking-dots";
-  dots.setAttribute("aria-hidden", "true");
-  dots.innerHTML = "<span></span><span></span><span></span>";
-
-  item.append(statusWrap, dots);
+  item.append(mark, statusWrap);
   messagesEl.appendChild(item);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 

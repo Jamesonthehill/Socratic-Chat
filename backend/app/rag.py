@@ -9,7 +9,7 @@ from typing import Any
 from app import db, settings
 from app.chunking import CHUNKING_VERSION, chunk_document
 from app.schemas import ChatMessage, Source
-from app.socratic import choose_socratic_strategy, socratic_system_instruction
+from app.socratic import choose_socratic_strategy, enforce_socratic_response, socratic_system_instruction
 
 
 LOGGER = logging.getLogger(__name__)
@@ -414,9 +414,11 @@ async def generate_answer(question: str, history: list[ChatMessage], sources: li
             messages=messages,
             temperature=settings.RAG_TEMPERATURE,
         )
-        return response.choices[0].message.content or fallback_answer(question, sources)
+        raw_answer = response.choices[0].message.content or fallback_answer(question, sources)
+        return enforce_socratic_response(raw_answer, question, socratic_decision)
     except Exception:
         # Keep the course chatbot useful if OpenAI is temporarily unavailable,
         # rate-limited, or rejects a model-specific option.
         LOGGER.exception("OpenAI answer generation failed; returning the grounded fallback answer.")
-        return fallback_answer(question, sources)
+        fallback = fallback_answer(question, sources)
+        return enforce_socratic_response(fallback, question, socratic_decision)

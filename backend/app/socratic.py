@@ -7,7 +7,7 @@ from app.schemas import ChatMessage, Source
 
 
 DIRECT_INFORMATION_PATTERN = re.compile(
-    r"\b(?:assignment|rubric|deadline|due date|submission|submit|points?|grade|"
+    r"\b(?:assignment|projects?|rubric|deadline|due date|submission|submit|points?|grade|"
     r"office hours?|schedule|syllabus|uploaded files?|documents?)\b",
     re.IGNORECASE,
 )
@@ -141,3 +141,74 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
         "Use specific feedback instead of generic praise such as 'Excellent' or 'Good job'. "
         "Never invent course facts beyond the retrieved context."
     )
+
+
+def _target_concept(message: str) -> str:
+    normalized = " ".join(message.strip().rstrip("?.!").split())
+    patterns = [
+        r"^(?:what is|what are|define|explain)\s+(.+)$",
+        r"^(?:tell me about|help me understand)\s+(.+)$",
+    ]
+    target = normalized
+    for pattern in patterns:
+        match = re.match(pattern, normalized, re.IGNORECASE)
+        if match:
+            target = match.group(1)
+            break
+    target = re.split(r"\s+(?:in|from|according to)\s+(?:the|this|our)\b", target, maxsplit=1, flags=re.IGNORECASE)[0]
+    return target.strip() or "this concept"
+
+
+def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
+    target = _target_concept(message)
+    if decision.strategy == "diagnostic_recall":
+        return f"Before we define {target}, what do you think it means in this course context?"
+    if decision.strategy == "guided_comparison":
+        return "What distinction between the two ideas might change your conclusion?"
+    if decision.strategy == "hint_then_question":
+        return "Which detail in the retrieved material seems most useful for working this out?"
+    if decision.strategy == "probe_reasoning":
+        return "What evidence from the retrieved material supports that reasoning?"
+    if decision.strategy == "justify_or_refine":
+        return "How would you justify or refine that response using the retrieved material?"
+    return f"How would you apply {target} in a new example?"
+
+
+def enforce_socratic_response(answer: str, message: str, decision: SocraticDecision) -> str:
+    """Guarantee that a Socratic turn contains exactly one focused question."""
+    clean_answer = answer.strip()
+    if decision.mode == "direct":
+        return clean_answer
+
+    question_count = clean_answer.count("?")
+    strict_discovery = decision.strategy in {"diagnostic_recall", "guided_comparison"}
+    if strict_discovery and question_count:
+        # Early discovery must not reveal the answer before asking the learner
+        # to reason. Retain only the first question sentence, discarding any
+        # model-generated definition, summary, or bullet list before it.
+        question_end = clean_answer.index("?") + 1
+        question_start = max(
+            clean_answer.rfind(".", 0, question_end),
+            clean_answer.rfind("!", 0, question_end),
+            clean_answer.rfind("\n", 0, question_end),
+        ) + 1
+        question_only = clean_answer[question_start:question_end].strip(" -*\t\n")
+        depends_on_removed_context = re.search(
+            r"\b(?:these|those|such|the above|this idea|that idea)\b",
+            question_only,
+            re.IGNORECASE,
+        )
+        if 3 <= len(question_only.split()) <= 30 and not depends_on_removed_context:
+            return question_only
+        return socratic_fallback_question(message, decision)
+
+    if question_count == 1:
+        return clean_answer
+    if question_count == 0:
+        fallback = socratic_fallback_question(message, decision)
+        if decision.strategy == "explain_then_check" and clean_answer:
+            return f"{clean_answer}\n\n{fallback}"
+        return fallback
+
+    # Keep only the first complete question so the learner has one clear task.
+    return clean_answer.split("?", 1)[0].strip() + "?"

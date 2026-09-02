@@ -3,7 +3,11 @@ from __future__ import annotations
 import unittest
 
 from app.schemas import ChatMessage, Source
-from app.socratic import choose_socratic_strategy, socratic_system_instruction
+from app.socratic import (
+    choose_socratic_strategy,
+    enforce_socratic_response,
+    socratic_system_instruction,
+)
 
 
 SOURCE = Source(
@@ -50,6 +54,55 @@ class SocraticPolicyTests(unittest.TestCase):
     def test_missing_sources_does_not_generate_an_ungrounded_question(self) -> None:
         decision = choose_socratic_strategy("What is a use case?", [], [])
         self.assertEqual(decision.mode, "direct")
+
+    def test_noncompliant_lecture_is_replaced_by_one_diagnostic_question(self) -> None:
+        decision = choose_socratic_strategy("What is mentorship in the paper?", [], [SOURCE])
+        lecture = "Mentorship has three benefits:\n- Support\n- Safety\n- Learning"
+        answer = enforce_socratic_response(lecture, "What is mentorship in the paper?", decision)
+        self.assertEqual(answer.count("?"), 1)
+        self.assertIn("mentorship", answer.lower())
+        self.assertNotIn("three benefits", answer)
+
+    def test_diagnostic_question_discards_a_complete_answer_preamble(self) -> None:
+        decision = choose_socratic_strategy("What is software engineering?", [], [SOURCE])
+        model_answer = (
+            "Software engineering includes policies, practices, tools, time, scale, and sustainability. "
+            "How do you think sustainability affects software engineering practices?"
+        )
+        answer = enforce_socratic_response(model_answer, "What is software engineering?", decision)
+        self.assertEqual(answer, "How do you think sustainability affects software engineering practices?")
+        self.assertNotIn("policies", answer)
+
+    def test_question_that_depends_on_removed_preamble_uses_self_contained_fallback(self) -> None:
+        decision = choose_socratic_strategy("What is software engineering?", [], [SOURCE])
+        model_answer = (
+            "Software engineering considers time, scale, and sustainability. "
+            "Where do you think these factors affect a software project?"
+        )
+        answer = enforce_socratic_response(model_answer, "What is software engineering?", decision)
+        self.assertNotIn("these factors", answer.lower())
+        self.assertIn("software engineering", answer.lower())
+        self.assertEqual(answer.count("?"), 1)
+
+    def test_multiple_model_questions_are_reduced_to_one(self) -> None:
+        decision = choose_socratic_strategy("What is mentorship?", [], [SOURCE])
+        answer = enforce_socratic_response(
+            "What do you already know? Can you give an example?",
+            "What is mentorship?",
+            decision,
+        )
+        self.assertEqual(answer, "What do you already know?")
+
+    def test_explanation_is_preserved_after_repeated_difficulty(self) -> None:
+        history = [
+            ChatMessage(role="assistant", content="What do you think?"),
+            ChatMessage(role="user", content="I am unsure."),
+            ChatMessage(role="assistant", content="Which detail helps?"),
+        ]
+        decision = choose_socratic_strategy("I still don't know.", history, [SOURCE])
+        answer = enforce_socratic_response("Actors remain outside the boundary.", "I still don't know.", decision)
+        self.assertIn("Actors remain outside", answer)
+        self.assertEqual(answer.count("?"), 1)
 
 
 if __name__ == "__main__":

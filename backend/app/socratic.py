@@ -133,13 +133,17 @@ def choose_socratic_strategy(
 
 
 def socratic_system_instruction(decision: SocraticDecision) -> str:
+    emphasis_instruction = (
+        "Use Markdown bold for one to three short, important concept terms when emphasis helps the learner. "
+        "Do not bold complete sentences or routine conversational words."
+    )
     if decision.mode == "direct":
-        return decision.instruction
+        return f"{decision.instruction} {emphasis_instruction}"
     return (
         f"Socratic teaching state: {decision.student_state}. Strategy: {decision.strategy}. "
         f"{decision.instruction} Keep the whole response under three sentences. Ask only one question. "
         "Use specific feedback instead of generic praise such as 'Excellent' or 'Good job'. "
-        "Never invent course facts beyond the retrieved context."
+        f"Never invent course facts beyond the retrieved context. {emphasis_instruction}"
     )
 
 
@@ -162,7 +166,7 @@ def _target_concept(message: str) -> str:
 def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
     target = _target_concept(message)
     if decision.strategy == "diagnostic_recall":
-        return f"Before we define {target}, what comes to mind when you hear that term?"
+        return f"Before we define **{target}**, what comes to mind when you hear that term?"
     if decision.strategy == "guided_comparison":
         return "What distinction between the two ideas might change your conclusion?"
     if decision.strategy == "hint_then_question":

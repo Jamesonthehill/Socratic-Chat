@@ -72,7 +72,7 @@ class SocraticPolicyTests(unittest.TestCase):
         answer = enforce_socratic_response(model_answer, "What is software engineering?", decision)
         self.assertEqual(
             answer,
-            "Before we define software engineering, what comes to mind when you hear that term?",
+            "Before we define **software engineering**, what comes to mind when you hear that term?",
         )
         self.assertNotIn("policies", answer)
 
@@ -96,8 +96,14 @@ class SocraticPolicyTests(unittest.TestCase):
         )
         self.assertEqual(
             answer,
-            "Before we define mentorship, what comes to mind when you hear that term?",
+            "Before we define **mentorship**, what comes to mind when you hear that term?",
         )
+
+    def test_tutor_instruction_uses_selective_keyword_emphasis(self) -> None:
+        decision = choose_socratic_strategy("What is a use case?", [], [SOURCE])
+        instruction = socratic_system_instruction(decision)
+        self.assertIn("Markdown bold", instruction)
+        self.assertIn("Do not bold complete sentences", instruction)
 
     def test_explanation_is_preserved_after_repeated_difficulty(self) -> None:
         history = [

@@ -2568,6 +2568,15 @@ html[data-theme="dark"] .brand-mark {
   font-size: 0.94rem;
 }
 
+.message.assistant .concept-emphasis {
+  color: var(--navy);
+  font-weight: 850;
+}
+
+html[data-theme="dark"] .message.assistant .concept-emphasis {
+  color: color-mix(in srgb, var(--accent) 72%, white);
+}
+
 .question-rationale {
   margin: 0 18px 14px;
   padding-top: 11px;

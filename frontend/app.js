@@ -1386,6 +1386,28 @@ function isMarkdownTableSeparator(line) {
   return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
 }
 
+function appendInlineEmphasis(container, content) {
+  const text = String(content || "");
+  const boldPattern = /\*\*([^*\n]+)\*\*/g;
+  let cursor = 0;
+  let match;
+
+  while ((match = boldPattern.exec(text)) !== null) {
+    if (match.index > cursor) {
+      container.appendChild(document.createTextNode(text.slice(cursor, match.index)));
+    }
+    const keyword = document.createElement("strong");
+    keyword.className = "concept-emphasis";
+    keyword.textContent = match[1];
+    container.appendChild(keyword);
+    cursor = boldPattern.lastIndex;
+  }
+
+  if (cursor < text.length) {
+    container.appendChild(document.createTextNode(text.slice(cursor)));
+  }
+}
+
 function appendAssistantContent(container, content) {
   const lines = String(content || "").split("\n");
   let index = 0;
@@ -1395,8 +1417,9 @@ function appendAssistantContent(container, content) {
     if (!textLines.length) return;
     const textBlock = document.createElement("div");
     textBlock.className = "message-text";
-    textBlock.textContent = textLines.join("\n").trim();
-    if (textBlock.textContent) container.appendChild(textBlock);
+    const textContent = textLines.join("\n").trim();
+    appendInlineEmphasis(textBlock, textContent);
+    if (textContent) container.appendChild(textBlock);
     textLines = [];
   };
 
@@ -1421,7 +1444,7 @@ function appendAssistantContent(container, content) {
     headerCells.forEach((cell) => {
       const heading = document.createElement("th");
       heading.scope = "col";
-      heading.textContent = cell;
+      appendInlineEmphasis(heading, cell);
       headRow.appendChild(heading);
     });
     head.appendChild(headRow);
@@ -1435,7 +1458,7 @@ function appendAssistantContent(container, content) {
       const row = document.createElement("tr");
       rowCells.forEach((cell) => {
         const data = document.createElement("td");
-        data.textContent = cell;
+        appendInlineEmphasis(data, cell);
         row.appendChild(data);
       });
       body.appendChild(row);

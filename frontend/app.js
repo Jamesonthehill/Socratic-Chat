@@ -211,6 +211,8 @@ function inferQuestionType(content) {
   const text = String(content || "").toLowerCase();
   if (/\b(?:reflect|understanding changed|would you revise|first response)\b/.test(text)) return "Reflection";
   if (/\b(?:synthesi|combine|bring together|overall explanation)\b/.test(text)) return "Synthesis";
+  if (/\b(?:apply|application|new example|new domain|library system)\b/.test(text)) return "Application";
+  if (/\b(?:compare|comparison|difference|distinction)\b/.test(text)) return "Comparison";
   if (/\b(?:evidence|support|source|detail|according|how do you know)\b/.test(text)) return "Evidence";
   if (/\b(?:assum|belie|thought|taking for granted)\b/.test(text)) return "Assumption";
   if (/\b(?:impact|implication|consequence|what happens|lead to|affect)\b/.test(text)) return "Implication";
@@ -227,6 +229,8 @@ function questionTypeExplanation(type) {
     "Alternative viewpoint": "This question invites another perspective so you can compare possibilities.",
     Synthesis: "This question asks you to combine concepts and evidence into a coherent explanation.",
     Reflection: "This question helps you notice how your understanding changed during the conversation.",
+    Application: "This question asks you to transfer the concept to a different situation.",
+    Comparison: "This question helps distinguish related ideas by examining how they differ.",
   };
   return explanations[type] || explanations.Clarification;
 }

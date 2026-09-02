@@ -295,6 +295,19 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                CREATE TABLE IF NOT EXISTS guided_lesson_state (
+                    conversation_id UUID PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+                    lesson_id TEXT NOT NULL,
+                    step_index INTEGER NOT NULL DEFAULT 0 CHECK (step_index >= 0),
+                    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+                    mastered_components JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    completed BOOLEAN NOT NULL DEFAULT FALSE,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS rag_files (
                     id UUID PRIMARY KEY,
                     conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
@@ -1845,6 +1858,76 @@ def clear_pending_clarification(conversation_id: str) -> None:
                 DELETE FROM conversation_state
                 WHERE conversation_id = %s
                 """,
+                (conversation_id,),
+            )
+        conn.commit()
+
+
+def save_guided_lesson_state(conversation_id: str, state: dict[str, object]) -> None:
+    from psycopg.types.json import Jsonb
+
+    init_db()
+    mastered = [str(item) for item in state.get("mastered_components", [])]
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO guided_lesson_state (
+                    conversation_id, lesson_id, step_index, attempts,
+                    mastered_components, completed, updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (conversation_id) DO UPDATE SET
+                    lesson_id = EXCLUDED.lesson_id,
+                    step_index = EXCLUDED.step_index,
+                    attempts = EXCLUDED.attempts,
+                    mastered_components = EXCLUDED.mastered_components,
+                    completed = EXCLUDED.completed,
+                    updated_at = NOW()
+                """,
+                (
+                    conversation_id,
+                    str(state.get("lesson_id", "")),
+                    int(state.get("step_index", 0)),
+                    int(state.get("attempts", 0)),
+                    Jsonb(mastered),
+                    bool(state.get("completed", False)),
+                ),
+            )
+        conn.commit()
+
+
+def get_guided_lesson_state(conversation_id: str) -> dict[str, object] | None:
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT lesson_id, step_index, attempts, mastered_components, completed
+                FROM guided_lesson_state
+                WHERE conversation_id = %s
+                """,
+                (conversation_id,),
+            )
+            row = cur.fetchone()
+
+    if row is None:
+        return None
+    return {
+        "lesson_id": row[0],
+        "step_index": int(row[1]),
+        "attempts": int(row[2]),
+        "mastered_components": list(row[3] or []),
+        "completed": bool(row[4]),
+    }
+
+
+def clear_guided_lesson_state(conversation_id: str) -> None:
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM guided_lesson_state WHERE conversation_id = %s",
                 (conversation_id,),
             )
         conn.commit()

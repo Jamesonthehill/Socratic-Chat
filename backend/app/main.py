@@ -16,6 +16,15 @@ from google.oauth2 import id_token as google_id_token
 
 from app import auth, db, settings
 from app.classifier import classify_message
+from app.guided_lessons import (
+    advance_use_case_lesson,
+    lesson_exit_requested,
+    lesson_search_query,
+    matches_use_case_lesson,
+    sources_support_use_case_lesson,
+    start_use_case_lesson,
+    unrelated_new_topic,
+)
 from app.rag import (
     RAG_DOCUMENT_SUFFIXES,
     generate_answer,
@@ -1040,6 +1049,7 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
     course_id = payload.course_id
     history = payload.history
     user_id = _current_user_id(request)
+    guided_state: dict[str, object] | None = None
 
     if not course_id:
         raise HTTPException(status_code=400, detail="Choose an approved course before opening the chatbot.")
@@ -1057,6 +1067,8 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
         stored_history = db.get_messages(conversation_id, limit=8)
         history = stored_history or payload.history
         db.add_message(conversation_id, "user", payload.message)
+        if hasattr(db, "get_guided_lesson_state"):
+            guided_state = db.get_guided_lesson_state(conversation_id)
 
         off_topic_answer = _off_topic_answer(payload.message)
         if off_topic_answer:
@@ -1099,6 +1111,46 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
                 db.clear_pending_clarification(conversation_id)
             db.add_message(conversation_id, "assistant", file_state_answer)
         return ChatResponse(answer=file_state_answer, conversation_id=conversation_id or "local", sources=[])
+
+    if db.is_enabled() and conversation_id:
+        if guided_state and bool(guided_state.get("completed")):
+            db.clear_guided_lesson_state(conversation_id)
+            guided_state = None
+
+        if guided_state and lesson_exit_requested(payload.message):
+            db.clear_guided_lesson_state(conversation_id)
+            answer = "The guided use case lesson is paused. Ask any course question when you are ready."
+            db.add_message(conversation_id, "assistant", answer)
+            return ChatResponse(answer=answer, conversation_id=conversation_id, sources=[])
+
+        if guided_state and unrelated_new_topic(payload.message):
+            db.clear_guided_lesson_state(conversation_id)
+            guided_state = None
+
+        guided_requested = guided_state is not None or matches_use_case_lesson(payload.message)
+        if guided_requested:
+            sources = retrieve(
+                lesson_search_query(payload.message),
+                top_k=payload.top_k,
+                conversation_id=conversation_id,
+                course_id=course_id,
+            )
+            if sources_support_use_case_lesson(sources):
+                turn = (
+                    advance_use_case_lesson(payload.message, guided_state)
+                    if guided_state is not None
+                    else start_use_case_lesson()
+                )
+                db.save_guided_lesson_state(conversation_id, turn.state)
+                db.add_message(conversation_id, "assistant", turn.answer)
+                return ChatResponse(
+                    answer=turn.answer,
+                    conversation_id=conversation_id,
+                    sources=sources,
+                )
+            if guided_state is not None:
+                db.clear_guided_lesson_state(conversation_id)
+                guided_state = None
 
     classification = await classify_message(payload.message, history)
 

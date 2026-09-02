@@ -1408,6 +1408,35 @@ function appendInlineEmphasis(container, content) {
   }
 }
 
+function splitFinalSocraticQuestion(content) {
+  const text = String(content || "").trim();
+  if (!text.endsWith("?")) return { lead: text, question: "" };
+
+  const paragraphBreaks = [...text.matchAll(/\n\s*\n/g)];
+  const paragraphBreak = paragraphBreaks.at(-1);
+  if (paragraphBreak) {
+    const question = text.slice(paragraphBreak.index + paragraphBreak[0].length).trim();
+    if (question.endsWith("?")) {
+      return { lead: text.slice(0, paragraphBreak.index).trim(), question };
+    }
+  }
+
+  const sentenceBreaks = [...text.matchAll(/[.!]\s+(?=[A-Z*])/g)];
+  const sentenceBreak = sentenceBreaks.at(-1);
+  if (sentenceBreak) {
+    const questionStart = sentenceBreak.index + sentenceBreak[0].length;
+    const question = text.slice(questionStart).trim();
+    if (question.endsWith("?")) {
+      return {
+        lead: text.slice(0, sentenceBreak.index + 1).trim(),
+        question,
+      };
+    }
+  }
+
+  return { lead: "", question: text };
+}
+
 function appendAssistantContent(container, content) {
   const lines = String(content || "").split("\n");
   let index = 0;
@@ -1549,7 +1578,25 @@ function appendMessage(role, content, sources = [], options = {}) {
   const body = document.createElement("div");
   body.className = "message-body";
   if (role === "assistant") {
-    appendAssistantContent(body, content);
+    const { lead, question } = splitFinalSocraticQuestion(content);
+    if (isQuestion && question) {
+      body.classList.add("has-question-focus");
+      if (lead) appendAssistantContent(body, lead);
+
+      const questionFocus = document.createElement("section");
+      questionFocus.className = "socratic-question-focus";
+      questionFocus.setAttribute("aria-label", "Your next thinking step");
+      const questionLabel = document.createElement("span");
+      questionLabel.className = "socratic-question-label";
+      questionLabel.textContent = "Your next thinking step";
+      const questionContent = document.createElement("div");
+      questionContent.className = "socratic-question-content";
+      appendAssistantContent(questionContent, question);
+      questionFocus.append(questionLabel, questionContent);
+      body.appendChild(questionFocus);
+    } else {
+      appendAssistantContent(body, content);
+    }
   } else {
     body.textContent = content;
   }

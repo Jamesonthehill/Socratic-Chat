@@ -104,6 +104,8 @@ class SocraticPolicyTests(unittest.TestCase):
         instruction = socratic_system_instruction(decision)
         self.assertIn("Markdown bold", instruction)
         self.assertIn("Do not bold complete sentences", instruction)
+        self.assertIn("final question in its own paragraph", instruction)
+        self.assertIn("What evidence", instruction)
 
     def test_explanation_is_preserved_after_repeated_difficulty(self) -> None:
         history = [

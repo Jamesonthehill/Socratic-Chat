@@ -2568,6 +2568,34 @@ html[data-theme="dark"] .brand-mark {
   font-size: 0.94rem;
 }
 
+.message-body.has-question-focus {
+  display: grid;
+  gap: 14px;
+}
+
+.socratic-question-focus {
+  display: grid;
+  gap: 5px;
+  padding: 13px 14px 14px;
+  border-left: 3px solid var(--teal);
+  border-radius: 4px 11px 11px 4px;
+  background: color-mix(in srgb, var(--teal-soft) 72%, var(--paper));
+}
+
+.socratic-question-label {
+  color: var(--teal);
+  font-size: 0.62rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.socratic-question-content {
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.58;
+}
+
 .message.assistant .concept-emphasis {
   color: var(--navy);
   font-weight: 850;

@@ -142,6 +142,8 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
     return (
         f"Socratic teaching state: {decision.student_state}. Strategy: {decision.strategy}. "
         f"{decision.instruction} Keep the whole response under three sentences. Ask only one question. "
+        "Put the final question in its own paragraph. When natural, bold only a short reasoning cue at the start "
+        "of the question, such as '**What evidence**', '**Which assumption**', or '**What consequence**'. "
         "Use specific feedback instead of generic praise such as 'Excellent' or 'Good job'. "
         f"Never invent course facts beyond the retrieved context. {emphasis_instruction}"
     )

@@ -63,14 +63,17 @@ class SocraticPolicyTests(unittest.TestCase):
         self.assertIn("mentorship", answer.lower())
         self.assertNotIn("three benefits", answer)
 
-    def test_diagnostic_question_discards_a_complete_answer_preamble(self) -> None:
+    def test_diagnostic_turn_always_uses_prior_knowledge_question(self) -> None:
         decision = choose_socratic_strategy("What is software engineering?", [], [SOURCE])
         model_answer = (
             "Software engineering includes policies, practices, tools, time, scale, and sustainability. "
             "How do you think sustainability affects software engineering practices?"
         )
         answer = enforce_socratic_response(model_answer, "What is software engineering?", decision)
-        self.assertEqual(answer, "How do you think sustainability affects software engineering practices?")
+        self.assertEqual(
+            answer,
+            "Before we define software engineering, what comes to mind when you hear that term?",
+        )
         self.assertNotIn("policies", answer)
 
     def test_question_that_depends_on_removed_preamble_uses_self_contained_fallback(self) -> None:
@@ -84,14 +87,17 @@ class SocraticPolicyTests(unittest.TestCase):
         self.assertIn("software engineering", answer.lower())
         self.assertEqual(answer.count("?"), 1)
 
-    def test_multiple_model_questions_are_reduced_to_one(self) -> None:
+    def test_multiple_model_questions_are_replaced_by_diagnostic_opening(self) -> None:
         decision = choose_socratic_strategy("What is mentorship?", [], [SOURCE])
         answer = enforce_socratic_response(
             "What do you already know? Can you give an example?",
             "What is mentorship?",
             decision,
         )
-        self.assertEqual(answer, "What do you already know?")
+        self.assertEqual(
+            answer,
+            "Before we define mentorship, what comes to mind when you hear that term?",
+        )
 
     def test_explanation_is_preserved_after_repeated_difficulty(self) -> None:
         history = [

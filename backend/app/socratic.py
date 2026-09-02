@@ -162,7 +162,7 @@ def _target_concept(message: str) -> str:
 def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
     target = _target_concept(message)
     if decision.strategy == "diagnostic_recall":
-        return f"Before we define {target}, what do you think it means in this course context?"
+        return f"Before we define {target}, what comes to mind when you hear that term?"
     if decision.strategy == "guided_comparison":
         return "What distinction between the two ideas might change your conclusion?"
     if decision.strategy == "hint_then_question":
@@ -181,6 +181,12 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
         return clean_answer
 
     question_count = clean_answer.count("?")
+    if decision.strategy == "diagnostic_recall":
+        # The opening turn is a prior-knowledge check. Never allow a model
+        # definition or summary to precede it, even when the model also asks a
+        # valid question afterward.
+        return socratic_fallback_question(message, decision)
+
     strict_discovery = decision.strategy in {"diagnostic_recall", "guided_comparison"}
     if strict_discovery and question_count:
         # Early discovery must not reveal the answer before asking the learner

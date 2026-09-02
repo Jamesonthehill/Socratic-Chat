@@ -1659,18 +1659,14 @@ function showThinkingIndicator() {
   mark.className = "thinking-mark";
   mark.setAttribute("aria-hidden", "true");
   mark.innerHTML = `
-    <svg viewBox="0 0 38 38" focusable="false">
-      <g class="thinking-mark-rays">
-        <rect class="thinking-mark-ray" x="17" y="1" width="4" height="12" rx="2"></rect>
-        <rect class="thinking-mark-ray" x="17" y="1" width="4" height="12" rx="2" transform="rotate(45 19 19)"></rect>
-        <rect class="thinking-mark-ray" x="17" y="1" width="4" height="12" rx="2" transform="rotate(90 19 19)"></rect>
-        <rect class="thinking-mark-ray" x="17" y="1" width="4" height="12" rx="2" transform="rotate(135 19 19)"></rect>
-        <rect class="thinking-mark-ray" x="17" y="1" width="4" height="12" rx="2" transform="rotate(180 19 19)"></rect>
-        <rect class="thinking-mark-ray" x="17" y="1" width="4" height="12" rx="2" transform="rotate(225 19 19)"></rect>
-        <rect class="thinking-mark-ray" x="17" y="1" width="4" height="12" rx="2" transform="rotate(270 19 19)"></rect>
-        <rect class="thinking-mark-ray" x="17" y="1" width="4" height="12" rx="2" transform="rotate(315 19 19)"></rect>
+    <svg viewBox="0 0 44 44" focusable="false">
+      <circle class="thinking-orbit-track" cx="22" cy="22" r="16"></circle>
+      <g class="thinking-orbit-particles">
+        <circle class="thinking-particle thinking-particle-primary" cx="22" cy="6" r="3.2"></circle>
+        <circle class="thinking-particle thinking-particle-secondary" cx="22" cy="38" r="2.4"></circle>
       </g>
-      <circle class="thinking-mark-core" cx="19" cy="19" r="4.5"></circle>
+      <circle class="thinking-mark-center" cx="22" cy="22" r="10"></circle>
+      <text class="thinking-mark-letter" x="22" y="22">S</text>
     </svg>`;
 
   const statusWrap = document.createElement("div");

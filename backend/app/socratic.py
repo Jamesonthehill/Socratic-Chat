@@ -17,7 +17,7 @@ DIRECT_REQUEST_PATTERN = re.compile(
     re.IGNORECASE,
 )
 UNCERTAINTY_PATTERN = re.compile(
-    r"\b(?:i do not know|i don't know|not sure|unsure|confused|no idea|i'm stuck|i am stuck)\b",
+    r"\b(?:i (?:still )?(?:do not|don't) know|not sure|unsure|confused|no idea|i'm stuck|i am stuck)\b",
     re.IGNORECASE,
 )
 MISCONCEPTION_PATTERN = re.compile(
@@ -25,6 +25,10 @@ MISCONCEPTION_PATTERN = re.compile(
     re.IGNORECASE,
 )
 REASONING_PATTERN = re.compile(r"\b(?:because|therefore|since|which means|so that)\b", re.IGNORECASE)
+NEW_CONCEPT_PATTERN = re.compile(
+    r"^(?:what is|what are|define|explain|tell me about|help me understand)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -47,9 +51,15 @@ DIRECT_DECISION = SocraticDecision(
 
 
 def _recent_socratic_questions(history: list[ChatMessage]) -> int:
+    recent_history = history[-10:]
+    for index in range(len(recent_history) - 1, -1, -1):
+        message = recent_history[index]
+        if message.role == "assistant" and message.content.lstrip().startswith("Before we define"):
+            recent_history = recent_history[index:]
+            break
     return sum(
         1
-        for message in history[-6:]
+        for message in recent_history
         if message.role == "assistant" and message.content.rstrip().endswith("?")
     )
 
@@ -66,18 +76,30 @@ def choose_socratic_strategy(
     if DIRECT_INFORMATION_PATTERN.search(clean_message) or DIRECT_REQUEST_PATTERN.search(clean_message):
         return DIRECT_DECISION
 
-    if _recent_socratic_questions(history) >= 2:
+    if NEW_CONCEPT_PATTERN.search(clean_message):
         return SocraticDecision(
             mode="socratic",
-            student_state="repeated_difficulty",
-            strategy="explain_then_check",
+            student_state="prior_knowledge_unknown",
+            strategy="diagnostic_recall",
             instruction=(
-                "Give a concise, evidence-grounded explanation now. Then ask exactly one short application "
-                "question that checks understanding. Do not withhold the explanation again."
+                "Do not lecture or reveal the complete answer yet. Ask exactly one accessible diagnostic question "
+                "that connects the target concept to the learner's prior knowledge or a simple example."
             ),
         )
 
+    question_turns = _recent_socratic_questions(history)
+
     if UNCERTAINTY_PATTERN.search(clean_message):
+        if question_turns >= 2:
+            return SocraticDecision(
+                mode="socratic",
+                student_state="repeated_difficulty",
+                strategy="explain_then_check",
+                instruction=(
+                    "Give a concise, evidence-grounded explanation now. Then ask exactly one short application "
+                    "question that checks understanding. Do not withhold the explanation again."
+                ),
+            )
         return SocraticDecision(
             mode="socratic",
             student_state="uncertain",
@@ -110,7 +132,38 @@ def choose_socratic_strategy(
             ),
         )
 
-    if history and history[-1].role == "assistant" and history[-1].content.rstrip().endswith("?"):
+    latest_assistant = next((item for item in reversed(history) if item.role == "assistant"), None)
+    if latest_assistant and latest_assistant.content.rstrip().endswith("?"):
+        if question_turns >= 4:
+            return SocraticDecision(
+                mode="socratic",
+                student_state="ready_to_reflect",
+                strategy="reflect_on_learning",
+                instruction=(
+                    "Give one specific, neutral observation about the learner's progress. Then ask exactly one "
+                    "reflection question about how their understanding changed or what they would revise."
+                ),
+            )
+        if question_turns == 3:
+            return SocraticDecision(
+                mode="socratic",
+                student_state="ready_to_synthesize",
+                strategy="synthesize_understanding",
+                instruction=(
+                    "Give specific, neutral feedback in one short sentence. Then ask exactly one question that "
+                    "requires the learner to combine relevant concepts or evidence into an overall explanation."
+                ),
+            )
+        if question_turns == 2:
+            return SocraticDecision(
+                mode="socratic",
+                student_state="understanding_developing",
+                strategy="examine_limitation",
+                instruction=(
+                    "Give specific, neutral feedback in one short sentence. Then ask exactly one question about "
+                    "a limitation, alternative factor, or condition that could change the learner's conclusion."
+                ),
+            )
         return SocraticDecision(
             mode="socratic",
             student_state="response_to_prompt",
@@ -142,6 +195,7 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
     return (
         f"Socratic teaching state: {decision.student_state}. Strategy: {decision.strategy}. "
         f"{decision.instruction} Keep the whole response under three sentences. Ask only one question. "
+        "Anchor feedback and questions in the retrieved learning context and the learner's latest response. "
         "Put the final question in its own paragraph. When natural, bold only a short reasoning cue at the start "
         "of the question, such as '**What evidence**', '**Which assumption**', or '**What consequence**'. "
         "Use specific feedback instead of generic praise such as 'Excellent' or 'Good job'. "
@@ -177,6 +231,12 @@ def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
         return "What evidence from the retrieved material supports that reasoning?"
     if decision.strategy == "justify_or_refine":
         return "How would you justify or refine that response using the retrieved material?"
+    if decision.strategy == "examine_limitation":
+        return "**What limitation or alternative factor** might change that conclusion?"
+    if decision.strategy == "synthesize_understanding":
+        return "**How can you combine** the relevant concepts and evidence into one explanation?"
+    if decision.strategy == "reflect_on_learning":
+        return "**How has your understanding changed**, and what would you revise in your first response?"
     return f"How would you apply {target} in a new example?"
 
 

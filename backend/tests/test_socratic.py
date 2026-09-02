@@ -118,6 +118,54 @@ class SocraticPolicyTests(unittest.TestCase):
         self.assertIn("Actors remain outside", answer)
         self.assertEqual(answer.count("?"), 1)
 
+    def test_dialogue_progresses_to_limitation_after_two_questions(self) -> None:
+        history = [
+            ChatMessage(role="assistant", content="What comes to mind first?"),
+            ChatMessage(role="user", content="A user goal."),
+            ChatMessage(role="assistant", content="How would you justify that response?"),
+            ChatMessage(role="user", content="It describes what the user does."),
+        ]
+        decision = choose_socratic_strategy("It describes what the user does.", history, [SOURCE])
+        self.assertEqual(decision.strategy, "examine_limitation")
+
+    def test_dialogue_progresses_to_synthesis_after_three_questions(self) -> None:
+        history = [
+            ChatMessage(role="assistant", content="What comes to mind first?"),
+            ChatMessage(role="user", content="A user goal."),
+            ChatMessage(role="assistant", content="What evidence supports that?"),
+            ChatMessage(role="user", content="The actor initiates it."),
+            ChatMessage(role="assistant", content="What alternative factor matters?"),
+            ChatMessage(role="user", content="The boundary also matters."),
+        ]
+        decision = choose_socratic_strategy("The boundary also matters.", history, [SOURCE])
+        self.assertEqual(decision.strategy, "synthesize_understanding")
+
+    def test_dialogue_progresses_to_reflection_after_four_questions(self) -> None:
+        history = [
+            ChatMessage(role="assistant", content="What comes to mind first?"),
+            ChatMessage(role="user", content="A user goal."),
+            ChatMessage(role="assistant", content="What evidence supports that?"),
+            ChatMessage(role="user", content="The actor initiates it."),
+            ChatMessage(role="assistant", content="What alternative factor matters?"),
+            ChatMessage(role="user", content="The system boundary."),
+            ChatMessage(role="assistant", content="How can you combine those ideas?"),
+            ChatMessage(role="user", content="Actors connect to use cases."),
+        ]
+        decision = choose_socratic_strategy("Actors connect to use cases.", history, [SOURCE])
+        self.assertEqual(decision.strategy, "reflect_on_learning")
+
+    def test_new_concept_resets_the_dialogue_progression(self) -> None:
+        history = [
+            ChatMessage(role="assistant", content="What comes to mind first?"),
+            ChatMessage(role="user", content="A user goal."),
+            ChatMessage(role="assistant", content="What evidence supports that?"),
+            ChatMessage(role="user", content="The actor initiates it."),
+            ChatMessage(role="assistant", content="What alternative factor matters?"),
+            ChatMessage(role="user", content="The system boundary."),
+        ]
+        decision = choose_socratic_strategy("What is encapsulation?", history, [SOURCE])
+        self.assertEqual(decision.strategy, "diagnostic_recall")
+
 
 if __name__ == "__main__":
     unittest.main()

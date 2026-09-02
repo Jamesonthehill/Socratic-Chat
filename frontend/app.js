@@ -1478,10 +1478,12 @@ function appendMessage(role, content, sources = [], options = {}) {
 
   const meta = document.createElement("div");
   meta.className = "message-meta";
-  const time = document.createElement("time");
-  time.textContent = options.saved ? "Saved session" : formatClock();
-  if (!options.saved) time.dateTime = new Date().toISOString();
-  meta.appendChild(time);
+  if (!options.saved) {
+    const time = document.createElement("time");
+    time.textContent = formatClock();
+    time.dateTime = new Date().toISOString();
+    meta.appendChild(time);
+  }
 
   if (isQuestion) {
     const bookmarkKey = `${activeCourse?.course_id || "general"}:${content}`;

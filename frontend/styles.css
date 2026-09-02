@@ -2428,11 +2428,12 @@ html[data-theme="dark"] .brand-mark {
   width: 100%;
   max-width: 980px;
   margin: 0 auto;
-  gap: 22px;
+  gap: 0;
   padding: 38px 36px 28px;
 }
 
 .message {
+  flex: 0 0 auto;
   width: min(760px, 88%);
   max-width: none;
   padding: 0;
@@ -2440,6 +2441,20 @@ html[data-theme="dark"] .brand-mark {
   line-height: 1.62;
   white-space: normal;
   overflow: hidden;
+}
+
+.message + .message {
+  margin-top: 16px;
+}
+
+/* A larger pause starts the student's next thought; the tutor response stays
+   visually connected to the student message that prompted it. */
+.message.assistant + .message.user {
+  margin-top: 28px;
+}
+
+.message.user + .message.assistant {
+  margin-top: 12px;
 }
 
 .message.assistant {
@@ -2518,6 +2533,10 @@ html[data-theme="dark"] .brand-mark {
   color: var(--muted);
   font-size: 0.65rem;
   font-weight: 650;
+}
+
+.message-meta:empty {
+  display: none;
 }
 
 .message-bookmark {

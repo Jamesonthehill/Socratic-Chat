@@ -8,7 +8,8 @@ from html.parser import HTMLParser
 TOKEN_PATTERN = re.compile(r"\w+|[^\w\s]", re.UNICODE)
 SENTENCE_PATTERN = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'])")
 MARKDOWN_HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
-CHUNKING_VERSION = "semantic-html-v1"
+ASSIGNMENT_PATTERN = re.compile(r"\bassignment\s+(\d+)\b", re.IGNORECASE)
+CHUNKING_VERSION = "semantic-html-v2"
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,7 @@ class ChunkProfile:
 class SemanticChunk:
     text: str
     section_path: tuple[str, ...] = ()
+    assignment_number: int | None = None
     token_count: int = 0
     profile: str = "default"
 
@@ -31,6 +33,7 @@ class SemanticChunk:
 class _Block:
     text: str
     section_path: tuple[str, ...] = ()
+    assignment_number: int | None = None
     kind: str = "paragraph"
 
 
@@ -62,6 +65,11 @@ def approximate_token_count(text: str) -> int:
     return len(TOKEN_PATTERN.findall(text))
 
 
+def assignment_number_from_text(text: str) -> int | None:
+    match = ASSIGNMENT_PATTERN.search(text)
+    return int(match.group(1)) if match else None
+
+
 def select_profile(title: str, text: str = "") -> ChunkProfile:
     marker = f"{title}\n{text[:1000]}".lower()
     if "software-engineering-3155-core" in marker or "software engineering 3155" in marker:
@@ -91,6 +99,8 @@ class _StructuredHTMLParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.blocks: list[_Block] = []
         self._headings: list[str] = []
+        self._assignment_number: int | None = None
+        self._article_assignment_stack: list[int | None] = []
         self._ignored_depth = 0
         self._active_tag: str | None = None
         self._active_heading_level: int | None = None
@@ -102,6 +112,15 @@ class _StructuredHTMLParser(HTMLParser):
             self._ignored_depth += 1
             return
         if self._ignored_depth:
+            return
+
+        if tag == "article":
+            self._article_assignment_stack.append(self._assignment_number)
+            attributes = dict(attrs)
+            article_id = attributes.get("id") or ""
+            match = re.search(r"(?:^|[-_])assignment[-_](\d+)(?:$|[-_])", article_id, re.IGNORECASE)
+            if match:
+                self._assignment_number = int(match.group(1))
             return
 
         if re.fullmatch(r"h[1-6]", tag) and self._active_tag is None:
@@ -123,6 +142,8 @@ class _StructuredHTMLParser(HTMLParser):
                 self._ignored_depth -= 1
             return
         if self._ignored_depth or tag != self._active_tag:
+            if tag == "article" and self._article_assignment_stack:
+                self._assignment_number = self._article_assignment_stack.pop()
             return
 
         text = _normalize_code("".join(self._buffer)) if self._active_tag == "pre" else _normalize("".join(self._buffer))
@@ -133,9 +154,21 @@ class _StructuredHTMLParser(HTMLParser):
                 while len(self._headings) < level - 1:
                     self._headings.append("")
                 self._headings.append(text)
+                heading_assignment = assignment_number_from_text(text)
+                if level <= 2 and not self._article_assignment_stack:
+                    self._assignment_number = heading_assignment
+                elif heading_assignment is not None:
+                    self._assignment_number = heading_assignment
         elif text:
             kind = "code" if tag == "pre" else ("list_item" if tag == "li" else tag)
-            self.blocks.append(_Block(text=text, section_path=tuple(filter(None, self._headings)), kind=kind))
+            self.blocks.append(
+                _Block(
+                    text=text,
+                    section_path=tuple(filter(None, self._headings)),
+                    assignment_number=self._assignment_number,
+                    kind=kind,
+                )
+            )
 
         self._active_tag = None
         self._active_heading_level = None
@@ -162,7 +195,17 @@ def text_blocks(text: str) -> list[_Block]:
         value = _normalize(" ".join(pending))
         pending.clear()
         if value:
-            blocks.append(_Block(text=value, section_path=tuple(filter(None, headings))))
+            heading_assignment = next(
+                (number for heading in reversed(headings) if (number := assignment_number_from_text(heading)) is not None),
+                None,
+            )
+            blocks.append(
+                _Block(
+                    text=value,
+                    section_path=tuple(filter(None, headings)),
+                    assignment_number=heading_assignment,
+                )
+            )
 
     for raw_line in text.replace("\r\n", "\n").split("\n"):
         line = raw_line.strip()
@@ -179,7 +222,18 @@ def text_blocks(text: str) -> list[_Block]:
             flush()
         elif re.match(r"^(?:[-*+] |\d+[.)] )", line):
             flush()
-            blocks.append(_Block(text=_normalize(line), section_path=tuple(filter(None, headings)), kind="list_item"))
+            heading_assignment = next(
+                (number for heading in reversed(headings) if (number := assignment_number_from_text(heading)) is not None),
+                None,
+            )
+            blocks.append(
+                _Block(
+                    text=_normalize(line),
+                    section_path=tuple(filter(None, headings)),
+                    assignment_number=heading_assignment,
+                    kind="list_item",
+                )
+            )
         else:
             pending.append(line)
     flush()
@@ -216,7 +270,14 @@ def _expand_long_blocks(blocks: list[_Block], document_title: str, max_tokens: i
         header_tokens = approximate_token_count(_context_header(document_title, block.section_path))
         body_limit = max(50, max_tokens - header_tokens)
         for part in _split_long_text(block.text, body_limit):
-            expanded.append(_Block(text=part, section_path=block.section_path, kind=block.kind))
+            expanded.append(
+                _Block(
+                    text=part,
+                    section_path=block.section_path,
+                    assignment_number=block.assignment_number,
+                    kind=block.kind,
+                )
+            )
     return expanded
 
 
@@ -252,6 +313,7 @@ def build_semantic_chunks(
     chunks: list[SemanticChunk] = []
     current: list[_Block] = []
     current_path: tuple[str, ...] = ()
+    current_assignment: int | None = None
 
     def emit() -> None:
         nonlocal current
@@ -264,18 +326,20 @@ def build_semantic_chunks(
             SemanticChunk(
                 text=text,
                 section_path=current_path,
+                assignment_number=current_assignment,
                 token_count=approximate_token_count(text),
                 profile=profile.name,
             )
         )
 
     for block in blocks:
-        if current and block.section_path != current_path:
+        if current and (block.section_path != current_path or block.assignment_number != current_assignment):
             emit()
             current = []
 
         if not current:
             current_path = block.section_path
+            current_assignment = block.assignment_number
 
         proposed = "\n\n".join(item.text for item in [*current, block])
         header_size = approximate_token_count(_context_header(document_title, current_path))
@@ -287,6 +351,7 @@ def build_semantic_chunks(
             emit()
             current = _trailing_overlap(previous, profile.overlap_tokens)
             current_path = block.section_path
+            current_assignment = block.assignment_number
             overlap_and_block = "\n\n".join(item.text for item in [*current, block])
             if approximate_token_count(overlap_and_block) + header_size > profile.max_tokens:
                 current = []

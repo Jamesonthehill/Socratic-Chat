@@ -41,6 +41,9 @@ chunk receives a document-and-section breadcrumb plus retrieval metadata.
 
 Chunks never overlap across heading boundaries. Re-uploading a previously indexed
 document replaces its older chunk layout rather than retaining stale duplicates.
+Assignment requests are hard-filtered by structural assignment metadata before
+retrieval, so a cross-reference to Assignment 1 inside Assignment 2 cannot leak
+Assignment 2 content into an Assignment 1 answer.
 
 ### Software Engineering 3155 corpus
 

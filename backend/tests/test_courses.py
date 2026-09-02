@@ -162,6 +162,38 @@ class CourseRagIsolationTests(unittest.TestCase):
 
         self.assertEqual(sources[0].document_id, "assignment-2")
         self.assertEqual(sources[0].score, 1.0)
+        self.assertEqual(len(sources), 1)
+
+    @patch("app.rag.load_index")
+    def test_assignment_filter_excludes_cross_references(self, load_index) -> None:
+        load_index.return_value = [
+            {
+                "document_id": "assignment-1",
+                "chunk_id": "assignment-1:requirements",
+                "course_id": "course-a",
+                "title": "course-core.html",
+                "text": "Assignment 1 > Requirements. Check resources before accepting payment.",
+                "tokens": rag.tokenize("Assignment 1 requirements resources payment"),
+                "metadata": {"assignment_number": 1},
+            },
+            {
+                "document_id": "assignment-2",
+                "chunk_id": "assignment-2:overview",
+                "course_id": "course-a",
+                "title": "course-core.html",
+                "text": "Assignment 2 refactors the Assignment 1 payment and resource program into modules.",
+                "tokens": rag.tokenize("Assignment 2 Assignment 1 payment resources requirements modules"),
+                "metadata": {"assignment_number": 2},
+            },
+        ]
+
+        sources = rag.retrieve("What are the Assignment 1 payment requirements?", course_id="course-a")
+
+        self.assertEqual([source.document_id for source in sources], ["assignment-1"])
+
+    def test_assignment_range_is_expanded(self) -> None:
+        self.assertEqual(rag.requested_assignment_numbers("Compare Assignments 1-5 requirements"), {1, 2, 3, 4, 5})
+        self.assertEqual(rag.requested_assignment_numbers("Compare Assignment 1 to 5"), {1, 2, 3, 4, 5})
 
     def test_assignment_answers_request_a_compact_table(self) -> None:
         instruction = rag.answer_format_instruction("Explain Assignment 1")

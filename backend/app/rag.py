@@ -44,6 +44,38 @@ def requested_numbered_item(query: str) -> str | None:
     return " ".join(match.group(0).lower().split())
 
 
+def requested_assignment_numbers(query: str) -> set[int]:
+    requested: set[int] = set()
+    for match in re.finditer(r"\bassignments?\s+(\d+)\s*(?:[-–—]|to)\s*(\d+)\b", query, re.IGNORECASE):
+        start, end = int(match.group(1)), int(match.group(2))
+        if 1 <= start <= end <= 100:
+            requested.update(range(start, end + 1))
+    for match in re.finditer(r"\bassignments?\s+(\d+)\b", query, re.IGNORECASE):
+        requested.add(int(match.group(1)))
+    return requested
+
+
+def item_assignment_number(item: dict[str, Any]) -> int | None:
+    metadata = item.get("metadata") or {}
+    value = metadata.get("assignment_number")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+
+    structural_text = " ".join(
+        [
+            str(item.get("title", "")),
+            " ".join(str(part) for part in metadata.get("section_path", [])),
+            str(item.get("text", ""))[:300],
+        ]
+    )
+    match = re.search(r"\bassignment\s+(\d+)\b|\bse3155-a(\d+)\b", structural_text, re.IGNORECASE)
+    if not match:
+        return None
+    return int(match.group(1) or match.group(2))
+
+
 def requested_page_number(query: str) -> int | None:
     match = PAGE_PATTERN.search(query)
     if not match:
@@ -113,6 +145,7 @@ def ingest_text(
                 "metadata": {
                     "section_path": list(semantic_chunk.section_path),
                     "chunk_profile": semantic_chunk.profile,
+                    "assignment_number": semantic_chunk.assignment_number,
                     "approximate_token_count": semantic_chunk.token_count,
                     "chunking_version": CHUNKING_VERSION,
                 },
@@ -290,6 +323,7 @@ def retrieve(
     query_tokens = tokenize(query)
     requested_page = requested_page_number(query)
     numbered_item = requested_numbered_item(query)
+    requested_assignments = requested_assignment_numbers(query)
     ranked = []
     page_ranked = []
 
@@ -299,8 +333,15 @@ def retrieve(
         if not course_id and conversation_id and item.get("conversation_id") != conversation_id:
             continue
 
+        item_assignment = item_assignment_number(item)
+        if requested_assignments and item_assignment not in requested_assignments:
+            # Assignment isolation is a hard boundary. Do not broaden an Assignment 1
+            # request to Assignment 2 merely because their vocabulary is similar or one
+            # assignment references the other.
+            continue
+
         item_score = score(query_tokens, item.get("tokens", []))
-        if numbered_item:
+        if numbered_item and item_assignment in requested_assignments:
             # Generated course documents place assignment scope near the start. Restrict
             # matching to that header area so a later cross-reference such as
             # "Prerequisite: Assignment 1" does not make an Assignment 2 chunk outrank

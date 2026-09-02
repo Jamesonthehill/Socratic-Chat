@@ -32,10 +32,26 @@ class StructuredChunkingTests(unittest.TestCase):
 
         self.assertEqual(len(chunks), 2)
         self.assertEqual(chunks[0].profile, COURSE_CORE_PROFILE.name)
+        self.assertEqual(chunks[0].assignment_number, 1)
         self.assertEqual(chunks[0].section_path[-1], "Requirements")
         self.assertEqual(chunks[1].section_path[-1], "Rubric")
         self.assertIn("Software Engineering 3155 > Assignment 1 > Requirements", chunks[0].text)
         self.assertNotIn("color: red", " ".join(chunk.text for chunk in chunks))
+
+    def test_course_core_article_id_supplies_assignment_metadata(self) -> None:
+        html = """
+        <html><body><h1>Software Engineering 3155</h1>
+        <article id="assignment-2">
+          <h2>Modular Ham Sandwich Maker Machine</h2>
+          <h3>Requirements</h3><p>Separate payment from sandwich production.</p>
+        </article>
+        </body></html>
+        """
+
+        chunks = chunk_document("software-engineering-3155-core.html", html, source_format="html")
+
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(chunks[0].assignment_number, 2)
 
     def test_reference_book_preserves_code_and_does_not_cross_sections(self) -> None:
         paragraph = "Software changes over time and engineers must evaluate trade-offs. " * 80
@@ -90,6 +106,8 @@ class StructuredChunkingTests(unittest.TestCase):
         self.assertEqual(sum(item["document_id"] == document_id for item in saved), 1)
         self.assertTrue(any(item["document_id"] == "unrelated" for item in saved))
         self.assertFalse(any(item["text"] == "Legacy character-sliced HTML" for item in saved))
+        replacement = next(item for item in saved if item["document_id"] == document_id)
+        self.assertIn("assignment_number", replacement["metadata"])
 
 
 if __name__ == "__main__":

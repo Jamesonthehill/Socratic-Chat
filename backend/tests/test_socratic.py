@@ -24,17 +24,36 @@ class SocraticPolicyTests(unittest.TestCase):
         decision = choose_socratic_strategy("What are the Assignment 4 requirements?", [], [SOURCE])
         self.assertEqual(decision.mode, "direct")
         self.assertEqual(decision.strategy, "grounded_explanation")
+        self.assertEqual(decision.disclosure_level, 4)
 
     def test_new_concept_question_starts_with_diagnostic_recall(self) -> None:
         decision = choose_socratic_strategy("What is a use case?", [], [SOURCE])
         self.assertEqual(decision.mode, "socratic")
         self.assertEqual(decision.strategy, "diagnostic_recall")
-        self.assertIn("Ask exactly one", socratic_system_instruction(decision))
+        self.assertEqual(decision.disclosure_level, 0)
+        instruction = socratic_system_instruction(decision)
+        self.assertIn("Ask exactly one", instruction)
+        self.assertIn("Disclosure level 0", instruction)
+
+    def test_comparison_question_uses_natural_diagnostic_wording(self) -> None:
+        question = "What is the difference between software engineering and programming?"
+        decision = choose_socratic_strategy(question, [], [SOURCE])
+        answer = enforce_socratic_response("A long definition.", question, decision)
+        self.assertEqual(
+            answer,
+            "Before we compare **software engineering** and **programming**, what difference comes to mind first?",
+        )
 
     def test_uncertainty_receives_a_hint(self) -> None:
         decision = choose_socratic_strategy("I am not sure.", [], [SOURCE])
         self.assertEqual(decision.student_state, "uncertain")
         self.assertEqual(decision.strategy, "hint_then_question")
+        self.assertEqual(decision.disclosure_level, 2)
+
+    def test_explicit_hint_request_increases_disclosure_to_level_two(self) -> None:
+        decision = choose_socratic_strategy("Could I have a hint?", [], [SOURCE])
+        self.assertEqual(decision.strategy, "hint_then_question")
+        self.assertEqual(decision.disclosure_level, 2)
 
     def test_possible_misconception_uses_guided_comparison(self) -> None:
         decision = choose_socratic_strategy("I thought students should be inside.", [], [SOURCE])
@@ -49,6 +68,7 @@ class SocraticPolicyTests(unittest.TestCase):
         ]
         decision = choose_socratic_strategy("I don't know.", history, [SOURCE])
         self.assertEqual(decision.strategy, "explain_then_check")
+        self.assertEqual(decision.disclosure_level, 3)
         self.assertIn("Do not withhold", decision.instruction)
 
     def test_missing_sources_does_not_generate_an_ungrounded_question(self) -> None:
@@ -165,6 +185,29 @@ class SocraticPolicyTests(unittest.TestCase):
         ]
         decision = choose_socratic_strategy("What is encapsulation?", history, [SOURCE])
         self.assertEqual(decision.strategy, "diagnostic_recall")
+
+    def test_level_one_feedback_is_capped_at_twelve_words(self) -> None:
+        history = [ChatMessage(role="assistant", content="What comes to mind first?")]
+        decision = choose_socratic_strategy("It seems related to a user goal.", history, [SOURCE])
+        answer = enforce_socratic_response(
+            "Your response correctly identifies a very important relationship between the external actor and the internal system behavior in this example.\n\n"
+            "What evidence supports your response?",
+            "It seems related to a user goal.",
+            decision,
+        )
+        feedback, question = answer.split("\n\n", 1)
+        self.assertLessEqual(len(feedback.split()), 12)
+        self.assertEqual(question, "What evidence supports your response?")
+
+    def test_question_over_twenty_five_words_uses_strategy_fallback(self) -> None:
+        history = [ChatMessage(role="assistant", content="What comes to mind first?")]
+        decision = choose_socratic_strategy("It seems related to a user goal.", history, [SOURCE])
+        long_question = (
+            "What evidence from every section of the retrieved course material would you use to explain in extensive "
+            "detail why your current response should be accepted as completely correct by another student?"
+        )
+        answer = enforce_socratic_response(long_question, "It seems related to a user goal.", decision)
+        self.assertEqual(answer, "How would you justify or refine that response using the retrieved material?")
 
 
 if __name__ == "__main__":

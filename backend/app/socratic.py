@@ -16,6 +16,10 @@ DIRECT_REQUEST_PATTERN = re.compile(
     r"stop asking|explain it directly)\b",
     re.IGNORECASE,
 )
+HINT_REQUEST_PATTERN = re.compile(
+    r"\b(?:hint|small clue|give me a clue|nudge me|help me start)\b",
+    re.IGNORECASE,
+)
 UNCERTAINTY_PATTERN = re.compile(
     r"\b(?:i (?:still )?(?:do not|don't) know|not sure|unsure|confused|no idea|i'm stuck|i am stuck)\b",
     re.IGNORECASE,
@@ -37,6 +41,7 @@ class SocraticDecision:
     student_state: str
     strategy: str
     instruction: str
+    disclosure_level: int = 1
 
 
 DIRECT_DECISION = SocraticDecision(
@@ -47,6 +52,7 @@ DIRECT_DECISION = SocraticDecision(
         "Answer the request directly and concisely from the retrieved context. "
         "Do not force a Socratic question into administrative or assignment-logistics information."
     ),
+    disclosure_level=4,
 )
 
 
@@ -76,6 +82,20 @@ def choose_socratic_strategy(
     if DIRECT_INFORMATION_PATTERN.search(clean_message) or DIRECT_REQUEST_PATTERN.search(clean_message):
         return DIRECT_DECISION
 
+    question_turns = _recent_socratic_questions(history)
+
+    if HINT_REQUEST_PATTERN.search(clean_message):
+        return SocraticDecision(
+            mode="socratic",
+            student_state="hint_requested",
+            strategy="hint_then_question",
+            instruction=(
+                "Give one small hint grounded in the retrieved context, without revealing the entire answer. "
+                "Then ask exactly one focused question that uses the hint."
+            ),
+            disclosure_level=2,
+        )
+
     if NEW_CONCEPT_PATTERN.search(clean_message):
         return SocraticDecision(
             mode="socratic",
@@ -85,9 +105,8 @@ def choose_socratic_strategy(
                 "Do not lecture or reveal the complete answer yet. Ask exactly one accessible diagnostic question "
                 "that connects the target concept to the learner's prior knowledge or a simple example."
             ),
+            disclosure_level=0,
         )
-
-    question_turns = _recent_socratic_questions(history)
 
     if UNCERTAINTY_PATTERN.search(clean_message):
         if question_turns >= 2:
@@ -99,6 +118,7 @@ def choose_socratic_strategy(
                     "Give a concise, evidence-grounded explanation now. Then ask exactly one short application "
                     "question that checks understanding. Do not withhold the explanation again."
                 ),
+                disclosure_level=3,
             )
         return SocraticDecision(
             mode="socratic",
@@ -108,6 +128,7 @@ def choose_socratic_strategy(
                 "Give one small hint grounded in the retrieved context, without revealing the entire answer. "
                 "Then ask exactly one focused question that uses the hint."
             ),
+            disclosure_level=2,
         )
 
     if MISCONCEPTION_PATTERN.search(clean_message):
@@ -182,7 +203,30 @@ def choose_socratic_strategy(
             "Do not lecture or reveal the complete answer yet. Ask exactly one accessible diagnostic question "
             "that connects the target concept to the learner's prior knowledge or a simple example."
         ),
+        disclosure_level=0,
     )
+
+
+def _disclosure_instruction(level: int) -> str:
+    instructions = {
+        0: (
+            "Disclosure level 0: provide no explanation or new course facts. Output only the diagnostic question, "
+            "using at most 25 words."
+        ),
+        1: (
+            "Disclosure level 1: feedback may only reflect the learner's own reasoning in at most 12 words. "
+            "Do not add a definition or new course fact. Ask a question of at most 25 words."
+        ),
+        2: (
+            "Disclosure level 2: give one small hint containing at most one new course fact and at most 18 words, "
+            "then ask a question of at most 25 words."
+        ),
+        3: (
+            "Disclosure level 3: give a partial grounded explanation of at most 35 words, not the full solution, "
+            "then ask a question of at most 25 words."
+        ),
+    }
+    return instructions.get(level, "Answer directly and concisely from the retrieved context.")
 
 
 def socratic_system_instruction(decision: SocraticDecision) -> str:
@@ -194,7 +238,7 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
         return f"{decision.instruction} {emphasis_instruction}"
     return (
         f"Socratic teaching state: {decision.student_state}. Strategy: {decision.strategy}. "
-        f"{decision.instruction} Keep the whole response under three sentences. Ask only one question. "
+        f"{decision.instruction} {_disclosure_instruction(decision.disclosure_level)} Ask only one question. "
         "Anchor feedback and questions in the retrieved learning context and the learner's latest response. "
         "Put the final question in its own paragraph. When natural, bold only a short reasoning cue at the start "
         "of the question, such as '**What evidence**', '**Which assumption**', or '**What consequence**'. "
@@ -219,10 +263,26 @@ def _target_concept(message: str) -> str:
     return target.strip() or "this concept"
 
 
+def _comparison_targets(message: str) -> tuple[str, str] | None:
+    normalized = " ".join(message.strip().rstrip("?.!").split())
+    match = re.search(r"\bdifference between (.+?) and (.+)$", normalized, re.IGNORECASE)
+    if not match:
+        return None
+    return match.group(1).strip(), match.group(2).strip()
+
+
 def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
     target = _target_concept(message)
     if decision.strategy == "diagnostic_recall":
-        return f"Before we define **{target}**, what comes to mind when you hear that term?"
+        comparison = _comparison_targets(message)
+        if comparison:
+            first, second = comparison
+            question = f"Before we compare **{first}** and **{second}**, what difference comes to mind first?"
+        else:
+            question = f"Before we define **{target}**, what comes to mind when you hear that term?"
+        if _word_count(question) <= 25:
+            return question
+        return "What do you already understand about **this concept**?"
     if decision.strategy == "guided_comparison":
         return "What distinction between the two ideas might change your conclusion?"
     if decision.strategy == "hint_then_question":
@@ -237,7 +297,37 @@ def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
         return "**How can you combine** the relevant concepts and evidence into one explanation?"
     if decision.strategy == "reflect_on_learning":
         return "**How has your understanding changed**, and what would you revise in your first response?"
+    if decision.strategy == "explain_then_check":
+        return "How would you apply **this idea** in a simple example?"
     return f"How would you apply {target} in a new example?"
+
+
+def _word_count(text: str) -> int:
+    return len(re.findall(r"\b[\w'-]+\b", text))
+
+
+def _truncate_words(text: str, limit: int) -> str:
+    words = text.split()
+    if len(words) <= limit:
+        return text.strip()
+    return " ".join(words[:limit]).rstrip(".,;:") + "…"
+
+
+def _split_feedback_and_question(answer: str) -> tuple[str, str]:
+    question_end = answer.find("?") + 1
+    through_question = answer[:question_end].strip()
+    boundaries = [
+        (through_question.rfind("\n"), 1, False),
+        (through_question.rfind(". "), 2, True),
+        (through_question.rfind("! "), 2, True),
+    ]
+    position, width, includes_punctuation = max(boundaries, key=lambda item: item[0])
+    if position < 0:
+        return "", through_question
+    feedback_end = position + 1 if includes_punctuation else position
+    feedback = through_question[:feedback_end].strip()
+    question = through_question[position + width:].strip()
+    return feedback, question
 
 
 def enforce_socratic_response(answer: str, message: str, decision: SocraticDecision) -> str:
@@ -270,17 +360,29 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
             question_only,
             re.IGNORECASE,
         )
-        if 3 <= len(question_only.split()) <= 30 and not depends_on_removed_context:
+        if 3 <= _word_count(question_only) <= 25 and not depends_on_removed_context:
             return question_only
         return socratic_fallback_question(message, decision)
 
-    if question_count == 1:
-        return clean_answer
     if question_count == 0:
         fallback = socratic_fallback_question(message, decision)
         if decision.strategy == "explain_then_check" and clean_answer:
-            return f"{clean_answer}\n\n{fallback}"
-        return fallback
+            clean_answer = f"{clean_answer}\n\n{fallback}"
+        else:
+            clean_answer = fallback
+    elif question_count > 1:
+        # Keep only the first complete question so the learner has one clear task.
+        clean_answer = clean_answer.split("?", 1)[0].strip() + "?"
 
-    # Keep only the first complete question so the learner has one clear task.
-    return clean_answer.split("?", 1)[0].strip() + "?"
+    feedback, question = _split_feedback_and_question(clean_answer)
+    if not question or _word_count(question) > 25:
+        question = socratic_fallback_question(message, decision)
+
+    feedback_limits = {0: 0, 1: 12, 2: 18, 3: 35}
+    feedback_limit = feedback_limits.get(decision.disclosure_level, 0)
+    if feedback_limit == 0:
+        feedback = ""
+    elif _word_count(feedback) > feedback_limit:
+        feedback = _truncate_words(feedback, feedback_limit)
+
+    return f"{feedback}\n\n{question}".strip()

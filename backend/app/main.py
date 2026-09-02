@@ -1151,6 +1151,12 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
             if guided_state is not None:
                 db.clear_guided_lesson_state(conversation_id)
                 guided_state = None
+            answer = (
+                "I do not know from your uploaded notes. The published course materials do not "
+                "currently contain instruction about use case diagrams."
+            )
+            db.add_message(conversation_id, "assistant", answer)
+            return ChatResponse(answer=answer, conversation_id=conversation_id, sources=[])
 
     classification = await classify_message(payload.message, history)
 

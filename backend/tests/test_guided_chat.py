@@ -25,7 +25,7 @@ SOURCE = Source(
 
 
 class GuidedLessonChatIntegrationTests(unittest.TestCase):
-    def _patch_chat_dependencies(self, stored_state=None):
+    def _patch_chat_dependencies(self, stored_state=None, sources=None):
         return (
             patch("app.main._current_user_id", return_value="student-1"),
             patch("app.main._require_course_access", return_value={}),
@@ -39,7 +39,7 @@ class GuidedLessonChatIntegrationTests(unittest.TestCase):
             patch("app.main.db.save_guided_lesson_state"),
             patch("app.main.db.list_rag_files", return_value=[]),
             patch("app.main.db.get_course", return_value=None),
-            patch("app.main.retrieve", return_value=[SOURCE]),
+            patch("app.main.retrieve", return_value=[SOURCE] if sources is None else sources),
         )
 
     def test_use_case_question_starts_and_persists_guided_lesson(self) -> None:
@@ -80,6 +80,28 @@ class GuidedLessonChatIntegrationTests(unittest.TestCase):
 
         self.assertIn("Who", response.answer)
         self.assertIn("services", response.answer)
+
+    def test_incidental_source_does_not_start_or_ground_lesson(self) -> None:
+        incidental = SOURCE.model_copy(
+            update={"text": "A frequent use case for Code Search is finding examples."}
+        )
+        patches = self._patch_chat_dependencies(sources=[incidental])
+        [item.start() for item in patches]
+        self.addCleanup(lambda: [item.stop() for item in reversed(patches)])
+
+        response = asyncio.run(
+            main.chat(
+                ChatRequest(
+                    message="What is a use case diagram?",
+                    conversation_id="conversation-1",
+                    course_id="course-1",
+                ),
+                _request(),
+            )
+        )
+
+        self.assertIn("do not know from your uploaded notes", response.answer)
+        self.assertEqual(response.sources, [])
 
 
 if __name__ == "__main__":

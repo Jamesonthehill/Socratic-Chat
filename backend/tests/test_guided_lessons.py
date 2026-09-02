@@ -32,6 +32,15 @@ class GuidedUseCaseLessonTests(unittest.TestCase):
         unrelated = SOURCE.model_copy(update={"text": "Version control records changes."})
         self.assertFalse(sources_support_use_case_lesson([unrelated]))
 
+    def test_incidental_use_case_phrase_does_not_activate_lesson(self) -> None:
+        incidental = SOURCE.model_copy(
+            update={
+                "title": "Code Search",
+                "text": "The most frequent use case is seeing examples of existing code.",
+            }
+        )
+        self.assertFalse(sources_support_use_case_lesson([incidental]))
+
     def test_lesson_starts_with_one_concrete_scenario_question(self) -> None:
         turn = start_use_case_lesson()
         self.assertEqual(turn.answer.count("?"), 1)

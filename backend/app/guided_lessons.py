@@ -185,8 +185,19 @@ def lesson_search_query(message: str) -> str:
 
 
 def sources_support_use_case_lesson(sources: list[Source]) -> bool:
-    context = " ".join(f"{source.title} {source.text}" for source in sources).lower()
-    return "use case" in context
+    for source in sources:
+        context = " ".join(f"{source.title} {source.text}".lower().split())
+        explicitly_names_diagram = bool(
+            re.search(r"\buse case(?:s)? diagram(?:s)?\b", context)
+        )
+        teaches_core_notation = (
+            "use case" in context
+            and "actor" in context
+            and ("system boundary" in context or "association" in context)
+        )
+        if explicitly_names_diagram or teaches_core_notation:
+            return True
+    return False
 
 
 def initial_lesson_state() -> dict[str, object]:

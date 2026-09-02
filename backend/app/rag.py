@@ -9,6 +9,7 @@ from typing import Any
 from app import db, settings
 from app.chunking import CHUNKING_VERSION, chunk_document
 from app.schemas import ChatMessage, Source
+from app.socratic import choose_socratic_strategy, socratic_system_instruction
 
 
 LOGGER = logging.getLogger(__name__)
@@ -388,6 +389,7 @@ async def generate_answer(question: str, history: list[ChatMessage], sources: li
 
     from openai import AsyncOpenAI
 
+    socratic_decision = choose_socratic_strategy(question, history, sources)
     context = "\n\n".join(f"[{index + 1}] {source.title}\n{source.text}" for index, source in enumerate(sources))
     messages = [
         {
@@ -398,6 +400,7 @@ async def generate_answer(question: str, history: list[ChatMessage], sources: li
                 "'I do not know from your uploaded notes.' Do not answer from general knowledge unless the user asks for that."
             ),
         },
+        {"role": "system", "content": socratic_system_instruction(socratic_decision)},
         {"role": "system", "content": answer_format_instruction(question)},
         {"role": "system", "content": f"Retrieved context:\n{context or 'No context retrieved.'}"},
         *[{"role": item.role, "content": item.content} for item in history[-8:]],

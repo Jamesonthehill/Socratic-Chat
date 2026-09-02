@@ -120,8 +120,9 @@ class CourseRagIsolationTests(unittest.TestCase):
     def test_numbered_assignment_tokens_keep_the_identifier(self) -> None:
         self.assertEqual(rag.tokenize("Tell me about Assignment 2"), ["assignment", "2"])
 
+    @patch("app.rag.db.save_rag_file", return_value="file-a")
     @patch("app.rag.ingest_file", return_value=("doc-a", 1))
-    def test_scan_raw_docs_honors_ragignore(self, ingest_file) -> None:
+    def test_scan_raw_docs_honors_ragignore(self, ingest_file, _save_file) -> None:
         with tempfile.TemporaryDirectory() as directory:
             raw_docs = Path(directory)
             (raw_docs / "keep.txt").write_text("Keep this course content.", encoding="utf-8")
@@ -137,59 +138,44 @@ class CourseRagIsolationTests(unittest.TestCase):
         self.assertEqual((documents, chunks, skipped), (1, 1, []))
         self.assertEqual(ingest_file.call_args.args[0].name, "keep.txt")
 
-    @patch("app.rag.load_index")
-    def test_exact_assignment_number_is_boosted_even_with_an_old_index(self, load_index) -> None:
-        load_index.return_value = [
-            {
-                "document_id": "assignment-1",
-                "chunk_id": "assignment-1:0",
-                "course_id": "course-a",
-                "title": "course.tex",
-                "text": "Assignment 1 - Sandwich Maker. Build an interactive sandwich machine.",
-                "tokens": ["assignment", "sandwich", "maker"],
-            },
+    @patch("app.rag.create_embeddings", return_value=[[0.1] * 1536])
+    @patch("app.rag.db.hybrid_search_chunks")
+    def test_exact_assignment_filter_is_sent_to_postgres(self, search, _embeddings) -> None:
+        search.return_value = [
             {
                 "document_id": "assignment-2",
                 "chunk_id": "assignment-2:0",
-                "course_id": "course-a",
                 "title": "course.tex",
                 "text": "Assignment 2 - Modular Sandwich Maker. Convert the code into modules.",
-                "tokens": ["assignment", "modular", "sandwich", "maker"],
+                "score": 0.03,
             },
         ]
 
         sources = rag.retrieve("Tell me about Assignment 2", course_id="course-a")
 
         self.assertEqual(sources[0].document_id, "assignment-2")
-        self.assertEqual(sources[0].score, 1.0)
+        self.assertEqual(sources[0].score, 0.03)
         self.assertEqual(len(sources), 1)
+        self.assertEqual(search.call_args.kwargs["assignment_numbers"], {2})
 
-    @patch("app.rag.load_index")
-    def test_assignment_filter_excludes_cross_references(self, load_index) -> None:
-        load_index.return_value = [
+    @patch("app.rag.create_embeddings", return_value=[[0.1] * 1536])
+    @patch("app.rag.db.hybrid_search_chunks")
+    def test_assignment_filter_excludes_cross_references(self, search, _embeddings) -> None:
+        search.return_value = [
             {
                 "document_id": "assignment-1",
                 "chunk_id": "assignment-1:requirements",
-                "course_id": "course-a",
                 "title": "course-core.html",
                 "text": "Assignment 1 > Requirements. Check resources before accepting payment.",
-                "tokens": rag.tokenize("Assignment 1 requirements resources payment"),
                 "metadata": {"assignment_number": 1},
-            },
-            {
-                "document_id": "assignment-2",
-                "chunk_id": "assignment-2:overview",
-                "course_id": "course-a",
-                "title": "course-core.html",
-                "text": "Assignment 2 refactors the Assignment 1 payment and resource program into modules.",
-                "tokens": rag.tokenize("Assignment 2 Assignment 1 payment resources requirements modules"),
-                "metadata": {"assignment_number": 2},
+                "score": 0.03,
             },
         ]
 
         sources = rag.retrieve("What are the Assignment 1 payment requirements?", course_id="course-a")
 
         self.assertEqual([source.document_id for source in sources], ["assignment-1"])
+        self.assertEqual(search.call_args.kwargs["assignment_numbers"], {1})
 
     def test_assignment_range_is_expanded(self) -> None:
         self.assertEqual(rag.requested_assignment_numbers("Compare Assignments 1-5 requirements"), {1, 2, 3, 4, 5})
@@ -232,9 +218,9 @@ class CourseRagIsolationTests(unittest.TestCase):
         self.assertIn("The group project has three parts.", answer)
         self.assertNotIn("reasoning_effort", completions.kwargs)
 
-    @patch("app.rag.save_index")
-    @patch("app.rag.load_index", return_value=[])
-    def test_latex_document_is_cleaned_and_chunked(self, _load_index, save_index) -> None:
+    @patch("app.rag.create_embeddings", return_value=[[0.1] * 1536])
+    @patch("app.rag.db.replace_document_chunks", return_value=1)
+    def test_latex_document_is_cleaned_and_chunked(self, replace_chunks, _embeddings) -> None:
         latex = r"""
         \documentclass{article}
         % This comment must not enter the RAG index.
@@ -250,9 +236,9 @@ class CourseRagIsolationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "lecture.tex"
             path.write_text(latex, encoding="utf-8")
-            _, chunks_added = rag.ingest_file(path, course_id="course-a")
+            _, chunks_added = rag.ingest_file(path, course_id="course-a", file_id="file-a")
 
-        indexed = save_index.call_args.args[0]
+        indexed = replace_chunks.call_args.args[3]
         indexed_text = " ".join(item["text"] for item in indexed)
         self.assertEqual(chunks_added, 1)
         self.assertIn("Private Retrieval Systems", indexed_text)
@@ -266,28 +252,21 @@ class CourseRagIsolationTests(unittest.TestCase):
         second = rag.document_id("syllabus.pdf", "same text", course_id="course-b")
         self.assertNotEqual(first, second)
 
-    @patch("app.rag.load_index")
-    def test_retrieval_returns_only_selected_course_chunks(self, load_index) -> None:
-        load_index.return_value = [
+    @patch("app.rag.create_embeddings", return_value=[[0.1] * 1536])
+    @patch("app.rag.db.hybrid_search_chunks")
+    def test_retrieval_returns_only_selected_course_chunks(self, search, _embeddings) -> None:
+        search.return_value = [
             {
                 "document_id": "doc-a",
                 "chunk_id": "doc-a:0",
-                "course_id": "course-a",
                 "title": "A.txt",
                 "text": "linear regression model",
-                "tokens": ["linear", "regression", "model"],
-            },
-            {
-                "document_id": "doc-b",
-                "chunk_id": "doc-b:0",
-                "course_id": "course-b",
-                "title": "B.txt",
-                "text": "linear regression model",
-                "tokens": ["linear", "regression", "model"],
+                "score": 0.02,
             },
         ]
         sources = rag.retrieve("linear regression", course_id="course-a")
         self.assertEqual([source.document_id for source in sources], ["doc-a"])
+        self.assertEqual(search.call_args.kwargs["course_id"], "course-a")
 
     def test_course_metadata_answers_do_not_depend_on_document_search(self) -> None:
         course = {
@@ -304,29 +283,6 @@ class CourseRagIsolationTests(unittest.TestCase):
         scope = main._course_context_answer(course, files, "What do you know?")
         self.assertIn("Software Engineering", scope)
         self.assertIn("course-paper.pdf", scope)
-
-    @patch("app.main.ingest_file", return_value=("doc-a", 7))
-    @patch("app.main.db.get_rag_file", return_value={"content": b"course notes"})
-    @patch("app.main.course_document_ids", return_value=set())
-    def test_missing_render_index_is_rebuilt_from_postgres(
-        self,
-        _document_ids,
-        _get_file,
-        ingest_file,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            original_raw_docs = settings.RAW_DOCS_DIR
-            settings.RAW_DOCS_DIR = Path(directory)
-            try:
-                restored = main._restore_missing_course_chunks(
-                    "course-a",
-                    [{"file_id": "file-a", "document_id": "doc-a", "filename": "notes.txt"}],
-                )
-            finally:
-                settings.RAW_DOCS_DIR = original_raw_docs
-        self.assertEqual(restored, 7)
-        self.assertEqual(ingest_file.call_args.kwargs["course_id"], "course-a")
-
 
 if __name__ == "__main__":
     unittest.main()

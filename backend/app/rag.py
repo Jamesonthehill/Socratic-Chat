@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
-import math
 import re
-from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from app import settings
+from app import db, settings
 from app.chunking import CHUNKING_VERSION, chunk_document
 from app.schemas import ChatMessage, Source
 
@@ -25,8 +22,6 @@ STOP_WORDS = {
     "was", "we", "what", "when", "where", "which", "who", "why", "with", "you", "your",
 }
 RAG_DOCUMENT_SUFFIXES = {".txt", ".md", ".pdf", ".tex", ".html", ".htm"}
-MIN_RELEVANCE_SCORE = 0.12
-MIN_SHARED_TERMS = 2
 
 
 def tokenize(text: str) -> list[str]:
@@ -103,19 +98,42 @@ def document_id(
     return digest[:16]
 
 
-def load_index() -> list[dict[str, Any]]:
-    if not settings.INDEX_PATH.exists():
+def create_embeddings(texts: list[str]) -> list[list[float]]:
+    if not texts:
         return []
-    try:
-        data = json.loads(settings.INDEX_PATH.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return []
-    return data if isinstance(data, list) else []
+    if not settings.OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is required to index and search documents.")
+
+    from openai import OpenAI
+
+    client = OpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_API_BASE_URL)
+    vectors: list[list[float]] = []
+    batch_size = max(1, settings.EMBEDDING_BATCH_SIZE)
+    for start in range(0, len(texts), batch_size):
+        response = client.embeddings.create(
+            model=settings.EMBEDDING_MODEL,
+            input=texts[start : start + batch_size],
+            dimensions=settings.EMBEDDING_DIMENSIONS,
+        )
+        vectors.extend(item.embedding for item in response.data)
+    return vectors
 
 
-def save_index(items: list[dict[str, Any]]) -> None:
-    settings.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-    settings.INDEX_PATH.write_text(json.dumps(items, indent=2), encoding="utf-8")
+def _semantic_chunk_rows(title: str, text: str) -> list[dict[str, object]]:
+    suffix = Path(title).suffix.lower()
+    return [
+        {
+            "text": chunk.text,
+            "metadata": {
+                "section_path": list(chunk.section_path),
+                "chunk_profile": chunk.profile,
+                "assignment_number": chunk.assignment_number,
+                "approximate_token_count": chunk.token_count,
+                "chunking_version": CHUNKING_VERSION,
+            },
+        }
+        for chunk in chunk_document(title, text, source_format=suffix)
+    ]
 
 
 def ingest_text(
@@ -123,49 +141,18 @@ def ingest_text(
     text: str,
     conversation_id: str | None = None,
     course_id: str | None = None,
+    file_id: str | None = None,
 ) -> tuple[str, int]:
+    if not file_id:
+        raise ValueError("A PostgreSQL rag_files file_id is required for ingestion.")
     doc_id = document_id(title, text, conversation_id, course_id)
-    existing = load_index()
-    new_items = []
-
-    suffix = Path(title).suffix.lower()
-    semantic_chunks = chunk_document(title, text, source_format=suffix)
-    for index, semantic_chunk in enumerate(semantic_chunks):
-        chunk = semantic_chunk.text
-        chunk_id = f"{doc_id}:{index}"
-        new_items.append(
-            {
-                "document_id": doc_id,
-                "chunk_id": chunk_id,
-                "conversation_id": conversation_id,
-                "course_id": course_id,
-                "title": title,
-                "text": chunk,
-                "tokens": tokenize(chunk),
-                "metadata": {
-                    "section_path": list(semantic_chunk.section_path),
-                    "chunk_profile": semantic_chunk.profile,
-                    "assignment_number": semantic_chunk.assignment_number,
-                    "approximate_token_count": semantic_chunk.token_count,
-                    "chunking_version": CHUNKING_VERSION,
-                },
-            }
-        )
-
-    previous = [item for item in existing if item.get("document_id") == doc_id]
-    is_current = len(previous) == len(new_items) and all(
-        old.get("text") == new.get("text")
-        and old.get("metadata", {}).get("chunking_version") == CHUNKING_VERSION
-        for old, new in zip(previous, new_items)
+    chunks = _semantic_chunk_rows(title, text)
+    embeddings = create_embeddings([str(chunk["text"]) for chunk in chunks])
+    added = db.replace_document_chunks(
+        file_id, doc_id, title, chunks, embeddings, settings.EMBEDDING_MODEL,
+        conversation_id=conversation_id, course_id=course_id,
     )
-    if is_current:
-        return doc_id, 0
-
-    # Replace an older chunk layout for this document instead of leaving stale
-    # character-sliced chunks beside the new semantic chunks.
-    unrelated = [item for item in existing if item.get("document_id") != doc_id]
-    save_index([*unrelated, *new_items])
-    return doc_id, len(new_items)
+    return doc_id, added
 
 
 def read_pdf_pages(path: Path) -> list[tuple[int, str]]:
@@ -185,34 +172,30 @@ def ingest_pdf_file(
     path: Path,
     conversation_id: str | None = None,
     course_id: str | None = None,
+    file_id: str | None = None,
 ) -> tuple[str, int]:
+    if not file_id:
+        raise ValueError("A PostgreSQL rag_files file_id is required for ingestion.")
     pages = read_pdf_pages(path)
     full_text = "\n".join(text for _, text in pages)
     doc_id = document_id(path.name, full_text, conversation_id, course_id)
-    existing = load_index()
-    existing_ids = {item["chunk_id"] for item in existing}
-    new_items = []
+    chunks: list[dict[str, object]] = []
 
     for page_number, page_text in pages:
-        for chunk_index, chunk in enumerate(chunk_text(page_text)):
-            chunk_id = f"{doc_id}:p{page_number}:{chunk_index}"
-            if chunk_id in existing_ids:
-                continue
-            new_items.append(
+        for chunk in chunk_text(page_text):
+            chunks.append(
                 {
-                    "document_id": doc_id,
-                    "chunk_id": chunk_id,
-                    "conversation_id": conversation_id,
-                    "course_id": course_id,
                     "page_number": page_number,
-                    "title": path.name,
                     "text": f"Page {page_number}: {chunk}",
-                    "tokens": tokenize(chunk),
+                    "metadata": {"chunking_version": CHUNKING_VERSION},
                 }
             )
-
-    save_index([*existing, *new_items])
-    return doc_id, len(new_items)
+    embeddings = create_embeddings([str(chunk["text"]) for chunk in chunks])
+    added = db.replace_document_chunks(
+        file_id, doc_id, path.name, chunks, embeddings, settings.EMBEDDING_MODEL,
+        conversation_id=conversation_id, course_id=course_id,
+    )
+    return doc_id, added
 
 
 def read_latex_document(path: Path) -> str:
@@ -258,11 +241,12 @@ def ingest_file(
     path: Path,
     conversation_id: str | None = None,
     course_id: str | None = None,
+    file_id: str | None = None,
 ) -> tuple[str, int]:
     if path.suffix.lower() == ".pdf":
-        return ingest_pdf_file(path, conversation_id, course_id)
+        return ingest_pdf_file(path, conversation_id, course_id, file_id)
     text = read_document(path)
-    return ingest_text(path.name, text, conversation_id, course_id)
+    return ingest_text(path.name, text, conversation_id, course_id, file_id)
 
 
 def scan_raw_docs() -> tuple[int, int, list[str]]:
@@ -289,29 +273,15 @@ def scan_raw_docs() -> tuple[int, int, list[str]]:
             skipped_files.append(path.name)
             continue
 
-        _, added = ingest_file(path)
+        content = path.read_bytes()
+        file_id = db.save_rag_file(path.name, "application/octet-stream", content)
+        if not file_id:
+            raise RuntimeError("PostgreSQL is required to scan RAG documents.")
+        _, added = ingest_file(path, file_id=file_id)
         documents_scanned += 1
         chunks_added += added
 
     return documents_scanned, chunks_added, skipped_files
-
-
-def score(query_tokens: list[str], chunk_tokens: list[str]) -> float:
-    if not query_tokens or not chunk_tokens:
-        return 0.0
-
-    query_counts = Counter(query_tokens)
-    chunk_counts = Counter(chunk_tokens)
-    shared = set(query_counts) & set(chunk_counts)
-    if len(shared) < min(MIN_SHARED_TERMS, len(set(query_tokens))):
-        return 0.0
-
-    numerator = sum(query_counts[token] * chunk_counts[token] for token in shared)
-    query_norm = math.sqrt(sum(value * value for value in query_counts.values()))
-    chunk_norm = math.sqrt(sum(value * value for value in chunk_counts.values()))
-    if query_norm == 0 or chunk_norm == 0:
-        return 0.0
-    return numerator / (query_norm * chunk_norm)
 
 
 def retrieve(
@@ -320,57 +290,21 @@ def retrieve(
     conversation_id: str | None = None,
     course_id: str | None = None,
 ) -> list[Source]:
-    query_tokens = tokenize(query)
-    requested_page = requested_page_number(query)
-    numbered_item = requested_numbered_item(query)
     requested_assignments = requested_assignment_numbers(query)
-    ranked = []
-    page_ranked = []
-
-    for item in load_index():
-        if course_id and item.get("course_id") != course_id:
-            continue
-        if not course_id and conversation_id and item.get("conversation_id") != conversation_id:
-            continue
-
-        item_assignment = item_assignment_number(item)
-        if requested_assignments and item_assignment not in requested_assignments:
-            # Assignment isolation is a hard boundary. Do not broaden an Assignment 1
-            # request to Assignment 2 merely because their vocabulary is similar or one
-            # assignment references the other.
-            continue
-
-        item_score = score(query_tokens, item.get("tokens", []))
-        if numbered_item and item_assignment in requested_assignments:
-            # Generated course documents place assignment scope near the start. Restrict
-            # matching to that header area so a later cross-reference such as
-            # "Prerequisite: Assignment 1" does not make an Assignment 2 chunk outrank
-            # the requested Assignment 1 material.
-            normalized_item_text = " ".join(str(item.get("text", ""))[:300].lower().split())
-            if re.search(rf"\b{re.escape(numbered_item)}\b", normalized_item_text):
-                # Keep the strong assignment-number match while preserving semantic relevance
-                # inside that assignment. Otherwise every matching section ties at 1.0 and
-                # file order can outrank the section the learner actually asked for.
-                item_score += 1.0
-        if item_score < MIN_RELEVANCE_SCORE:
-            continue
-
-        if requested_page and item.get("page_number") == requested_page:
-            page_ranked.append((item_score + 1.0, item))
-        elif not requested_page:
-            ranked.append((item_score, item))
-
-    ranked = page_ranked or ranked
-    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    query_embedding = create_embeddings([query])[0]
+    ranked = db.hybrid_search_chunks(
+        query, query_embedding, top_k, conversation_id=conversation_id,
+        course_id=course_id, assignment_numbers=requested_assignments,
+    )
     return [
         Source(
             document_id=item["document_id"],
             chunk_id=item["chunk_id"],
             title=f"{item['title']} p. {item['page_number']}" if item.get("page_number") else item["title"],
             text=item["text"],
-            score=float(item_score),
+            score=float(item["score"]),
         )
-        for item_score, item in ranked[:top_k]
+        for item in ranked
     ]
 
 
@@ -379,36 +313,18 @@ def retrieve_by_titles(query: str, titles: list[str], top_k: int = 4) -> list[So
     if not title_set:
         return []
 
-    query_tokens = tokenize(query)
-    ranked = []
-
-    for item in load_index():
-        if item.get("title") not in title_set:
-            continue
-
-        item_score = score(query_tokens, item.get("tokens", []))
-
-        # Short concept questions like "what is regression?" can produce a
-        # score below the normal threshold because there is only one useful
-        # query token. Keep exact term hits as a low-confidence fallback.
-        if item_score < MIN_RELEVANCE_SCORE:
-            shared = set(query_tokens) & set(item.get("tokens", []))
-            if not shared:
-                continue
-            item_score = 0.13
-
-        ranked.append((item_score, item))
-
-    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    ranked = db.hybrid_search_chunks(
+        query, create_embeddings([query])[0], top_k, titles=sorted(title_set),
+    )
     return [
         Source(
             document_id=item["document_id"],
             chunk_id=item["chunk_id"],
             title=f"{item['title']} p. {item['page_number']}" if item.get("page_number") else item["title"],
             text=item["text"],
-            score=float(item_score),
+            score=float(item["score"]),
         )
-        for item_score, item in ranked[:top_k]
+        for item in ranked
     ]
 
 
@@ -420,14 +336,7 @@ def retrieve_overview(
     if not conversation_id and not course_id:
         return []
 
-    matches = [
-        item
-        for item in load_index()
-        if (
-            (course_id and item.get("course_id") == course_id)
-            or (not course_id and item.get("conversation_id") == conversation_id)
-        )
-    ]
+    matches = db.overview_chunks(conversation_id, course_id, top_k)
 
     return [
         Source(
@@ -437,32 +346,8 @@ def retrieve_overview(
             text=item["text"],
             score=1.0,
         )
-        for item in matches[:top_k]
+        for item in matches
     ]
-
-
-def delete_document(document_id: str, course_id: str | None = None) -> int:
-    items = load_index()
-    remaining = [
-        item
-        for item in items
-        if not (
-            item.get("document_id") == document_id
-            and (course_id is None or item.get("course_id") == course_id)
-        )
-    ]
-    removed = len(items) - len(remaining)
-    if removed:
-        save_index(remaining)
-    return removed
-
-
-def course_document_ids(course_id: str) -> set[str]:
-    return {
-        str(item["document_id"])
-        for item in load_index()
-        if item.get("course_id") == course_id and item.get("document_id")
-    }
 
 
 def fallback_answer(question: str, sources: list[Source]) -> str:
@@ -520,7 +405,7 @@ async def generate_answer(question: str, history: list[ChatMessage], sources: li
     ]
 
     try:
-        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_API_BASE_URL)
         response = await client.chat.completions.create(
             model=settings.RAG_MODEL,
             messages=messages,

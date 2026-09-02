@@ -336,6 +336,43 @@ def init_db() -> None:
                 ADD COLUMN IF NOT EXISTS is_published BOOLEAN NOT NULL DEFAULT TRUE
                 """
             )
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS document_chunks (
+                    id UUID PRIMARY KEY,
+                    file_id UUID NOT NULL REFERENCES rag_files(id) ON DELETE CASCADE,
+                    document_id TEXT NOT NULL,
+                    conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
+                    course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
+                    chunk_index INTEGER NOT NULL,
+                    page_number INTEGER,
+                    title TEXT NOT NULL,
+                    chunk_text TEXT NOT NULL,
+                    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    embedding_model TEXT NOT NULL,
+                    embedding vector(1536) NOT NULL,
+                    text_search TSVECTOR GENERATED ALWAYS AS (
+                        setweight(to_tsvector('english'::regconfig, coalesce(title, '')), 'A') ||
+                        setweight(to_tsvector('english'::regconfig, coalesce(chunk_text, '')), 'B')
+                    ) STORED,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE (file_id, chunk_index)
+                )
+                """
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_document_chunks_text_search ON document_chunks USING GIN (text_search)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_document_chunks_embedding ON document_chunks USING hnsw (embedding vector_cosine_ops)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_document_chunks_course ON document_chunks(course_id, document_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_document_chunks_conversation ON document_chunks(conversation_id, document_id)"
+            )
             cur.execute(
                 """
                 UPDATE rag_files rf
@@ -787,6 +824,189 @@ def get_rag_file(file_id: str, user_id: str | None = None) -> dict[str, object] 
     }
 
 
+def list_indexable_rag_files() -> list[dict[str, object]]:
+    """Return the durable, published source files used by the RAG migration."""
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id::text, document_id, filename, content_type, content,
+                       conversation_id::text, course_id::text
+                FROM rag_files
+                WHERE is_published = TRUE
+                ORDER BY created_at, id
+                """
+            )
+            rows = cur.fetchall()
+    return [
+        {
+            "file_id": row[0], "document_id": row[1], "filename": row[2],
+            "content_type": row[3], "content": bytes(row[4]),
+            "conversation_id": row[5], "course_id": row[6],
+        }
+        for row in rows
+    ]
+
+
+def replace_document_chunks(
+    file_id: str,
+    document_id: str,
+    title: str,
+    chunks: list[dict[str, object]],
+    embeddings: list[list[float]],
+    embedding_model: str,
+    conversation_id: str | None = None,
+    course_id: str | None = None,
+) -> int:
+    """Atomically replace every searchable chunk for one stored source file."""
+    if len(chunks) != len(embeddings):
+        raise ValueError("Every document chunk must have one embedding.")
+    init_db()
+    from psycopg.types.json import Jsonb
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM document_chunks WHERE file_id = %s", (file_id,))
+            for index, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+                vector = "[" + ",".join(str(value) for value in embedding) + "]"
+                cur.execute(
+                    """
+                    INSERT INTO document_chunks (
+                        id, file_id, document_id, conversation_id, course_id,
+                        chunk_index, page_number, title, chunk_text, metadata,
+                        embedding_model, embedding
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector)
+                    """,
+                    (
+                        str(uuid.uuid4()), file_id, document_id, conversation_id, course_id,
+                        index, chunk.get("page_number"), title, chunk["text"],
+                        Jsonb(chunk.get("metadata") or {}), embedding_model, vector,
+                    ),
+                )
+            cur.execute("UPDATE rag_files SET document_id = %s WHERE id = %s", (document_id, file_id))
+        conn.commit()
+    return len(chunks)
+
+
+def hybrid_search_chunks(
+    query: str,
+    query_embedding: list[float],
+    top_k: int,
+    conversation_id: str | None = None,
+    course_id: str | None = None,
+    assignment_numbers: set[int] | None = None,
+    titles: list[str] | None = None,
+) -> list[dict[str, object]]:
+    """Fuse pgvector semantic rank and PostgreSQL full-text rank with RRF."""
+    init_db()
+    conditions = ["rf.is_published = TRUE"]
+    filter_params: list[object] = []
+    if course_id:
+        conditions.append("dc.course_id = %s")
+        filter_params.append(course_id)
+    elif conversation_id:
+        conditions.append("dc.conversation_id = %s")
+        filter_params.append(conversation_id)
+    if assignment_numbers:
+        conditions.append("dc.metadata->>'assignment_number' = ANY(%s)")
+        filter_params.append([str(number) for number in sorted(assignment_numbers)])
+    if titles:
+        conditions.append("dc.title = ANY(%s)")
+        filter_params.append(titles)
+
+    where_clause = " AND ".join(conditions)
+    candidate_k = max(top_k * 4, 20)
+    vector = "[" + ",".join(str(value) for value in query_embedding) + "]"
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                WITH dense AS (
+                    SELECT dc.id,
+                           row_number() OVER (ORDER BY dc.embedding <=> %s::vector) AS rank
+                    FROM document_chunks dc
+                    JOIN rag_files rf ON rf.id = dc.file_id
+                    WHERE {where_clause}
+                    ORDER BY dc.embedding <=> %s::vector
+                    LIMIT %s
+                ),
+                sparse AS (
+                    SELECT dc.id,
+                           row_number() OVER (
+                               ORDER BY ts_rank_cd(dc.text_search, websearch_to_tsquery('english', %s)) DESC
+                           ) AS rank
+                    FROM document_chunks dc
+                    JOIN rag_files rf ON rf.id = dc.file_id
+                    WHERE {where_clause}
+                      AND dc.text_search @@ websearch_to_tsquery('english', %s)
+                    ORDER BY ts_rank_cd(dc.text_search, websearch_to_tsquery('english', %s)) DESC
+                    LIMIT %s
+                ),
+                fused AS (
+                    SELECT id, SUM(score) AS score
+                    FROM (
+                        SELECT id, 1.0 / (60 + rank) AS score FROM dense
+                        UNION ALL
+                        SELECT id, 1.0 / (60 + rank) AS score FROM sparse
+                    ) ranked
+                    GROUP BY id
+                )
+                SELECT dc.document_id, dc.id::text, dc.title, dc.chunk_text,
+                       dc.page_number, fused.score, dc.metadata
+                FROM fused
+                JOIN document_chunks dc ON dc.id = fused.id
+                ORDER BY fused.score DESC
+                LIMIT %s
+                """,
+                (
+                    vector, *filter_params, vector, candidate_k,
+                    query, *filter_params, query, query, candidate_k, top_k,
+                ),
+            )
+            rows = cur.fetchall()
+    return [
+        {
+            "document_id": row[0], "chunk_id": row[1], "title": row[2],
+            "text": row[3], "page_number": row[4], "score": float(row[5]),
+            "metadata": row[6] or {},
+        }
+        for row in rows
+    ]
+
+
+def overview_chunks(conversation_id: str | None, course_id: str | None, top_k: int) -> list[dict[str, object]]:
+    init_db()
+    if not conversation_id and not course_id:
+        return []
+    column, value = ("dc.course_id", course_id) if course_id else ("dc.conversation_id", conversation_id)
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT dc.document_id, dc.id::text, dc.title, dc.chunk_text, dc.page_number
+                FROM document_chunks dc JOIN rag_files rf ON rf.id = dc.file_id
+                WHERE {column} = %s AND rf.is_published = TRUE
+                ORDER BY dc.created_at, dc.chunk_index LIMIT %s
+                """,
+                (value, top_k),
+            )
+            rows = cur.fetchall()
+    return [
+        {"document_id": row[0], "chunk_id": row[1], "title": row[2], "text": row[3], "page_number": row[4]}
+        for row in rows
+    ]
+
+
+def course_document_ids(course_id: str) -> set[str]:
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT DISTINCT document_id FROM document_chunks WHERE course_id = %s", (course_id,))
+            return {str(row[0]) for row in cur.fetchall() if row[0]}
+
+
 def conversation_belongs_to(conversation_id: str, user_id: str | None) -> bool:
     if not user_id:
         return True
@@ -1170,6 +1390,8 @@ def delete_course_document(file_id: str, course_id: str) -> dict[str, object] | 
     init_db()
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM document_chunks WHERE file_id = %s", (file_id,))
+            chunks_removed = int(cur.fetchone()[0])
             cur.execute(
                 """
                 DELETE FROM rag_files
@@ -1182,7 +1404,7 @@ def delete_course_document(file_id: str, course_id: str) -> dict[str, object] | 
         conn.commit()
     if row is None:
         return None
-    return {"document_id": row[0], "filename": row[1]}
+    return {"document_id": row[0], "filename": row[1], "chunks_removed": chunks_removed}
 
 
 def _user_profile(row: tuple[object, ...] | None) -> dict[str, object] | None:

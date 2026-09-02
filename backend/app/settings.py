@@ -10,14 +10,16 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 BACKEND_DIR = ROOT_DIR / "backend"
 FRONTEND_DIR = ROOT_DIR / "frontend"
 RAW_DOCS_DIR = BACKEND_DIR / "data" / "raw_docs"
-STORAGE_DIR = BACKEND_DIR / "storage"
-INDEX_PATH = STORAGE_DIR / "rag_index.json"
 
 load_dotenv(ROOT_DIR / ".env")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_API_BASE_URL = os.getenv("OPENAI_API_BASE_URL", "https://api.openai.com/v1")
 RAG_MODEL = os.getenv("RAG_MODEL", "gpt-4o-mini")
 RAG_TEMPERATURE = float(os.getenv("RAG_TEMPERATURE", "0.2"))
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
+EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "64"))
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")

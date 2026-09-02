@@ -78,35 +78,18 @@ class StructuredChunkingTests(unittest.TestCase):
         chunks = chunk_document("notes.md", "# Testing\n\nA test should verify observable behavior.")
         self.assertEqual(chunks[0].token_count, approximate_token_count(chunks[0].text))
 
-    @patch("app.rag.save_index")
-    @patch("app.rag.load_index")
-    def test_reingestion_replaces_legacy_chunks(self, load_index, save_index) -> None:
+    @patch("app.rag.create_embeddings", return_value=[[0.1] * 1536])
+    @patch("app.rag.db.replace_document_chunks", return_value=1)
+    def test_reingestion_replaces_postgres_chunks(self, replace_chunks, _embeddings) -> None:
         title = "software-engineering-3155-core.html"
         content = "<html><body><h1>Software Engineering 3155</h1><h2>Policy</h2><p>Use evidence.</p></body></html>"
         document_id = rag.document_id(title, content, course_id="course-a")
-        load_index.return_value = [
-            {
-                "document_id": document_id,
-                "chunk_id": f"{document_id}:0",
-                "text": "Legacy character-sliced HTML",
-                "tokens": ["legacy"],
-            },
-            {
-                "document_id": "unrelated",
-                "chunk_id": "unrelated:0",
-                "text": "Keep this chunk",
-                "tokens": ["keep"],
-            },
-        ]
+        _, chunks_added = rag.ingest_text(title, content, course_id="course-a", file_id="file-a")
 
-        _, chunks_added = rag.ingest_text(title, content, course_id="course-a")
-
-        saved = save_index.call_args.args[0]
+        saved = replace_chunks.call_args.args[3]
         self.assertEqual(chunks_added, 1)
-        self.assertEqual(sum(item["document_id"] == document_id for item in saved), 1)
-        self.assertTrue(any(item["document_id"] == "unrelated" for item in saved))
-        self.assertFalse(any(item["text"] == "Legacy character-sliced HTML" for item in saved))
-        replacement = next(item for item in saved if item["document_id"] == document_id)
+        self.assertEqual(replace_chunks.call_args.args[1], document_id)
+        replacement = saved[0]
         self.assertIn("assignment_number", replacement["metadata"])
 
 

@@ -18,8 +18,6 @@ from app import auth, db, settings
 from app.classifier import classify_message
 from app.rag import (
     RAG_DOCUMENT_SUFFIXES,
-    course_document_ids,
-    delete_document,
     generate_answer,
     ingest_file,
     ingest_text,
@@ -578,8 +576,14 @@ async def download_uploaded_file(file_id: str, request: Request) -> Response:
 
 @app.post("/api/documents/text", response_model=IngestResponse)
 async def add_text_document(payload: TextDocumentRequest, request: Request) -> IngestResponse:
-    _require_authority(request, 1)
-    doc_id, chunks_added = ingest_text(payload.title, payload.text)
+    user = _require_authority(request, 1)
+    content = payload.text.encode("utf-8")
+    file_id = db.save_rag_file(
+        payload.title, "text/plain; charset=utf-8", content, user_id=str(user["user_id"]),
+    )
+    if not file_id:
+        raise HTTPException(status_code=503, detail="PostgreSQL is required to index documents.")
+    doc_id, chunks_added = ingest_text(payload.title, payload.text, file_id=file_id)
     message = "Text added to the knowledge base." if chunks_added else "That text was already indexed."
     return IngestResponse(document_id=doc_id, chunks_added=chunks_added, documents_scanned=1, message=message)
 
@@ -661,8 +665,9 @@ async def upload_document(request: Request) -> IngestResponse:
         target = settings.RAW_DOCS_DIR / filename
         target.write_bytes(content)
 
+        file_id = None
         if db.is_enabled():
-            db.save_rag_file(
+            file_id = db.save_rag_file(
                 filename,
                 getattr(upload, "content_type", "") or "application/octet-stream",
                 content,
@@ -673,7 +678,11 @@ async def upload_document(request: Request) -> IngestResponse:
 
         added = 0
         if suffix in rag_suffixes:
-            _, added = ingest_file(target, str(conversation_id) if conversation_id else None)
+            if not file_id:
+                raise HTTPException(status_code=503, detail="PostgreSQL is required to index documents.")
+            _, added = ingest_file(
+                target, str(conversation_id) if conversation_id else None, file_id=file_id,
+            )
             documents_scanned += 1
         chunks_added += added
 
@@ -731,15 +740,16 @@ async def upload_course_documents(course_id: str, request: Request) -> IngestRes
         target = upload_dir / filename
         target.write_bytes(content)
 
-        document_id, added = ingest_file(target, course_id=course_id)
-        db.save_rag_file(
+        file_id = db.save_rag_file(
             filename,
             getattr(upload, "content_type", "") or "application/octet-stream",
             content,
             user_id=instructor_id,
             course_id=course_id,
-            document_id=document_id,
         )
+        if not file_id:
+            raise HTTPException(status_code=503, detail="PostgreSQL is required to index documents.")
+        _, added = ingest_file(target, course_id=course_id, file_id=file_id)
         chunks_added += added
         documents_scanned += 1
         files_stored += 1
@@ -766,10 +776,11 @@ async def delete_course_document(course_id: str, file_id: str, request: Request)
     removed = db.delete_course_document(file_id, course_id)
     if removed is None:
         raise HTTPException(status_code=404, detail="Course document was not found.")
-    chunks_removed = 0
-    if removed.get("document_id"):
-        chunks_removed = delete_document(str(removed["document_id"]), course_id=course_id)
-    return {"deleted": True, "filename": removed["filename"], "chunks_removed": chunks_removed}
+    return {
+        "deleted": True,
+        "filename": removed["filename"],
+        "chunks_removed": int(removed.get("chunks_removed") or 0),
+    }
 
 
 
@@ -890,36 +901,6 @@ def _unique_file_names(files: list[dict[str, object]]) -> list[str]:
         seen.add(name)
         names.append(name)
     return names
-
-
-def _restore_missing_course_chunks(course_id: str, files: list[dict[str, object]]) -> int:
-    """Rebuild Render-local chunks from the durable PostgreSQL file copy."""
-    indexed_ids = course_document_ids(course_id)
-    restored_chunks = 0
-    for file in files:
-        expected_document_id = str(file.get("document_id") or "")
-        if expected_document_id and expected_document_id in indexed_ids:
-            continue
-
-        filename = Path(str(file.get("filename") or "document.txt")).name
-        if Path(filename).suffix.lower() not in RAG_DOCUMENT_SUFFIXES:
-            continue
-        stored = db.get_rag_file(str(file.get("file_id") or ""))
-        if not stored:
-            continue
-
-        try:
-            restore_dir = settings.RAW_DOCS_DIR / course_id / "restored" / secrets.token_hex(8)
-            restore_dir.mkdir(parents=True, exist_ok=True)
-            target = restore_dir / filename
-            target.write_bytes(bytes(stored["content"]))
-            _, added = ingest_file(target, course_id=course_id)
-            restored_chunks += added
-        except Exception:
-            # A damaged document should not prevent the rest of the course chat
-            # or the course metadata answers from working.
-            continue
-    return restored_chunks
 
 
 def _course_context_answer(
@@ -1102,9 +1083,6 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
             return ChatResponse(answer=answer, conversation_id=conversation_id, sources=sources)
 
     current_files = db.list_rag_files(course_id=course_id) if db.is_enabled() else []
-    if current_files:
-        _restore_missing_course_chunks(course_id, current_files)
-
     course = db.get_course(course_id) if db.is_enabled() else None
     course_answer = _course_context_answer(course, current_files, payload.message) if course else None
     if course_answer:

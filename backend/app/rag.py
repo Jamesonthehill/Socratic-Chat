@@ -18,7 +18,12 @@ from app.pipeline_logging import (
     trace_active,
 )
 from app.schemas import ChatMessage, Source
-from app.socratic import choose_socratic_strategy, enforce_socratic_response, socratic_system_instruction
+from app.socratic import (
+    choose_socratic_strategy,
+    enforce_socratic_response,
+    socratic_fallback_question,
+    socratic_system_instruction,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -473,17 +478,6 @@ def generation_client_config() -> tuple[str, str, str, str] | None:
 
 
 async def generate_answer(question: str, history: list[ChatMessage], sources: list[Source]) -> str:
-    client_config = generation_client_config()
-    if client_config is None:
-        log_event(8, "generation_fallback_selected", reason="provider_not_configured")
-        answer = fallback_answer(question, sources)
-        log_event(9, "candidate_response_generated", source="extractive_fallback", response_chars=len(answer))
-        debug_preview("candidate_answer", answer)
-        return answer
-
-    from openai import AsyncOpenAI
-
-    provider, api_key, base_url, model = client_config
     socratic_decision = choose_socratic_strategy(question, history, sources)
     log_event(
         6,
@@ -493,6 +487,28 @@ async def generate_answer(question: str, history: list[ChatMessage], sources: li
         mode=socratic_decision.mode,
         scaffolding_level=socratic_decision.disclosure_level,
     )
+    client_config = generation_client_config()
+    if client_config is None:
+        log_event(8, "generation_fallback_selected", reason="provider_not_configured")
+        candidate = (
+            fallback_answer(question, sources)
+            if socratic_decision.mode == "direct"
+            else socratic_fallback_question(question, socratic_decision)
+        )
+        log_event(9, "candidate_response_generated", source="policy_fallback", response_chars=len(candidate))
+        answer = enforce_socratic_response(candidate, question, socratic_decision)
+        log_event(
+            10,
+            "response_validated",
+            result="accepted" if answer == candidate.strip() else "adjusted",
+            adjustment="question_only_policy" if answer != candidate.strip() else "none",
+        )
+        debug_preview("candidate_answer", answer)
+        return answer
+
+    from openai import AsyncOpenAI
+
+    provider, api_key, base_url, model = client_config
     context = "\n\n".join(f"[{index + 1}] {source.title}\n{source.text}" for index, source in enumerate(sources))
     messages = [
         {

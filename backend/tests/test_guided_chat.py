@@ -79,7 +79,8 @@ class GuidedLessonChatIntegrationTests(unittest.TestCase):
         )
 
         self.assertIn("Who", response.answer)
-        self.assertIn("services", response.answer)
+        self.assertEqual(response.answer.count("?"), 1)
+        self.assertNotIn("services", response.answer)
 
     def test_incidental_source_does_not_start_or_ground_lesson(self) -> None:
         incidental = SOURCE.model_copy(

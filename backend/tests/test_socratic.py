@@ -26,6 +26,12 @@ class SocraticPolicyTests(unittest.TestCase):
         self.assertEqual(decision.strategy, "grounded_explanation")
         self.assertEqual(decision.disclosure_level, 4)
 
+    def test_direct_answer_request_remains_socratic_for_course_content(self) -> None:
+        decision = choose_socratic_strategy("Just give me the answer.", [], [SOURCE])
+        self.assertEqual(decision.mode, "socratic")
+        self.assertEqual(decision.strategy, "return_to_reasoning")
+        self.assertEqual(decision.disclosure_level, 0)
+
     def test_new_concept_question_starts_with_diagnostic_recall(self) -> None:
         decision = choose_socratic_strategy("What is a use case?", [], [SOURCE])
         self.assertEqual(decision.mode, "socratic")
@@ -33,7 +39,7 @@ class SocraticPolicyTests(unittest.TestCase):
         self.assertEqual(decision.disclosure_level, 0)
         instruction = socratic_system_instruction(decision)
         self.assertIn("Ask exactly one", instruction)
-        self.assertIn("Disclosure level 0", instruction)
+        self.assertIn("Question-only mode", instruction)
 
     def test_comparison_question_uses_natural_diagnostic_wording(self) -> None:
         question = "What is the difference between software engineering and programming?"
@@ -72,32 +78,32 @@ class SocraticPolicyTests(unittest.TestCase):
             "Before we define **GitHub**, what comes to mind when you hear that term?",
         )
 
-    def test_uncertainty_receives_a_hint(self) -> None:
+    def test_uncertainty_receives_a_narrower_question(self) -> None:
         decision = choose_socratic_strategy("I am not sure.", [], [SOURCE])
         self.assertEqual(decision.student_state, "uncertain")
-        self.assertEqual(decision.strategy, "hint_then_question")
-        self.assertEqual(decision.disclosure_level, 2)
+        self.assertEqual(decision.strategy, "narrow_guiding_question")
+        self.assertEqual(decision.disclosure_level, 0)
 
-    def test_explicit_hint_request_increases_disclosure_to_level_two(self) -> None:
+    def test_explicit_hint_request_keeps_question_only_disclosure(self) -> None:
         decision = choose_socratic_strategy("Could I have a hint?", [], [SOURCE])
-        self.assertEqual(decision.strategy, "hint_then_question")
-        self.assertEqual(decision.disclosure_level, 2)
+        self.assertEqual(decision.strategy, "narrow_guiding_question")
+        self.assertEqual(decision.disclosure_level, 0)
 
     def test_possible_misconception_uses_guided_comparison(self) -> None:
         decision = choose_socratic_strategy("I thought students should be inside.", [], [SOURCE])
         self.assertEqual(decision.student_state, "possible_misconception")
         self.assertEqual(decision.strategy, "guided_comparison")
 
-    def test_repeated_difficulty_discloses_an_explanation(self) -> None:
+    def test_repeated_difficulty_decomposes_without_explaining(self) -> None:
         history = [
             ChatMessage(role="assistant", content="Who interacts with the system?"),
             ChatMessage(role="user", content="A student."),
             ChatMessage(role="assistant", content="Is that person part of the software?"),
         ]
         decision = choose_socratic_strategy("I don't know.", history, [SOURCE])
-        self.assertEqual(decision.strategy, "explain_then_check")
-        self.assertEqual(decision.disclosure_level, 3)
-        self.assertIn("Do not withhold", decision.instruction)
+        self.assertEqual(decision.strategy, "decompose_or_offer_choices")
+        self.assertEqual(decision.disclosure_level, 0)
+        self.assertIn("Do not explain", decision.instruction)
 
     def test_missing_sources_does_not_generate_an_ungrounded_question(self) -> None:
         decision = choose_socratic_strategy("What is a use case?", [], [])
@@ -152,10 +158,10 @@ class SocraticPolicyTests(unittest.TestCase):
         instruction = socratic_system_instruction(decision)
         self.assertIn("Markdown bold", instruction)
         self.assertIn("Do not bold complete sentences", instruction)
-        self.assertIn("final question in its own paragraph", instruction)
+        self.assertIn("Do not output an explanation, hint", instruction)
         self.assertIn("What evidence", instruction)
 
-    def test_explanation_is_preserved_after_repeated_difficulty(self) -> None:
+    def test_explanation_is_removed_after_repeated_difficulty(self) -> None:
         history = [
             ChatMessage(role="assistant", content="What do you think?"),
             ChatMessage(role="user", content="I am unsure."),
@@ -163,7 +169,7 @@ class SocraticPolicyTests(unittest.TestCase):
         ]
         decision = choose_socratic_strategy("I still don't know.", history, [SOURCE])
         answer = enforce_socratic_response("Actors remain outside the boundary.", "I still don't know.", decision)
-        self.assertIn("Actors remain outside", answer)
+        self.assertNotIn("Actors remain outside", answer)
         self.assertEqual(answer.count("?"), 1)
 
     def test_dialogue_progresses_to_limitation_after_two_questions(self) -> None:
@@ -214,7 +220,7 @@ class SocraticPolicyTests(unittest.TestCase):
         decision = choose_socratic_strategy("What is encapsulation?", history, [SOURCE])
         self.assertEqual(decision.strategy, "diagnostic_recall")
 
-    def test_level_one_feedback_is_capped_at_twelve_words(self) -> None:
+    def test_feedback_is_removed_from_a_socratic_turn(self) -> None:
         history = [ChatMessage(role="assistant", content="What comes to mind first?")]
         decision = choose_socratic_strategy("It seems related to a user goal.", history, [SOURCE])
         answer = enforce_socratic_response(
@@ -223,9 +229,13 @@ class SocraticPolicyTests(unittest.TestCase):
             "It seems related to a user goal.",
             decision,
         )
-        feedback, question = answer.split("\n\n", 1)
-        self.assertLessEqual(len(feedback.split()), 12)
-        self.assertEqual(question, "What evidence supports your response?")
+        self.assertEqual(answer, "What evidence supports your response?")
+
+    def test_question_only_instruction_forbids_hints_and_feedback(self) -> None:
+        decision = choose_socratic_strategy("Could I have a hint?", [], [SOURCE])
+        instruction = socratic_system_instruction(decision)
+        self.assertIn("Question-only mode", instruction)
+        self.assertIn("Do not output an explanation, hint", instruction)
 
     def test_question_over_twenty_five_words_uses_strategy_fallback(self) -> None:
         history = [ChatMessage(role="assistant", content="What comes to mind first?")]

@@ -32,7 +32,9 @@ class LessonStep:
     concept: str
     prompt: str
     evidence_groups: tuple[tuple[str, ...], ...]
-    support_questions: tuple[str, str]
+    success_feedback: str
+    hint: str
+    explanation: str
 
 
 @dataclass(frozen=True)
@@ -47,30 +49,27 @@ USE_CASE_STEPS = (
         concept="system services",
         prompt="Think about using an ATM. **What actions** might you perform?",
         evidence_groups=((r"withdraw", r"deposit", r"balance", r"cash", r"transfer", r"account"),),
-        support_questions=(
-            "What is one task involving cash or your account that you might perform at an ATM?",
-            "When you approach an ATM, what result are you trying to obtain?",
-        ),
+        success_feedback="You identified services the ATM provides.",
+        hint="Think about cash and account information.",
+        explanation="ATM services include actions such as withdrawing cash or checking a balance.",
     ),
     LessonStep(
         step_id="person_role",
         concept="external participant",
         prompt="**Who** performs those actions?",
         evidence_groups=((r"\bi\b", r"\bme\b", r"customer", r"user", r"person", r"cardholder", r"client"),),
-        support_questions=(
-            "Who initiates a withdrawal before the ATM processes it?",
-            "Is the action initiated by the machine or by someone using it?",
-        ),
+        success_feedback="That identifies the person interacting with the system.",
+        hint="Focus on the person standing at the machine.",
+        explanation="The ATM customer performs those actions.",
     ),
     LessonStep(
         step_id="actor_label",
         concept="actor",
         prompt="In a system model, **what might we call** a role that interacts with the system?",
         evidence_groups=((r"actor", r"user"),),
-        support_questions=(
-            "What word might describe an external role that acts on a system?",
-            "Which term suits an external participant: attribute, actor, or algorithm?",
-        ),
+        success_feedback="In use case diagrams, that external role is an **actor**.",
+        hint="The term begins with 'a' and describes an external role.",
+        explanation="A role that interacts with the modeled system is called an **actor**.",
     ),
     LessonStep(
         step_id="external_actor",
@@ -80,70 +79,63 @@ USE_CASE_STEPS = (
             (r"yes", r"can", r"could", r"external", r"outside"),
             (r"interact", r"communicat", r"service", r"system", r"boundary"),
         ),
-        support_questions=(
-            "Does something need to be human to interact across a system boundary?",
-            "What matters more here: being human or interacting from outside the boundary?",
-        ),
+        success_feedback="Actors can be people or external systems outside the boundary.",
+        hint="Actors are defined by interaction across the chosen system boundary.",
+        explanation="An external system can be an actor when it interacts across the modeled boundary.",
     ),
     LessonStep(
         step_id="use_case_label",
         concept="use case",
         prompt="What might we call a user **goal or service**, such as withdrawing cash?",
         evidence_groups=((r"use case", r"goal", r"service", r"function"),),
-        support_questions=(
-            "Does withdrawing cash describe an external role or a goal the system provides?",
-            "Which term describes what an actor wants the system to accomplish?",
-        ),
+        success_feedback="That system-provided goal is a **use case**.",
+        hint="The name focuses on a user's goal, not an internal code function.",
+        explanation="A service or goal the system provides to an actor is a **use case**.",
     ),
     LessonStep(
         step_id="association",
         concept="association",
         prompt="If actors mean who and use cases mean what, **how are they related**?",
         evidence_groups=((r"perform", r"participat", r"interact", r"connect", r"initiat", r"association", r"line"),),
-        support_questions=(
-            "What could the line between an actor and a use case communicate?",
-            "Does that line represent participation, inheritance, or physical distance?",
-        ),
+        success_feedback="The line represents an **association** between actor and use case.",
+        hint="Think about the line connecting the external role to the goal.",
+        explanation="An association connects an actor to a use case it participates in.",
     ),
     LessonStep(
         step_id="use_case_boundary",
         concept="use cases inside boundary",
         prompt="**Where should use cases appear** relative to the system boundary?",
         evidence_groups=((r"inside", r"within", r"internal"),),
-        support_questions=(
-            "Do use cases describe behavior belonging to the system or its environment?",
-            "Which side of the boundary should contain behavior the system provides?",
-        ),
+        success_feedback="Use cases belong inside the system boundary.",
+        hint="Ask where the system's own behavior belongs.",
+        explanation="Use cases are placed inside the system boundary because they belong to the modeled system.",
     ),
     LessonStep(
         step_id="actor_boundary",
         concept="actors outside boundary",
         prompt="**Where should actors appear** relative to that boundary?",
         evidence_groups=((r"outside", r"external"),),
-        support_questions=(
-            "Is an actor part of the modeled system or something interacting with it?",
-            "Which side represents entities from the system's environment?",
-        ),
+        success_feedback="Actors remain outside the boundary they interact with.",
+        hint="Ask whether the actor is part of the software itself.",
+        explanation="Actors are placed outside because they interact with the modeled system from its environment.",
     ),
     LessonStep(
         step_id="include_relationship",
         concept="include relationship",
         prompt="Borrowing always checks availability. **Which UML relationship** represents that required behavior?",
         evidence_groups=((r"include", r"required", r"mandatory", r"always"),),
-        support_questions=(
-            "Is checking availability required every time borrowing occurs?",
-            "Which relationship represents behavior that must always occur?",
-        ),
+        success_feedback="Required reused behavior is modeled with **<<include>>**.",
+        hint="**<<include>>** represents behavior that always occurs.",
+        explanation="Use **<<include>>** when the included behavior is required by the base use case.",
     ),
     LessonStep(
         step_id="extend_relationship",
         concept="extend relationship",
         prompt="Two-factor authentication happens only sometimes. **Which relationship** represents that optional behavior?",
         evidence_groups=((r"extend", r"optional", r"conditional", r"sometimes"),),
-        support_questions=(
-            "Is two-factor authentication required every time or only under some conditions?",
-            "Which relationship represents behavior added only under a condition?",
-        ),
+        success_feedback="Optional conditional behavior is modeled with **<<extend>>**.",
+        hint="**<<extend>>** represents optional behavior triggered under a condition.",
+        explanation="Use **<<extend>>** when additional behavior occurs only under a condition.",
     ),
     LessonStep(
         step_id="library_transfer",
@@ -153,10 +145,9 @@ USE_CASE_STEPS = (
             (r"student", r"librarian", r"member", r"administrator", r"patron"),
             (r"borrow", r"return", r"search", r"reserve", r"register", r"inventory"),
         ),
-        support_questions=(
-            "Who might approach a library system with a goal involving a book?",
-            "What book-related result might that person ask the system to provide?",
-        ),
+        success_feedback="You transferred the model to a new domain.",
+        hint="Try a role such as student and a goal involving books.",
+        explanation="For example, a student actor can participate in the Borrow Book use case.",
     ),
     LessonStep(
         step_id="reflection",
@@ -167,10 +158,9 @@ USE_CASE_STEPS = (
             (r"use case",),
             (r"boundary", r"inside", r"outside"),
         ),
-        support_questions=(
-            "Which element represents who, and which represents what the system provides?",
-            "Where would you place each element relative to the system boundary?",
-        ),
+        success_feedback="You connected actors, use cases, and the system boundary.",
+        hint="Use who, what, and inside versus outside.",
+        explanation="Actors stay outside, use cases stay inside, and associations connect them across the boundary.",
     ),
 )
 
@@ -228,6 +218,12 @@ def _matches_step_evidence(message: str, step: LessonStep) -> bool:
     )
 
 
+def _answer_with_next(feedback: str, next_prompt: str | None) -> str:
+    if next_prompt:
+        return f"{feedback}\n\n{next_prompt}"
+    return f"{feedback}\n\nThe guided lesson is complete."
+
+
 def start_use_case_lesson() -> GuidedTurn:
     state = initial_lesson_state()
     return GuidedTurn(answer=USE_CASE_STEPS[0].prompt, state=state)
@@ -246,7 +242,7 @@ def advance_use_case_lesson(message: str, state: dict[str, object]) -> GuidedTur
         completed = next_index >= len(USE_CASE_STEPS)
         next_prompt = None if completed else USE_CASE_STEPS[next_index].prompt
         return GuidedTurn(
-            answer=next_prompt or "The guided lesson is complete.",
+            answer=_answer_with_next(step.success_feedback, next_prompt),
             state={
                 "lesson_id": LESSON_ID,
                 "step_index": min(next_index, len(USE_CASE_STEPS) - 1),
@@ -257,19 +253,28 @@ def advance_use_case_lesson(message: str, state: dict[str, object]) -> GuidedTur
         )
 
     attempts += 1
-    if attempts == 1:
-        support_question = step.support_questions[0]
-    elif attempts == 2:
-        support_question = step.support_questions[1]
-    else:
-        support_question = "Which word or relationship in this question feels unclear?"
+    if attempts < 2:
+        return GuidedTurn(
+            answer=f"{step.hint}\n\n{step.prompt}",
+            state={
+                "lesson_id": LESSON_ID,
+                "step_index": step_index,
+                "attempts": attempts,
+                "mastered_components": mastered,
+                "completed": False,
+            },
+        )
+
+    next_index = step_index + 1
+    completed = next_index >= len(USE_CASE_STEPS)
+    next_prompt = None if completed else USE_CASE_STEPS[next_index].prompt
     return GuidedTurn(
-        answer=support_question,
+        answer=_answer_with_next(step.explanation, next_prompt),
         state={
             "lesson_id": LESSON_ID,
-            "step_index": step_index,
-            "attempts": attempts,
+            "step_index": min(next_index, len(USE_CASE_STEPS) - 1),
+            "attempts": 0,
             "mastered_components": mastered,
-            "completed": False,
+            "completed": completed,
         },
     )

@@ -74,28 +74,27 @@ class GuidedUseCaseLessonTests(unittest.TestCase):
         self.assertEqual(len(state["mastered_components"]), len(USE_CASE_STEPS))
         self.assertIn("guided lesson is complete", turn.answer.lower())
 
-    def test_failed_attempts_provide_questions_without_advancing(self) -> None:
+    def test_two_failed_attempts_provide_help_and_advance_one_step(self) -> None:
         state = start_use_case_lesson().state
-        narrow_turn = advance_use_case_lesson("I do not know.", state)
-        self.assertEqual(narrow_turn.state["step_index"], 0)
-        self.assertEqual(narrow_turn.state["attempts"], 1)
-        self.assertEqual(narrow_turn.answer.count("?"), 1)
+        hint_turn = advance_use_case_lesson("I do not know.", state)
+        self.assertEqual(hint_turn.state["step_index"], 0)
+        self.assertEqual(hint_turn.state["attempts"], 1)
+        self.assertEqual(hint_turn.answer.count("?"), 1)
 
-        decomposed_turn = advance_use_case_lesson("I still do not know.", narrow_turn.state)
-        self.assertEqual(decomposed_turn.state["step_index"], 0)
-        self.assertEqual(decomposed_turn.state["attempts"], 2)
-        self.assertEqual(decomposed_turn.answer.count("?"), 1)
-        self.assertEqual(decomposed_turn.state["mastered_components"], [])
+        explanation_turn = advance_use_case_lesson("I still do not know.", hint_turn.state)
+        self.assertEqual(explanation_turn.state["step_index"], 1)
+        self.assertEqual(explanation_turn.state["attempts"], 0)
+        self.assertEqual(explanation_turn.answer.count("?"), 1)
+        self.assertEqual(explanation_turn.state["mastered_components"], [])
 
     def test_unrelated_concept_question_can_exit_the_lesson(self) -> None:
         self.assertTrue(unrelated_new_topic("What is version control?"))
         self.assertFalse(unrelated_new_topic("What is an actor?"))
 
-    def test_scripted_support_contains_questions_only(self) -> None:
+    def test_scripted_feedback_stays_brief_and_specific(self) -> None:
         for step in USE_CASE_STEPS:
-            self.assertEqual(step.prompt.count("?"), 1)
-            for support_question in step.support_questions:
-                self.assertEqual(support_question.count("?"), 1)
+            self.assertLessEqual(len(step.success_feedback.split()), 10)
+            self.assertNotRegex(step.success_feedback.lower(), r"\b(?:excellent|great|good job)\b")
 
 
 if __name__ == "__main__":

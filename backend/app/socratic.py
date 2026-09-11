@@ -42,7 +42,7 @@ class SocraticDecision:
     student_state: str
     strategy: str
     instruction: str
-    disclosure_level: int = 0
+    disclosure_level: int = 1
 
 
 DIRECT_DECISION = SocraticDecision(
@@ -80,31 +80,21 @@ def choose_socratic_strategy(
     clean_message = " ".join(message.strip().split())
     if not sources:
         return DIRECT_DECISION
-    if DIRECT_INFORMATION_PATTERN.search(clean_message):
+    if DIRECT_INFORMATION_PATTERN.search(clean_message) or DIRECT_REQUEST_PATTERN.search(clean_message):
         return DIRECT_DECISION
 
     question_turns = _recent_socratic_questions(history)
-
-    if DIRECT_REQUEST_PATTERN.search(clean_message):
-        return SocraticDecision(
-            mode="socratic",
-            student_state="direct_answer_requested",
-            strategy="return_to_reasoning",
-            instruction=(
-                "Keep the course-content interaction Socratic. Ask exactly one accessible question that invites "
-                "the learner's best current idea without providing the answer."
-            ),
-        )
 
     if HINT_REQUEST_PATTERN.search(clean_message):
         return SocraticDecision(
             mode="socratic",
             student_state="hint_requested",
-            strategy="narrow_guiding_question",
+            strategy="hint_then_question",
             instruction=(
-                "Do not provide a hint as a statement. Ask exactly one narrower question that breaks the current "
-                "reasoning task into a smaller step."
+                "Give one small hint grounded in the retrieved context, without revealing the entire answer. "
+                "Then ask exactly one focused question that uses the hint."
             ),
+            disclosure_level=2,
         )
 
     if NEW_CONCEPT_PATTERN.search(clean_message):
@@ -124,20 +114,22 @@ def choose_socratic_strategy(
             return SocraticDecision(
                 mode="socratic",
                 student_state="repeated_difficulty",
-                strategy="decompose_or_offer_choices",
+                strategy="explain_then_check",
                 instruction=(
-                    "Do not explain the answer. Ask exactly one simple prerequisite, concrete scenario, comparison, "
-                    "or choice-based question that makes the next reasoning step easier."
+                    "Give a concise, evidence-grounded explanation now. Then ask exactly one short application "
+                    "question that checks understanding. Do not withhold the explanation again."
                 ),
+                disclosure_level=3,
             )
         return SocraticDecision(
             mode="socratic",
             student_state="uncertain",
-            strategy="narrow_guiding_question",
+            strategy="hint_then_question",
             instruction=(
-                "Do not provide a hint as a statement. Rephrase the task as exactly one simpler, narrower, "
-                "grounded question."
+                "Give one small hint grounded in the retrieved context, without revealing the entire answer. "
+                "Then ask exactly one focused question that uses the hint."
             ),
+            disclosure_level=2,
         )
 
     if MISCONCEPTION_PATTERN.search(clean_message):
@@ -146,8 +138,8 @@ def choose_socratic_strategy(
             student_state="possible_misconception",
             strategy="guided_comparison",
             instruction=(
-                "Ask exactly one guided-comparison question that helps distinguish the two relevant concepts. "
-                "Do not first state whether the learner is correct."
+                "Briefly acknowledge the learner's idea without calling it correct or incorrect. Ask exactly one "
+                "guided-comparison question that helps distinguish the two relevant concepts."
             ),
         )
 
@@ -157,7 +149,8 @@ def choose_socratic_strategy(
             student_state="reasoning_in_progress",
             strategy="probe_reasoning",
             instruction=(
-                "Ask exactly one question about the learner's evidence, assumption, consequence, or applicability."
+                "Refer briefly to the learner's reasoning and ask exactly one question about its evidence, "
+                "assumption, consequence, or applicability."
             ),
         )
 
@@ -169,8 +162,8 @@ def choose_socratic_strategy(
                 student_state="ready_to_reflect",
                 strategy="reflect_on_learning",
                 instruction=(
-                    "Ask exactly one reflection question about how the learner's understanding changed or what they "
-                    "would revise. Do not summarize their learning for them."
+                    "Give one specific, neutral observation about the learner's progress. Then ask exactly one "
+                    "reflection question about how their understanding changed or what they would revise."
                 ),
             )
         if question_turns == 3:
@@ -179,8 +172,8 @@ def choose_socratic_strategy(
                 student_state="ready_to_synthesize",
                 strategy="synthesize_understanding",
                 instruction=(
-                    "Ask exactly one question that requires the learner to combine relevant concepts or evidence "
-                    "into an overall explanation."
+                    "Give specific, neutral feedback in one short sentence. Then ask exactly one question that "
+                    "requires the learner to combine relevant concepts or evidence into an overall explanation."
                 ),
             )
         if question_turns == 2:
@@ -189,8 +182,8 @@ def choose_socratic_strategy(
                 student_state="understanding_developing",
                 strategy="examine_limitation",
                 instruction=(
-                    "Ask exactly one question about a limitation, alternative factor, or condition that could change "
-                    "the learner's conclusion."
+                    "Give specific, neutral feedback in one short sentence. Then ask exactly one question about "
+                    "a limitation, alternative factor, or condition that could change the learner's conclusion."
                 ),
             )
         return SocraticDecision(
@@ -198,8 +191,8 @@ def choose_socratic_strategy(
             student_state="response_to_prompt",
             strategy="justify_or_refine",
             instruction=(
-                "Assess the response against the retrieved context internally, then ask exactly one question that "
-                "helps the learner justify or refine it. Do not state the assessment."
+                "Assess the response against the retrieved context. Give specific, neutral feedback in one short "
+                "sentence, then ask exactly one question that helps the learner justify or refine the response."
             ),
         )
 
@@ -216,12 +209,25 @@ def choose_socratic_strategy(
 
 
 def _disclosure_instruction(level: int) -> str:
-    if level >= 4:
-        return "Answer directly and concisely from the retrieved context."
-    return (
-        "Question-only mode: output exactly one question of at most 25 words. Do not output an explanation, hint, "
-        "answer, evaluation, praise, summary, or other statement before or after it."
-    )
+    instructions = {
+        0: (
+            "Disclosure level 0: provide no explanation or new course facts. Output only the diagnostic question, "
+            "using at most 25 words."
+        ),
+        1: (
+            "Disclosure level 1: feedback may only reflect the learner's own reasoning in at most 12 words. "
+            "Do not add a definition or new course fact. Ask a question of at most 25 words."
+        ),
+        2: (
+            "Disclosure level 2: give one small hint containing at most one new course fact and at most 18 words, "
+            "then ask a question of at most 25 words."
+        ),
+        3: (
+            "Disclosure level 3: give a partial grounded explanation of at most 35 words, not the full solution, "
+            "then ask a question of at most 25 words."
+        ),
+    }
+    return instructions.get(level, "Answer directly and concisely from the retrieved context.")
 
 
 def socratic_system_instruction(decision: SocraticDecision) -> str:
@@ -234,9 +240,10 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
     return (
         f"Socratic teaching state: {decision.student_state}. Strategy: {decision.strategy}. "
         f"{decision.instruction} {_disclosure_instruction(decision.disclosure_level)} Ask only one question. "
-        "Use the retrieved learning context and the learner's latest response to choose the question, but do not "
-        "reveal the retrieved answer. When natural, bold only a short reasoning cue at the start "
+        "Anchor feedback and questions in the retrieved learning context and the learner's latest response. "
+        "Put the final question in its own paragraph. When natural, bold only a short reasoning cue at the start "
         "of the question, such as '**What evidence**', '**Which assumption**', or '**What consequence**'. "
+        "Use specific feedback instead of generic praise such as 'Excellent' or 'Good job'. "
         f"Never invent course facts beyond the retrieved context. {emphasis_instruction}"
     )
 
@@ -283,10 +290,8 @@ def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
         return "What do you already understand about **this concept**?"
     if decision.strategy == "guided_comparison":
         return "What distinction between the two ideas might change your conclusion?"
-    if decision.strategy == "narrow_guiding_question":
-        return "What smaller part of **this idea** could you reason through first?"
-    if decision.strategy == "return_to_reasoning":
-        return "What is your best current idea, even if you are uncertain?"
+    if decision.strategy == "hint_then_question":
+        return "Which detail in the retrieved material seems most useful for working this out?"
     if decision.strategy == "probe_reasoning":
         return "What evidence from the retrieved material supports that reasoning?"
     if decision.strategy == "justify_or_refine":
@@ -297,13 +302,20 @@ def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
         return "**How can you combine** the relevant concepts and evidence into one explanation?"
     if decision.strategy == "reflect_on_learning":
         return "**How has your understanding changed**, and what would you revise in your first response?"
-    if decision.strategy == "decompose_or_offer_choices":
-        return "Which part should we examine first: the main concept, its purpose, or an example?"
+    if decision.strategy == "explain_then_check":
+        return "How would you apply **this idea** in a simple example?"
     return f"How would you apply {target} in a new example?"
 
 
 def _word_count(text: str) -> int:
     return len(re.findall(r"\b[\w'-]+\b", text))
+
+
+def _truncate_words(text: str, limit: int) -> str:
+    words = text.split()
+    if len(words) <= limit:
+        return text.strip()
+    return " ".join(words[:limit]).rstrip(".,;:") + "…"
 
 
 def _split_feedback_and_question(answer: str) -> tuple[str, str]:
@@ -376,18 +388,24 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
         return socratic_fallback_question(message, decision)
 
     if question_count == 0:
-        clean_answer = socratic_fallback_question(message, decision)
+        fallback = socratic_fallback_question(message, decision)
+        if decision.strategy == "explain_then_check" and clean_answer:
+            clean_answer = f"{clean_answer}\n\n{fallback}"
+        else:
+            clean_answer = fallback
     elif question_count > 1:
         # Keep only the first complete question so the learner has one clear task.
         clean_answer = clean_answer.split("?", 1)[0].strip() + "?"
 
     feedback, question = _split_feedback_and_question(clean_answer)
-    del feedback
-    depends_on_removed_context = re.search(
-        r"\b(?:these|those|such|the above|this information|that information)\b",
-        question,
-        re.IGNORECASE,
-    )
-    if not question or _word_count(question) > 25 or depends_on_removed_context:
+    if not question or _word_count(question) > 25:
         question = socratic_fallback_question(message, decision)
-    return question
+
+    feedback_limits = {0: 0, 1: 12, 2: 18, 3: 35}
+    feedback_limit = feedback_limits.get(decision.disclosure_level, 0)
+    if feedback_limit == 0:
+        feedback = ""
+    elif _word_count(feedback) > feedback_limit:
+        feedback = _truncate_words(feedback, feedback_limit)
+
+    return f"{feedback}\n\n{question}".strip()

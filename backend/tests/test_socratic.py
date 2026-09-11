@@ -44,6 +44,34 @@ class SocraticPolicyTests(unittest.TestCase):
             "Before we compare **software engineering** and **programming**, what difference comes to mind first?",
         )
 
+    def test_explain_what_phrase_extracts_only_the_concept(self) -> None:
+        question = "Explain what GitHub is."
+        decision = choose_socratic_strategy(question, [], [SOURCE])
+        answer = enforce_socratic_response("A definition without a question.", question, decision)
+        self.assertEqual(
+            answer,
+            "Before we define **GitHub**, what comes to mind when you hear that term?",
+        )
+
+    def test_specific_standalone_diagnostic_question_is_preserved(self) -> None:
+        question = "Explain what GitHub is."
+        decision = choose_socratic_strategy(question, [], [SOURCE])
+        model_answer = (
+            "If a project exists only on your laptop, what difficulty might arise when another developer needs to contribute?"
+        )
+        answer = enforce_socratic_response(model_answer, question, decision)
+        self.assertEqual(answer, model_answer)
+
+    def test_polite_explain_what_phrase_uses_the_same_concept(self) -> None:
+        question = "Could you please explain what GitHub is?"
+        decision = choose_socratic_strategy(question, [], [SOURCE])
+        answer = enforce_socratic_response("No question was generated.", question, decision)
+        self.assertEqual(decision.strategy, "diagnostic_recall")
+        self.assertEqual(
+            answer,
+            "Before we define **GitHub**, what comes to mind when you hear that term?",
+        )
+
     def test_uncertainty_receives_a_hint(self) -> None:
         decision = choose_socratic_strategy("I am not sure.", [], [SOURCE])
         self.assertEqual(decision.student_state, "uncertain")

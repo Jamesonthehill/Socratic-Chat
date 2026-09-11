@@ -30,7 +30,8 @@ MISCONCEPTION_PATTERN = re.compile(
 )
 REASONING_PATTERN = re.compile(r"\b(?:because|therefore|since|which means|so that)\b", re.IGNORECASE)
 NEW_CONCEPT_PATTERN = re.compile(
-    r"^(?:what is|what are|define|explain|tell me about|help me understand)\b",
+    r"^(?:(?:can|could|would)\s+you\s+)?(?:please\s+)?"
+    r"(?:what is|what are|define|explain|describe|tell me about|help me understand)\b",
     re.IGNORECASE,
 )
 
@@ -250,8 +251,12 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
 def _target_concept(message: str) -> str:
     normalized = " ".join(message.strip().rstrip("?.!").split())
     patterns = [
-        r"^(?:what is|what are|define|explain)\s+(.+)$",
-        r"^(?:tell me about|help me understand)\s+(.+)$",
+        r"^(?:(?:can|could|would)\s+you\s+)?(?:please\s+)?"
+        r"(?:explain|describe|tell me)\s+(?:what|who)\s+(.+?)\s+(?:is|are|means?)$",
+        r"^(?:(?:can|could|would)\s+you\s+)?(?:please\s+)?"
+        r"(?:what is|what are|define|explain|describe)\s+(.+)$",
+        r"^(?:(?:can|could|would)\s+you\s+)?(?:please\s+)?"
+        r"(?:tell me about|help me understand)\s+(.+)$",
     ]
     target = normalized
     for pattern in patterns:
@@ -330,6 +335,24 @@ def _split_feedback_and_question(answer: str) -> tuple[str, str]:
     return feedback, question
 
 
+def _standalone_diagnostic_question(answer: str) -> str | None:
+    """Return a safe model-authored opening question, or None when it needs replacement."""
+    question = answer.strip(" -*\t\n")
+    if question.count("?") != 1 or not question.endswith("?"):
+        return None
+    if not 3 <= _word_count(question) <= 25:
+        return None
+    if re.search(r"[.!]\s+", question[:-1]):
+        return None
+    if re.search(
+        r"\b(?:these|those|such|the above|this idea|that idea|this information|that information)\b",
+        question,
+        re.IGNORECASE,
+    ):
+        return None
+    return question
+
+
 def enforce_socratic_response(answer: str, message: str, decision: SocraticDecision) -> str:
     """Guarantee that a Socratic turn contains exactly one focused question."""
     clean_answer = answer.strip()
@@ -338,10 +361,10 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
 
     question_count = clean_answer.count("?")
     if decision.strategy == "diagnostic_recall":
-        # The opening turn is a prior-knowledge check. Never allow a model
-        # definition or summary to precede it, even when the model also asks a
-        # valid question afterward.
-        return socratic_fallback_question(message, decision)
+        # Preserve a concise model-authored diagnostic when it stands alone.
+        # Replace lectures, multiple questions, and context-dependent questions
+        # with a concept-aware fallback that reveals no course facts.
+        return _standalone_diagnostic_question(clean_answer) or socratic_fallback_question(message, decision)
 
     strict_discovery = decision.strategy in {"diagnostic_recall", "guided_comparison"}
     if strict_discovery and question_count:

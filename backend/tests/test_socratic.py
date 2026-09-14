@@ -48,13 +48,25 @@ class SocraticPolicyTests(unittest.TestCase):
     def test_uncertainty_receives_a_hint(self) -> None:
         decision = choose_socratic_strategy("I am not sure.", [], [SOURCE])
         self.assertEqual(decision.student_state, "uncertain")
-        self.assertEqual(decision.strategy, "hint_then_question")
+        self.assertEqual(decision.strategy, "scaffold_then_question")
         self.assertEqual(decision.disclosure_level, 2)
 
     def test_explicit_hint_request_increases_disclosure_to_level_two(self) -> None:
         decision = choose_socratic_strategy("Could I have a hint?", [], [SOURCE])
-        self.assertEqual(decision.strategy, "hint_then_question")
+        self.assertEqual(decision.strategy, "scaffold_then_question")
         self.assertEqual(decision.disclosure_level, 2)
+
+    def test_visible_hint_label_is_removed_from_response(self) -> None:
+        decision = choose_socratic_strategy("Could you guide me?", [], [SOURCE])
+        self.assertEqual(decision.strategy, "scaffold_then_question")
+        answer = enforce_socratic_response(
+            "**Hint:** Actors interact from outside the boundary.\n\nWhere should a student actor appear?",
+            "Could you guide me?",
+            decision,
+        )
+        self.assertNotIn("Hint:", answer)
+        self.assertTrue(answer.startswith("Actors interact"))
+        self.assertEqual(answer.count("?"), 1)
 
     def test_possible_misconception_uses_guided_comparison(self) -> None:
         decision = choose_socratic_strategy("I thought students should be inside.", [], [SOURCE])

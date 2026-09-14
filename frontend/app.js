@@ -984,7 +984,7 @@ function renderSuggestedResponses(content = "") {
   suggestedResponses.replaceChildren();
   if (!String(content).trim().endsWith("?")) return;
 
-  ["I’m not sure yet", "My reasoning is…", "Could I have a hint?"].forEach((suggestion) => {
+  ["I’m not sure yet", "My reasoning is…", "Could you guide me?"].forEach((suggestion) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "suggestion-chip";

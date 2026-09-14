@@ -33,7 +33,7 @@ SESSION_CONTROL_PATTERN = re.compile(
     r"^(?:stop|pause|end|quit|exit)(?:\s+(?:the\s+)?(?:chat|lesson|session|questions?))?[.! ]*$",
     re.IGNORECASE,
 )
-HINT_PATTERN = re.compile(r"\b(?:hint|clue|nudge|help me start)\b", re.IGNORECASE)
+HINT_PATTERN = re.compile(r"\b(?:hint|clue|nudge|help me start|guide me)\b", re.IGNORECASE)
 DIRECT_ANSWER_PATTERN = re.compile(
     r"\b(?:just tell me|give me the answer|answer directly|no questions?|stop asking)\b", re.IGNORECASE,
 )

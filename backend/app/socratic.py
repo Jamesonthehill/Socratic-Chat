@@ -21,7 +21,7 @@ DIRECT_REQUEST_PATTERN = re.compile(
     re.IGNORECASE,
 )
 HINT_REQUEST_PATTERN = re.compile(
-    r"\b(?:hint|small clue|give me a clue|nudge me|help me start)\b",
+    r"\b(?:hint|small clue|give me a clue|nudge me|help me start|guide me)\b",
     re.IGNORECASE,
 )
 UNCERTAINTY_PATTERN = re.compile(
@@ -33,6 +33,10 @@ MISCONCEPTION_PATTERN = re.compile(
     re.IGNORECASE,
 )
 REASONING_PATTERN = re.compile(r"\b(?:because|therefore|since|which means|so that)\b", re.IGNORECASE)
+VISIBLE_HINT_LABEL_PATTERN = re.compile(
+    r"^\s*(?:\*\*(?:hint|clue):\*\*|__(?:hint|clue):__|(?:hint|clue):)\s*",
+    re.IGNORECASE,
+)
 NEW_CONCEPT_PATTERN = re.compile(
     r"^(?:what is|what are|define|explain|tell me about|help me understand)\b",
     re.IGNORECASE,
@@ -109,11 +113,11 @@ def choose_socratic_strategy(
     if HINT_REQUEST_PATTERN.search(clean_message) or intent == "hint":
         return SocraticDecision(
             mode="socratic",
-            student_state="hint_requested",
-            strategy="hint_then_question",
+            student_state="support_requested",
+            strategy="scaffold_then_question",
             instruction=(
-                "Give one small hint grounded in the retrieved context, without revealing the entire answer. "
-                "Then ask exactly one focused question that uses the hint."
+                "Offer one brief contextual clue naturally, grounded in the retrieved context, without revealing "
+                "the entire answer. Do not introduce it with a label. Then ask exactly one focused question."
             ),
             disclosure_level=2,
             target_concept=target,
@@ -191,10 +195,10 @@ def choose_socratic_strategy(
         return SocraticDecision(
             mode="socratic",
             student_state="uncertain",
-            strategy="hint_then_question",
+            strategy="scaffold_then_question",
             instruction=(
-                "Give one small hint grounded in the retrieved context, without revealing the entire answer. "
-                "Then ask exactly one focused question that uses the hint."
+                "Offer one brief contextual clue naturally, grounded in the retrieved context, without revealing "
+                "the entire answer. Do not introduce it with a label. Then ask exactly one focused question."
             ),
             disclosure_level=2,
             target_concept=target,
@@ -298,8 +302,8 @@ def _disclosure_instruction(level: int) -> str:
             "Do not add a definition or new course fact. Ask a question of at most 25 words."
         ),
         2: (
-            "Disclosure level 2: give one small hint containing at most one new course fact and at most 18 words, "
-            "then ask a question of at most 25 words."
+            "Disclosure level 2: provide one concise supporting fact naturally, containing at most one new course "
+            "fact and at most 18 words, then ask a question of at most 25 words. Never prefix it with 'Hint:'."
         ),
         3: (
             "Disclosure level 3: give a partial grounded explanation of at most 35 words, not the full solution, "
@@ -374,7 +378,7 @@ def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
         return "What distinction between the two ideas might change your conclusion?"
     if decision.strategy in {"guided_sequence", "transfer_application", "failure_scenario"}:
         return f"In a simple project scenario, what would you try first with **{target}**, and why?"
-    if decision.strategy == "hint_then_question":
+    if decision.strategy == "scaffold_then_question":
         return "Which detail in the retrieved material seems most useful for working this out?"
     if decision.strategy == "probe_reasoning":
         return "What evidence from the retrieved material supports that reasoning?"
@@ -421,7 +425,7 @@ def _split_feedback_and_question(answer: str) -> tuple[str, str]:
 
 def enforce_socratic_response(answer: str, message: str, decision: SocraticDecision) -> str:
     """Guarantee that a Socratic turn contains exactly one focused question."""
-    clean_answer = answer.strip()
+    clean_answer = VISIBLE_HINT_LABEL_PATTERN.sub("", answer.strip(), count=1).strip()
     if decision.mode == "direct":
         return clean_answer
 

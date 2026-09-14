@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from app.schemas import ChatMessage, Source
+from app.classifier import MessageClassification
 from app.socratic import (
     choose_socratic_strategy,
     enforce_socratic_response,
@@ -83,18 +84,40 @@ class SocraticPolicyTests(unittest.TestCase):
         self.assertIn("mentorship", answer.lower())
         self.assertNotIn("three benefits", answer)
 
-    def test_diagnostic_turn_always_uses_prior_knowledge_question(self) -> None:
+    def test_diagnostic_turn_rejects_a_definition_disguised_as_a_question(self) -> None:
         decision = choose_socratic_strategy("What is software engineering?", [], [SOURCE])
         model_answer = (
             "Software engineering includes policies, practices, tools, time, scale, and sustainability. "
             "How do you think sustainability affects software engineering practices?"
         )
         answer = enforce_socratic_response(model_answer, "What is software engineering?", decision)
-        self.assertEqual(
-            answer,
-            "Before we define **software engineering**, what comes to mind when you hear that term?",
-        )
+        self.assertIn("Imagine a team", answer)
         self.assertNotIn("policies", answer)
+
+    def test_short_example_first_diagnostic_is_preserved(self) -> None:
+        decision = choose_socratic_strategy("What is version control?", [], [SOURCE])
+        candidate = (
+            "Two developers change the same file on separate laptops and need to combine their work. "
+            "What problem should their tool help them solve?"
+        )
+        answer = enforce_socratic_response(candidate, "What is version control?", decision)
+        self.assertEqual(answer, candidate)
+
+    def test_classifier_selects_contrasting_examples_for_comparison(self) -> None:
+        classification = MessageClassification(
+            student_intent="comparison",
+            question_type="comparison",
+            target_concepts=("Git", "GitHub"),
+            target="Git",
+            confidence=0.95,
+            source="llm",
+        )
+        decision = choose_socratic_strategy(
+            "How are Git and GitHub different?", [], [SOURCE], classification,
+        )
+        self.assertEqual(decision.strategy, "guided_comparison")
+        self.assertEqual(decision.example_type, "contrasting_cases")
+        self.assertEqual(decision.tutor_question_type, "comparison")
 
     def test_question_that_depends_on_removed_preamble_uses_self_contained_fallback(self) -> None:
         decision = choose_socratic_strategy("What is software engineering?", [], [SOURCE])
@@ -114,10 +137,9 @@ class SocraticPolicyTests(unittest.TestCase):
             "What is mentorship?",
             decision,
         )
-        self.assertEqual(
-            answer,
-            "Before we define **mentorship**, what comes to mind when you hear that term?",
-        )
+        self.assertIn("Imagine a team", answer)
+        self.assertIn("**mentorship**", answer)
+        self.assertEqual(answer.count("?"), 1)
 
     def test_tutor_instruction_uses_selective_keyword_emphasis(self) -> None:
         decision = choose_socratic_strategy("What is a use case?", [], [SOURCE])

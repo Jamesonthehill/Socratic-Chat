@@ -1195,6 +1195,13 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
     log_event(
         4,
         "message_classification_completed",
+        source=classification.source,
+        route=classification.route,
+        student_intent=classification.student_intent,
+        question_type=classification.question_type,
+        conversation_state=classification.conversation_state,
+        target_concepts="|".join(classification.target_concepts) or "none",
+        confidence=round(classification.confidence, 2),
         needs_clarification=classification.needs_clarification,
         direct_answer=classification.direct_answer is not None,
         query_rewritten=bool(classification.rewritten_query and classification.rewritten_query != payload.message),
@@ -1232,7 +1239,7 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
             top_k=payload.top_k,
             course_id=course_id,
         )
-    answer = await generate_answer(query, history, sources)
+    answer = await generate_answer(payload.message, history, sources, classification=classification)
     if answer.lower().startswith("i do not know from your uploaded notes"):
         sources = []
 

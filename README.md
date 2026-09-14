@@ -36,6 +36,29 @@ Keep `OPENAI_API_KEY` configured because document ingestion and query retrieval
 still use `text-embedding-3-small` with 1,536 dimensions. Restart the service
 after changing these variables.
 
+## Socratic questioning pipeline
+
+Each learning message passes through a hybrid interpretation stage before RAG
+retrieval. Deterministic rules retain control of course administration, session
+commands, access checks, and safe fallbacks. The configured Groq or OpenAI model
+then returns validated labels for the student's intent, question type, target
+concepts, conversation state, and a focused retrieval query. Invalid JSON,
+unsupported labels, or a provider failure automatically falls back to the rules.
+
+After retrieval, the teaching policy chooses one explainable action. A new
+concept begins with a short document-grounded example and one discovery
+question; comparisons use contrasting cases; procedure, application, and
+debugging requests use an incomplete scenario. Uncertainty or an explicit hint
+request increases disclosure, while repeated difficulty permits a concise
+partial explanation followed by one check question. The response validator
+limits disclosure, rejects definition-first opening turns, and guarantees one
+focused question. This pipeline does not calculate or store a permanent student
+mastery level.
+
+Set `CLASSIFIER_ENABLED=false` to use deterministic classification only. By
+default the classifier uses `GROQ_MODEL` or `RAG_MODEL`; set `CLASSIFIER_MODEL`
+only when a separate OpenAI-compatible classification model is desired.
+
 ## Add Documents
 
 Put `.txt`, `.md`, `.pdf`, `.tex`, `.html`, or `.htm` files in:

@@ -8,6 +8,7 @@ from time import monotonic
 from typing import Any
 
 from app import db, settings
+from app.classifier import MessageClassification
 from app.chunking import CHUNKING_VERSION, chunk_document
 from app.pipeline_logging import (
     debug_digest,
@@ -472,7 +473,12 @@ def generation_client_config() -> tuple[str, str, str, str] | None:
     return None
 
 
-async def generate_answer(question: str, history: list[ChatMessage], sources: list[Source]) -> str:
+async def generate_answer(
+    question: str,
+    history: list[ChatMessage],
+    sources: list[Source],
+    classification: MessageClassification | None = None,
+) -> str:
     client_config = generation_client_config()
     if client_config is None:
         log_event(8, "generation_fallback_selected", reason="provider_not_configured")
@@ -484,7 +490,7 @@ async def generate_answer(question: str, history: list[ChatMessage], sources: li
     from openai import AsyncOpenAI
 
     provider, api_key, base_url, model = client_config
-    socratic_decision = choose_socratic_strategy(question, history, sources)
+    socratic_decision = choose_socratic_strategy(question, history, sources, classification)
     log_event(
         6,
         "socratic_strategy_selected",
@@ -492,6 +498,11 @@ async def generate_answer(question: str, history: list[ChatMessage], sources: li
         strategy=socratic_decision.strategy,
         mode=socratic_decision.mode,
         scaffolding_level=socratic_decision.disclosure_level,
+        input_intent=classification.student_intent if classification else "rules",
+        input_question_type=classification.question_type if classification else "rules",
+        target_concept=socratic_decision.target_concept or "unknown",
+        example_type=socratic_decision.example_type,
+        tutor_question_type=socratic_decision.tutor_question_type,
     )
     context = "\n\n".join(f"[{index + 1}] {source.title}\n{source.text}" for index, source in enumerate(sources))
     messages = [

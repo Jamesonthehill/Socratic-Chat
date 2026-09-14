@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from app.schemas import ChatMessage, Source
+
+if TYPE_CHECKING:
+    from app.classifier import MessageClassification
 
 
 DIRECT_INFORMATION_PATTERN = re.compile(
@@ -42,6 +46,9 @@ class SocraticDecision:
     strategy: str
     instruction: str
     disclosure_level: int = 1
+    target_concept: str | None = None
+    example_type: str = "none"
+    tutor_question_type: str = "clarification"
 
 
 DIRECT_DECISION = SocraticDecision(
@@ -74,17 +81,32 @@ def choose_socratic_strategy(
     message: str,
     history: list[ChatMessage],
     sources: list[Source],
+    classification: MessageClassification | None = None,
 ) -> SocraticDecision:
     """Choose one explainable teaching action after document retrieval."""
     clean_message = " ".join(message.strip().split())
     if not sources:
         return DIRECT_DECISION
-    if DIRECT_INFORMATION_PATTERN.search(clean_message) or DIRECT_REQUEST_PATTERN.search(clean_message):
+    if (
+        DIRECT_INFORMATION_PATTERN.search(clean_message)
+        or DIRECT_REQUEST_PATTERN.search(clean_message)
+        or (classification and classification.route == "administrative")
+    ):
         return DIRECT_DECISION
 
     question_turns = _recent_socratic_questions(history)
+    if classification and len(classification.target_concepts) > 1:
+        target = " and ".join(classification.target_concepts)
+    else:
+        target = (
+            classification.target
+            if classification and classification.target
+            else _target_concept(clean_message)
+        )
+    intent = classification.student_intent if classification else None
+    classified_state = classification.conversation_state if classification else None
 
-    if HINT_REQUEST_PATTERN.search(clean_message):
+    if HINT_REQUEST_PATTERN.search(clean_message) or intent == "hint":
         return SocraticDecision(
             mode="socratic",
             student_state="hint_requested",
@@ -94,21 +116,64 @@ def choose_socratic_strategy(
                 "Then ask exactly one focused question that uses the hint."
             ),
             disclosure_level=2,
+            target_concept=target,
+            example_type="simplified_example",
+            tutor_question_type="application",
         )
 
-    if NEW_CONCEPT_PATTERN.search(clean_message):
+    if intent == "comparison":
+        return SocraticDecision(
+            mode="socratic",
+            student_state="prior_knowledge_unknown",
+            strategy="guided_comparison",
+            instruction=(
+                "Give two short contrasting situations grounded in the retrieved context without stating the "
+                "final distinction. Then ask exactly one question that invites the learner to identify it."
+            ),
+            disclosure_level=0,
+            target_concept=target,
+            example_type="contrasting_cases",
+            tutor_question_type="comparison",
+        )
+
+    if intent in {"procedure", "application", "debugging"}:
+        strategy_by_intent = {
+            "procedure": "guided_sequence",
+            "application": "transfer_application",
+            "debugging": "failure_scenario",
+        }
+        return SocraticDecision(
+            mode="socratic",
+            student_state="prior_knowledge_unknown",
+            strategy=strategy_by_intent[intent],
+            instruction=(
+                "Present one short, concrete scenario grounded in the retrieved context, leaving one meaningful "
+                "step or decision unresolved. Ask exactly one question that lets the learner complete it."
+            ),
+            disclosure_level=0,
+            target_concept=target,
+            example_type="incomplete_scenario",
+            tutor_question_type="application",
+        )
+
+    if NEW_CONCEPT_PATTERN.search(clean_message) or (
+        intent in {"definition", "explanation"} and classified_state == "new_concept"
+    ):
         return SocraticDecision(
             mode="socratic",
             student_state="prior_knowledge_unknown",
             strategy="diagnostic_recall",
             instruction=(
-                "Do not lecture or reveal the complete answer yet. Ask exactly one accessible diagnostic question "
-                "that connects the target concept to the learner's prior knowledge or a simple example."
+                "Do not lecture or state the definition. Give one brief, familiar scenario grounded in the "
+                "retrieved context. Ask exactly one accessible question that helps the learner notice the idea."
             ),
             disclosure_level=0,
+            target_concept=target,
+            example_type="familiar_scenario",
+            tutor_question_type="clarification" if intent != "explanation" else "implication",
         )
 
-    if UNCERTAINTY_PATTERN.search(clean_message):
+    if UNCERTAINTY_PATTERN.search(clean_message) or classified_state == "uncertain":
         if question_turns >= 2:
             return SocraticDecision(
                 mode="socratic",
@@ -119,6 +184,9 @@ def choose_socratic_strategy(
                     "question that checks understanding. Do not withhold the explanation again."
                 ),
                 disclosure_level=3,
+                target_concept=target,
+                example_type="worked_example",
+                tutor_question_type="application",
             )
         return SocraticDecision(
             mode="socratic",
@@ -129,9 +197,12 @@ def choose_socratic_strategy(
                 "Then ask exactly one focused question that uses the hint."
             ),
             disclosure_level=2,
+            target_concept=target,
+            example_type="simplified_example",
+            tutor_question_type="application",
         )
 
-    if MISCONCEPTION_PATTERN.search(clean_message):
+    if MISCONCEPTION_PATTERN.search(clean_message) or classified_state == "possible_misconception":
         return SocraticDecision(
             mode="socratic",
             student_state="possible_misconception",
@@ -140,9 +211,12 @@ def choose_socratic_strategy(
                 "Briefly acknowledge the learner's idea without calling it correct or incorrect. Ask exactly one "
                 "guided-comparison question that helps distinguish the two relevant concepts."
             ),
+            target_concept=target,
+            example_type="counterexample",
+            tutor_question_type="alternative",
         )
 
-    if REASONING_PATTERN.search(clean_message):
+    if REASONING_PATTERN.search(clean_message) or classified_state == "reasoning_in_progress":
         return SocraticDecision(
             mode="socratic",
             student_state="reasoning_in_progress",
@@ -151,6 +225,9 @@ def choose_socratic_strategy(
                 "Refer briefly to the learner's reasoning and ask exactly one question about its evidence, "
                 "assumption, consequence, or applicability."
             ),
+            target_concept=target,
+            example_type="none",
+            tutor_question_type="evidence",
         )
 
     latest_assistant = next((item for item in reversed(history) if item.role == "assistant"), None)
@@ -200,18 +277,21 @@ def choose_socratic_strategy(
         student_state="prior_knowledge_unknown",
         strategy="diagnostic_recall",
         instruction=(
-            "Do not lecture or reveal the complete answer yet. Ask exactly one accessible diagnostic question "
-            "that connects the target concept to the learner's prior knowledge or a simple example."
+            "Do not lecture or state the definition. Give one brief, familiar scenario grounded in the retrieved "
+            "context, then ask exactly one accessible question that helps the learner notice the idea."
         ),
         disclosure_level=0,
+        target_concept=target,
+        example_type="familiar_scenario",
+        tutor_question_type="clarification",
     )
 
 
 def _disclosure_instruction(level: int) -> str:
     instructions = {
         0: (
-            "Disclosure level 0: provide no explanation or new course facts. Output only the diagnostic question, "
-            "using at most 25 words."
+            "Disclosure level 0: do not state the definition or conclusion. You may provide one short illustrative "
+            "scenario followed by one question; keep the entire response within 60 words."
         ),
         1: (
             "Disclosure level 1: feedback may only reflect the learner's own reasoning in at most 12 words. "
@@ -238,6 +318,8 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
         return f"{decision.instruction} {emphasis_instruction}"
     return (
         f"Socratic teaching state: {decision.student_state}. Strategy: {decision.strategy}. "
+        f"Target concept: {decision.target_concept or 'infer from the latest message'}. "
+        f"Example pattern: {decision.example_type}. Tutor question type: {decision.tutor_question_type}. "
         f"{decision.instruction} {_disclosure_instruction(decision.disclosure_level)} Ask only one question. "
         "Anchor feedback and questions in the retrieved learning context and the learner's latest response. "
         "Put the final question in its own paragraph. When natural, bold only a short reasoning cue at the start "
@@ -250,7 +332,7 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
 def _target_concept(message: str) -> str:
     normalized = " ".join(message.strip().rstrip("?.!").split())
     patterns = [
-        r"^(?:what is|what are|define|explain)\s+(.+)$",
+        r"^(?:what is|what are|define|explain(?:\s+what)?)\s+(.+)$",
         r"^(?:tell me about|help me understand)\s+(.+)$",
     ]
     target = normalized
@@ -260,6 +342,8 @@ def _target_concept(message: str) -> str:
             target = match.group(1)
             break
     target = re.split(r"\s+(?:in|from|according to)\s+(?:the|this|our)\b", target, maxsplit=1, flags=re.IGNORECASE)[0]
+    target = re.sub(r"\s+(?:is|are)$", "", target, flags=re.IGNORECASE)
+    target = re.sub(r"^(?:the|a|an)\s+", "", target, flags=re.IGNORECASE)
     return target.strip() or "this concept"
 
 
@@ -272,19 +356,24 @@ def _comparison_targets(message: str) -> tuple[str, str] | None:
 
 
 def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
-    target = _target_concept(message)
+    target = decision.target_concept or _target_concept(message)
     if decision.strategy == "diagnostic_recall":
         comparison = _comparison_targets(message)
         if comparison:
             first, second = comparison
             question = f"Before we compare **{first}** and **{second}**, what difference comes to mind first?"
         else:
-            question = f"Before we define **{target}**, what comes to mind when you hear that term?"
-        if _word_count(question) <= 25:
+            question = (
+                f"Imagine a team encounters **{target}** while building a project. "
+                "What problem do you think it might help them solve?"
+            )
+        if _word_count(question) <= 60:
             return question
         return "What do you already understand about **this concept**?"
     if decision.strategy == "guided_comparison":
         return "What distinction between the two ideas might change your conclusion?"
+    if decision.strategy in {"guided_sequence", "transfer_application", "failure_scenario"}:
+        return f"In a simple project scenario, what would you try first with **{target}**, and why?"
     if decision.strategy == "hint_then_question":
         return "Which detail in the retrieved material seems most useful for working this out?"
     if decision.strategy == "probe_reasoning":
@@ -337,10 +426,31 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
         return clean_answer
 
     question_count = clean_answer.count("?")
+    target = re.escape((decision.target_concept or _target_concept(message)).strip("* "))
+    reveals_definition = bool(
+        re.search(
+            rf"\b{target}\b\s+(?:is|means|refers to|includes|describes|can be defined as)\b",
+            clean_answer,
+            re.IGNORECASE,
+        )
+    )
+    depends_on_unexplained_preamble = bool(
+        re.search(r"\b(?:these|those|such|the above|this idea|that idea|these factors)\b", clean_answer, re.IGNORECASE)
+    )
+    valid_example_first_turn = (
+        decision.disclosure_level == 0
+        and decision.example_type != "none"
+        and question_count == 1
+        and clean_answer.endswith("?")
+        and _word_count(clean_answer) <= 60
+        and not reveals_definition
+        and not depends_on_unexplained_preamble
+        and not re.search(r"(?:^|\n)\s*[-*]\s+", clean_answer)
+    )
+    if valid_example_first_turn:
+        return clean_answer
+
     if decision.strategy == "diagnostic_recall":
-        # The opening turn is a prior-knowledge check. Never allow a model
-        # definition or summary to precede it, even when the model also asks a
-        # valid question afterward.
         return socratic_fallback_question(message, decision)
 
     strict_discovery = decision.strategy in {"diagnostic_recall", "guided_comparison"}

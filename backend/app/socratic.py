@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from app.schemas import ChatMessage, Source
 
 if TYPE_CHECKING:
+    from app.answer_evaluation import AnswerEvaluation
     from app.classifier import MessageClassification
 
 
@@ -90,6 +91,7 @@ def choose_socratic_strategy(
     history: list[ChatMessage],
     sources: list[Source],
     classification: MessageClassification | None = None,
+    evaluation: AnswerEvaluation | None = None,
 ) -> SocraticDecision:
     """Choose one explainable teaching action after document retrieval."""
     clean_message = " ".join(message.strip().split())
@@ -115,6 +117,32 @@ def choose_socratic_strategy(
     intent = classification.student_intent if classification else None
     classified_state = classification.conversation_state if classification else None
     conversation_action = classification.conversation_action if classification else "continue"
+
+    needs_verification = bool(
+        evaluation
+        and (
+            evaluation.progress_status == "ready_for_verification"
+            or (
+                evaluation.progress_status == "unrecorded"
+                and evaluation.ready_for_verification
+            )
+        )
+    )
+    if evaluation and needs_verification:
+        return SocraticDecision(
+            mode="socratic",
+            student_state="ready_for_verification",
+            strategy="mastery_verification",
+            instruction=(
+                "Give one specific positive observation about the demonstrated reasoning. Do not declare mastery. "
+                "Ask exactly one short transfer, prediction, or teach-back question that requires an independently "
+                "demonstrated answer in a new situation."
+            ),
+            disclosure_level=1,
+            target_concept=target,
+            example_type="transfer_check",
+            tutor_question_type="application",
+        )
 
     if conversation_action == "verify_claim":
         return SocraticDecision(
@@ -430,6 +458,8 @@ def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
         return f"In a simple project scenario, what would you try first with **{target}**, and why?"
     if decision.strategy == "understanding_check":
         return f"How would you apply **{target}** in a new situation to demonstrate your understanding?"
+    if decision.strategy == "mastery_verification":
+        return f"How would you apply **{target}** in a different situation and explain your reasoning?"
     if decision.strategy == "grounded_claim_check":
         return "How would you revise or apply that claim using the retrieved course evidence?"
     if decision.strategy == "scaffold_then_question":

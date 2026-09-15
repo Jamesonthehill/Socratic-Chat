@@ -68,18 +68,33 @@ focused question. A substantive claim receives a short grounded
 `Yes—`/`Partly—`/`Not quite—` check before one revision question. A bare “I
 understand” receives a transfer or teach-back check instead of unearned praise.
 Acknowledgements and clear endings are routed to a short, question-free response
-instead of another Socratic prompt. This pipeline does not calculate or store a
-permanent student mastery level.
+instead of another Socratic prompt.
 
-For responses to tutor questions, the generation model compares the student's
-reasoning with the retrieved course evidence. Correct answers receive brief,
-specific positive feedback naming the valid connection. Nearly correct answers
-are told which part is on the right track, without implying full mastery;
-unsupported answers are handled neutrally before the next guiding question.
+Substantive responses to tutor questions pass through a separate hybrid answer
+evaluator. It calculates deterministic course-concept coverage (20%), model-based
+semantic alignment (20%), and a grounded rubric for correctness, completeness,
+reasoning, and application (60%). Retrieval rank is never used as a learning
+score. The evaluator uses the preceding tutor question as part of retrieval so
+short replies remain attached to the correct topic. Questions, acknowledgements,
+requests for help, and unsupported topics are not scored.
+
+Each eligible assessment is appended to `mastery_assessments`, while an
+exponentially weighted estimate and evidence count are stored in
+`student_concept_progress`. A single strong answer cannot complete a concept.
+After at least two supporting answers and an estimate of 80 or above, the tutor
+asks one transfer or teach-back verification question. A second high-quality
+application answer completes the current objective. Critical misconceptions cap
+the assessment below the verification threshold. Internal numbers are not shown
+to students and should be treated as adaptive tutoring signals, not official
+grades. Correct and nearly correct responses receive concise, specific feedback
+before the next learning step.
 
 Set `CLASSIFIER_ENABLED=false` to use deterministic classification only. By
 default the classifier uses `GROQ_MODEL` or `RAG_MODEL`; set `CLASSIFIER_MODEL`
 only when a separate OpenAI-compatible classification model is desired.
+Set `ANSWER_EVALUATION_ENABLED=false` to disable adaptive assessment. By default,
+the evaluator uses the configured Groq model (including GPT-OSS-120B) or the
+OpenAI generation model; `ANSWER_EVALUATION_MODEL` can override it.
 
 ## Add Documents
 
@@ -191,6 +206,8 @@ The app creates these tables automatically on startup:
 
 - `conversations`
 - `conversation_messages`
+- `mastery_assessments` (one immutable record per evaluated student answer)
+- `student_concept_progress` (the latest per-student, per-course concept state)
 
 ## Chat pipeline logs on Render
 

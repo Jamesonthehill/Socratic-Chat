@@ -308,6 +308,52 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                CREATE TABLE IF NOT EXISTS student_concept_progress (
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+                    concept TEXT NOT NULL,
+                    estimated_mastery NUMERIC(5,2) NOT NULL DEFAULT 0,
+                    evidence_count INTEGER NOT NULL DEFAULT 0 CHECK (evidence_count >= 0),
+                    status TEXT NOT NULL DEFAULT 'emerging' CHECK (
+                        status IN ('emerging', 'developing', 'ready_for_verification', 'mastered', 'needs_support')
+                    ),
+                    critical_misconception BOOLEAN NOT NULL DEFAULT FALSE,
+                    last_assessed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    PRIMARY KEY (user_id, course_id, concept)
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS mastery_assessments (
+                    id UUID PRIMARY KEY,
+                    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                    student_message_id BIGINT REFERENCES conversation_messages(id) ON DELETE SET NULL,
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+                    concept TEXT NOT NULL,
+                    keyword_coverage NUMERIC(6,4) NOT NULL,
+                    semantic_alignment NUMERIC(6,4) NOT NULL,
+                    rubric_score NUMERIC(6,4) NOT NULL,
+                    total_score NUMERIC(5,2) NOT NULL,
+                    correctness SMALLINT NOT NULL CHECK (correctness BETWEEN 0 AND 4),
+                    completeness SMALLINT NOT NULL CHECK (completeness BETWEEN 0 AND 4),
+                    reasoning SMALLINT NOT NULL CHECK (reasoning BETWEEN 0 AND 4),
+                    application SMALLINT NOT NULL CHECK (application BETWEEN 0 AND 4),
+                    critical_misconception BOOLEAN NOT NULL DEFAULT FALSE,
+                    evaluation JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_mastery_assessments_student_concept
+                ON mastery_assessments(user_id, course_id, concept, created_at DESC)
+                """
+            )
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS conversation_state (
                     conversation_id UUID PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
                     pending_type TEXT NOT NULL,
@@ -600,7 +646,7 @@ def rename_uploaded_document_chats() -> int:
     return updated
 
 
-def add_message(conversation_id: str, role: str, content: str) -> None:
+def add_message(conversation_id: str, role: str, content: str) -> int:
     init_db()
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -608,9 +654,11 @@ def add_message(conversation_id: str, role: str, content: str) -> None:
                 """
                 INSERT INTO conversation_messages (conversation_id, role, content)
                 VALUES (%s, %s, %s)
+                RETURNING id
                 """,
                 (conversation_id, role, content),
             )
+            message_id = int(cur.fetchone()[0])
             cur.execute(
                 """
                 UPDATE conversations
@@ -620,6 +668,112 @@ def add_message(conversation_id: str, role: str, content: str) -> None:
                 (conversation_id,),
             )
         conn.commit()
+    return message_id
+
+
+def _mastery_progress_update(
+    existing: tuple[object, object, object] | None,
+    score: float,
+    correctness: int,
+    application: int,
+    critical: bool,
+) -> tuple[float, int, str]:
+    previous_score = float(existing[0]) if existing else score
+    previous_count = int(existing[1]) if existing else 0
+    previous_status = str(existing[2]) if existing else "emerging"
+    evidence_count = previous_count + 1
+    estimated_mastery = score if existing is None else 0.65 * previous_score + 0.35 * score
+    verification_passed = (
+        previous_status == "ready_for_verification"
+        and score >= 80
+        and correctness >= 3
+        and application >= 3
+        and not critical
+    )
+    if previous_status == "mastered" or verification_passed:
+        status = "mastered"
+    elif critical:
+        status = "needs_support"
+    elif estimated_mastery >= 80 and evidence_count >= 2:
+        status = "ready_for_verification"
+    elif estimated_mastery >= 60:
+        status = "developing"
+    else:
+        status = "emerging"
+    return round(estimated_mastery, 2), evidence_count, status
+
+
+def save_mastery_assessment(
+    conversation_id: str,
+    student_message_id: int | None,
+    user_id: str,
+    course_id: str,
+    evaluation: dict[str, object],
+) -> str:
+    """Append assessment evidence and update the student's per-concept progress."""
+    from psycopg.types.json import Jsonb
+
+    init_db()
+    concept = str(evaluation["concept"]).strip().lower()
+    score = float(evaluation["total_score"])
+    critical = bool(evaluation["critical_misconception"])
+    correctness = int(evaluation["correctness"])
+    application = int(evaluation["application"])
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT estimated_mastery, evidence_count, status
+                FROM student_concept_progress
+                WHERE user_id = %s AND course_id = %s AND concept = %s
+                FOR UPDATE
+                """,
+                (user_id, course_id, concept),
+            )
+            existing = cur.fetchone()
+            estimated_mastery, evidence_count, status = _mastery_progress_update(
+                existing, score, correctness, application, critical,
+            )
+
+            cur.execute(
+                """
+                INSERT INTO mastery_assessments (
+                    id, conversation_id, student_message_id, user_id, course_id, concept,
+                    keyword_coverage, semantic_alignment, rubric_score, total_score,
+                    correctness, completeness, reasoning, application,
+                    critical_misconception, evaluation
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    str(uuid.uuid4()), conversation_id, student_message_id, user_id, course_id, concept,
+                    evaluation["keyword_coverage"], evaluation["semantic_alignment"],
+                    evaluation["rubric_score"], evaluation["total_score"], correctness,
+                    evaluation["completeness"], evaluation["reasoning"], application,
+                    critical, Jsonb(evaluation),
+                ),
+            )
+            cur.execute(
+                """
+                INSERT INTO student_concept_progress (
+                    user_id, course_id, concept, estimated_mastery, evidence_count,
+                    status, critical_misconception, last_assessed_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (user_id, course_id, concept) DO UPDATE SET
+                    estimated_mastery = EXCLUDED.estimated_mastery,
+                    evidence_count = EXCLUDED.evidence_count,
+                    status = EXCLUDED.status,
+                    critical_misconception = EXCLUDED.critical_misconception,
+                    last_assessed_at = NOW()
+                """,
+                (
+                    user_id, course_id, concept, estimated_mastery,
+                    evidence_count, status, critical,
+                ),
+            )
+        conn.commit()
+    return status
 
 
 def update_conversation_dialogue_state(

@@ -4,6 +4,7 @@ import unittest
 
 from app.schemas import ChatMessage, Source
 from app.classifier import MessageClassification
+from app.answer_evaluation import AnswerEvaluation
 from app.socratic import (
     choose_socratic_strategy,
     enforce_socratic_response,
@@ -21,6 +22,61 @@ SOURCE = Source(
 
 
 class SocraticPolicyTests(unittest.TestCase):
+    def test_persistent_ready_status_selects_mastery_verification(self) -> None:
+        evaluation = AnswerEvaluation(
+            concept="version control",
+            keyword_coverage=1,
+            semantic_alignment=0.9,
+            rubric_score=0.9,
+            total_score=92,
+            correctness=4,
+            completeness=3,
+            reasoning=4,
+            application=3,
+            supported_concepts=("revision history",),
+            missing_concepts=(),
+            critical_misconception=False,
+            misconception=None,
+            feedback="The explanation is well supported.",
+            confidence=0.95,
+            progress_status="ready_for_verification",
+        )
+        history = [ChatMessage(role="assistant", content="Why does version control help teams?")]
+        decision = choose_socratic_strategy(
+            "It preserves shared history and supports collaboration.",
+            history,
+            [SOURCE],
+            answering_classification := MessageClassification(
+                conversation_state="answering_tutor",
+                dialogue_status="answering_tutor",
+                conversation_action="continue",
+                target="version control",
+            ),
+            evaluation,
+        )
+        self.assertEqual(answering_classification.dialogue_status, "answering_tutor")
+        self.assertEqual(decision.strategy, "mastery_verification")
+        self.assertEqual(decision.tutor_question_type, "application")
+
+    def test_first_recorded_high_score_does_not_verify_early(self) -> None:
+        evaluation = AnswerEvaluation(
+            concept="version control", keyword_coverage=1, semantic_alignment=1,
+            rubric_score=1, total_score=100, correctness=4, completeness=4,
+            reasoning=4, application=4, supported_concepts=(), missing_concepts=(),
+            critical_misconception=False, misconception=None, feedback="Correct.",
+            confidence=1, progress_status="developing",
+        )
+        history = [ChatMessage(role="assistant", content="Why does version control help teams?")]
+        decision = choose_socratic_strategy(
+            "It preserves shared history and supports collaboration.", history, [SOURCE],
+            MessageClassification(
+                conversation_state="answering_tutor", dialogue_status="answering_tutor",
+                conversation_action="continue", target="version control",
+            ),
+            evaluation,
+        )
+        self.assertNotEqual(decision.strategy, "mastery_verification")
+
     def test_assignment_logistics_receive_a_direct_answer(self) -> None:
         decision = choose_socratic_strategy("What are the Assignment 4 requirements?", [], [SOURCE])
         self.assertEqual(decision.mode, "direct")

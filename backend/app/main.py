@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict
 from pathlib import Path
 import secrets
 import smtplib
@@ -18,6 +19,12 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 
 from app import auth, db, settings
+from app.answer_evaluation import (
+    answer_evaluation_query,
+    evaluate_student_answer,
+    mastery_completion_answer,
+    with_progress_status,
+)
 from app.classifier import classify_message
 from app.pipeline_logging import (
     begin_trace,
@@ -1069,6 +1076,7 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
     user_id = _current_user_id(request)
     guided_state: dict[str, object] | None = None
     pending: dict[str, object] | None = None
+    user_message_id: int | None = None
 
     if not course_id:
         raise HTTPException(status_code=400, detail="Choose an approved course before opening the chatbot.")
@@ -1089,7 +1097,8 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
         stored_history = db.get_messages(conversation_id, limit=8)
         history = stored_history or payload.history
         log_event(3, "history_loaded", messages=len(history), source="database" if stored_history else "request")
-        db.add_message(conversation_id, "user", payload.message)
+        saved_message_id = db.add_message(conversation_id, "user", payload.message)
+        user_message_id = saved_message_id if isinstance(saved_message_id, int) else None
         log_event(3, "user_message_saved")
         if hasattr(db, "get_guided_lesson_state"):
             guided_state = db.get_guided_lesson_state(conversation_id)
@@ -1251,7 +1260,7 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
             _save_assistant_message(conversation_id, answer)
         return ChatResponse(answer=answer, conversation_id=conversation_id or "local", sources=[])
 
-    query = classification.rewritten_query or payload.message
+    query = answer_evaluation_query(payload.message, history, classification)
     log_event(4, "route_selected", route="rag_generation")
     sources = retrieve(
         query,
@@ -1265,7 +1274,35 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
             top_k=payload.top_k,
             course_id=course_id,
         )
-    answer = await generate_answer(payload.message, history, sources, classification=classification)
+    evaluation = await evaluate_student_answer(payload.message, history, sources, classification)
+    if evaluation and db.is_enabled() and conversation_id and hasattr(db, "save_mastery_assessment"):
+        progress_status = db.save_mastery_assessment(
+            conversation_id,
+            user_message_id,
+            user_id,
+            course_id,
+            asdict(evaluation),
+        )
+        evaluation = with_progress_status(evaluation, progress_status)
+        log_event(
+            6,
+            "concept_progress_updated",
+            concept=evaluation.concept,
+            status=progress_status,
+            score=evaluation.total_score,
+        )
+
+    if evaluation and evaluation.progress_status == "mastered":
+        log_event(4, "route_selected", route="mastery_completed")
+        answer = mastery_completion_answer(evaluation)
+    else:
+        answer = await generate_answer(
+            payload.message,
+            history,
+            sources,
+            classification=classification,
+            evaluation=evaluation,
+        )
     if answer.lower().startswith("i do not know from your uploaded notes"):
         sources = []
 

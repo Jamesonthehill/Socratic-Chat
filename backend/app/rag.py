@@ -8,6 +8,7 @@ from time import monotonic
 from typing import Any
 
 from app import db, settings
+from app.answer_evaluation import AnswerEvaluation, evaluation_tutor_instruction
 from app.classifier import MessageClassification
 from app.chunking import CHUNKING_VERSION, chunk_document
 from app.pipeline_logging import (
@@ -504,6 +505,7 @@ async def generate_answer(
     history: list[ChatMessage],
     sources: list[Source],
     classification: MessageClassification | None = None,
+    evaluation: AnswerEvaluation | None = None,
 ) -> str:
     if not sources:
         log_event(8, "generation_stopped", reason="no_relevant_context")
@@ -521,7 +523,7 @@ async def generate_answer(
     from openai import AsyncOpenAI
 
     provider, api_key, base_url, model = client_config
-    socratic_decision = choose_socratic_strategy(question, history, sources, classification)
+    socratic_decision = choose_socratic_strategy(question, history, sources, classification, evaluation)
     log_event(
         6,
         "socratic_strategy_selected",
@@ -536,6 +538,9 @@ async def generate_answer(
         tutor_question_type=socratic_decision.tutor_question_type,
     )
     context = "\n\n".join(f"[{index + 1}] {source.title}\n{source.text}" for index, source in enumerate(sources))
+    teaching_instruction = socratic_system_instruction(socratic_decision)
+    if evaluation:
+        teaching_instruction = f"{teaching_instruction} {evaluation_tutor_instruction(evaluation)}"
     messages = [
         {
             "role": "system",
@@ -545,7 +550,7 @@ async def generate_answer(
                 "'I do not know from your uploaded notes.' Do not answer from general knowledge unless the user asks for that."
             ),
         },
-        {"role": "system", "content": socratic_system_instruction(socratic_decision)},
+        {"role": "system", "content": teaching_instruction},
         {"role": "system", "content": answer_format_instruction(question)},
         {"role": "system", "content": f"Retrieved context:\n{context or 'No context retrieved.'}"},
         *[{"role": item.role, "content": item.content} for item in history[-8:]],

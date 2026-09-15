@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from app.answer_evaluation import (
     answer_evaluation_query,
     concept_coverage,
+    evaluate_student_answer,
     evaluation_tutor_instruction,
     should_evaluate_answer,
     validated_evaluation,
@@ -12,7 +17,7 @@ from app.answer_evaluation import (
 )
 from app.classifier import MessageClassification
 from app import db
-from app.schemas import ChatMessage
+from app.schemas import ChatMessage, Source
 
 
 def answering_classification() -> MessageClassification:
@@ -32,6 +37,54 @@ def answering_classification() -> MessageClassification:
 
 
 class AnswerEvaluationTests(unittest.TestCase):
+    def test_groq_gpt_oss_uses_strict_schema_and_disables_reasoning_output(self) -> None:
+        payload = {
+            "concept": "version control",
+            "expected_concepts": [
+                {"name": "revision history", "accepted_terms": ["tracks changes"]},
+            ],
+            "semantic_alignment": 0.9,
+            "correctness": 4,
+            "completeness": 3,
+            "reasoning": 3,
+            "application": 1,
+            "supported_concepts": ["revision history"],
+            "missing_concepts": [],
+            "critical_misconception": False,
+            "misconception": None,
+            "feedback": "You identified revision history.",
+            "confidence": 0.9,
+        }
+        response = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload)))],
+        )
+        create = AsyncMock(return_value=response)
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        history = [ChatMessage(role="assistant", content="Why does version control help teams?")]
+        source = Source(
+            document_id="doc-1", chunk_id="chunk-1", title="course.html",
+            text="Version control tracks revisions.", score=0.9,
+        )
+        with (
+            patch("openai.AsyncOpenAI", return_value=client),
+            patch("app.answer_evaluation.settings.GROQ_API_KEY", "test-key"),
+            patch("app.answer_evaluation.settings.GROQ_MODEL", "openai/gpt-oss-120b"),
+        ):
+            evaluation = asyncio.run(
+                evaluate_student_answer(
+                    "It tracks changes over time.", history, [source],
+                    answering_classification(), concept_hint="version control",
+                )
+            )
+        self.assertIsNotNone(evaluation)
+        request = create.await_args.kwargs
+        self.assertEqual(request["response_format"]["type"], "json_schema")
+        self.assertTrue(request["response_format"]["json_schema"]["strict"])
+        self.assertEqual(
+            request["extra_body"],
+            {"reasoning_effort": "low", "include_reasoning": False},
+        )
+
     def test_mastery_requires_repeated_evidence_then_transfer_verification(self) -> None:
         first = db._mastery_progress_update(None, 85, 4, 2, False)
         second = db._mastery_progress_update(first, 88, 4, 2, False)
@@ -98,6 +151,7 @@ class AnswerEvaluationTests(unittest.TestCase):
                 "supported_concepts": ["revision history"],
                 "missing_concepts": ["collaboration"],
                 "critical_misconception": False,
+                "misconception": None,
                 "feedback": "You correctly identified revision history.",
                 "confidence": 0.9,
             },
@@ -108,16 +162,50 @@ class AnswerEvaluationTests(unittest.TestCase):
         self.assertEqual(evaluation.rubric_score, 0.8)
         self.assertEqual(evaluation.total_score, 74.0)
 
+    def test_incomplete_model_payload_is_rejected_instead_of_saved_as_zero(self) -> None:
+        with self.assertRaisesRegex(ValueError, "missing required fields"):
+            validated_evaluation({}, "It tracks changes.", "version control")
+
+    def test_persisted_concept_hint_overrides_a_drifting_model_label(self) -> None:
+        evaluation = validated_evaluation(
+            {
+                "concept": "current concept",
+                "expected_concepts": [
+                    {"name": "revision history", "accepted_terms": ["tracks changes"]},
+                ],
+                "semantic_alignment": 0.8,
+                "correctness": 3,
+                "completeness": 2,
+                "reasoning": 2,
+                "application": 1,
+                "supported_concepts": ["revision history"],
+                "missing_concepts": [],
+                "critical_misconception": False,
+                "misconception": None,
+                "feedback": "You identified revision history.",
+                "confidence": 0.9,
+            },
+            "It tracks changes.",
+            "version control",
+        )
+        self.assertEqual(evaluation.concept, "version control")
+
     def test_critical_misconception_prevents_mastery(self) -> None:
         evaluation = validated_evaluation(
             {
+                "concept": "version control",
                 "expected_concepts": [{"name": "history", "accepted_terms": ["history"]}],
                 "semantic_alignment": 1,
                 "correctness": 4,
                 "completeness": 4,
                 "reasoning": 4,
                 "application": 4,
+                "supported_concepts": ["history"],
+                "missing_concepts": [],
                 "critical_misconception": True,
+                "misconception": "The answer reverses the role of history.",
+                "feedback": "Reconsider how history is preserved.",
+                "confidence": 1,
             },
             "history",
             "version control",
@@ -128,13 +216,19 @@ class AnswerEvaluationTests(unittest.TestCase):
     def test_recorded_high_score_waits_for_persistent_ready_status(self) -> None:
         evaluation = validated_evaluation(
             {
+                "concept": "version control",
                 "expected_concepts": [{"name": "history", "accepted_terms": ["history"]}],
                 "semantic_alignment": 1,
                 "correctness": 4,
                 "completeness": 4,
                 "reasoning": 4,
                 "application": 4,
+                "supported_concepts": ["history"],
+                "missing_concepts": [],
                 "critical_misconception": False,
+                "misconception": None,
+                "feedback": "You explained the concept correctly.",
+                "confidence": 1,
             },
             "history",
             "version control",

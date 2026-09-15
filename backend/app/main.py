@@ -1274,7 +1274,16 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
             top_k=payload.top_k,
             course_id=course_id,
         )
-    evaluation = await evaluate_student_answer(payload.message, history, sources, classification)
+    concept_hint = classification.target
+    if not concept_hint and db.is_enabled() and conversation_id:
+        concept_hint = db.get_conversation_active_concept(conversation_id)
+    evaluation = await evaluate_student_answer(
+        payload.message,
+        history,
+        sources,
+        classification,
+        concept_hint=concept_hint,
+    )
     if evaluation and db.is_enabled() and conversation_id and hasattr(db, "save_mastery_assessment"):
         progress_status = db.save_mastery_assessment(
             conversation_id,

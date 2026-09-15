@@ -89,6 +89,12 @@ to students and should be treated as adaptive tutoring signals, not official
 grades. Correct and nearly correct responses receive concise, specific feedback
 before the next learning step.
 
+When Groq GPT-OSS is the evaluator, the request uses strict JSON Schema output,
+low reasoning effort, and hidden reasoning output. Empty or incomplete evaluator
+responses are rejected and logged instead of being converted into zero-score
+database records. The persisted conversation concept is reused for follow-up
+answers so a short reply cannot be stored under a generic `current concept` key.
+
 Set `CLASSIFIER_ENABLED=false` to use deterministic classification only. By
 default the classifier uses `GROQ_MODEL` or `RAG_MODEL`; set `CLASSIFIER_MODEL`
 only when a separate OpenAI-compatible classification model is desired.

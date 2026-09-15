@@ -811,6 +811,20 @@ def update_conversation_dialogue_state(
         conn.commit()
 
 
+def get_conversation_active_concept(conversation_id: str) -> str | None:
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT active_concept FROM conversations WHERE id = %s",
+                (conversation_id,),
+            )
+            row = cur.fetchone()
+    if not row or not row[0]:
+        return None
+    return str(row[0])
+
+
 def get_messages(conversation_id: str, limit: int = 50) -> list[ChatMessage]:
     init_db()
     with get_connection() as conn:

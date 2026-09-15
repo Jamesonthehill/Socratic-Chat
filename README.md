@@ -62,6 +62,12 @@ Acknowledgements and clear endings are routed to a short, question-free response
 instead of another Socratic prompt. This pipeline does not calculate or store a
 permanent student mastery level.
 
+For responses to tutor questions, the generation model compares the student's
+reasoning with the retrieved course evidence. Correct answers receive brief,
+specific positive feedback naming the valid connection. Nearly correct answers
+are told which part is on the right track, without implying full mastery;
+unsupported answers are handled neutrally before the next guiding question.
+
 Set `CLASSIFIER_ENABLED=false` to use deterministic classification only. By
 default the classifier uses `GROQ_MODEL` or `RAG_MODEL`; set `CLASSIFIER_MODEL`
 only when a separate OpenAI-compatible classification model is desired.

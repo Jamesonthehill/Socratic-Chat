@@ -306,6 +306,31 @@ class SocraticPolicyTests(unittest.TestCase):
         self.assertIn("learner identified", instruction)
         self.assertIn("not learner-authored evidence", instruction)
 
+    def test_instruction_gives_specific_positive_feedback_for_nearly_correct_answers(self) -> None:
+        history = [ChatMessage(role="assistant", content="Where should actors appear?")]
+        decision = choose_socratic_strategy(
+            "Actors should be outside because they interact with the system.", history, [SOURCE],
+        )
+        instruction = socratic_system_instruction(decision)
+        self.assertIn("nearly correct response", instruction)
+        self.assertIn("on the right track", instruction)
+        self.assertIn("do not praise it", instruction)
+
+    def test_specific_positive_feedback_is_preserved_before_next_question(self) -> None:
+        history = [ChatMessage(role="assistant", content="Where should actors appear?")]
+        message = "Actors should be outside because they interact with the system."
+        decision = choose_socratic_strategy(message, history, [SOURCE])
+        answer = enforce_socratic_response(
+            "You correctly connected actors with interaction outside the boundary.\n\n"
+            "What evidence explains why use cases belong inside?",
+            message,
+            decision,
+        )
+        feedback, question = answer.split("\n\n", 1)
+        self.assertIn("correctly connected", feedback)
+        self.assertEqual(answer.count("?"), 1)
+        self.assertTrue(question.endswith("?"))
+
 
 if __name__ == "__main__":
     unittest.main()

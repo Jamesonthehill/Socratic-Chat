@@ -265,8 +265,9 @@ def choose_socratic_strategy(
             student_state="reasoning_in_progress",
             strategy="probe_reasoning",
             instruction=(
-                "Refer briefly to the learner's reasoning and ask exactly one question about its evidence, "
-                "assumption, consequence, or applicability."
+                "Evaluate the learner's reasoning against the retrieved context. If it is correct or substantially "
+                "close, briefly identify the specific valid connection before asking exactly one question about "
+                "its evidence, assumption, consequence, or applicability."
             ),
             target_concept=target,
             example_type="none",
@@ -281,8 +282,9 @@ def choose_socratic_strategy(
                 student_state="ready_to_reflect",
                 strategy="reflect_on_learning",
                 instruction=(
-                    "Give one specific, neutral observation about the learner's progress. Then ask exactly one "
-                    "reflection question about how their understanding changed or what they would revise."
+                    "Give one specific, calibrated observation about the learner's progress, positively recognizing "
+                    "any supported reasoning. Then ask exactly one reflection question about how their understanding "
+                    "changed or what they would revise."
                 ),
             )
         if question_turns == 3:
@@ -291,8 +293,9 @@ def choose_socratic_strategy(
                 student_state="ready_to_synthesize",
                 strategy="synthesize_understanding",
                 instruction=(
-                    "Give specific, neutral feedback in one short sentence. Then ask exactly one question that "
-                    "requires the learner to combine relevant concepts or evidence into an overall explanation."
+                    "Give specific, calibrated feedback in one short sentence, positively recognizing the supported "
+                    "part of a correct or nearly correct response. Then ask exactly one question that requires the "
+                    "learner to combine relevant concepts or evidence into an overall explanation."
                 ),
             )
         if question_turns == 2:
@@ -301,8 +304,9 @@ def choose_socratic_strategy(
                 student_state="understanding_developing",
                 strategy="examine_limitation",
                 instruction=(
-                    "Give specific, neutral feedback in one short sentence. Then ask exactly one question about "
-                    "a limitation, alternative factor, or condition that could change the learner's conclusion."
+                    "Give specific, calibrated feedback in one short sentence, positively recognizing the supported "
+                    "part of a correct or nearly correct response. Then ask exactly one question about a limitation, "
+                    "alternative factor, or condition that could change the learner's conclusion."
                 ),
             )
         return SocraticDecision(
@@ -310,8 +314,9 @@ def choose_socratic_strategy(
             student_state="response_to_prompt",
             strategy="justify_or_refine",
             instruction=(
-                "Assess the response against the retrieved context. Give specific, neutral feedback in one short "
-                "sentence, then ask exactly one question that helps the learner justify or refine the response."
+                "Assess the response against the retrieved context. If it is correct or substantially close, give "
+                "specific positive feedback in one short sentence naming the supported part. If it is not close, "
+                "respond neutrally. Then ask exactly one question that helps the learner justify or refine it."
             ),
         )
 
@@ -365,6 +370,10 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
         f"Example pattern: {decision.example_type}. Tutor question type: {decision.tutor_question_type}. "
         f"{decision.instruction} {_disclosure_instruction(decision.disclosure_level)} Ask only one question. "
         "Anchor feedback and questions in the retrieved learning context and the learner's latest response. "
+        "Calibrate feedback to the evidence: for a correct response, briefly name what the learner connected "
+        "correctly; for a nearly correct response, say they are on the right track and name only the supported part; "
+        "for an unsupported or incorrect response, do not praise it. Positive feedback must be specific, concise, "
+        "and proportional—it must not imply complete mastery. "
         "Put the final question in its own paragraph. When natural, bold only a short reasoning cue at the start "
         "of the question, such as '**What evidence**', '**Which assumption**', or '**What consequence**'. "
         "Use specific feedback instead of generic praise such as 'Excellent' or 'Good job'. "

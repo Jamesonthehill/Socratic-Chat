@@ -103,12 +103,19 @@ def choose_socratic_strategy(
     clean_message = " ".join(message.strip().split())
     if not sources:
         return DIRECT_DECISION
-    if (
-        DIRECT_INFORMATION_PATTERN.search(clean_message)
-        or PROJECT_INFORMATION_PATTERN.search(clean_message)
-        or DIRECT_REQUEST_PATTERN.search(clean_message)
-        or (classification and classification.route == "administrative")
-    ):
+    if classification:
+        direct_request = (
+            classification.route == "administrative"
+            or classification.student_intent == "direct_answer"
+            or classification.conversation_action == "direct"
+        )
+    else:
+        direct_request = bool(
+            DIRECT_INFORMATION_PATTERN.search(clean_message)
+            or PROJECT_INFORMATION_PATTERN.search(clean_message)
+            or DIRECT_REQUEST_PATTERN.search(clean_message)
+        )
+    if direct_request:
         return DIRECT_DECISION
 
     question_turns = _recent_socratic_questions(history)
@@ -183,7 +190,7 @@ def choose_socratic_strategy(
             tutor_question_type="application",
         )
 
-    if HINT_REQUEST_PATTERN.search(clean_message) or intent == "hint":
+    if intent == "hint" or (classification is None and HINT_REQUEST_PATTERN.search(clean_message)):
         return SocraticDecision(
             mode="socratic",
             student_state="support_requested",
@@ -233,9 +240,9 @@ def choose_socratic_strategy(
             tutor_question_type="application",
         )
 
-    if NEW_CONCEPT_PATTERN.search(clean_message) or (
-        intent in {"definition", "explanation"} and classified_state == "new_concept"
-    ):
+    if (
+        classification is None and NEW_CONCEPT_PATTERN.search(clean_message)
+    ) or (intent in {"definition", "explanation"} and classified_state == "new_concept"):
         return SocraticDecision(
             mode="socratic",
             student_state="prior_knowledge_unknown",
@@ -250,7 +257,9 @@ def choose_socratic_strategy(
             tutor_question_type="clarification" if intent != "explanation" else "implication",
         )
 
-    if UNCERTAINTY_PATTERN.search(clean_message) or classified_state == "uncertain":
+    if classified_state == "uncertain" or (
+        classification is None and UNCERTAINTY_PATTERN.search(clean_message)
+    ):
         if question_turns >= 2:
             return SocraticDecision(
                 mode="socratic",
@@ -279,7 +288,9 @@ def choose_socratic_strategy(
             tutor_question_type="application",
         )
 
-    if MISCONCEPTION_PATTERN.search(clean_message) or classified_state == "possible_misconception":
+    if classified_state == "possible_misconception" or (
+        classification is None and MISCONCEPTION_PATTERN.search(clean_message)
+    ):
         return SocraticDecision(
             mode="socratic",
             student_state="possible_misconception",
@@ -293,7 +304,9 @@ def choose_socratic_strategy(
             tutor_question_type="alternative",
         )
 
-    if REASONING_PATTERN.search(clean_message) or classified_state == "reasoning_in_progress":
+    if classified_state == "reasoning_in_progress" or (
+        classification is None and REASONING_PATTERN.search(clean_message)
+    ):
         return SocraticDecision(
             mode="socratic",
             student_state="reasoning_in_progress",

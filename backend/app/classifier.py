@@ -17,6 +17,16 @@ INTENTS = {
     "confirmation", "comprehension_claim", "acknowledgement", "close_session", "changing_topic",
     "hint", "direct_answer", "administrative", "reflection", "unclear",
 }
+OPERATIONAL_REQUESTS = {
+    "none",
+    "list_documents",
+    "document_visibility",
+    "document_overview",
+    "course_title",
+    "course_instructor",
+    "course_scope",
+    "system_status",
+}
 QUESTION_TYPES = {
     "what", "why", "how", "comparison", "application", "debugging", "statement", "follow_up", "unclear",
 }
@@ -34,9 +44,41 @@ CONVERSATION_ACTIONS = {
     "continue", "verify_claim", "verify_understanding", "soft_close", "complete", "clarify", "direct",
 }
 
+CLASSIFICATION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "route": {"type": "string", "enum": sorted(ROUTES)},
+        "student_intent": {"type": "string", "enum": sorted(INTENTS)},
+        "question_type": {"type": "string", "enum": sorted(QUESTION_TYPES)},
+        "target_concepts": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {"type": "string", "maxLength": 100},
+        },
+        "conversation_state": {"type": "string", "enum": sorted(CONVERSATION_STATES)},
+        "dialogue_status": {"type": "string", "enum": sorted(DIALOGUE_STATUSES)},
+        "conversation_action": {"type": "string", "enum": sorted(CONVERSATION_ACTIONS)},
+        "has_substantive_claim": {"type": "boolean"},
+        "student_claim": {"type": ["string", "null"], "maxLength": 500},
+        "wants_to_continue": {"type": "boolean"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "needs_clarification": {"type": "boolean"},
+        "clarification_question": {"type": ["string", "null"], "maxLength": 200},
+        "retrieval_query": {"type": "string", "minLength": 1, "maxLength": 300},
+        "operational_request": {"type": "string", "enum": sorted(OPERATIONAL_REQUESTS)},
+    },
+    "required": [
+        "route", "student_intent", "question_type", "target_concepts", "conversation_state",
+        "dialogue_status", "conversation_action", "has_substantive_claim", "student_claim",
+        "wants_to_continue", "confidence", "needs_clarification", "clarification_question",
+        "retrieval_query", "operational_request",
+    ],
+    "additionalProperties": False,
+}
+
 ADMIN_PATTERN = re.compile(
     r"\b(?:assignment|rubric|deadline|due date|submission|submit|points?|grade|"
-    r"office hours?|schedule|syllabus|uploaded files?|documents?)\b",
+    r"office hours?|schedule|syllabus|uploaded files?)\b",
     re.IGNORECASE,
 )
 SESSION_CONTROL_PATTERN = re.compile(
@@ -76,6 +118,7 @@ class MessageClassification:
     target: str | None = None
     direct_answer: str | None = None
     rewritten_query: str | None = None
+    operational_request: str = "none"
     source: str = "rules"
 
 
@@ -253,6 +296,11 @@ def _validated_llm_classification(
         if payload.get("conversation_action") in CONVERSATION_ACTIONS
         else fallback.conversation_action
     )
+    operational_request = (
+        payload.get("operational_request")
+        if payload.get("operational_request") in OPERATIONAL_REQUESTS
+        else fallback.operational_request
+    )
     raw_concepts = payload.get("target_concepts")
     concepts: tuple[str, ...] = ()
     if isinstance(raw_concepts, list):
@@ -292,7 +340,8 @@ def _validated_llm_classification(
         student_claim=student_claim, wants_to_continue=wants_to_continue, confidence=confidence,
         needs_clarification=needs_clarification, clarification_question=clarification,
         target=concepts[0] if concepts else None,
-        rewritten_query=" ".join(rewrite.split()), source="llm",
+        rewritten_query=" ".join(rewrite.split()), operational_request=operational_request,
+        source="llm",
     )
 
 
@@ -333,7 +382,11 @@ async def _classify_with_llm(
         "actual proposition to verify or null); wants_to_continue (boolean); confidence (0 to 1); "
         "needs_clarification (boolean); clarification_question "
         "(one short question or null); retrieval_query (a concise standalone search query that preserves named "
-        "course items and resolves pronouns from history). Distinguish a bare understanding claim from a claim "
+        "course items and resolves pronouns from history); operational_request (none, list_documents, "
+        "document_visibility, document_overview, course_title, course_instructor, course_scope, or system_status). "
+        "Use an operational request only when the student explicitly asks for that application or course metadata. "
+        "Ordinary learning statements that merely mention files, documents, folders, seeing, or having something "
+        "must remain operational_request=none. Distinguish a bare understanding claim from a claim "
         "that contains reasoning. Treat thanks without a question as acknowledgement/soft_close, a clear goodbye "
         "as closing/complete, and a claim asking whether it is correct as requesting_confirmation/verify_claim. "
         "Never invent a concept, claim, or intention absent from the message and recent history."
@@ -341,16 +394,36 @@ async def _classify_with_llm(
     client = AsyncOpenAI(api_key=api_key, base_url=base_url)
     log_event(4, "classifier_llm_started", provider=provider, model=model)
     started = monotonic()
-    response = await client.chat.completions.create(
-        model=model,
-        messages=[
+    response_format: dict[str, Any]
+    extra_body: dict[str, Any] | None = None
+    if provider == "Groq" and model in {"openai/gpt-oss-20b", "openai/gpt-oss-120b"}:
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "course_message_classification",
+                "strict": True,
+                "schema": CLASSIFICATION_SCHEMA,
+            },
+        }
+        extra_body = {"reasoning_effort": "low", "include_reasoning": False}
+    else:
+        response_format = {"type": "json_object"}
+    request: dict[str, Any] = {
+        "model": model,
+        "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Recent conversation:\n{conversation}\n\nLatest message:\n{message}"},
         ],
-        temperature=settings.CLASSIFIER_TEMPERATURE,
-        max_tokens=settings.CLASSIFIER_MAX_TOKENS,
-    )
-    raw = response.choices[0].message.content or "{}"
+        "temperature": settings.CLASSIFIER_TEMPERATURE,
+        "max_completion_tokens": settings.CLASSIFIER_MAX_TOKENS,
+        "response_format": response_format,
+    }
+    if extra_body:
+        request["extra_body"] = extra_body
+    response = await client.chat.completions.create(**request)
+    raw = response.choices[0].message.content
+    if not raw or not raw.strip():
+        raise ValueError("Message classifier returned empty content.")
     log_event(
         4, "classifier_llm_completed", provider=provider, model=model,
         latency_ms=round((monotonic() - started) * 1000),
@@ -368,7 +441,7 @@ async def classify_message(message: str, history: list[ChatMessage]) -> MessageC
     """
 
     fallback = _rule_classification(message, history)
-    if fallback.route in {"administrative", "session_control"}:
+    if fallback.route == "session_control":
         return fallback
     try:
         result = await _classify_with_llm(message, history, fallback)
@@ -376,7 +449,7 @@ async def classify_message(message: str, history: list[ChatMessage]) -> MessageC
         log_exception(4, "classifier_llm_failed", error, fallback="rules")
         return fallback
 
-    if SESSION_CONTROL_PATTERN.match(message.strip()) or ADMIN_PATTERN.search(message):
+    if SESSION_CONTROL_PATTERN.match(message.strip()):
         return fallback
     if result.route == "session_control":
         return replace(result, route=fallback.route, direct_answer=None)

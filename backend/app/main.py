@@ -25,7 +25,7 @@ from app.answer_evaluation import (
     mastery_completion_answer,
     with_progress_status,
 )
-from app.classifier import classify_message
+from app.classifier import MessageClassification, classify_message
 from app.pipeline_logging import (
     begin_trace,
     debug_digest,
@@ -34,15 +34,6 @@ from app.pipeline_logging import (
     log_event,
     log_exception,
     set_conversation_id,
-)
-from app.guided_lessons import (
-    advance_use_case_lesson,
-    lesson_exit_requested,
-    lesson_search_query,
-    matches_use_case_lesson,
-    sources_support_use_case_lesson,
-    start_use_case_lesson,
-    unrelated_new_topic,
 )
 from app.rag import (
     RAG_DOCUMENT_SUFFIXES,
@@ -813,113 +804,6 @@ async def delete_course_document(course_id: str, file_id: str, request: Request)
 
 
 
-def _normalise_text(message: str) -> str:
-    return " ".join(message.lower().strip().split())
-
-
-def _is_file_status_question(message: str) -> bool:
-    text = _normalise_text(message)
-    words = text.split()
-
-    # Keep real content questions in the RAG path. For example:
-    # "what is machine learning in this paper?" should retrieve from the PDF,
-    # not merely report that a PDF exists.
-    content_question_patterns = [
-        "what is",
-        "what are",
-        "explain",
-        "summarize",
-        "define",
-        "according to",
-        "why",
-        "how does",
-        "how do",
-        "compare",
-    ]
-    file_listing_patterns = [
-        "what file",
-        "what files",
-        "which file",
-        "which files",
-        "what document",
-        "what documents",
-        "which document",
-        "which documents",
-        "what pdf",
-        "which pdf",
-        "file name",
-        "filename",
-        "name of the file",
-        "what is the file name",
-        "what's the file name",
-        "which file name",
-        "file we looked at",
-        "file we are looking at",
-        "what kind of list",
-        "what kind of lists",
-        "what list",
-        "what lists",
-    ]
-
-    if any(pattern in text for pattern in content_question_patterns) and not any(
-        pattern in text for pattern in file_listing_patterns
-    ):
-        return False
-
-    status_patterns = [
-        "do you have a document",
-        "do you have any document",
-        "do you have documents",
-        "do you have a file",
-        "do you have any file",
-        "do you see a file",
-        "do you see my file",
-        "can you see the file",
-        "can you see my file",
-        "can you read the file",
-        "what is the file name",
-        "what's the file name",
-        "what file are we looking at",
-        "what file did i upload",
-        "what files did i upload",
-        "what documents did i upload",
-        "which file did i upload",
-        "which documents did i upload",
-        "list uploaded files",
-        "list my files",
-        "show uploaded files",
-        "show my documents",
-        "show my files",
-        "did i upload",
-        "is there a file",
-        "is there any file",
-        "uploaded files",
-        "uploaded documents",
-        "for now",
-    ]
-    if any(pattern in text for pattern in status_patterns):
-        return True
-
-    file_words = {"file", "files", "document", "documents", "pdf", "paper", "papers"}
-    list_words = {"list", "lists", "show", "see", "have", "uploaded"}
-    if file_words.intersection(words) and list_words.intersection(words):
-        return True
-
-    # Short phrases like "privacy risks pdf" or "machine learning pdf?" are
-    # usually the user checking which uploaded document the chatbot sees.
-    if len(words) <= 5 and file_words.intersection(words):
-        return True
-
-    return False
-
-
-def _is_start_study_request(message: str) -> bool:
-    text = _normalise_text(message)
-    study_words = ["study", "start", "learn", "review", "practice"]
-    file_refs = ["this file", "this document", "this pdf", "uploaded file", "uploaded document", "the file"]
-    return any(word in text for word in study_words) and any(ref in text for ref in file_refs)
-
-
 def _unique_file_names(files: list[dict[str, object]]) -> list[str]:
     names: list[str] = []
     seen = set()
@@ -932,42 +816,17 @@ def _unique_file_names(files: list[dict[str, object]]) -> list[str]:
     return names
 
 
-def _course_context_answer(
+def _operational_context_answer(
     course: dict[str, object],
     files: list[dict[str, object]],
-    message: str,
+    classification: MessageClassification,
 ) -> str | None:
-    text = _normalise_text(message).rstrip("?.!")
-    instructor_questions = {
-        "what is the professor name",
-        "what's the professor name",
-        "who is the professor",
-        "what is the instructor name",
-        "what's the instructor name",
-        "who is the instructor",
-        "who teaches this course",
-    }
-    course_title_questions = {
-        "what is the course title",
-        "what's the course title",
-        "what is the class name",
-        "what's the class name",
-        "which course is this",
-        "which class is this",
-    }
-    scope_questions = {
-        "what do you know",
-        "what you know",
-        "what can i ask",
-        "what can you answer",
-        "what materials do you know",
-    }
-
-    if text in instructor_questions:
+    request_type = classification.operational_request
+    if request_type == "course_instructor":
         return f"The instructor for {course['course_code']} is {course['instructor_name']}."
-    if text in course_title_questions:
+    if request_type == "course_title":
         return f"This course is {course['course_code']}: {course['title']}."
-    if text in scope_questions:
+    if request_type == "course_scope":
         names = _unique_file_names(files)
         document_text = ", ".join(names) if names else "no published documents yet"
         description = str(course.get("description") or "").strip()
@@ -976,91 +835,14 @@ def _course_context_answer(
             f"I can answer questions about {course['course_code']}: {course['title']}."
             f"{description_text} Published materials: {document_text}."
         )
+    if request_type in {"list_documents", "document_visibility", "system_status"}:
+        names = _unique_file_names(files)
+        if not names:
+            return "No course documents are currently published."
+        return f"Published course documents: {', '.join(names)}."
     return None
 
 
-
-
-def _small_status_answer(files: list[dict[str, object]], message: str) -> str | None:
-    text = _normalise_text(message)
-    status_patterns = [
-        "is it going well",
-        "it's going well",
-        "is this working",
-        "does it work",
-        "are we good",
-        "are you ready",
-    ]
-    if not any(pattern in text for pattern in status_patterns):
-        return None
-
-    names = _unique_file_names(files)
-    if not names:
-        return "Not yet. I do not see an uploaded file in this chat."
-
-    if len(names) == 1:
-        return f"Yes. I can see {names[0]} in this chat. Ask me a specific question about it, or ask for a summary."
-
-    return f"Yes. I can see {len(names)} files in this chat: {', '.join(names[:5])}."
-
-def _file_state_answer(files: list[dict[str, object]], message: str) -> str | None:
-    wants_status = _is_file_status_question(message)
-    wants_study_start = _is_start_study_request(message)
-    if not wants_status and not wants_study_start:
-        return None
-
-    names = _unique_file_names(files)
-    if not names:
-        return "I do not see any uploaded files in this chat yet. Attach a .txt, .md, .pdf, .tex, .html, or .htm file first."
-
-    if len(names) == 1:
-        return (
-            f"Yes, I see your uploaded file: {names[0]}. "
-            "We can start with a summary, key concepts, or practice questions. Which one do you prefer?"
-        )
-
-    preview = ", ".join(names[:5])
-    return (
-        f"Yes, I see these uploaded files: {preview}. "
-        "Which one should we focus on first?"
-    )
-
-
-
-def _is_document_overview_question(message: str) -> bool:
-    text = _normalise_text(message)
-    overview_patterns = [
-        "topic",
-        "main topic",
-        "main idea",
-        "what is this about",
-        "what's this about",
-        "what is the document about",
-        "what is this document about",
-        "what is this paper about",
-        "what's the paper about",
-        "what is the title",
-        "what's the title",
-        "document title",
-        "paper title",
-        "summarize",
-        "summary",
-        "overview",
-    ]
-    return any(pattern in text for pattern in overview_patterns)
-
-
-OFF_TOPIC_TERMS = {"messi", "ronaldo", "soccer", "football", "nba", "weather", "movie", "restaurant"}
-
-
-def _off_topic_answer(message: str) -> str | None:
-    words = set(_normalise_text(message).replace("?", "").split())
-    if not words.intersection(OFF_TOPIC_TERMS):
-        return None
-    return (
-        "That question is outside the uploaded documents for this chat, "
-        "so I should not answer it from the RAG workspace."
-    )
 
 
 def _save_assistant_message(conversation_id: str, answer: str) -> None:
@@ -1074,7 +856,6 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
     course_id = payload.course_id
     history = payload.history
     user_id = _current_user_id(request)
-    guided_state: dict[str, object] | None = None
     pending: dict[str, object] | None = None
     user_message_id: int | None = None
 
@@ -1100,17 +881,6 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
         saved_message_id = db.add_message(conversation_id, "user", payload.message)
         user_message_id = saved_message_id if isinstance(saved_message_id, int) else None
         log_event(3, "user_message_saved")
-        if hasattr(db, "get_guided_lesson_state"):
-            guided_state = db.get_guided_lesson_state(conversation_id)
-
-        off_topic_answer = _off_topic_answer(payload.message)
-        if off_topic_answer:
-            log_event(4, "route_selected", route="off_topic_guard")
-            if hasattr(db, "clear_pending_clarification"):
-                db.clear_pending_clarification(conversation_id)
-            _save_assistant_message(conversation_id, off_topic_answer)
-            return ChatResponse(answer=off_topic_answer, conversation_id=conversation_id, sources=[])
-
         pending = db.get_pending_clarification(conversation_id) if hasattr(db, "get_pending_clarification") else None
     else:
         log_event(3, "history_loaded", messages=len(history), source="request")
@@ -1133,6 +903,7 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
         confidence=round(classification.confidence, 2),
         needs_clarification=classification.needs_clarification,
         direct_answer=classification.direct_answer is not None,
+        operational_request=classification.operational_request,
         query_rewritten=bool(classification.rewritten_query and classification.rewritten_query != payload.message),
     )
 
@@ -1150,79 +921,25 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
         if db.is_enabled() and conversation_id:
             if hasattr(db, "clear_pending_clarification"):
                 db.clear_pending_clarification(conversation_id)
-            if guided_state and hasattr(db, "clear_guided_lesson_state"):
-                db.clear_guided_lesson_state(conversation_id)
             _save_assistant_message(conversation_id, answer)
         return ChatResponse(answer=answer, conversation_id=conversation_id or "local", sources=[])
 
     current_files = db.list_rag_files(course_id=course_id) if db.is_enabled() else []
     course = db.get_course(course_id) if db.is_enabled() else None
     log_event(3, "course_context_loaded", files=len(current_files), course_found=course is not None)
-    course_answer = _course_context_answer(course, current_files, payload.message) if course else None
-    if course_answer:
-        log_event(4, "route_selected", route="course_context_answer")
+    operational_answer = _operational_context_answer(course, current_files, classification) if course else None
+    if operational_answer:
+        log_event(
+            4,
+            "route_selected",
+            route="operational_context_answer",
+            operational_request=classification.operational_request,
+        )
         if db.is_enabled() and conversation_id:
             if hasattr(db, "clear_pending_clarification"):
                 db.clear_pending_clarification(conversation_id)
-            _save_assistant_message(conversation_id, course_answer)
-        return ChatResponse(answer=course_answer, conversation_id=conversation_id or "local", sources=[])
-
-    file_state_answer = _file_state_answer(current_files, payload.message) or _small_status_answer(current_files, payload.message)
-    if file_state_answer:
-        log_event(4, "route_selected", route="file_status_answer")
-        if db.is_enabled() and conversation_id:
-            if hasattr(db, "clear_pending_clarification"):
-                db.clear_pending_clarification(conversation_id)
-            _save_assistant_message(conversation_id, file_state_answer)
-        return ChatResponse(answer=file_state_answer, conversation_id=conversation_id or "local", sources=[])
-
-    if db.is_enabled() and conversation_id:
-        if guided_state and bool(guided_state.get("completed")):
-            db.clear_guided_lesson_state(conversation_id)
-            guided_state = None
-
-        if guided_state and lesson_exit_requested(payload.message):
-            log_event(4, "route_selected", route="guided_lesson_exit")
-            db.clear_guided_lesson_state(conversation_id)
-            answer = "The guided use case lesson is paused. Ask any course question when you are ready."
-            _save_assistant_message(conversation_id, answer)
-            return ChatResponse(answer=answer, conversation_id=conversation_id, sources=[])
-
-        if guided_state and unrelated_new_topic(payload.message):
-            db.clear_guided_lesson_state(conversation_id)
-            guided_state = None
-
-        guided_requested = guided_state is not None or matches_use_case_lesson(payload.message)
-        if guided_requested:
-            log_event(4, "route_selected", route="guided_lesson")
-            sources = retrieve(
-                lesson_search_query(payload.message),
-                top_k=payload.top_k,
-                conversation_id=conversation_id,
-                course_id=course_id,
-            )
-            if sources_support_use_case_lesson(sources):
-                turn = (
-                    advance_use_case_lesson(payload.message, guided_state)
-                    if guided_state is not None
-                    else start_use_case_lesson()
-                )
-                db.save_guided_lesson_state(conversation_id, turn.state)
-                _save_assistant_message(conversation_id, turn.answer)
-                return ChatResponse(
-                    answer=turn.answer,
-                    conversation_id=conversation_id,
-                    sources=sources,
-                )
-            if guided_state is not None:
-                db.clear_guided_lesson_state(conversation_id)
-                guided_state = None
-            answer = (
-                "I do not know from your uploaded notes. The published course materials do not "
-                "currently contain instruction about use case diagrams."
-            )
-            _save_assistant_message(conversation_id, answer)
-            return ChatResponse(answer=answer, conversation_id=conversation_id, sources=[])
+            _save_assistant_message(conversation_id, operational_answer)
+        return ChatResponse(answer=operational_answer, conversation_id=conversation_id or "local", sources=[])
 
     if pending:
         log_event(4, "route_selected", route="pending_clarification")
@@ -1268,7 +985,11 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
         conversation_id=conversation_id,
         course_id=course_id,
     )
-    if not sources and current_files and _is_document_overview_question(payload.message):
+    if (
+        not sources
+        and current_files
+        and classification.operational_request == "document_overview"
+    ):
         sources = retrieve_overview(
             conversation_id=conversation_id,
             top_k=payload.top_k,

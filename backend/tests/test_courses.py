@@ -380,12 +380,50 @@ class CourseRagIsolationTests(unittest.TestCase):
         }
         files = [{"filename": "course-paper.pdf"}]
         self.assertEqual(
-            main._course_context_answer(course, files, "What is the professor name?"),
+            main._operational_context_answer(
+                course,
+                files,
+                main.MessageClassification(operational_request="course_instructor"),
+            ),
             "The instructor for ITCS 3155 is Demo Instructor.",
         )
-        scope = main._course_context_answer(course, files, "What do you know?")
+        scope = main._operational_context_answer(
+            course,
+            files,
+            main.MessageClassification(operational_request="course_scope"),
+        )
         self.assertIn("Software Engineering", scope)
         self.assertIn("course-paper.pdf", scope)
+
+    def test_learning_statement_that_mentions_files_does_not_list_documents(self) -> None:
+        course = {
+            "course_code": "ITCS 3155",
+            "title": "Software Engineering",
+            "description": "Software design and teamwork",
+            "instructor_name": "Demo Instructor",
+        }
+        files = [{"filename": "ch19.html"}]
+        classification = main.MessageClassification(
+            route="learning",
+            student_intent="reflection",
+            operational_request="none",
+        )
+        self.assertIsNone(main._operational_context_answer(course, files, classification))
+
+    def test_document_list_uses_classifier_intent_not_message_keywords(self) -> None:
+        course = {
+            "course_code": "ITCS 3155",
+            "title": "Software Engineering",
+            "description": "",
+            "instructor_name": "Demo Instructor",
+        }
+        files = [{"filename": "ch19.html"}, {"filename": "ch20.html"}]
+        classification = main.MessageClassification(
+            route="administrative",
+            operational_request="list_documents",
+        )
+        answer = main._operational_context_answer(course, files, classification)
+        self.assertEqual(answer, "Published course documents: ch19.html, ch20.html.")
 
 if __name__ == "__main__":
     unittest.main()

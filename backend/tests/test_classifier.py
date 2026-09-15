@@ -172,6 +172,47 @@ class MessageClassifierTests(unittest.TestCase):
         self.assertEqual(result.conversation_action, "soft_close")
         self.assertFalse(result.wants_to_continue)
 
+    def test_llm_can_explicitly_classify_document_listing_request(self) -> None:
+        message = "Which documents are currently published for this course?"
+        result = classifier._validated_llm_classification(
+            {
+                "route": "administrative",
+                "student_intent": "administrative",
+                "question_type": "what",
+                "operational_request": "list_documents",
+                "confidence": 0.98,
+                "needs_clarification": False,
+                "retrieval_query": message,
+            },
+            message,
+            classifier._rule_classification(message, []),
+        )
+        self.assertEqual(result.operational_request, "list_documents")
+
+    def test_learning_statement_keeps_operational_request_none(self) -> None:
+        message = (
+            "Code annotations align with lines rather than merely connecting with files "
+            "that other developers have generated."
+        )
+        result = classifier._validated_llm_classification(
+            {
+                "route": "learning",
+                "student_intent": "reflection",
+                "question_type": "statement",
+                "conversation_state": "follow_up",
+                "dialogue_status": "unclear",
+                "conversation_action": "continue",
+                "operational_request": "none",
+                "confidence": 0.95,
+                "needs_clarification": False,
+                "retrieval_query": "code annotations lines format",
+            },
+            message,
+            classifier._rule_classification(message, []),
+        )
+        self.assertEqual(result.route, "learning")
+        self.assertEqual(result.operational_request, "none")
+
 
 if __name__ == "__main__":
     unittest.main()

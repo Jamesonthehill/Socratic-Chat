@@ -48,14 +48,23 @@ course questions rather than lowering it simply to force results.
 ## Socratic questioning pipeline
 
 Each learning message passes through a hybrid interpretation stage before RAG
-retrieval. Deterministic rules retain control of course administration, session
-commands, access checks, and safe fallbacks. The configured Groq or OpenAI model
-then returns validated labels for the student's intent, question type, target
-concepts, dialogue status, next conversation action, and a focused retrieval
-query. The status distinguishes ordinary learning, a substantive claim asking
-for confirmation, a bare claim of understanding, acknowledgement, topic change,
-and a request to close. Invalid JSON, unsupported labels, or a provider failure
-automatically falls back to the rules.
+retrieval. Session commands, access checks, and safe fallbacks remain
+deterministic. The configured Groq or OpenAI model then returns validated labels
+for the student's intent, question type, target concepts, dialogue status, next
+conversation action, and a focused retrieval query. The status distinguishes
+ordinary learning, a substantive claim asking for confirmation, a bare claim of
+understanding, acknowledgement, topic change, and a request to close. Invalid
+JSON, unsupported labels, or a provider failure automatically falls back to the
+rules.
+
+Operational chat requests—such as listing published documents or asking for the
+course title—are selected from the classifier's structured `operational_request`
+field. They are no longer detected by loose keyword combinations such as
+`files + have`. Ordinary mentions of files, folders, documents, or unrelated
+topic words proceed through classification and RAG. Unsupported topics are
+rejected by the retrieval relevance gate rather than a fixed list of words.
+Groq GPT-OSS classification uses strict JSON Schema output with hidden,
+low-effort reasoning to keep these semantic routes reliable.
 
 After retrieval, the teaching policy chooses one explainable action. A new
 concept begins with a short document-grounded example and one discovery

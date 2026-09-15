@@ -148,6 +148,8 @@ class CourseRagIsolationTests(unittest.TestCase):
                 "title": "course.tex",
                 "text": "Assignment 2 - Modular Sandwich Maker. Convert the code into modules.",
                 "score": 0.03,
+                "dense_similarity": 0.71,
+                "sparse_score": 0.18,
             },
         ]
 
@@ -169,6 +171,8 @@ class CourseRagIsolationTests(unittest.TestCase):
                 "text": "Assignment 1 > Requirements. Check resources before accepting payment.",
                 "metadata": {"assignment_number": 1},
                 "score": 0.03,
+                "dense_similarity": 0.69,
+                "sparse_score": 0.21,
             },
         ]
 
@@ -303,11 +307,69 @@ class CourseRagIsolationTests(unittest.TestCase):
                 "title": "A.txt",
                 "text": "linear regression model",
                 "score": 0.02,
+                "dense_similarity": 0.76,
+                "sparse_score": 0.14,
             },
         ]
         sources = rag.retrieve("linear regression", course_id="course-a")
         self.assertEqual([source.document_id for source in sources], ["doc-a"])
         self.assertEqual(search.call_args.kwargs["course_id"], "course-a")
+
+    @patch("app.rag.create_embeddings", return_value=[[0.1] * 1536])
+    @patch("app.rag.db.hybrid_search_chunks")
+    def test_unrelated_dense_candidates_are_rejected(self, search, _embeddings) -> None:
+        search.return_value = [
+            {
+                "document_id": "chapter-13",
+                "chunk_id": "chapter-13:0",
+                "title": "ch13.html",
+                "text": "Build systems and software engineering practices.",
+                "score": 1 / 61,
+                "dense_similarity": 0.19,
+                "sparse_score": 0.0,
+            },
+            {
+                "document_id": "chapter-17",
+                "chunk_id": "chapter-17:0",
+                "title": "ch17.html",
+                "text": "Developer tools at scale.",
+                "score": 1 / 62,
+                "dense_similarity": 0.16,
+                "sparse_score": 0.0,
+            },
+        ]
+
+        sources = rag.retrieve("sushi recipe", course_id="course-a")
+
+        self.assertEqual(sources, [])
+
+    @patch("app.rag.create_embeddings", return_value=[[0.1] * 1536])
+    @patch("app.rag.db.hybrid_search_chunks")
+    def test_sparse_evidence_keeps_a_relevant_result_with_lower_dense_similarity(
+        self, search, _embeddings,
+    ) -> None:
+        search.return_value = [
+            {
+                "document_id": "chapter-9",
+                "chunk_id": "chapter-9:review",
+                "title": "ch09.html",
+                "text": "Code review requires another engineer to examine a change before submission.",
+                "score": 0.03,
+                "dense_similarity": 0.35,
+                "sparse_score": 0.24,
+            },
+        ]
+
+        sources = rag.retrieve("code review", course_id="course-a")
+
+        self.assertEqual([source.document_id for source in sources], ["chapter-9"])
+
+    def test_no_relevant_sources_stop_before_llm_generation(self) -> None:
+        with patch("app.rag.generation_client_config") as client_config:
+            answer = asyncio.run(rag.generate_answer("What is a sushi recipe?", [], []))
+
+        client_config.assert_not_called()
+        self.assertTrue(answer.startswith("I do not know from your uploaded notes"))
 
     def test_course_metadata_answers_do_not_depend_on_document_search(self) -> None:
         course = {

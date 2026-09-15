@@ -98,6 +98,19 @@ def chunk_text(text: str) -> list[str]:
     return [chunk.text for chunk in chunk_document("Uploaded document", text)]
 
 
+def is_relevant_search_result(item: dict[str, Any]) -> bool:
+    """Require lexical evidence or sufficiently strong absolute semantic similarity."""
+    try:
+        dense_similarity = float(item.get("dense_similarity"))
+    except (TypeError, ValueError):
+        dense_similarity = float("-inf")
+    try:
+        sparse_score = float(item.get("sparse_score"))
+    except (TypeError, ValueError):
+        sparse_score = 0.0
+    return sparse_score > 0 or dense_similarity >= settings.RAG_MIN_DENSE_SIMILARITY
+
+
 def document_id(
     title: str,
     text: str,
@@ -320,6 +333,8 @@ def retrieve(
             query, query_embedding, top_k, conversation_id=conversation_id,
             course_id=course_id, assignment_numbers=requested_assignments,
         )
+        accepted = [item for item in ranked if is_relevant_search_result(item)]
+        relevant = accepted[:top_k]
         sources = [
             Source(
                 document_id=item["document_id"],
@@ -327,13 +342,19 @@ def retrieve(
                 title=f"{item['title']} p. {item['page_number']}" if item.get("page_number") else item["title"],
                 text=item["text"],
                 score=float(item["score"]),
+                dense_similarity=float(item["dense_similarity"]),
+                sparse_score=float(item["sparse_score"]),
             )
-            for item in ranked
+            for item in relevant
         ]
         log_event(
             5,
             "hybrid_search_completed",
             chunks=len(sources),
+            candidates=len(ranked),
+            relevant_candidates=len(accepted),
+            rejected=len(ranked) - len(accepted),
+            min_dense_similarity=settings.RAG_MIN_DENSE_SIMILARITY,
             latency_ms=round((monotonic() - search_started) * 1000),
         )
         log_event(
@@ -351,6 +372,8 @@ def retrieve(
                 rank=rank,
                 title=redacted_preview(source.title, max_chars=80),
                 score=round(source.score, 6),
+                dense_similarity=round(source.dense_similarity or 0.0, 6),
+                sparse_score=round(source.sparse_score or 0.0, 6),
             )
         return sources
     except Exception as error:
@@ -366,6 +389,7 @@ def retrieve_by_titles(query: str, titles: list[str], top_k: int = 4) -> list[So
     ranked = db.hybrid_search_chunks(
         query, create_embeddings([query])[0], top_k, titles=sorted(title_set),
     )
+    relevant = [item for item in ranked if is_relevant_search_result(item)][:top_k]
     return [
         Source(
             document_id=item["document_id"],
@@ -373,8 +397,10 @@ def retrieve_by_titles(query: str, titles: list[str], top_k: int = 4) -> list[So
             title=f"{item['title']} p. {item['page_number']}" if item.get("page_number") else item["title"],
             text=item["text"],
             score=float(item["score"]),
+            dense_similarity=float(item["dense_similarity"]),
+            sparse_score=float(item["sparse_score"]),
         )
-        for item in ranked
+        for item in relevant
     ]
 
 
@@ -479,6 +505,12 @@ async def generate_answer(
     sources: list[Source],
     classification: MessageClassification | None = None,
 ) -> str:
+    if not sources:
+        log_event(8, "generation_stopped", reason="no_relevant_context")
+        answer = fallback_answer(question, sources)
+        log_event(9, "candidate_response_generated", source="unsupported_topic_fallback", response_chars=len(answer))
+        debug_preview("candidate_answer", answer)
+        return answer
     client_config = generation_client_config()
     if client_config is None:
         log_event(8, "generation_fallback_selected", reason="provider_not_configured")

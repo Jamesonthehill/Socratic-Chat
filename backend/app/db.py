@@ -1026,7 +1026,9 @@ def hybrid_search_chunks(
                     GROUP BY id
                 )
                 SELECT dc.document_id, dc.id::text, dc.title, dc.chunk_text,
-                       dc.page_number, fused.score, dc.metadata
+                       dc.page_number, fused.score, dc.metadata,
+                       1.0 - (dc.embedding <=> %s::vector) AS dense_similarity,
+                       ts_rank_cd(dc.text_search, websearch_to_tsquery('english', %s)) AS sparse_score
                 FROM fused
                 JOIN document_chunks dc ON dc.id = fused.id
                 ORDER BY fused.score DESC
@@ -1034,7 +1036,8 @@ def hybrid_search_chunks(
                 """,
                 (
                     vector, *filter_params, vector, candidate_k,
-                    query, *filter_params, query, query, candidate_k, top_k,
+                    query, *filter_params, query, query, candidate_k,
+                    vector, query, candidate_k,
                 ),
             )
             rows = cur.fetchall()
@@ -1042,7 +1045,8 @@ def hybrid_search_chunks(
         {
             "document_id": row[0], "chunk_id": row[1], "title": row[2],
             "text": row[3], "page_number": row[4], "score": float(row[5]),
-            "metadata": row[6] or {},
+            "metadata": row[6] or {}, "dense_similarity": float(row[7]),
+            "sparse_score": float(row[8]),
         }
         for row in rows
     ]

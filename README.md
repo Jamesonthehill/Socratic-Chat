@@ -36,6 +36,15 @@ Keep `OPENAI_API_KEY` configured because document ingestion and query retrieval
 still use `text-embedding-3-small` with 1,536 dimensions. Restart the service
 after changing these variables.
 
+Hybrid retrieval applies a relevance gate before any answer or Socratic example
+is generated. A chunk is retained when PostgreSQL full-text search finds lexical
+evidence or its absolute cosine similarity reaches `RAG_MIN_DENSE_SIMILARITY`
+(default `0.42`). Rank-fusion scores decide the order of retained chunks; they
+are not treated as proof of relevance. If every candidate is rejected, the
+pipeline returns the grounded “not found in uploaded notes” response without
+calling the generation model. Tune the threshold against a labeled set of
+course questions rather than lowering it simply to force results.
+
 ## Socratic questioning pipeline
 
 Each learning message passes through a hybrid interpretation stage before RAG

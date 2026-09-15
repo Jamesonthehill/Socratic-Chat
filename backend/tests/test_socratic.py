@@ -243,6 +243,69 @@ class SocraticPolicyTests(unittest.TestCase):
         answer = enforce_socratic_response(long_question, "It seems related to a user goal.", decision)
         self.assertEqual(answer, "How would you justify or refine that response using the retrieved material?")
 
+    def test_bare_understanding_claim_gets_a_verification_task(self) -> None:
+        classification = MessageClassification(
+            student_intent="comprehension_claim",
+            conversation_state="claiming_understanding",
+            dialogue_status="claiming_understanding",
+            conversation_action="verify_understanding",
+            target_concepts=("version control",),
+            target="version control",
+            confidence=0.96,
+            source="llm",
+        )
+        decision = choose_socratic_strategy("I understand it.", [], [SOURCE], classification)
+        self.assertEqual(decision.strategy, "understanding_check")
+        self.assertEqual(decision.disclosure_level, 0)
+        self.assertIn("self-reported understanding", decision.instruction)
+
+    def test_confirmation_claim_gets_grounded_feedback_before_one_question(self) -> None:
+        classification = MessageClassification(
+            student_intent="confirmation",
+            dialogue_status="requesting_confirmation",
+            conversation_action="verify_claim",
+            has_substantive_claim=True,
+            student_claim="Actors belong inside the system boundary.",
+            target_concepts=("system boundary",),
+            target="system boundary",
+            confidence=0.98,
+            source="llm",
+        )
+        decision = choose_socratic_strategy(
+            "Actors belong inside the system boundary. Is that right?", [], [SOURCE], classification,
+        )
+        self.assertEqual(decision.strategy, "grounded_claim_check")
+        answer = enforce_socratic_response(
+            "Not quite—actors remain outside the boundary.",
+            "Actors belong inside the system boundary. Is that right?",
+            decision,
+        )
+        self.assertIn("Not quite", answer)
+        self.assertEqual(answer.count("?"), 1)
+
+    def test_student_project_reasoning_is_not_forced_into_direct_answer_mode(self) -> None:
+        classification = MessageClassification(
+            student_intent="reflection",
+            conversation_state="answering_tutor",
+            dialogue_status="answering_tutor",
+            conversation_action="continue",
+            target_concepts=("version control",),
+            target="version control",
+            confidence=0.9,
+            source="llm",
+        )
+        history = [ChatMessage(role="assistant", content="Why might a team need version control?")]
+        decision = choose_socratic_strategy(
+            "Perhaps we can build a product or project successfully.", history, [SOURCE], classification,
+        )
+        self.assertEqual(decision.mode, "socratic")
+
+    def test_instruction_forbids_attributing_retrieved_facts_to_student(self) -> None:
+        decision = choose_socratic_strategy("Why does review matter?", [], [SOURCE])
+        instruction = socratic_system_instruction(decision)
+        self.assertIn("learner identified", instruction)
+        self.assertIn("not learner-authored evidence", instruction)
+
 
 if __name__ == "__main__":
     unittest.main()

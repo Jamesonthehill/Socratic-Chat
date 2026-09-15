@@ -42,8 +42,11 @@ Each learning message passes through a hybrid interpretation stage before RAG
 retrieval. Deterministic rules retain control of course administration, session
 commands, access checks, and safe fallbacks. The configured Groq or OpenAI model
 then returns validated labels for the student's intent, question type, target
-concepts, conversation state, and a focused retrieval query. Invalid JSON,
-unsupported labels, or a provider failure automatically falls back to the rules.
+concepts, dialogue status, next conversation action, and a focused retrieval
+query. The status distinguishes ordinary learning, a substantive claim asking
+for confirmation, a bare claim of understanding, acknowledgement, topic change,
+and a request to close. Invalid JSON, unsupported labels, or a provider failure
+automatically falls back to the rules.
 
 After retrieval, the teaching policy chooses one explainable action. A new
 concept begins with a short document-grounded example and one discovery
@@ -52,8 +55,12 @@ debugging requests use an incomplete scenario. Uncertainty or an explicit hint
 request increases disclosure, while repeated difficulty permits a concise
 partial explanation followed by one check question. The response validator
 limits disclosure, rejects definition-first opening turns, and guarantees one
-focused question. This pipeline does not calculate or store a permanent student
-mastery level.
+focused question. A substantive claim receives a short grounded
+`Yes—`/`Partly—`/`Not quite—` check before one revision question. A bare “I
+understand” receives a transfer or teach-back check instead of unearned praise.
+Acknowledgements and clear endings are routed to a short, question-free response
+instead of another Socratic prompt. This pipeline does not calculate or store a
+permanent student mastery level.
 
 Set `CLASSIFIER_ENABLED=false` to use deterministic classification only. By
 default the classifier uses `GROQ_MODEL` or `RAG_MODEL`; set `CLASSIFIER_MODEL`
@@ -133,7 +140,10 @@ http://127.0.0.1:8000
 
 ## PostgreSQL conversation memory
 
-The chatbot can save every user and assistant message in PostgreSQL.
+The chatbot saves every user and assistant message in PostgreSQL. It also stores
+the conversation's latest LLM-derived dialogue status, active concept, and
+whether the session is active, paused, or completed. These fields describe the
+current interaction; they are not a student mastery score.
 
 1. Create a database:
 

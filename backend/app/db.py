@@ -255,6 +255,30 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                ALTER TABLE conversations
+                ADD COLUMN IF NOT EXISTS conversation_status TEXT NOT NULL DEFAULT 'active'
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE conversations
+                ADD COLUMN IF NOT EXISTS last_dialogue_status TEXT NOT NULL DEFAULT 'new_topic'
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE conversations
+                ADD COLUMN IF NOT EXISTS active_concept TEXT
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE conversations
+                ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ
+                """
+            )
+            cur.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_conversations_user_id_updated_at
                 ON conversations(user_id, updated_at DESC)
                 """
@@ -594,6 +618,41 @@ def add_message(conversation_id: str, role: str, content: str) -> None:
                 WHERE id = %s
                 """,
                 (conversation_id,),
+            )
+        conn.commit()
+
+
+def update_conversation_dialogue_state(
+    conversation_id: str,
+    dialogue_status: str,
+    conversation_action: str,
+    active_concept: str | None = None,
+) -> None:
+    """Persist the latest LLM-derived dialogue state without creating a mastery score."""
+    init_db()
+    conversation_status = {
+        "soft_close": "paused",
+        "complete": "completed",
+    }.get(conversation_action, "active")
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE conversations
+                SET conversation_status = %s,
+                    last_dialogue_status = %s,
+                    active_concept = COALESCE(%s, active_concept),
+                    completed_at = CASE WHEN %s = 'completed' THEN NOW() ELSE NULL END,
+                    updated_at = NOW()
+                WHERE id = %s
+                """,
+                (
+                    conversation_status,
+                    dialogue_status,
+                    active_concept,
+                    conversation_status,
+                    conversation_id,
+                ),
             )
         conn.commit()
 

@@ -14,14 +14,24 @@ from app.schemas import ChatMessage
 ROUTES = {"learning", "administrative", "session_control", "unclear"}
 INTENTS = {
     "definition", "explanation", "comparison", "procedure", "application", "debugging",
-    "confirmation", "hint", "direct_answer", "administrative", "reflection", "unclear",
+    "confirmation", "comprehension_claim", "acknowledgement", "close_session", "changing_topic",
+    "hint", "direct_answer", "administrative", "reflection", "unclear",
 }
 QUESTION_TYPES = {
     "what", "why", "how", "comparison", "application", "debugging", "statement", "follow_up", "unclear",
 }
 CONVERSATION_STATES = {
     "new_concept", "answering_tutor", "reasoning_in_progress", "uncertain", "possible_misconception",
-    "requesting_hint", "requesting_answer", "follow_up",
+    "requesting_hint", "requesting_answer", "claiming_understanding", "acknowledging", "closing",
+    "changing_topic", "follow_up",
+}
+DIALOGUE_STATUSES = {
+    "new_topic", "answering_tutor", "requesting_confirmation", "claiming_understanding",
+    "reasoning_in_progress", "uncertain", "requesting_support", "acknowledgement", "closing",
+    "changing_topic", "administrative_request", "unclear",
+}
+CONVERSATION_ACTIONS = {
+    "continue", "verify_claim", "verify_understanding", "soft_close", "complete", "clarify", "direct",
 }
 
 ADMIN_PATTERN = re.compile(
@@ -55,6 +65,11 @@ class MessageClassification:
     question_type: str = "unclear"
     target_concepts: tuple[str, ...] = ()
     conversation_state: str = "new_concept"
+    dialogue_status: str = "new_topic"
+    conversation_action: str = "continue"
+    has_substantive_claim: bool = False
+    student_claim: str | None = None
+    wants_to_continue: bool = True
     confidence: float = 0.0
     needs_clarification: bool = False
     clarification_question: str | None = None
@@ -128,40 +143,47 @@ def _rule_classification(message: str, history: list[ChatMessage]) -> MessageCla
 
     if SESSION_CONTROL_PATTERN.match(clean):
         return MessageClassification(
-            route="session_control", student_intent="reflection", question_type="statement",
-            conversation_state="follow_up", confidence=1.0,
-            direct_answer="The Socratic learning session is paused. You can begin again whenever you are ready.",
+            route="session_control", student_intent="close_session", question_type="statement",
+            conversation_state="closing", dialogue_status="closing", conversation_action="complete",
+            wants_to_continue=False, confidence=1.0,
         )
 
     if ADMIN_PATTERN.search(clean):
         return MessageClassification(
             route="administrative", student_intent="administrative",
             question_type="what" if lowered.startswith("what") else "how",
+            dialogue_status="administrative_request", conversation_action="direct",
             target_concepts=concepts, target=concepts[0] if concepts else None,
             confidence=0.98, rewritten_query=clean,
         )
 
     if HINT_PATTERN.search(clean):
-        intent, state = "hint", "requesting_hint"
+        intent, state, dialogue_status, action = "hint", "requesting_hint", "requesting_support", "continue"
     elif DIRECT_ANSWER_PATTERN.search(clean):
-        intent, state = "direct_answer", "requesting_answer"
+        intent, state, dialogue_status, action = "direct_answer", "requesting_answer", "answering_tutor", "direct"
     elif UNCERTAIN_PATTERN.search(clean):
-        intent, state = "hint", "uncertain"
+        intent, state, dialogue_status, action = "hint", "uncertain", "uncertain", "continue"
     elif MISCONCEPTION_PATTERN.search(clean):
-        intent, state = "confirmation", "possible_misconception"
+        intent, state, dialogue_status, action = (
+            "confirmation", "possible_misconception", "requesting_confirmation", "verify_claim"
+        )
     elif REASONING_PATTERN.search(clean):
-        intent, state = "explanation", "reasoning_in_progress"
+        intent, state, dialogue_status, action = (
+            "explanation", "reasoning_in_progress", "reasoning_in_progress", "continue"
+        )
     elif re.search(r"\b(?:difference between|compare|different|differ)\b", clean, re.IGNORECASE):
-        intent, state = "comparison", "new_concept"
+        intent, state, dialogue_status, action = "comparison", "new_concept", "new_topic", "continue"
     elif lowered.startswith("why"):
-        intent, state = "explanation", "new_concept"
+        intent, state, dialogue_status, action = "explanation", "new_concept", "new_topic", "continue"
     elif lowered.startswith("how"):
-        intent, state = "procedure", "new_concept"
+        intent, state, dialogue_status, action = "procedure", "new_concept", "new_topic", "continue"
     elif re.match(r"^(?:what (?:is|are)|define|explain|tell me about|help me understand)\b", lowered):
-        intent, state = "definition", "new_concept"
+        intent, state, dialogue_status, action = "definition", "new_concept", "new_topic", "continue"
     else:
         intent = "confirmation" if clean.endswith("?") else "reflection"
         state = "answering_tutor" if history and any(item.role == "assistant" for item in history[-2:]) else "follow_up"
+        dialogue_status = "answering_tutor" if state == "answering_tutor" else "unclear"
+        action = "continue"
 
     if lowered.startswith("why"):
         question_type = "why"
@@ -189,6 +211,8 @@ def _rule_classification(message: str, history: list[ChatMessage]) -> MessageCla
         question_type="unclear" if vague else question_type,
         target_concepts=concepts,
         conversation_state=state,
+        dialogue_status="unclear" if vague else dialogue_status,
+        conversation_action="clarify" if vague else action,
         confidence=0.45 if vague else 0.72,
         needs_clarification=vague,
         clarification_question="Which course concept or problem would you like to examine?" if vague else None,
@@ -219,6 +243,16 @@ def _validated_llm_classification(
     intent = payload.get("student_intent") if payload.get("student_intent") in INTENTS else fallback.student_intent
     question_type = payload.get("question_type") if payload.get("question_type") in QUESTION_TYPES else fallback.question_type
     state = payload.get("conversation_state") if payload.get("conversation_state") in CONVERSATION_STATES else fallback.conversation_state
+    dialogue_status = (
+        payload.get("dialogue_status")
+        if payload.get("dialogue_status") in DIALOGUE_STATUSES
+        else fallback.dialogue_status
+    )
+    action = (
+        payload.get("conversation_action")
+        if payload.get("conversation_action") in CONVERSATION_ACTIONS
+        else fallback.conversation_action
+    )
     raw_concepts = payload.get("target_concepts")
     concepts: tuple[str, ...] = ()
     if isinstance(raw_concepts, list):
@@ -235,9 +269,27 @@ def _validated_llm_classification(
     rewrite = payload.get("retrieval_query")
     if not isinstance(rewrite, str) or not rewrite.strip() or len(rewrite) > 300:
         rewrite = _retrieval_query(message, concepts)
+    raw_claim = payload.get("student_claim")
+    student_claim = " ".join(raw_claim.strip().split())[:500] if isinstance(raw_claim, str) and raw_claim.strip() else None
+    has_substantive_claim = payload.get("has_substantive_claim") is True and student_claim is not None
+    wants_to_continue = payload.get("wants_to_continue") is not False
+    if action in {"soft_close", "complete"}:
+        wants_to_continue = False
+    if action == "complete" and (dialogue_status != "closing" or confidence < 0.8):
+        action = "soft_close"
+    if action == "verify_claim" and not has_substantive_claim:
+        action = "clarify"
+        needs_clarification = True
+        clarification = "What specific understanding would you like me to check?"
+    if action == "clarify":
+        needs_clarification = True
+        if not clarification:
+            clarification = "Could you clarify what you want to explore or verify?"
     return MessageClassification(
         route=route, student_intent=intent, question_type=question_type,
-        target_concepts=concepts, conversation_state=state, confidence=confidence,
+        target_concepts=concepts, conversation_state=state, dialogue_status=dialogue_status,
+        conversation_action=action, has_substantive_claim=has_substantive_claim,
+        student_claim=student_claim, wants_to_continue=wants_to_continue, confidence=confidence,
         needs_clarification=needs_clarification, clarification_question=clarification,
         target=concepts[0] if concepts else None,
         rewritten_query=" ".join(rewrite.split()), source="llm",
@@ -269,12 +321,22 @@ async def _classify_with_llm(
         "Classify a student's latest course-chat message. Do not answer it. Return one JSON object only with: "
         "route (learning, administrative, session_control, unclear); student_intent (definition, explanation, "
         "comparison, procedure, application, debugging, confirmation, hint, direct_answer, administrative, "
-        "reflection, unclear); question_type (what, why, how, comparison, application, debugging, statement, "
+        "comprehension_claim, acknowledgement, close_session, changing_topic, reflection, unclear); question_type "
+        "(what, why, how, comparison, application, debugging, statement, "
         "follow_up, unclear); target_concepts (zero to three concise noun phrases); conversation_state "
         "(new_concept, answering_tutor, reasoning_in_progress, uncertain, possible_misconception, requesting_hint, "
-        "requesting_answer, follow_up); confidence (0 to 1); needs_clarification (boolean); clarification_question "
+        "requesting_answer, claiming_understanding, acknowledging, closing, changing_topic, follow_up); "
+        "dialogue_status (new_topic, answering_tutor, requesting_confirmation, claiming_understanding, "
+        "reasoning_in_progress, uncertain, requesting_support, acknowledgement, closing, changing_topic, "
+        "administrative_request, unclear); conversation_action (continue, verify_claim, verify_understanding, "
+        "soft_close, complete, clarify, direct); has_substantive_claim (boolean); student_claim (the student's "
+        "actual proposition to verify or null); wants_to_continue (boolean); confidence (0 to 1); "
+        "needs_clarification (boolean); clarification_question "
         "(one short question or null); retrieval_query (a concise standalone search query that preserves named "
-        "course items and resolves pronouns from history). Never invent a concept absent from the message/history."
+        "course items and resolves pronouns from history). Distinguish a bare understanding claim from a claim "
+        "that contains reasoning. Treat thanks without a question as acknowledgement/soft_close, a clear goodbye "
+        "as closing/complete, and a claim asking whether it is correct as requesting_confirmation/verify_claim. "
+        "Never invent a concept, claim, or intention absent from the message and recent history."
     )
     client = AsyncOpenAI(api_key=api_key, base_url=base_url)
     log_event(4, "classifier_llm_started", provider=provider, model=model)
@@ -316,6 +378,6 @@ async def classify_message(message: str, history: list[ChatMessage]) -> MessageC
 
     if SESSION_CONTROL_PATTERN.match(message.strip()) or ADMIN_PATTERN.search(message):
         return fallback
-    if result.route in {"administrative", "session_control"}:
+    if result.route == "session_control":
         return replace(result, route=fallback.route, direct_answer=None)
     return result

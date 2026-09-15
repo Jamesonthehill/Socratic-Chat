@@ -108,6 +108,70 @@ class MessageClassifierTests(unittest.TestCase):
         self.assertEqual(result.source, "rules")
         self.assertEqual(result.target_concepts, ("version control",))
 
+    def test_llm_routes_a_bare_understanding_claim_to_verification(self) -> None:
+        fallback = classifier._rule_classification("I understand it.", [])
+        result = classifier._validated_llm_classification(
+            {
+                "route": "learning",
+                "student_intent": "comprehension_claim",
+                "question_type": "statement",
+                "target_concepts": ["version control"],
+                "conversation_state": "claiming_understanding",
+                "dialogue_status": "claiming_understanding",
+                "conversation_action": "verify_understanding",
+                "has_substantive_claim": False,
+                "student_claim": None,
+                "wants_to_continue": True,
+                "confidence": 0.95,
+                "needs_clarification": False,
+                "retrieval_query": "version control",
+            },
+            "I understand it.",
+            fallback,
+        )
+        self.assertEqual(result.conversation_action, "verify_understanding")
+        self.assertFalse(result.has_substantive_claim)
+
+    def test_llm_routes_a_substantive_confirmation_request_to_claim_check(self) -> None:
+        message = "I think Git and GitHub are the same. Is that correct?"
+        result = classifier._validated_llm_classification(
+            {
+                "route": "learning",
+                "student_intent": "confirmation",
+                "question_type": "follow_up",
+                "target_concepts": ["Git", "GitHub"],
+                "conversation_state": "possible_misconception",
+                "dialogue_status": "requesting_confirmation",
+                "conversation_action": "verify_claim",
+                "has_substantive_claim": True,
+                "student_claim": "Git and GitHub are the same.",
+                "wants_to_continue": True,
+                "confidence": 0.97,
+                "needs_clarification": False,
+                "retrieval_query": "Git and GitHub relationship",
+            },
+            message,
+            classifier._rule_classification(message, []),
+        )
+        self.assertEqual(result.conversation_action, "verify_claim")
+        self.assertTrue(result.has_substantive_claim)
+        self.assertEqual(result.student_claim, "Git and GitHub are the same.")
+
+    def test_low_confidence_completion_is_softened(self) -> None:
+        message = "Thanks, I think that is enough."
+        result = classifier._validated_llm_classification(
+            {
+                "dialogue_status": "closing",
+                "conversation_action": "complete",
+                "wants_to_continue": False,
+                "confidence": 0.62,
+            },
+            message,
+            classifier._rule_classification(message, []),
+        )
+        self.assertEqual(result.conversation_action, "soft_close")
+        self.assertFalse(result.wants_to_continue)
+
 
 if __name__ == "__main__":
     unittest.main()

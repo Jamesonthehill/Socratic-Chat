@@ -11,8 +11,12 @@ if TYPE_CHECKING:
 
 
 DIRECT_INFORMATION_PATTERN = re.compile(
-    r"\b(?:assignment|projects?|rubric|deadline|due date|submission|submit|points?|grade|"
+    r"\b(?:assignment|rubric|deadline|due date|submission|submit|points?|grade|"
     r"office hours?|schedule|syllabus|uploaded files?|documents?)\b",
+    re.IGNORECASE,
+)
+PROJECT_INFORMATION_PATTERN = re.compile(
+    r"^(?:what|explain|describe|summarize|tell me|give me)\b.*\bprojects?\b",
     re.IGNORECASE,
 )
 DIRECT_REQUEST_PATTERN = re.compile(
@@ -93,6 +97,7 @@ def choose_socratic_strategy(
         return DIRECT_DECISION
     if (
         DIRECT_INFORMATION_PATTERN.search(clean_message)
+        or PROJECT_INFORMATION_PATTERN.search(clean_message)
         or DIRECT_REQUEST_PATTERN.search(clean_message)
         or (classification and classification.route == "administrative")
     ):
@@ -109,6 +114,40 @@ def choose_socratic_strategy(
         )
     intent = classification.student_intent if classification else None
     classified_state = classification.conversation_state if classification else None
+    conversation_action = classification.conversation_action if classification else "continue"
+
+    if conversation_action == "verify_claim":
+        return SocraticDecision(
+            mode="socratic",
+            student_state="requesting_confirmation",
+            strategy="grounded_claim_check",
+            instruction=(
+                "Compare only the learner's actual claim with the retrieved context. Begin with exactly one "
+                "calibrated verdict: 'Yes—', 'Partly—', or 'Not quite—'. Briefly state the supported point or "
+                "smallest necessary correction, then ask exactly one question inviting revision or application. "
+                "Never attribute a retrieved fact to the learner unless it appears in the learner's message."
+            ),
+            disclosure_level=3,
+            target_concept=target,
+            example_type="claim_check",
+            tutor_question_type="clarification",
+        )
+
+    if conversation_action == "verify_understanding":
+        return SocraticDecision(
+            mode="socratic",
+            student_state="claiming_understanding",
+            strategy="understanding_check",
+            instruction=(
+                "Treat the learner's statement as self-reported understanding, not demonstrated understanding. "
+                "Give no congratulatory evaluation yet. Present one brief transfer, prediction, comparison, or "
+                "teach-back task grounded in the retrieved context and ask exactly one verification question."
+            ),
+            disclosure_level=0,
+            target_concept=target,
+            example_type="verification_task",
+            tutor_question_type="application",
+        )
 
     if HINT_REQUEST_PATTERN.search(clean_message) or intent == "hint":
         return SocraticDecision(
@@ -329,6 +368,8 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
         "Put the final question in its own paragraph. When natural, bold only a short reasoning cue at the start "
         "of the question, such as '**What evidence**', '**Which assumption**', or '**What consequence**'. "
         "Use specific feedback instead of generic praise such as 'Excellent' or 'Good job'. "
+        "Never say the learner identified, explained, or noted a fact unless that fact appears explicitly in the "
+        "learner's latest response. Retrieved context is reference evidence, not learner-authored evidence. "
         f"Never invent course facts beyond the retrieved context. {emphasis_instruction}"
     )
 
@@ -378,6 +419,10 @@ def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
         return "What distinction between the two ideas might change your conclusion?"
     if decision.strategy in {"guided_sequence", "transfer_application", "failure_scenario"}:
         return f"In a simple project scenario, what would you try first with **{target}**, and why?"
+    if decision.strategy == "understanding_check":
+        return f"How would you apply **{target}** in a new situation to demonstrate your understanding?"
+    if decision.strategy == "grounded_claim_check":
+        return "How would you revise or apply that claim using the retrieved course evidence?"
     if decision.strategy == "scaffold_then_question":
         return "Which detail in the retrieved material seems most useful for working this out?"
     if decision.strategy == "probe_reasoning":
@@ -480,7 +525,7 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
 
     if question_count == 0:
         fallback = socratic_fallback_question(message, decision)
-        if decision.strategy == "explain_then_check" and clean_answer:
+        if decision.strategy in {"explain_then_check", "grounded_claim_check"} and clean_answer:
             clean_answer = f"{clean_answer}\n\n{fallback}"
         else:
             clean_answer = fallback

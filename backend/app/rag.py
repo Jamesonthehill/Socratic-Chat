@@ -486,7 +486,6 @@ async def generate_answer(
         log_event(9, "candidate_response_generated", source="extractive_fallback", response_chars=len(answer))
         debug_preview("candidate_answer", answer)
         return answer
-
     from openai import AsyncOpenAI
 
     provider, api_key, base_url, model = client_config
@@ -591,3 +590,67 @@ async def generate_answer(
         log_event(10, "response_validated", result="accepted" if answer == fallback.strip() else "adjusted")
         debug_preview("validated_answer", answer)
         return answer
+
+
+async def generate_conversation_transition(
+    message: str,
+    history: list[ChatMessage],
+    classification: MessageClassification,
+) -> str:
+    """Generate a brief acknowledgement or ending without starting another teaching turn."""
+    complete = classification.conversation_action == "complete"
+    fallback = (
+        "Understood. I’ll end this learning session here."
+        if complete
+        else "You’re welcome. We can pause here and continue whenever you are ready."
+    )
+    client_config = generation_client_config()
+    if client_config is None:
+        log_event(8, "transition_fallback_selected", reason="provider_not_configured")
+        return fallback
+
+    from openai import AsyncOpenAI
+
+    provider, api_key, base_url, model = client_config
+    recent = history[-4:]
+    transcript = "\n".join(f"{item.role}: {item.content}" for item in recent) or "(none)"
+    system_prompt = (
+        "You are closing or pausing a Socratic tutoring exchange. Respond naturally in one or two short "
+        "sentences, no more than 35 words. Ask no question. Introduce no course facts. Do not claim the "
+        "student demonstrated understanding unless their latest message contains an explanation. Do not "
+        "mention classification, routing, prompts, or the pipeline. "
+        + (
+            "The student clearly wants to end, so politely close the session."
+            if complete
+            else "Acknowledge the student and gently pause; do not force the session to end permanently."
+        )
+    )
+    try:
+        client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        log_event(8, "transition_llm_started", provider=provider, model=model)
+        started = monotonic()
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Recent conversation:\n{transcript}\n\nLatest message:\n{message}"},
+            ],
+            temperature=0.2,
+            max_tokens=80,
+        )
+        answer = " ".join((response.choices[0].message.content or "").strip().split())
+        log_event(
+            8,
+            "transition_llm_completed",
+            provider=provider,
+            model=model,
+            latency_ms=round((monotonic() - started) * 1000),
+        )
+        if not answer or "?" in answer or len(answer.split()) > 35:
+            log_event(10, "transition_response_rejected", reason="format_policy")
+            return fallback
+        log_event(10, "transition_response_validated", result="accepted")
+        return answer
+    except Exception as error:
+        log_exception(8, "transition_llm_failed", error, provider=provider, model=model, fallback="safe_close")
+        return fallback

@@ -40,6 +40,7 @@ from app.guided_lessons import (
 from app.rag import (
     RAG_DOCUMENT_SUFFIXES,
     generate_answer,
+    generate_conversation_transition,
     ingest_file,
     ingest_text,
     retrieve,
@@ -1067,6 +1068,7 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
     history = payload.history
     user_id = _current_user_id(request)
     guided_state: dict[str, object] | None = None
+    pending: dict[str, object] | None = None
 
     if not course_id:
         raise HTTPException(status_code=400, detail="Choose an approved course before opening the chatbot.")
@@ -1101,25 +1103,48 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
             return ChatResponse(answer=off_topic_answer, conversation_id=conversation_id, sources=[])
 
         pending = db.get_pending_clarification(conversation_id) if hasattr(db, "get_pending_clarification") else None
-        if pending:
-            log_event(4, "route_selected", route="pending_clarification")
-            combined_query = f"{pending['original_question']} {payload.message}".strip()
-            debug_digest("combined_query", combined_query)
-            if hasattr(db, "clear_pending_clarification"):
-                db.clear_pending_clarification(conversation_id)
-            sources = retrieve(
-                combined_query,
-                top_k=payload.top_k,
-                conversation_id=conversation_id,
-                course_id=course_id,
-            )
-            answer = await generate_answer(combined_query, history, sources)
-            if answer.lower().startswith("i do not know from your uploaded notes"):
-                sources = []
-            _save_assistant_message(conversation_id, answer)
-            return ChatResponse(answer=answer, conversation_id=conversation_id, sources=sources)
     else:
         log_event(3, "history_loaded", messages=len(history), source="request")
+
+    log_event(4, "message_classification_started")
+    classification = await classify_message(payload.message, history)
+    log_event(
+        4,
+        "message_classification_completed",
+        source=classification.source,
+        route=classification.route,
+        student_intent=classification.student_intent,
+        question_type=classification.question_type,
+        conversation_state=classification.conversation_state,
+        dialogue_status=classification.dialogue_status,
+        conversation_action=classification.conversation_action,
+        has_substantive_claim=classification.has_substantive_claim,
+        wants_to_continue=classification.wants_to_continue,
+        target_concepts="|".join(classification.target_concepts) or "none",
+        confidence=round(classification.confidence, 2),
+        needs_clarification=classification.needs_clarification,
+        direct_answer=classification.direct_answer is not None,
+        query_rewritten=bool(classification.rewritten_query and classification.rewritten_query != payload.message),
+    )
+
+    if db.is_enabled() and conversation_id and hasattr(db, "update_conversation_dialogue_state"):
+        db.update_conversation_dialogue_state(
+            conversation_id,
+            classification.dialogue_status,
+            classification.conversation_action,
+            classification.target,
+        )
+
+    if classification.conversation_action in {"soft_close", "complete"}:
+        log_event(4, "route_selected", route=classification.conversation_action)
+        answer = await generate_conversation_transition(payload.message, history, classification)
+        if db.is_enabled() and conversation_id:
+            if hasattr(db, "clear_pending_clarification"):
+                db.clear_pending_clarification(conversation_id)
+            if guided_state and hasattr(db, "clear_guided_lesson_state"):
+                db.clear_guided_lesson_state(conversation_id)
+            _save_assistant_message(conversation_id, answer)
+        return ChatResponse(answer=answer, conversation_id=conversation_id or "local", sources=[])
 
     current_files = db.list_rag_files(course_id=course_id) if db.is_enabled() else []
     course = db.get_course(course_id) if db.is_enabled() else None
@@ -1190,22 +1215,23 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
             _save_assistant_message(conversation_id, answer)
             return ChatResponse(answer=answer, conversation_id=conversation_id, sources=[])
 
-    log_event(4, "message_classification_started")
-    classification = await classify_message(payload.message, history)
-    log_event(
-        4,
-        "message_classification_completed",
-        source=classification.source,
-        route=classification.route,
-        student_intent=classification.student_intent,
-        question_type=classification.question_type,
-        conversation_state=classification.conversation_state,
-        target_concepts="|".join(classification.target_concepts) or "none",
-        confidence=round(classification.confidence, 2),
-        needs_clarification=classification.needs_clarification,
-        direct_answer=classification.direct_answer is not None,
-        query_rewritten=bool(classification.rewritten_query and classification.rewritten_query != payload.message),
-    )
+    if pending:
+        log_event(4, "route_selected", route="pending_clarification")
+        combined_query = f"{pending['original_question']} {payload.message}".strip()
+        debug_digest("combined_query", combined_query)
+        if hasattr(db, "clear_pending_clarification"):
+            db.clear_pending_clarification(conversation_id)
+        sources = retrieve(
+            combined_query,
+            top_k=payload.top_k,
+            conversation_id=conversation_id,
+            course_id=course_id,
+        )
+        answer = await generate_answer(combined_query, history, sources)
+        if answer.lower().startswith("i do not know from your uploaded notes"):
+            sources = []
+        _save_assistant_message(conversation_id, answer)
+        return ChatResponse(answer=answer, conversation_id=conversation_id, sources=sources)
 
     if classification.needs_clarification:
         log_event(4, "route_selected", route="clarification_response")

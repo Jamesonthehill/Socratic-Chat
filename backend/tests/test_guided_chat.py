@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from starlette.requests import Request
 
 from app import main
+from app.classifier import MessageClassification
 from app.guided_lessons import initial_lesson_state
 from app.schemas import ChatRequest, Source
 
@@ -37,9 +38,13 @@ class GuidedLessonChatIntegrationTests(unittest.TestCase):
             patch("app.main.db.get_pending_clarification", return_value=None),
             patch("app.main.db.get_guided_lesson_state", return_value=stored_state),
             patch("app.main.db.save_guided_lesson_state"),
+            patch("app.main.db.update_conversation_dialogue_state"),
+            patch("app.main.db.clear_guided_lesson_state"),
+            patch("app.main.db.clear_pending_clarification"),
             patch("app.main.db.list_rag_files", return_value=[]),
             patch("app.main.db.get_course", return_value=None),
             patch("app.main.retrieve", return_value=[SOURCE] if sources is None else sources),
+            patch("app.classifier.settings.CLASSIFIER_ENABLED", False),
         )
 
     def test_use_case_question_starts_and_persists_guided_lesson(self) -> None:
@@ -101,6 +106,40 @@ class GuidedLessonChatIntegrationTests(unittest.TestCase):
         )
 
         self.assertIn("do not know from your uploaded notes", response.answer)
+        self.assertEqual(response.sources, [])
+
+    def test_llm_closing_state_ends_an_active_guided_lesson(self) -> None:
+        patches = self._patch_chat_dependencies(initial_lesson_state())
+        [item.start() for item in patches]
+        self.addCleanup(lambda: [item.stop() for item in reversed(patches)])
+        closing = MessageClassification(
+            student_intent="close_session",
+            conversation_state="closing",
+            dialogue_status="closing",
+            conversation_action="complete",
+            wants_to_continue=False,
+            confidence=0.97,
+            source="llm",
+        )
+        with (
+            patch("app.main.classify_message", new=AsyncMock(return_value=closing)),
+            patch(
+                "app.main.generate_conversation_transition",
+                new=AsyncMock(return_value="Take care. We can continue another time."),
+            ),
+        ):
+            response = asyncio.run(
+                main.chat(
+                    ChatRequest(
+                        message="Nothing, bye.",
+                        conversation_id="conversation-1",
+                        course_id="course-1",
+                    ),
+                    _request(),
+                )
+            )
+
+        self.assertEqual(response.answer, "Take care. We can continue another time.")
         self.assertEqual(response.sources, [])
 
 

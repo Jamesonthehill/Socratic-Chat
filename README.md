@@ -70,6 +70,13 @@ understand” receives a transfer or teach-back check instead of unearned praise
 Acknowledgements and clear endings are routed to a short, question-free response
 instead of another Socratic prompt.
 
+Question categories remain internal planning labels. Student-facing questions
+use plain language and name a concrete action, choice, example, or outcome from
+the current topic rather than canned stems such as `What evidence?` or `What
+factor?`. A substantial pasted passage receives one neutral reflection before
+the question. The response validator rejects malformed Markdown and incomplete
+choice prompts such as `Which scenario?` when no choices are presented.
+
 Substantive responses to tutor questions pass through a separate hybrid answer
 evaluator. It calculates deterministic course-concept coverage (20%), model-based
 semantic alignment (20%), and a grounded rubric for correctness, completeness,

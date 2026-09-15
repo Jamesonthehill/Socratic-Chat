@@ -215,7 +215,8 @@ class SocraticPolicyTests(unittest.TestCase):
         self.assertIn("Markdown bold", instruction)
         self.assertIn("Do not bold complete sentences", instruction)
         self.assertIn("final question in its own paragraph", instruction)
-        self.assertIn("What evidence", instruction)
+        self.assertIn("plain, conversational language", instruction)
+        self.assertIn("Do not expose internal question", instruction)
 
     def test_explanation_is_preserved_after_repeated_difficulty(self) -> None:
         history = [
@@ -287,7 +288,7 @@ class SocraticPolicyTests(unittest.TestCase):
         )
         feedback, question = answer.split("\n\n", 1)
         self.assertLessEqual(len(feedback.split()), 12)
-        self.assertEqual(question, "What evidence supports your response?")
+        self.assertEqual(question, "Which detail from the course example would make your answer more precise?")
 
     def test_question_over_twenty_five_words_uses_strategy_fallback(self) -> None:
         history = [ChatMessage(role="assistant", content="What comes to mind first?")]
@@ -297,7 +298,42 @@ class SocraticPolicyTests(unittest.TestCase):
             "detail why your current response should be accepted as completely correct by another student?"
         )
         answer = enforce_socratic_response(long_question, "It seems related to a user goal.", decision)
-        self.assertEqual(answer, "How would you justify or refine that response using the retrieved material?")
+        self.assertEqual(answer, "Which detail from the course example would make your answer more precise?")
+
+    def test_substantive_passage_gets_neutral_reflection_before_plain_question(self) -> None:
+        passage = (
+            "Simplicity has a tension with workflow integration. Critique keeps code review as its primary focus "
+            "while linking features implemented in other subsystems."
+        )
+        classification = MessageClassification(
+            student_intent="reflection",
+            conversation_state="follow_up",
+            dialogue_status="unclear",
+            target="simplicity and workflow integration",
+        )
+        decision = choose_socratic_strategy(passage, [], [SOURCE], classification)
+        self.assertEqual(decision.strategy, "reflect_then_explore")
+        answer = enforce_socratic_response(
+            "Which scenario** better reflects the tension between *simplicity* and *workflow integration*?",
+            passage,
+            decision,
+        )
+        reflection, question = answer.split("\n\n", 1)
+        self.assertIn("choice", reflection.lower())
+        self.assertNotIn("Which scenario", answer)
+        self.assertEqual(answer.count("?"), 1)
+        self.assertTrue(question.startswith("Why might"))
+
+    def test_generic_academic_question_stem_is_replaced_with_plain_wording(self) -> None:
+        history = [ChatMessage(role="assistant", content="Why might review help a team?")]
+        decision = choose_socratic_strategy("Because teammates can find mistakes.", history, [SOURCE])
+        answer = enforce_socratic_response(
+            "That connects review with finding mistakes.\n\nWhat evidence supports that reasoning?",
+            "Because teammates can find mistakes.",
+            decision,
+        )
+        self.assertNotIn("What evidence", answer)
+        self.assertIn("Which detail from the course example", answer)
 
     def test_bare_understanding_claim_gets_a_verification_task(self) -> None:
         classification = MessageClassification(

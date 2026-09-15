@@ -46,6 +46,12 @@ NEW_CONCEPT_PATTERN = re.compile(
     r"^(?:what is|what are|define|explain|tell me about|help me understand)\b",
     re.IGNORECASE,
 )
+GENERIC_VISIBLE_QUESTION_PATTERN = re.compile(
+    r"^(?:\*{0,2})?(?:what evidence|what factors?|which assumptions?|what consequences?|"
+    r"what implications?|what limitations?|what alternative(?: viewpoint| factor)?s?)\b",
+    re.IGNORECASE,
+)
+INCOMPLETE_CHOICE_PATTERN = re.compile(r"^(?:\*{0,2})?which (?:scenario|example|option)\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -294,8 +300,8 @@ def choose_socratic_strategy(
             strategy="probe_reasoning",
             instruction=(
                 "Evaluate the learner's reasoning against the retrieved context. If it is correct or substantially "
-                "close, briefly identify the specific valid connection before asking exactly one question about "
-                "its evidence, assumption, consequence, or applicability."
+                "close, briefly identify the specific valid connection. Then ask exactly one plain-language "
+                "question naming a concrete detail, action, or outcome from the course example."
             ),
             target_concept=target,
             example_type="none",
@@ -333,8 +339,8 @@ def choose_socratic_strategy(
                 strategy="examine_limitation",
                 instruction=(
                     "Give specific, calibrated feedback in one short sentence, positively recognizing the supported "
-                    "part of a correct or nearly correct response. Then ask exactly one question about a limitation, "
-                    "alternative factor, or condition that could change the learner's conclusion."
+                    "part of a correct or nearly correct response. Then name a concrete condition and ask how it "
+                    "could change the result the learner described."
                 ),
             )
         return SocraticDecision(
@@ -346,6 +352,22 @@ def choose_socratic_strategy(
                 "specific positive feedback in one short sentence naming the supported part. If it is not close, "
                 "respond neutrally. Then ask exactly one question that helps the learner justify or refine it."
             ),
+        )
+
+    if _word_count(clean_message) >= 20:
+        return SocraticDecision(
+            mode="socratic",
+            student_state="substantive_passage",
+            strategy="reflect_then_explore",
+            instruction=(
+                "Begin with one short, neutral sentence that names the concrete idea or tradeoff in the learner's "
+                "passage without praising it or treating quoted material as demonstrated understanding. Then ask "
+                "one plain-language question about a specific action, choice, or outcome named in that passage."
+            ),
+            disclosure_level=1,
+            target_concept=target,
+            example_type="passage_reflection",
+            tutor_question_type="clarification",
         )
 
     return SocraticDecision(
@@ -402,8 +424,11 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
         "correctly; for a nearly correct response, say they are on the right track and name only the supported part; "
         "for an unsupported or incorrect response, do not praise it. Positive feedback must be specific, concise, "
         "and proportional—it must not imply complete mastery. "
-        "Put the final question in its own paragraph. When natural, bold only a short reasoning cue at the start "
-        "of the question, such as '**What evidence**', '**Which assumption**', or '**What consequence**'. "
+        "Put the final question in its own paragraph. Write it in plain, conversational language and name the "
+        "specific action, decision, example, or outcome the learner should examine. Do not expose internal question "
+        "categories through canned stems such as 'What evidence', 'What factor', 'Which assumption', 'What "
+        "implication', or 'What alternative viewpoint'. If asking the learner to choose a scenario, include the "
+        "actual scenarios in the response. The question must make sense by itself without hidden context. "
         "Use specific feedback instead of generic praise such as 'Excellent' or 'Good job'. "
         "Never say the learner identified, explained, or noted a fact unless that fact appears explicitly in the "
         "learner's latest response. Retrieved context is reference evidence, not learner-authored evidence. "
@@ -438,7 +463,7 @@ def _comparison_targets(message: str) -> tuple[str, str] | None:
 
 
 def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
-    target = decision.target_concept or _target_concept(message)
+    target = _visible_target(decision.target_concept or _target_concept(message))
     if decision.strategy == "diagnostic_recall":
         comparison = _comparison_targets(message)
         if comparison:
@@ -453,7 +478,7 @@ def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
             return question
         return "What do you already understand about **this concept**?"
     if decision.strategy == "guided_comparison":
-        return "What distinction between the two ideas might change your conclusion?"
+        return f"How would **{target}** behave differently in the two situations?"
     if decision.strategy in {"guided_sequence", "transfer_application", "failure_scenario"}:
         return f"In a simple project scenario, what would you try first with **{target}**, and why?"
     if decision.strategy == "understanding_check":
@@ -461,19 +486,24 @@ def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
     if decision.strategy == "mastery_verification":
         return f"How would you apply **{target}** in a different situation and explain your reasoning?"
     if decision.strategy == "grounded_claim_check":
-        return "How would you revise or apply that claim using the retrieved course evidence?"
+        return f"How would you restate your idea about **{target}** after comparing it with the course example?"
     if decision.strategy == "scaffold_then_question":
-        return "Which detail in the retrieved material seems most useful for working this out?"
+        return f"Which detail about **{target}** helps you take the next step?"
     if decision.strategy == "probe_reasoning":
-        return "What evidence from the retrieved material supports that reasoning?"
+        return "Which detail from the course example best supports your answer?"
     if decision.strategy == "justify_or_refine":
-        return "How would you justify or refine that response using the retrieved material?"
+        return "Which detail from the course example would make your answer more precise?"
     if decision.strategy == "examine_limitation":
-        return "**What limitation or alternative factor** might change that conclusion?"
+        return f"When might **{target}** work differently from the way you described?"
     if decision.strategy == "synthesize_understanding":
-        return "**How can you combine** the relevant concepts and evidence into one explanation?"
+        return f"How would you explain the main parts of **{target}** together in your own words?"
     if decision.strategy == "reflect_on_learning":
-        return "**How has your understanding changed**, and what would you revise in your first response?"
+        return f"What would you change in your first explanation of **{target}** now?"
+    if decision.strategy == "reflect_then_explore":
+        return (
+            f"This passage presents a choice involving **{target}**.\n\n"
+            "Why might someone choose one approach instead of combining both?"
+        )
     if decision.strategy == "explain_then_check":
         return "How would you apply **this idea** in a simple example?"
     return f"How would you apply {target} in a new example?"
@@ -481,6 +511,14 @@ def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
 
 def _word_count(text: str) -> int:
     return len(re.findall(r"\b[\w'-]+\b", text))
+
+
+def _visible_target(target: str, limit: int = 8) -> str:
+    clean = " ".join(target.replace("**", "").replace("*", "").split())
+    words = clean.split()
+    if len(words) > limit:
+        clean = " ".join(words[:limit]).rstrip(".,;:") + "…"
+    return clean or "this course idea"
 
 
 def _truncate_words(text: str, limit: int) -> str:
@@ -536,6 +574,12 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
         and not re.search(r"(?:^|\n)\s*[-*]\s+", clean_answer)
     )
     if valid_example_first_turn:
+        feedback, question = _split_feedback_and_question(clean_answer)
+        incomplete_choice = bool(INCOMPLETE_CHOICE_PATTERN.search(question))
+        malformed_bold = clean_answer.count("**") % 2 != 0
+        if incomplete_choice or malformed_bold or GENERIC_VISIBLE_QUESTION_PATTERN.search(question):
+            valid_example_first_turn = False
+    if valid_example_first_turn:
         return clean_answer
 
     if decision.strategy == "diagnostic_recall":
@@ -573,7 +617,13 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
         clean_answer = clean_answer.split("?", 1)[0].strip() + "?"
 
     feedback, question = _split_feedback_and_question(clean_answer)
-    if not question or _word_count(question) > 25:
+    if (
+        not question
+        or _word_count(question) > 25
+        or GENERIC_VISIBLE_QUESTION_PATTERN.search(question)
+        or INCOMPLETE_CHOICE_PATTERN.search(question)
+        or question.count("**") % 2 != 0
+    ):
         question = socratic_fallback_question(message, decision)
 
     feedback_limits = {0: 0, 1: 12, 2: 18, 3: 35}

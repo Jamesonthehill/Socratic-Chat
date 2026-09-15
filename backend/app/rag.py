@@ -109,7 +109,10 @@ def is_relevant_search_result(item: dict[str, Any]) -> bool:
         sparse_score = float(item.get("sparse_score"))
     except (TypeError, ValueError):
         sparse_score = 0.0
-    return sparse_score > 0 or dense_similarity >= settings.RAG_MIN_DENSE_SIMILARITY
+    return (
+        sparse_score >= settings.RAG_MIN_SPARSE_SCORE
+        or dense_similarity >= settings.RAG_MIN_DENSE_SIMILARITY
+    )
 
 
 def document_id(
@@ -356,6 +359,7 @@ def retrieve(
             relevant_candidates=len(accepted),
             rejected=len(ranked) - len(accepted),
             min_dense_similarity=settings.RAG_MIN_DENSE_SIMILARITY,
+            min_sparse_score=settings.RAG_MIN_SPARSE_SCORE,
             latency_ms=round((monotonic() - search_started) * 1000),
         )
         log_event(
@@ -450,10 +454,7 @@ def retrieve_overview(
 
 def fallback_answer(question: str, sources: list[Source]) -> str:
     if not sources:
-        return (
-            "I do not know from your uploaded notes. "
-            "I could not find relevant context in the indexed documents."
-        )
+        return "That topic is outside the currently published course documentation."
 
     source_notes = "\n\n".join(f"- {source.text}" for source in sources[:3])
     return (
@@ -545,9 +546,10 @@ async def generate_answer(
         {
             "role": "system",
             "content": (
-                "You are a concise RAG tutor. Use the retrieved context first. "
-                "If the context does not contain the answer, say: "
-                "'I do not know from your uploaded notes.' Do not answer from general knowledge unless the user asks for that."
+                "You are a concise RAG tutor whose objective is student understanding of instructor-published topics. "
+                "Use only the retrieved course context for factual course content. If that context does not support "
+                "the requested topic, respond exactly: 'That topic is outside the currently published course "
+                "documentation.' Never answer an unsupported topic from general knowledge, even if requested."
             ),
         },
         {"role": "system", "content": teaching_instruction},
@@ -591,7 +593,14 @@ async def generate_answer(
         )
         log_event(9, "candidate_response_generated", source="llm", response_chars=len(raw_answer))
         debug_preview("candidate_answer", raw_answer)
-        answer = enforce_socratic_response(raw_answer, question, socratic_decision)
+        unsupported = raw_answer.strip().lower().startswith(
+            "that topic is outside the currently published course documentation"
+        ) or raw_answer.strip().lower().startswith("i do not know from your uploaded notes")
+        answer = (
+            "That topic is outside the currently published course documentation."
+            if unsupported
+            else enforce_socratic_response(raw_answer, question, socratic_decision)
+        )
         changed = answer != raw_answer.strip()
         adjustment = "none"
         if changed:

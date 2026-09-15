@@ -43,6 +43,7 @@ DIALOGUE_STATUSES = {
 CONVERSATION_ACTIONS = {
     "continue", "verify_claim", "verify_understanding", "soft_close", "complete", "clarify", "direct",
 }
+UNDERSTANDING_LEVELS = {"unknown", "beginner", "developing", "proficient"}
 
 CLASSIFICATION_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -66,12 +67,14 @@ CLASSIFICATION_SCHEMA: dict[str, Any] = {
         "clarification_question": {"type": ["string", "null"], "maxLength": 200},
         "retrieval_query": {"type": "string", "minLength": 1, "maxLength": 300},
         "operational_request": {"type": "string", "enum": sorted(OPERATIONAL_REQUESTS)},
+        "understanding_level": {"type": "string", "enum": sorted(UNDERSTANDING_LEVELS)},
+        "support_level": {"type": "integer", "minimum": 0, "maximum": 3},
     },
     "required": [
         "route", "student_intent", "question_type", "target_concepts", "conversation_state",
         "dialogue_status", "conversation_action", "has_substantive_claim", "student_claim",
         "wants_to_continue", "confidence", "needs_clarification", "clarification_question",
-        "retrieval_query", "operational_request",
+        "retrieval_query", "operational_request", "understanding_level", "support_level",
     ],
     "additionalProperties": False,
 }
@@ -119,6 +122,8 @@ class MessageClassification:
     direct_answer: str | None = None
     rewritten_query: str | None = None
     operational_request: str = "none"
+    understanding_level: str = "unknown"
+    support_level: int = 0
     source: str = "rules"
 
 
@@ -301,6 +306,15 @@ def _validated_llm_classification(
         if payload.get("operational_request") in OPERATIONAL_REQUESTS
         else fallback.operational_request
     )
+    understanding_level = (
+        payload.get("understanding_level")
+        if payload.get("understanding_level") in UNDERSTANDING_LEVELS
+        else fallback.understanding_level
+    )
+    try:
+        support_level = min(3, max(0, int(payload.get("support_level", fallback.support_level))))
+    except (TypeError, ValueError):
+        support_level = fallback.support_level
     raw_concepts = payload.get("target_concepts")
     concepts: tuple[str, ...] = ()
     if isinstance(raw_concepts, list):
@@ -341,6 +355,7 @@ def _validated_llm_classification(
         needs_clarification=needs_clarification, clarification_question=clarification,
         target=concepts[0] if concepts else None,
         rewritten_query=" ".join(rewrite.split()), operational_request=operational_request,
+        understanding_level=understanding_level, support_level=support_level,
         source="llm",
     )
 
@@ -384,6 +399,12 @@ async def _classify_with_llm(
         "(one short question or null); retrieval_query (a concise standalone search query that preserves named "
         "course items and resolves pronouns from history); operational_request (none, list_documents, "
         "document_visibility, document_overview, course_title, course_instructor, course_scope, or system_status). "
+        "Also return understanding_level (unknown, beginner, developing, or proficient) for the student's currently "
+        "demonstrated understanding of the target concept, and support_level (0 to 3), where 0 means no additional "
+        "support, 1 means a small scaffold, 2 means the student remains confused and needs a simpler different "
+        "example plus a concise explanation, and 3 means repeated difficulty needs a step-by-step worked example. "
+        "Infer these from the latest message and recent conversation; never equate confidence or fluent wording with "
+        "subject mastery. The objective is learning and understanding the instructor-published topic. "
         "Use an operational request only when the student explicitly asks for that application or course metadata. "
         "Ordinary learning statements that merely mention files, documents, folders, seeing, or having something "
         "must remain operational_request=none. Distinguish a bare understanding claim from a claim "

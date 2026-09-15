@@ -904,6 +904,8 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
         needs_clarification=classification.needs_clarification,
         direct_answer=classification.direct_answer is not None,
         operational_request=classification.operational_request,
+        understanding_level=classification.understanding_level,
+        support_level=classification.support_level,
         query_rewritten=bool(classification.rewritten_query and classification.rewritten_query != payload.message),
     )
 
@@ -913,6 +915,8 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
             classification.dialogue_status,
             classification.conversation_action,
             classification.target,
+            classification.understanding_level,
+            classification.support_level,
         )
 
     if classification.conversation_action in {"soft_close", "complete"}:
@@ -1020,6 +1024,8 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
             concept=evaluation.concept,
             status=progress_status,
             score=evaluation.total_score,
+            understanding_improved=evaluation.understanding_improved,
+            application=evaluation.application if evaluation.application is not None else "not_assessed",
         )
 
     if evaluation and evaluation.progress_status == "mastered":
@@ -1033,7 +1039,10 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
             classification=classification,
             evaluation=evaluation,
         )
-    if answer.lower().startswith("i do not know from your uploaded notes"):
+    if answer.lower().startswith((
+        "i do not know from your uploaded notes",
+        "that topic is outside the currently published course documentation",
+    )):
         sources = []
 
     if db.is_enabled() and conversation_id:

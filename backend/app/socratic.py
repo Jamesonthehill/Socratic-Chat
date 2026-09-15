@@ -130,6 +130,7 @@ def choose_socratic_strategy(
     intent = classification.student_intent if classification else None
     classified_state = classification.conversation_state if classification else None
     conversation_action = classification.conversation_action if classification else "continue"
+    support_level = classification.support_level if classification else 0
 
     needs_verification = bool(
         evaluation
@@ -190,7 +191,28 @@ def choose_socratic_strategy(
             tutor_question_type="application",
         )
 
-    if intent == "hint" or (classification is None and HINT_REQUEST_PATTERN.search(clean_message)):
+    if (evaluation and evaluation.understanding_improved is False) or (
+        classification and support_level >= 2
+    ):
+        return SocraticDecision(
+            mode="socratic",
+            student_state="repeated_difficulty",
+            strategy="explain_then_check",
+            instruction=(
+                "Give a concise, evidence-grounded explanation now and a concrete example that is simpler and "
+                "meaningfully different from examples already used in the conversation. If support level is 3, "
+                "walk through that example step by step. Then ask exactly one easy, specific check question. "
+                "Do not withhold the explanation again and do not repeat the previous question."
+            ),
+            disclosure_level=4,
+            target_concept=target,
+            example_type="simpler_new_example",
+            tutor_question_type="application",
+        )
+
+    if (
+        intent == "hint" or (classification is None and HINT_REQUEST_PATTERN.search(clean_message))
+    ) and support_level < 2:
         return SocraticDecision(
             mode="socratic",
             student_state="support_requested",
@@ -260,18 +282,20 @@ def choose_socratic_strategy(
     if classified_state == "uncertain" or (
         classification is None and UNCERTAINTY_PATTERN.search(clean_message)
     ):
-        if question_turns >= 2:
+        if classification is None and question_turns >= 2:
             return SocraticDecision(
                 mode="socratic",
                 student_state="repeated_difficulty",
                 strategy="explain_then_check",
                 instruction=(
-                    "Give a concise, evidence-grounded explanation now. Then ask exactly one short application "
-                    "question that checks understanding. Do not withhold the explanation again."
+                    "Give a concise, evidence-grounded explanation now and a concrete example that is simpler and "
+                    "meaningfully different from examples already used in the conversation. If support level is 3, "
+                    "walk through that example step by step. Then ask exactly one easy, specific check question. "
+                    "Do not withhold the explanation again and do not repeat the previous question."
                 ),
-                disclosure_level=3,
+                disclosure_level=4,
                 target_concept=target,
-                example_type="worked_example",
+                example_type="simpler_new_example",
                 tutor_question_type="application",
             )
         return SocraticDecision(
@@ -416,6 +440,10 @@ def _disclosure_instruction(level: int) -> str:
             "Disclosure level 3: give a partial grounded explanation of at most 35 words, not the full solution, "
             "then ask a question of at most 25 words."
         ),
+        4: (
+            "Disclosure level 4: give a clear grounded explanation and one simple, concrete example in at most 80 "
+            "words, then ask one easy check question of at most 25 words."
+        ),
     }
     return instructions.get(level, "Answer directly and concisely from the retrieved context.")
 
@@ -428,6 +456,8 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
     if decision.mode == "direct":
         return f"{decision.instruction} {emphasis_instruction}"
     return (
+        "The teaching objective is for the learner to understand and use the instructor-published topic, not merely "
+        "to prolong the dialogue or ask another question. "
         f"Socratic teaching state: {decision.student_state}. Strategy: {decision.strategy}. "
         f"Target concept: {decision.target_concept or 'infer from the latest message'}. "
         f"Example pattern: {decision.example_type}. Tutor question type: {decision.tutor_question_type}. "
@@ -639,7 +669,7 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
     ):
         question = socratic_fallback_question(message, decision)
 
-    feedback_limits = {0: 0, 1: 12, 2: 18, 3: 35}
+    feedback_limits = {0: 0, 1: 12, 2: 18, 3: 35, 4: 80}
     feedback_limit = feedback_limits.get(decision.disclosure_level, 0)
     if feedback_limit == 0:
         feedback = ""

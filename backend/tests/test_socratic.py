@@ -137,8 +137,47 @@ class SocraticPolicyTests(unittest.TestCase):
         ]
         decision = choose_socratic_strategy("I don't know.", history, [SOURCE])
         self.assertEqual(decision.strategy, "explain_then_check")
-        self.assertEqual(decision.disclosure_level, 3)
+        self.assertEqual(decision.disclosure_level, 4)
         self.assertIn("Do not withhold", decision.instruction)
+
+    def test_llm_support_level_selects_a_simpler_different_example(self) -> None:
+        classification = MessageClassification(
+            student_intent="hint",
+            conversation_state="uncertain",
+            dialogue_status="uncertain",
+            target_concepts=("code review",),
+            target="code review",
+            understanding_level="beginner",
+            support_level=2,
+        )
+        decision = choose_socratic_strategy(
+            "I still do not understand.", [], [SOURCE], classification,
+        )
+        self.assertEqual(decision.strategy, "explain_then_check")
+        self.assertEqual(decision.example_type, "simpler_new_example")
+        self.assertEqual(decision.disclosure_level, 4)
+
+    def test_no_detected_improvement_selects_a_simpler_example(self) -> None:
+        evaluation = AnswerEvaluation(
+            concept="code review", keyword_coverage=0.2, semantic_alignment=0.3,
+            rubric_score=0.25, total_score=25, correctness=1, completeness=1,
+            reasoning=1, application=None, supported_concepts=(),
+            missing_concepts=("review purpose",), critical_misconception=False,
+            misconception=None, feedback="The purpose is still unclear.", confidence=0.9,
+            understanding_improved=False,
+        )
+        decision = choose_socratic_strategy(
+            "It evaluates code.",
+            [ChatMessage(role="assistant", content="What is code review intended to improve?")],
+            [SOURCE],
+            MessageClassification(
+                conversation_state="answering_tutor", dialogue_status="answering_tutor",
+                target="code review",
+            ),
+            evaluation,
+        )
+        self.assertEqual(decision.strategy, "explain_then_check")
+        self.assertEqual(decision.example_type, "simpler_new_example")
 
     def test_missing_sources_does_not_generate_an_ungrounded_question(self) -> None:
         decision = choose_socratic_strategy("What is a use case?", [], [])

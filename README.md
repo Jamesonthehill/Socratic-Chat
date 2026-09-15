@@ -50,8 +50,9 @@ course questions rather than lowering it simply to force results.
 Each learning message passes through a hybrid interpretation stage before RAG
 retrieval. Session commands, access checks, and safe fallbacks remain
 deterministic. The configured Groq or OpenAI model then returns validated labels
-for the student's intent, question type, target concepts, dialogue status, next
-conversation action, and a focused retrieval query. The status distinguishes
+for the student's intent, question type, target concepts, current demonstrated
+understanding, required support level, dialogue status, next conversation action,
+and a focused retrieval query. The status distinguishes
 ordinary learning, a substantive claim asking for confirmation, a bare claim of
 understanding, acknowledgement, topic change, and a request to close. Invalid
 JSON, unsupported labels, or a provider failure automatically falls back to the
@@ -62,7 +63,10 @@ course title—are selected from the classifier's structured `operational_reques
 field. They are no longer detected by loose keyword combinations such as
 `files + have`. Ordinary mentions of files, folders, documents, or unrelated
 topic words proceed through classification and RAG. Unsupported topics are
-rejected by the retrieval relevance gate rather than a fixed list of words.
+rejected by configurable sparse and dense retrieval thresholds rather than a
+fixed list of words, and the generator is instructed to use only retrieved
+instructor-published evidence. Unsupported requests receive a short boundary
+message instead of an answer from the model's general knowledge.
 Groq GPT-OSS classification uses strict JSON Schema output with hidden,
 low-effort reasoning to keep these semantic routes reliable.
 
@@ -70,8 +74,9 @@ After retrieval, the teaching policy chooses one explainable action. A new
 concept begins with a short document-grounded example and one discovery
 question; comparisons use contrasting cases; procedure, application, and
 debugging requests use an incomplete scenario. Uncertainty or an explicit hint
-request increases disclosure, while repeated difficulty permits a concise
-partial explanation followed by one check question. The response validator
+request increases disclosure. Repeated difficulty raises the classifier's
+support level and produces a clear explanation plus a simpler, meaningfully
+different example; continued difficulty permits a step-by-step example. The response validator
 limits disclosure, rejects definition-first opening turns, and guarantees one
 focused question. A substantive claim receives a short grounded
 `Yes—`/`Partly—`/`Not quite—` check before one revision question. A bare “I
@@ -89,7 +94,10 @@ choice prompts such as `Which scenario?` when no choices are presented.
 Substantive responses to tutor questions pass through a separate hybrid answer
 evaluator. It calculates deterministic course-concept coverage (20%), model-based
 semantic alignment (20%), and a grounded rubric for correctness, completeness,
-reasoning, and application (60%). Retrieval rank is never used as a learning
+reasoning, and application (60%). Application is stored as `NULL` and excluded
+from the rubric denominator when the tutor did not ask for transfer or application;
+zero now means application was requested but not demonstrated. The evaluator also
+compares recent responses and records whether understanding improved. Retrieval rank is never used as a learning
 score. The evaluator uses the preceding tutor question as part of retrieval so
 short replies remain attached to the correct topic. Questions, acknowledgements,
 requests for help, and unsupported topics are not scored.
@@ -117,6 +125,11 @@ only when a separate OpenAI-compatible classification model is desired.
 Set `ANSWER_EVALUATION_ENABLED=false` to disable adaptive assessment. By default,
 the evaluator uses the configured Groq model (including GPT-OSS-120B) or the
 OpenAI generation model; `ANSWER_EVALUATION_MODEL` can override it.
+
+These are three logical LLM roles: student-state classification, conditional
+learning-progress evaluation, and grounded response generation. The evaluator is
+skipped for a new topic, acknowledgement, unsupported request, or other message
+that does not demonstrate an answer to a tutor question.
 
 ## Add Documents
 

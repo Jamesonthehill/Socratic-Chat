@@ -213,6 +213,29 @@ class MessageClassifierTests(unittest.TestCase):
         self.assertEqual(result.route, "learning")
         self.assertEqual(result.operational_request, "none")
 
+    def test_llm_classifies_understanding_and_repeated_support_need(self) -> None:
+        message = "I still do not understand code review."
+        result = classifier._validated_llm_classification(
+            {
+                "route": "learning",
+                "student_intent": "hint",
+                "question_type": "statement",
+                "target_concepts": ["code review"],
+                "conversation_state": "uncertain",
+                "dialogue_status": "uncertain",
+                "conversation_action": "continue",
+                "understanding_level": "beginner",
+                "support_level": 2,
+                "confidence": 0.96,
+                "needs_clarification": False,
+                "retrieval_query": "code review purpose process",
+            },
+            message,
+            classifier._rule_classification(message, []),
+        )
+        self.assertEqual(result.understanding_level, "beginner")
+        self.assertEqual(result.support_level, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

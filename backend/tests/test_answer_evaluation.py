@@ -48,6 +48,7 @@ class AnswerEvaluationTests(unittest.TestCase):
             "completeness": 3,
             "reasoning": 3,
             "application": 1,
+            "understanding_improved": None,
             "supported_concepts": ["revision history"],
             "missing_concepts": [],
             "critical_misconception": False,
@@ -148,6 +149,7 @@ class AnswerEvaluationTests(unittest.TestCase):
                 "completeness": 3,
                 "reasoning": 3,
                 "application": 2,
+                "understanding_improved": True,
                 "supported_concepts": ["revision history"],
                 "missing_concepts": ["collaboration"],
                 "critical_misconception": False,
@@ -161,6 +163,33 @@ class AnswerEvaluationTests(unittest.TestCase):
         self.assertEqual(evaluation.keyword_coverage, 0.5)
         self.assertEqual(evaluation.rubric_score, 0.8)
         self.assertEqual(evaluation.total_score, 74.0)
+
+    def test_unassessed_application_is_not_treated_as_zero(self) -> None:
+        evaluation = validated_evaluation(
+            {
+                "concept": "version control",
+                "expected_concepts": [
+                    {"name": "revision history", "accepted_terms": ["tracks changes"]},
+                ],
+                "semantic_alignment": 1,
+                "correctness": 4,
+                "completeness": 3,
+                "reasoning": 3,
+                "application": None,
+                "understanding_improved": True,
+                "supported_concepts": ["revision history"],
+                "missing_concepts": [],
+                "critical_misconception": False,
+                "misconception": None,
+                "feedback": "You explained how revision history helps.",
+                "confidence": 0.9,
+            },
+            "It tracks changes over time.",
+            "version control",
+        )
+        self.assertIsNone(evaluation.application)
+        self.assertEqual(evaluation.rubric_score, 0.875)
+        self.assertEqual(evaluation.total_score, 92.5)
 
     def test_incomplete_model_payload_is_rejected_instead_of_saved_as_zero(self) -> None:
         with self.assertRaisesRegex(ValueError, "missing required fields"):
@@ -178,6 +207,7 @@ class AnswerEvaluationTests(unittest.TestCase):
                 "completeness": 2,
                 "reasoning": 2,
                 "application": 1,
+                "understanding_improved": None,
                 "supported_concepts": ["revision history"],
                 "missing_concepts": [],
                 "critical_misconception": False,
@@ -200,6 +230,7 @@ class AnswerEvaluationTests(unittest.TestCase):
                 "completeness": 4,
                 "reasoning": 4,
                 "application": 4,
+                "understanding_improved": True,
                 "supported_concepts": ["history"],
                 "missing_concepts": [],
                 "critical_misconception": True,
@@ -223,6 +254,7 @@ class AnswerEvaluationTests(unittest.TestCase):
                 "completeness": 4,
                 "reasoning": 4,
                 "application": 4,
+                "understanding_improved": True,
                 "supported_concepts": ["history"],
                 "missing_concepts": [],
                 "critical_misconception": False,

@@ -279,6 +279,18 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                ALTER TABLE conversations
+                ADD COLUMN IF NOT EXISTS understanding_level TEXT NOT NULL DEFAULT 'unknown'
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE conversations
+                ADD COLUMN IF NOT EXISTS support_level SMALLINT NOT NULL DEFAULT 0
+                """
+            )
+            cur.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_conversations_user_id_updated_at
                 ON conversations(user_id, updated_at DESC)
                 """
@@ -339,11 +351,24 @@ def init_db() -> None:
                     correctness SMALLINT NOT NULL CHECK (correctness BETWEEN 0 AND 4),
                     completeness SMALLINT NOT NULL CHECK (completeness BETWEEN 0 AND 4),
                     reasoning SMALLINT NOT NULL CHECK (reasoning BETWEEN 0 AND 4),
-                    application SMALLINT NOT NULL CHECK (application BETWEEN 0 AND 4),
+                    application SMALLINT CHECK (application BETWEEN 0 AND 4),
+                    understanding_improved BOOLEAN,
                     critical_misconception BOOLEAN NOT NULL DEFAULT FALSE,
                     evaluation JSONB NOT NULL DEFAULT '{}'::jsonb,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE mastery_assessments
+                ALTER COLUMN application DROP NOT NULL
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE mastery_assessments
+                ADD COLUMN IF NOT EXISTS understanding_improved BOOLEAN
                 """
             )
             cur.execute(
@@ -661,7 +686,7 @@ def _mastery_progress_update(
     existing: tuple[object, object, object] | None,
     score: float,
     correctness: int,
-    application: int,
+    application: int | None,
     critical: bool,
 ) -> tuple[float, int, str]:
     previous_score = float(existing[0]) if existing else score
@@ -673,6 +698,7 @@ def _mastery_progress_update(
         previous_status == "ready_for_verification"
         and score >= 80
         and correctness >= 3
+        and application is not None
         and application >= 3
         and not critical
     )
@@ -704,7 +730,8 @@ def save_mastery_assessment(
     score = float(evaluation["total_score"])
     critical = bool(evaluation["critical_misconception"])
     correctness = int(evaluation["correctness"])
-    application = int(evaluation["application"])
+    application_value = evaluation.get("application")
+    application = int(application_value) if application_value is not None else None
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -727,16 +754,16 @@ def save_mastery_assessment(
                     id, conversation_id, student_message_id, user_id, course_id, concept,
                     keyword_coverage, semantic_alignment, rubric_score, total_score,
                     correctness, completeness, reasoning, application,
-                    critical_misconception, evaluation
+                    critical_misconception, understanding_improved, evaluation
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     str(uuid.uuid4()), conversation_id, student_message_id, user_id, course_id, concept,
                     evaluation["keyword_coverage"], evaluation["semantic_alignment"],
                     evaluation["rubric_score"], evaluation["total_score"], correctness,
                     evaluation["completeness"], evaluation["reasoning"], application,
-                    critical, Jsonb(evaluation),
+                    critical, evaluation.get("understanding_improved"), Jsonb(evaluation),
                 ),
             )
             cur.execute(
@@ -767,6 +794,8 @@ def update_conversation_dialogue_state(
     dialogue_status: str,
     conversation_action: str,
     active_concept: str | None = None,
+    understanding_level: str = "unknown",
+    support_level: int = 0,
 ) -> None:
     """Persist the latest LLM-derived dialogue state without creating a mastery score."""
     init_db()
@@ -782,6 +811,8 @@ def update_conversation_dialogue_state(
                 SET conversation_status = %s,
                     last_dialogue_status = %s,
                     active_concept = COALESCE(%s, active_concept),
+                    understanding_level = %s,
+                    support_level = %s,
                     completed_at = CASE WHEN %s = 'completed' THEN NOW() ELSE NULL END,
                     updated_at = NOW()
                 WHERE id = %s
@@ -790,6 +821,8 @@ def update_conversation_dialogue_state(
                     conversation_status,
                     dialogue_status,
                     active_concept,
+                    understanding_level,
+                    support_level,
                     conversation_status,
                     conversation_id,
                 ),

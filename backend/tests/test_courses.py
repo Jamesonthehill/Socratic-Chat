@@ -263,6 +263,34 @@ class CourseRagIsolationTests(unittest.TestCase):
         self.assertEqual(created_clients[0]["base_url"], "https://api.groq.com/openai/v1")
         self.assertEqual(completions.kwargs["model"], "openai/gpt-oss-120b")
 
+    def test_model_unsupported_response_is_not_turned_into_a_socratic_question(self) -> None:
+        class UnsupportedCompletions:
+            async def create(self, **_kwargs):
+                return SimpleNamespace(
+                    choices=[SimpleNamespace(message=SimpleNamespace(
+                        content="That topic is outside the currently published course documentation."
+                    ))]
+                )
+
+        class FakeAsyncOpenAI:
+            def __init__(self, **_kwargs):
+                self.chat = SimpleNamespace(completions=UnsupportedCompletions())
+
+        source = rag.Source(
+            document_id="doc-a", chunk_id="doc-a:0", title="course-notes.txt",
+            text="Software projects use code review.", score=1.0,
+        )
+        with (
+            patch.object(settings, "GROQ_API_KEY", "test-key"),
+            patch.dict(sys.modules, {"openai": SimpleNamespace(AsyncOpenAI=FakeAsyncOpenAI)}),
+        ):
+            answer = asyncio.run(rag.generate_answer("Explain sushi recipes", [], [source]))
+
+        self.assertEqual(
+            answer,
+            "That topic is outside the currently published course documentation.",
+        )
+
     @patch("app.rag.create_embeddings", return_value=[[0.1] * 1536])
     @patch("app.rag.db.replace_document_chunks", return_value=1)
     def test_latex_document_is_cleaned_and_chunked(self, replace_chunks, _embeddings) -> None:
@@ -364,12 +392,31 @@ class CourseRagIsolationTests(unittest.TestCase):
 
         self.assertEqual([source.document_id for source in sources], ["chapter-9"])
 
+    @patch("app.rag.create_embeddings", return_value=[[0.1] * 1536])
+    @patch("app.rag.db.hybrid_search_chunks")
+    def test_incidental_weak_sparse_match_is_rejected(self, search, _embeddings) -> None:
+        search.return_value = [
+            {
+                "document_id": "chapter-13",
+                "chunk_id": "chapter-13:0",
+                "title": "ch13.html",
+                "text": "A software project uses a documented process.",
+                "score": 0.02,
+                "dense_similarity": 0.21,
+                "sparse_score": 0.01,
+            },
+        ]
+        self.assertEqual(rag.retrieve("sushi recipe", course_id="course-a"), [])
+
     def test_no_relevant_sources_stop_before_llm_generation(self) -> None:
         with patch("app.rag.generation_client_config") as client_config:
             answer = asyncio.run(rag.generate_answer("What is a sushi recipe?", [], []))
 
         client_config.assert_not_called()
-        self.assertTrue(answer.startswith("I do not know from your uploaded notes"))
+        self.assertEqual(
+            answer,
+            "That topic is outside the currently published course documentation.",
+        )
 
     def test_course_metadata_answers_do_not_depend_on_document_search(self) -> None:
         course = {

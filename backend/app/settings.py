@@ -32,6 +32,7 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
 EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "64"))
 RAG_MIN_DENSE_SIMILARITY = float(os.getenv("RAG_MIN_DENSE_SIMILARITY", "0.42"))
+RAG_MIN_SPARSE_SCORE = float(os.getenv("RAG_MIN_SPARSE_SCORE", "0.05"))
 DEBUG_PIPELINE_LOGS = os.getenv("DEBUG_PIPELINE_LOGS", "false").lower() in {"1", "true", "yes"}
 
 

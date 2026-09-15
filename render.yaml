@@ -20,14 +20,14 @@ services:
         sync: false
       - key: OPENAI_API_BASE_URL
         value: https://api.openai.com/v1
-      - key: GROQ_API_KEY
-        sync: false
-      - key: GROQ_API_BASE_URL
-        value: https://api.groq.com/openai/v1
-      - key: GROQ_MODEL
-        value: openai/gpt-oss-120b
+      - key: RAG_MODEL
+        value: gpt-4.1-mini
       - key: CLASSIFIER_ENABLED
         value: "true"
+      - key: CLASSIFIER_MODEL
+        value: gpt-4.1-mini
+      - key: ANSWER_EVALUATION_MODEL
+        value: gpt-4.1-mini
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GITHUB_CLIENT_ID

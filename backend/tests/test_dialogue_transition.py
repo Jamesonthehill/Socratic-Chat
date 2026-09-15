@@ -31,7 +31,7 @@ class DialogueTransitionTests(unittest.TestCase):
             source="llm",
         )
         with (
-            patch.object(settings, "GROQ_API_KEY", "test-key"),
+            patch.object(settings, "OPENAI_API_KEY", "test-key"),
             patch.dict(sys.modules, {"openai": SimpleNamespace(AsyncOpenAI=FakeAsyncOpenAI)}),
         ):
             return asyncio.run(generate_conversation_transition("Nothing, bye.", [], classification))

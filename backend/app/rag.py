@@ -455,12 +455,9 @@ def retrieve_overview(
 def fallback_answer(question: str, sources: list[Source]) -> str:
     if not sources:
         return "That topic is outside the currently published course documentation."
-
-    source_notes = "\n\n".join(f"- {source.text}" for source in sources[:3])
     return (
-        "Here is what I found in your notes:\n\n"
-        f"{source_notes}\n\n"
-        "To go deeper, ask: which sentence in the source best supports this answer?"
+        "I found relevant course material, but I could not generate the explanation right now. "
+        "Please try again."
     )
 
 
@@ -482,15 +479,8 @@ def answer_format_instruction(question: str) -> str:
 
 
 def generation_client_config() -> tuple[str, str, str, str] | None:
-    """Select Groq for tutor generation, with OpenAI as a compatible fallback."""
+    """Use the configured OpenAI model for tutor generation."""
 
-    if settings.GROQ_API_KEY:
-        return (
-            "Groq",
-            settings.GROQ_API_KEY,
-            settings.GROQ_API_BASE_URL,
-            settings.GROQ_MODEL,
-        )
     if settings.OPENAI_API_KEY:
         return (
             "OpenAI",
@@ -518,7 +508,7 @@ async def generate_answer(
     if client_config is None:
         log_event(8, "generation_fallback_selected", reason="provider_not_configured")
         answer = fallback_answer(question, sources)
-        log_event(9, "candidate_response_generated", source="extractive_fallback", response_chars=len(answer))
+        log_event(9, "candidate_response_generated", source="service_fallback", response_chars=len(answer))
         debug_preview("candidate_answer", answer)
         return answer
     from openai import AsyncOpenAI
@@ -623,19 +613,17 @@ async def generate_answer(
         debug_preview("validated_answer", answer)
         return answer
     except Exception as error:
-        # Keep the course chatbot useful if the generation provider is temporarily unavailable,
-        # rate-limited, or rejects a model-specific option.
+        # Return a safe student-facing message if OpenAI is temporarily unavailable or rate-limited.
         if trace_active():
-            log_exception(8, "llm_request_failed", error, provider=provider, model=model, fallback="grounded")
+            log_exception(8, "llm_request_failed", error, provider=provider, model=model, fallback="service_message")
         else:
-            LOGGER.exception("%s answer generation failed; returning the grounded fallback answer.", provider)
+            LOGGER.exception("%s answer generation failed; returning the service fallback message.", provider)
         fallback = fallback_answer(question, sources)
-        log_event(9, "candidate_response_generated", source="grounded_fallback", response_chars=len(fallback))
+        log_event(9, "candidate_response_generated", source="service_fallback", response_chars=len(fallback))
         debug_preview("candidate_answer", fallback)
-        answer = enforce_socratic_response(fallback, question, socratic_decision)
-        log_event(10, "response_validated", result="accepted" if answer == fallback.strip() else "adjusted")
-        debug_preview("validated_answer", answer)
-        return answer
+        log_event(10, "response_validated", result="accepted", adjustment="service_fallback")
+        debug_preview("validated_answer", fallback)
+        return fallback
 
 
 async def generate_conversation_transition(

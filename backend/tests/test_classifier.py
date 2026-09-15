@@ -77,7 +77,7 @@ class MessageClassifierTests(unittest.TestCase):
 
         with (
             patch.object(settings, "CLASSIFIER_ENABLED", True),
-            patch.object(settings, "GROQ_API_KEY", "test-key"),
+            patch.object(settings, "OPENAI_API_KEY", "test-key"),
             patch.dict(sys.modules, {"openai": SimpleNamespace(AsyncOpenAI=FakeAsyncOpenAI)}),
         ):
             result = asyncio.run(classify_message("How are Git and GitHub different?", []))
@@ -100,7 +100,7 @@ class MessageClassifierTests(unittest.TestCase):
 
         with (
             patch.object(settings, "CLASSIFIER_ENABLED", True),
-            patch.object(settings, "GROQ_API_KEY", "test-key"),
+            patch.object(settings, "OPENAI_API_KEY", "test-key"),
             patch.dict(sys.modules, {"openai": SimpleNamespace(AsyncOpenAI=FakeAsyncOpenAI)}),
         ):
             result = asyncio.run(classify_message("What is version control?", []))

@@ -191,7 +191,7 @@ class CourseRagIsolationTests(unittest.TestCase):
         self.assertIn("Assignment", instruction)
         self.assertIn("Requirements", instruction)
 
-    def test_generation_failure_returns_grounded_fallback(self) -> None:
+    def test_generation_failure_returns_clean_service_fallback(self) -> None:
         class FailingCompletions:
             async def create(self, **kwargs):
                 self.kwargs = kwargs
@@ -213,17 +213,19 @@ class CourseRagIsolationTests(unittest.TestCase):
         fake_openai = SimpleNamespace(AsyncOpenAI=FakeAsyncOpenAI)
 
         with (
-            patch.object(settings, "GROQ_API_KEY", ""),
             patch.object(settings, "OPENAI_API_KEY", "test-key"),
             patch.dict(sys.modules, {"openai": fake_openai}),
             self.assertLogs("app.rag", level="ERROR"),
         ):
-            answer = asyncio.run(rag.generate_answer("Explain the group project", [], [source]))
+            answer = asyncio.run(rag.generate_answer("What is version control?", [], [source]))
 
-        self.assertIn("The group project has three parts.", answer)
+        self.assertEqual(
+            answer,
+            "I found relevant course material, but I could not generate the explanation right now. Please try again.",
+        )
         self.assertNotIn("reasoning_effort", completions.kwargs)
 
-    def test_groq_is_preferred_for_tutor_generation(self) -> None:
+    def test_openai_gpt_4_1_mini_generates_tutor_responses(self) -> None:
         created_clients = []
 
         class SuccessfulCompletions:
@@ -250,18 +252,17 @@ class CourseRagIsolationTests(unittest.TestCase):
         fake_openai = SimpleNamespace(AsyncOpenAI=FakeAsyncOpenAI)
 
         with (
-            patch.object(settings, "GROQ_API_KEY", "groq-test-key"),
-            patch.object(settings, "GROQ_API_BASE_URL", "https://api.groq.com/openai/v1"),
-            patch.object(settings, "GROQ_MODEL", "openai/gpt-oss-120b"),
             patch.object(settings, "OPENAI_API_KEY", "openai-test-key"),
+            patch.object(settings, "OPENAI_API_BASE_URL", "https://api.openai.com/v1"),
+            patch.object(settings, "RAG_MODEL", "gpt-4.1-mini"),
             patch.dict(sys.modules, {"openai": fake_openai}),
         ):
             answer = asyncio.run(rag.generate_answer("What is version control?", [], [source]))
 
         self.assertTrue(answer)
-        self.assertEqual(created_clients[0]["api_key"], "groq-test-key")
-        self.assertEqual(created_clients[0]["base_url"], "https://api.groq.com/openai/v1")
-        self.assertEqual(completions.kwargs["model"], "openai/gpt-oss-120b")
+        self.assertEqual(created_clients[0]["api_key"], "openai-test-key")
+        self.assertEqual(created_clients[0]["base_url"], "https://api.openai.com/v1")
+        self.assertEqual(completions.kwargs["model"], "gpt-4.1-mini")
 
     def test_model_unsupported_response_is_not_turned_into_a_socratic_question(self) -> None:
         class UnsupportedCompletions:
@@ -281,7 +282,7 @@ class CourseRagIsolationTests(unittest.TestCase):
             text="Software projects use code review.", score=1.0,
         )
         with (
-            patch.object(settings, "GROQ_API_KEY", "test-key"),
+            patch.object(settings, "OPENAI_API_KEY", "test-key"),
             patch.dict(sys.modules, {"openai": SimpleNamespace(AsyncOpenAI=FakeAsyncOpenAI)}),
         ):
             answer = asyncio.run(rag.generate_answer("Explain sushi recipes", [], [source]))

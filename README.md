@@ -3,10 +3,9 @@
 A clean personal workspace for a retrieval-augmented chatbot.
 
 The backend indexes course documents with OpenAI embeddings, retrieves relevant
-PostgreSQL chunks, and generates grounded Socratic responses. When
-`GROQ_API_KEY` is configured, Groq generates tutor responses; otherwise the app
-uses OpenAI. Without either generation key, it returns a grounded extractive
-answer from the retrieved documents.
+PostgreSQL chunks, and uses OpenAI `gpt-4.1-mini` for student-state
+classification, conditional learning evaluation, and grounded Socratic
+responses. Without `OPENAI_API_KEY`, model-backed features are unavailable.
 
 ## Setup
 
@@ -18,23 +17,18 @@ python -m pip install -r backend/requirements.txt
 cp .env.example .env
 ```
 
-Add `OPENAI_API_KEY` for document embeddings. Add `GROQ_API_KEY` to use Groq for
-the tutor responses. Groq generation uses the OpenAI-compatible endpoint and
-does not replace the existing OpenAI embedding pipeline.
-
-### Groq generation
-
-The backend automatically prefers Groq when `GROQ_API_KEY` is present:
+Add `OPENAI_API_KEY` for document embeddings and all three LLM roles. The
+default generation model is:
 
 ```env
-GROQ_API_KEY=your-groq-key
-GROQ_API_BASE_URL=https://api.groq.com/openai/v1
-GROQ_MODEL=openai/gpt-oss-120b
+OPENAI_API_KEY=your-openai-key
+OPENAI_API_BASE_URL=https://api.openai.com/v1
+RAG_MODEL=gpt-4.1-mini
 ```
 
-Keep `OPENAI_API_KEY` configured because document ingestion and query retrieval
-still use `text-embedding-3-small` with 1,536 dimensions. Restart the service
-after changing these variables.
+Document ingestion and query retrieval continue to use
+`text-embedding-3-small` with 1,536 dimensions. Restart the service after
+changing these variables.
 
 Hybrid retrieval applies a relevance gate before any answer or Socratic example
 is generated. A chunk is retained when PostgreSQL full-text search finds lexical
@@ -49,7 +43,7 @@ course questions rather than lowering it simply to force results.
 
 Each learning message passes through a hybrid interpretation stage before RAG
 retrieval. Session commands, access checks, and safe fallbacks remain
-deterministic. The configured Groq or OpenAI model then returns validated labels
+deterministic. OpenAI `gpt-4.1-mini` then returns validated labels
 for the student's intent, question type, target concepts, current demonstrated
 understanding, required support level, dialogue status, next conversation action,
 and a focused retrieval query. The status distinguishes
@@ -67,8 +61,8 @@ rejected by configurable sparse and dense retrieval thresholds rather than a
 fixed list of words, and the generator is instructed to use only retrieved
 instructor-published evidence. Unsupported requests receive a short boundary
 message instead of an answer from the model's general knowledge.
-Groq GPT-OSS classification uses strict JSON Schema output with hidden,
-low-effort reasoning to keep these semantic routes reliable.
+Classification uses strict JSON Schema output to keep these semantic routes
+reliable.
 
 After retrieval, the teaching policy chooses one explainable action. A new
 concept begins with a short document-grounded example and one discovery
@@ -113,18 +107,17 @@ to students and should be treated as adaptive tutoring signals, not official
 grades. Correct and nearly correct responses receive concise, specific feedback
 before the next learning step.
 
-When Groq GPT-OSS is the evaluator, the request uses strict JSON Schema output,
-low reasoning effort, and hidden reasoning output. Empty or incomplete evaluator
-responses are rejected and logged instead of being converted into zero-score
-database records. The persisted conversation concept is reused for follow-up
-answers so a short reply cannot be stored under a generic `current concept` key.
+The OpenAI evaluator uses strict JSON Schema output. Empty or incomplete
+evaluator responses are rejected and logged instead of being converted into
+zero-score database records. The persisted conversation concept is reused for
+follow-up answers so a short reply cannot be stored under a generic `current
+concept` key.
 
 Set `CLASSIFIER_ENABLED=false` to use deterministic classification only. By
-default the classifier uses `GROQ_MODEL` or `RAG_MODEL`; set `CLASSIFIER_MODEL`
-only when a separate OpenAI-compatible classification model is desired.
+default the classifier uses `RAG_MODEL`; set `CLASSIFIER_MODEL` only when a
+separate OpenAI classification model is desired.
 Set `ANSWER_EVALUATION_ENABLED=false` to disable adaptive assessment. By default,
-the evaluator uses the configured Groq model (including GPT-OSS-120B) or the
-OpenAI generation model; `ANSWER_EVALUATION_MODEL` can override it.
+the evaluator uses `RAG_MODEL`; `ANSWER_EVALUATION_MODEL` can override it.
 
 These are three logical LLM roles: student-state classification, conditional
 learning-progress evaluation, and grounded response generation. The evaluator is

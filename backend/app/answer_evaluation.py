@@ -314,8 +314,6 @@ def validated_evaluation(payload: dict[str, Any], message: str, fallback_concept
 
 def _client_config() -> tuple[str, str, str, str] | None:
     model = settings.ANSWER_EVALUATION_MODEL.strip()
-    if settings.GROQ_API_KEY:
-        return "Groq", settings.GROQ_API_KEY, settings.GROQ_API_BASE_URL, model or settings.GROQ_MODEL
     if settings.OPENAI_API_KEY:
         return "OpenAI", settings.OPENAI_API_KEY, settings.OPENAI_API_BASE_URL, model or settings.RAG_MODEL
     return None
@@ -372,20 +370,14 @@ async def evaluate_student_answer(
         client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         log_event(6, "answer_evaluation_started", provider=provider, model=model)
         started = monotonic()
-        response_format: dict[str, Any]
-        extra_body: dict[str, Any] | None = None
-        if provider == "Groq" and model in {"openai/gpt-oss-20b", "openai/gpt-oss-120b"}:
-            response_format = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "student_answer_evaluation",
-                    "strict": True,
-                    "schema": ANSWER_EVALUATION_SCHEMA,
-                },
-            }
-            extra_body = {"reasoning_effort": "low", "include_reasoning": False}
-        else:
-            response_format = {"type": "json_object"}
+        response_format: dict[str, Any] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "student_answer_evaluation",
+                "strict": True,
+                "schema": ANSWER_EVALUATION_SCHEMA,
+            },
+        }
         request: dict[str, Any] = {
             "model": model,
             "messages": [
@@ -404,8 +396,6 @@ async def evaluate_student_answer(
             "max_completion_tokens": settings.ANSWER_EVALUATION_MAX_TOKENS,
             "response_format": response_format,
         }
-        if extra_body:
-            request["extra_body"] = extra_body
         response = await client.chat.completions.create(**request)
         raw = response.choices[0].message.content
         if not raw or not raw.strip():

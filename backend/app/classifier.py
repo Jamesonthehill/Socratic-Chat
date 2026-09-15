@@ -363,8 +363,6 @@ def _validated_llm_classification(
 def _client_config() -> tuple[str, str, str, str] | None:
     if not settings.CLASSIFIER_ENABLED:
         return None
-    if settings.GROQ_API_KEY:
-        return "Groq", settings.GROQ_API_KEY, settings.GROQ_API_BASE_URL, settings.CLASSIFIER_MODEL or settings.GROQ_MODEL
     if settings.OPENAI_API_KEY:
         return "OpenAI", settings.OPENAI_API_KEY, settings.OPENAI_API_BASE_URL, settings.CLASSIFIER_MODEL or settings.RAG_MODEL
     return None
@@ -415,20 +413,14 @@ async def _classify_with_llm(
     client = AsyncOpenAI(api_key=api_key, base_url=base_url)
     log_event(4, "classifier_llm_started", provider=provider, model=model)
     started = monotonic()
-    response_format: dict[str, Any]
-    extra_body: dict[str, Any] | None = None
-    if provider == "Groq" and model in {"openai/gpt-oss-20b", "openai/gpt-oss-120b"}:
-        response_format = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "course_message_classification",
-                "strict": True,
-                "schema": CLASSIFICATION_SCHEMA,
-            },
-        }
-        extra_body = {"reasoning_effort": "low", "include_reasoning": False}
-    else:
-        response_format = {"type": "json_object"}
+    response_format: dict[str, Any] = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "course_message_classification",
+            "strict": True,
+            "schema": CLASSIFICATION_SCHEMA,
+        },
+    }
     request: dict[str, Any] = {
         "model": model,
         "messages": [
@@ -439,8 +431,6 @@ async def _classify_with_llm(
         "max_completion_tokens": settings.CLASSIFIER_MAX_TOKENS,
         "response_format": response_format,
     }
-    if extra_body:
-        request["extra_body"] = extra_body
     response = await client.chat.completions.create(**request)
     raw = response.choices[0].message.content
     if not raw or not raw.strip():

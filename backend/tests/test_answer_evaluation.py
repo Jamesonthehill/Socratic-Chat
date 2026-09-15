@@ -37,7 +37,7 @@ def answering_classification() -> MessageClassification:
 
 
 class AnswerEvaluationTests(unittest.TestCase):
-    def test_groq_gpt_oss_uses_strict_schema_and_disables_reasoning_output(self) -> None:
+    def test_openai_gpt_4_1_mini_uses_strict_schema(self) -> None:
         payload = {
             "concept": "version control",
             "expected_concepts": [
@@ -68,8 +68,8 @@ class AnswerEvaluationTests(unittest.TestCase):
         )
         with (
             patch("openai.AsyncOpenAI", return_value=client),
-            patch("app.answer_evaluation.settings.GROQ_API_KEY", "test-key"),
-            patch("app.answer_evaluation.settings.GROQ_MODEL", "openai/gpt-oss-120b"),
+            patch("app.answer_evaluation.settings.OPENAI_API_KEY", "test-key"),
+            patch("app.answer_evaluation.settings.RAG_MODEL", "gpt-4.1-mini"),
         ):
             evaluation = asyncio.run(
                 evaluate_student_answer(
@@ -81,10 +81,8 @@ class AnswerEvaluationTests(unittest.TestCase):
         request = create.await_args.kwargs
         self.assertEqual(request["response_format"]["type"], "json_schema")
         self.assertTrue(request["response_format"]["json_schema"]["strict"])
-        self.assertEqual(
-            request["extra_body"],
-            {"reasoning_effort": "low", "include_reasoning": False},
-        )
+        self.assertEqual(request["model"], "gpt-4.1-mini")
+        self.assertNotIn("extra_body", request)
 
     def test_mastery_requires_repeated_evidence_then_transfer_verification(self) -> None:
         first = db._mastery_progress_update(None, 85, 4, 2, False)

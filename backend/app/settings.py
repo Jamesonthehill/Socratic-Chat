@@ -15,10 +15,7 @@ load_dotenv(ROOT_DIR / ".env")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_API_BASE_URL = os.getenv("OPENAI_API_BASE_URL", "https://api.openai.com/v1")
-RAG_MODEL = os.getenv("RAG_MODEL", "gpt-4o-mini")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-GROQ_API_BASE_URL = os.getenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+RAG_MODEL = os.getenv("RAG_MODEL", "gpt-4.1-mini")
 RAG_TEMPERATURE = float(os.getenv("RAG_TEMPERATURE", "0.2"))
 CLASSIFIER_ENABLED = os.getenv("CLASSIFIER_ENABLED", "true").lower() in {"1", "true", "yes"}
 CLASSIFIER_MODEL = os.getenv("CLASSIFIER_MODEL", "").strip()

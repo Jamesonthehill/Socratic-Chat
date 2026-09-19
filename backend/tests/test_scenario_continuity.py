@@ -53,7 +53,7 @@ class ScenarioContinuityTests(unittest.TestCase):
     def test_evidence_drives_moves(self):
         cases = [(replace(EVALUATION, correctness=0), "scaffold_then_question"),
                  (replace(EVALUATION, critical_misconception=True), "guided_comparison"),
-                 (replace(EVALUATION, missing_concepts=("restoration",)), "justify_or_refine"),
+                 (replace(EVALUATION, missing_concepts=("restoration",)), "extend_scenario"),
                  (EVALUATION, "probe_reasoning"),
                  (replace(EVALUATION, progress_status="ready_for_verification"), "mastery_verification")]
         for evaluation, expected in cases:
@@ -66,6 +66,44 @@ class ScenarioContinuityTests(unittest.TestCase):
         answer = enforce_socratic_response("", "Save copies.", decision)
         self.assertIn("In our example", answer)
         self.assertNotIn("new situation", answer)
+
+    def test_partial_answer_extends_the_same_scenario_without_supplying_facts(self):
+        evaluation = replace(EVALUATION, correctness=2, missing_concepts=("clarity", "maintainability"))
+        decision = choose_socratic_strategy(
+            "It verifies the code structure.",
+            [ChatMessage(role="assistant", content=SCENARIO)],
+            [SOURCE],
+            replace(CLASSIFICATION, target="code review"),
+            evaluation,
+        )
+        answer = enforce_socratic_response(
+            "Partly—you are on the right track. Code review also checks correctness, clarity, and maintainability.",
+            "It verifies the code structure.",
+            decision,
+        )
+        self.assertEqual(decision.strategy, "extend_scenario")
+        self.assertTrue(answer.startswith("Now suppose"))
+        self.assertNotIn("Partly", answer)
+        self.assertNotIn("correctness", answer)
+        self.assertEqual(answer.count("?"), 1)
+
+    def test_generated_same_scenario_complication_is_preserved(self):
+        evaluation = replace(EVALUATION, correctness=2, missing_concepts=("clarity",))
+        decision = choose_socratic_strategy(
+            "It verifies the code structure.",
+            [ChatMessage(role="assistant", content=SCENARIO)],
+            [SOURCE],
+            replace(CLASSIFICATION, target="code review"),
+            evaluation,
+        )
+        candidate = (
+            "Now suppose the code works, but another teammate cannot understand the variable names. "
+            "What else should the reviewer examine?"
+        )
+        self.assertEqual(
+            enforce_socratic_response(candidate, "It verifies the code structure.", decision),
+            candidate,
+        )
 
     def test_explicit_example_change_resets_anchor(self):
         history = [ChatMessage(role="assistant", content=SCENARIO)]

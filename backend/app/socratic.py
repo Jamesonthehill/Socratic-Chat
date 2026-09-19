@@ -278,10 +278,12 @@ def _choose_socratic_strategy(
             state, strategy, level = "no_understanding", "scaffold_then_question", 2
             instruction = "Restate the current situation simply, give one small clue, and ask for one concrete next action."
         elif evaluation.correctness <= 2 or evaluation.missing_concepts:
-            state, strategy, level = "partial_understanding", "justify_or_refine", 1
+            state, strategy, level = "partial_understanding", "extend_scenario", 0
             instruction = (
-                "Acknowledge only the supported part of the answer. Ask about one missing connection in the "
-                "current example; do not introduce another scenario or advance to transfer yet."
+                "Do not state the missing concept, supply additional topic facts, or begin with an evaluation such "
+                "as 'Partly' or 'you are on the right track.' Continue the established scenario using the same "
+                "people, objects, and goal. Add one concrete complication that illustrates the missing connection, "
+                "then ask exactly one question that lets the learner infer it. Do not advance to transfer yet."
             )
         else:
             state, strategy, level = "good_understanding", "probe_reasoning", 1
@@ -556,6 +558,11 @@ def _comparison_targets(message: str) -> tuple[str, str] | None:
 
 def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
     if decision.scenario_anchor:
+        if decision.strategy == "extend_scenario":
+            return (
+                "Now suppose the same people encounter another complication before reaching their goal. "
+                "What additional detail should they examine, and why?"
+            )
         if decision.strategy == "mastery_verification":
             return "For a transfer check, suppose the same goal must be achieved with less time. How would you adapt your approach?"
         if decision.strategy == "guided_comparison":
@@ -593,6 +600,11 @@ def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
         return "Which detail from the course example best supports your answer?"
     if decision.strategy == "justify_or_refine":
         return "Which detail from the course example would make your answer more precise?"
+    if decision.strategy == "extend_scenario":
+        return (
+            "Now suppose the same people encounter another complication before reaching their goal. "
+            "What additional detail should they examine, and why?"
+        )
     if decision.strategy == "examine_limitation":
         return f"When might **{target}** work differently from the way you described?"
     if decision.strategy == "synthesize_understanding":
@@ -660,6 +672,13 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
             re.IGNORECASE,
         )
     )
+    reveals_concept_fact = bool(
+        re.search(
+            rf"\b{target}\b\s+(?:also\s+)?(?:checks|ensures|improves|prevents|detects|helps|allows|provides)\b",
+            clean_answer,
+            re.IGNORECASE,
+        )
+    )
     depends_on_unexplained_preamble = bool(
         re.search(r"\b(?:these|those|such|the above|this idea|that idea|these factors)\b", clean_answer, re.IGNORECASE)
     )
@@ -670,12 +689,21 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
         and clean_answer.endswith("?")
         and _word_count(clean_answer) <= 60
         and not reveals_definition
+        and not reveals_concept_fact
         and not depends_on_unexplained_preamble
         and not re.search(r"(?:^|\n)\s*[-*]\s+", clean_answer)
     )
     if decision.strategy == "diagnostic_recall":
         valid_example_first_turn = valid_example_first_turn and bool(
             re.match(r"^(?:Imagine|Suppose|Consider)\b", clean_answer, re.IGNORECASE)
+        )
+    elif decision.strategy == "extend_scenario":
+        valid_example_first_turn = valid_example_first_turn and bool(
+            re.match(
+                r"^(?:Now suppose|Suppose|Imagine|Consider|In (?:the same situation|our example))\b",
+                clean_answer,
+                re.IGNORECASE,
+            )
         )
     if valid_example_first_turn:
         feedback, question = _split_feedback_and_question(clean_answer)
@@ -687,6 +715,8 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
         return clean_answer
 
     if decision.strategy == "diagnostic_recall":
+        return socratic_fallback_question(message, decision)
+    if decision.strategy == "extend_scenario":
         return socratic_fallback_question(message, decision)
 
     strict_discovery = decision.strategy in {"diagnostic_recall", "guided_comparison"}

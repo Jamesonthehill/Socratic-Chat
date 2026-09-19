@@ -445,7 +445,11 @@ def evaluation_tutor_instruction(evaluation: AnswerEvaluation) -> str:
             "change only one condition, explicitly announcing the transfer check."
         )
     elif evaluation.total_score >= 60:
-        action = "Recognize the supported part, then ask exactly one question targeting the most important missing concept."
+        action = (
+            "Do not tell the learner the missing concept or add topic facts. Convert the most important missing "
+            "concept into one observable complication within the established scenario, then ask exactly one "
+            "question that lets the learner infer it. Do not begin with an evaluation label such as 'Partly'."
+        )
     else:
         action = "Give calibrated feedback and one scaffolded question; do not mention a numeric score."
     return (

@@ -140,8 +140,7 @@ def _choose_socratic_strategy(
     if classification:
         direct_request = (
             classification.route == "administrative"
-            or classification.student_intent == "direct_answer"
-            or classification.conversation_action == "direct"
+            or bool(DIRECT_REQUEST_PATTERN.search(clean_message))
         )
     else:
         direct_request = bool(
@@ -338,8 +337,9 @@ def _choose_socratic_strategy(
             student_state="prior_knowledge_unknown",
             strategy="diagnostic_recall",
             instruction=(
-                "Do not lecture or state the definition. Give one brief, familiar scenario grounded in the "
-                "retrieved context. Ask exactly one accessible question that helps the learner notice the idea."
+                "Do not lecture or state the definition. Begin with 'Imagine', 'Suppose', or 'Consider' and give "
+                "one brief, familiar scenario grounded in the retrieved context. Ask exactly one accessible "
+                "question that helps the learner notice the idea."
             ),
             disclosure_level=0,
             target_concept=target,
@@ -447,8 +447,9 @@ def _choose_socratic_strategy(
         student_state="prior_knowledge_unknown",
         strategy="diagnostic_recall",
         instruction=(
-            "Do not lecture or state the definition. Give one brief, familiar scenario grounded in the retrieved "
-            "context, then ask exactly one accessible question that helps the learner notice the idea."
+            "Do not lecture or state the definition. Begin with 'Imagine', 'Suppose', or 'Consider' and give one "
+            "brief, familiar scenario grounded in the retrieved context, then ask exactly one accessible question "
+            "that helps the learner notice the idea."
         ),
         disclosure_level=0,
         target_concept=target,
@@ -672,6 +673,10 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
         and not depends_on_unexplained_preamble
         and not re.search(r"(?:^|\n)\s*[-*]\s+", clean_answer)
     )
+    if decision.strategy == "diagnostic_recall":
+        valid_example_first_turn = valid_example_first_turn and bool(
+            re.match(r"^(?:Imagine|Suppose|Consider)\b", clean_answer, re.IGNORECASE)
+        )
     if valid_example_first_turn:
         feedback, question = _split_feedback_and_question(clean_answer)
         incomplete_choice = bool(INCOMPLETE_CHOICE_PATTERN.search(question))

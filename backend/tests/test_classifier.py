@@ -132,6 +132,29 @@ class MessageClassifierTests(unittest.TestCase):
         self.assertEqual(result.conversation_action, "verify_understanding")
         self.assertFalse(result.has_substantive_claim)
 
+    def test_llm_cannot_turn_ordinary_definition_into_direct_answer(self) -> None:
+        message = "what is the code review"
+        fallback = classifier._rule_classification(message, [])
+        result = classifier._validated_llm_classification(
+            {
+                "route": "learning",
+                "student_intent": "direct_answer",
+                "question_type": "what",
+                "target_concepts": ["code review"],
+                "conversation_state": "requesting_answer",
+                "dialogue_status": "answering_tutor",
+                "conversation_action": "direct",
+                "confidence": 0.95,
+                "needs_clarification": False,
+                "retrieval_query": "code review",
+            },
+            message,
+            fallback,
+        )
+        self.assertEqual(result.student_intent, "definition")
+        self.assertEqual(result.conversation_state, "new_concept")
+        self.assertEqual(result.conversation_action, "continue")
+
     def test_llm_routes_a_substantive_confirmation_request_to_claim_check(self) -> None:
         message = "I think Git and GitHub are the same. Is that correct?"
         result = classifier._validated_llm_classification(

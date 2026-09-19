@@ -347,6 +347,17 @@ def _validated_llm_classification(
         needs_clarification = True
         if not clarification:
             clarification = "Could you clarify what you want to explore or verify?"
+    # An ordinary concept question starts a Socratic teaching turn. The model
+    # may label a definition request as direct, but only the learner's explicit
+    # direct-answer wording is allowed to bypass the Socratic route.
+    explicit_direct_request = bool(DIRECT_ANSWER_PATTERN.search(message))
+    if fallback.route == "learning" and not explicit_direct_request and (
+        intent == "direct_answer" or action == "direct"
+    ):
+        intent = fallback.student_intent
+        state = fallback.conversation_state
+        dialogue_status = fallback.dialogue_status
+        action = fallback.conversation_action
     return MessageClassification(
         route=route, student_intent=intent, question_type=question_type,
         target_concepts=concepts, conversation_state=state, dialogue_status=dialogue_status,

@@ -204,11 +204,32 @@ class SocraticPolicyTests(unittest.TestCase):
     def test_short_example_first_diagnostic_is_preserved(self) -> None:
         decision = choose_socratic_strategy("What is version control?", [], [SOURCE])
         candidate = (
-            "Two developers change the same file on separate laptops and need to combine their work. "
+            "Imagine two developers change the same file on separate laptops and need to combine their work. "
             "What problem should their tool help them solve?"
         )
         answer = enforce_socratic_response(candidate, "What is version control?", decision)
         self.assertEqual(answer, candidate)
+
+    def test_definition_misclassified_as_direct_still_starts_with_scenario(self) -> None:
+        classification = MessageClassification(
+            route="learning",
+            student_intent="direct_answer",
+            question_type="what",
+            target_concepts=("code review",),
+            target="code review",
+            conversation_state="requesting_answer",
+            conversation_action="direct",
+            source="llm",
+        )
+        decision = choose_socratic_strategy("what is the code review", [], [SOURCE], classification)
+        answer = enforce_socratic_response(
+            "Code review is a process where another developer examines code for correctness.",
+            "what is the code review",
+            decision,
+        )
+        self.assertEqual(decision.strategy, "diagnostic_recall")
+        self.assertTrue(answer.startswith("Imagine"))
+        self.assertNotIn("is a process", answer)
 
     def test_classifier_selects_contrasting_examples_for_comparison(self) -> None:
         classification = MessageClassification(

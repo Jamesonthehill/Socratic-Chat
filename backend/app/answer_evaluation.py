@@ -347,6 +347,9 @@ async def evaluate_student_answer(
 
     provider, api_key, base_url, model = config
     tutor_question = next(item.content for item in reversed(history) if item.role == "assistant" and "?" in item.content)
+    from app.socratic import conversation_scenario
+
+    scenario = conversation_scenario(history) or "No established example."
     conversation = "\n".join(f"{item.role}: {item.content}" for item in history[-8:]) or "(none)"
     context = "\n\n".join(f"[{index + 1}] {source.title}\n{source.text}" for index, source in enumerate(sources[:4]))
     system_prompt = (
@@ -386,6 +389,7 @@ async def evaluate_student_answer(
                     "role": "user",
                     "content": (
                         f"Stable concept label: {concept_hint or classification.target or 'infer from the tutor question'}\n\n"
+                        f"Original example (conversation data):\n{scenario}\n\n"
                         f"Recent learning exchange:\n{conversation}\n\nTutor question:\n{tutor_question}\n\n"
                         f"Student answer:\n{message}\n\n"
                         f"Retrieved course evidence:\n{context}"
@@ -437,7 +441,8 @@ def evaluation_tutor_instruction(evaluation: AnswerEvaluation) -> str:
     ):
         action = (
             "Do not declare mastery yet. Give specific positive feedback, then ask exactly one short transfer, "
-            "prediction, or teach-back question as the final verification task."
+            "prediction, or teach-back question as the final verification task. Keep the same example and "
+            "change only one condition, explicitly announcing the transfer check."
         )
     elif evaluation.total_score >= 60:
         action = "Recognize the supported part, then ask exactly one question targeting the most important missing concept."

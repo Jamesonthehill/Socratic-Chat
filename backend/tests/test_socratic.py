@@ -140,7 +140,7 @@ class SocraticPolicyTests(unittest.TestCase):
         self.assertEqual(decision.disclosure_level, 4)
         self.assertIn("Do not withhold", decision.instruction)
 
-    def test_llm_support_level_selects_a_simpler_different_example(self) -> None:
+    def test_llm_support_level_simplifies_current_example(self) -> None:
         classification = MessageClassification(
             student_intent="hint",
             conversation_state="uncertain",
@@ -154,7 +154,7 @@ class SocraticPolicyTests(unittest.TestCase):
             "I still do not understand.", [], [SOURCE], classification,
         )
         self.assertEqual(decision.strategy, "explain_then_check")
-        self.assertEqual(decision.example_type, "simpler_new_example")
+        self.assertEqual(decision.example_type, "simplified_current_example")
         self.assertEqual(decision.disclosure_level, 4)
 
     def test_no_detected_improvement_selects_a_simpler_example(self) -> None:
@@ -177,7 +177,7 @@ class SocraticPolicyTests(unittest.TestCase):
             evaluation,
         )
         self.assertEqual(decision.strategy, "explain_then_check")
-        self.assertEqual(decision.example_type, "simpler_new_example")
+        self.assertEqual(decision.example_type, "simplified_current_example")
 
     def test_missing_sources_does_not_generate_an_ungrounded_question(self) -> None:
         decision = choose_socratic_strategy("What is a use case?", [], [])
@@ -268,7 +268,7 @@ class SocraticPolicyTests(unittest.TestCase):
         self.assertIn("Actors remain outside", answer)
         self.assertEqual(answer.count("?"), 1)
 
-    def test_dialogue_progresses_to_limitation_after_two_questions(self) -> None:
+    def test_two_questions_do_not_establish_understanding(self) -> None:
         history = [
             ChatMessage(role="assistant", content="What comes to mind first?"),
             ChatMessage(role="user", content="A user goal."),
@@ -276,9 +276,9 @@ class SocraticPolicyTests(unittest.TestCase):
             ChatMessage(role="user", content="It describes what the user does."),
         ]
         decision = choose_socratic_strategy("It describes what the user does.", history, [SOURCE])
-        self.assertEqual(decision.strategy, "examine_limitation")
+        self.assertEqual(decision.strategy, "justify_or_refine")
 
-    def test_dialogue_progresses_to_synthesis_after_three_questions(self) -> None:
+    def test_three_questions_do_not_trigger_synthesis(self) -> None:
         history = [
             ChatMessage(role="assistant", content="What comes to mind first?"),
             ChatMessage(role="user", content="A user goal."),
@@ -288,9 +288,9 @@ class SocraticPolicyTests(unittest.TestCase):
             ChatMessage(role="user", content="The boundary also matters."),
         ]
         decision = choose_socratic_strategy("The boundary also matters.", history, [SOURCE])
-        self.assertEqual(decision.strategy, "synthesize_understanding")
+        self.assertEqual(decision.strategy, "justify_or_refine")
 
-    def test_dialogue_progresses_to_reflection_after_four_questions(self) -> None:
+    def test_four_questions_do_not_trigger_completion(self) -> None:
         history = [
             ChatMessage(role="assistant", content="What comes to mind first?"),
             ChatMessage(role="user", content="A user goal."),
@@ -302,7 +302,7 @@ class SocraticPolicyTests(unittest.TestCase):
             ChatMessage(role="user", content="Actors connect to use cases."),
         ]
         decision = choose_socratic_strategy("Actors connect to use cases.", history, [SOURCE])
-        self.assertEqual(decision.strategy, "reflect_on_learning")
+        self.assertEqual(decision.strategy, "justify_or_refine")
 
     def test_new_concept_resets_the_dialogue_progression(self) -> None:
         history = [

@@ -361,3 +361,23 @@ The user must first pass the `charlotte.edu` Google Workspace check and then
 authorize GitHub. Each GitHub numeric user ID can be linked to only one school
 account. The app requests no repository access. Until both identities are
 present, protected chatbot APIs return 403.
+
+## Keeping a teaching example consistent
+
+The tutor keeps the first explicit scenario (for example, an opening beginning
+with “Imagine” or “Suppose”) from the saved conversation available to generation
+and answer evaluation, alongside the recent eight-message exchange. It recovers
+that example even after it leaves the recent-message window or a chat is resumed.
+An explicit request such as “use a different example” resets the example.
+
+Hints and corrections simplify the same people, objects, and goal. Evaluated
+misconceptions trigger a counterexample within that situation; partial answers
+lead to a missing connection; supported reasoning leads to a why/what-if question.
+The tutor no longer advances to synthesis or reflection merely because a fixed
+number of questions has been asked. Once the existing mastery checks indicate
+readiness, it asks a signposted transfer problem that changes one condition of
+the same example. A claim such as “I understand” still needs demonstrated evidence.
+
+Scenario continuity is a model instruction supported by retained context and
+scenario-aware fallback questions; it is not a guarantee that every generated
+response will stay on topic. The existing course-grounding checks still apply.

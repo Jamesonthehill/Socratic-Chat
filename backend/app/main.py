@@ -875,7 +875,7 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
         log_event(3, "conversation_ready", database_enabled=True)
         if not db.conversation_belongs_to_course(conversation_id, user_id, course_id):
             raise HTTPException(status_code=409, detail="This conversation belongs to a different course.")
-        stored_history = db.get_messages(conversation_id, limit=8)
+        stored_history = db.get_messages(conversation_id, limit=None)
         history = stored_history or payload.history
         log_event(3, "history_loaded", messages=len(history), source="database" if stored_history else "request")
         saved_message_id = db.add_message(conversation_id, "user", payload.message)

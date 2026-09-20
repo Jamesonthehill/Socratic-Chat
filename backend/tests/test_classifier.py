@@ -180,6 +180,33 @@ class MessageClassifierTests(unittest.TestCase):
         self.assertTrue(result.has_substantive_claim)
         self.assertEqual(result.student_claim, "Git and GitHub are the same.")
 
+    def test_llm_cannot_treat_plain_student_answer_as_confirmation_request(self) -> None:
+        message = "It reduces code conflicts in a team."
+        fallback = classifier._rule_classification(
+            message,
+            [ChatMessage(role="assistant", content="What problem might version control help solve?")],
+        )
+        result = classifier._validated_llm_classification(
+            {
+                "route": "learning",
+                "student_intent": "confirmation",
+                "question_type": "statement",
+                "target_concepts": ["version control"],
+                "conversation_state": "possible_misconception",
+                "dialogue_status": "requesting_confirmation",
+                "conversation_action": "verify_claim",
+                "has_substantive_claim": True,
+                "student_claim": "Version control reduces code conflicts.",
+                "confidence": 0.97,
+                "needs_clarification": False,
+                "retrieval_query": "version control code conflicts",
+            },
+            message,
+            fallback,
+        )
+        self.assertEqual(result.dialogue_status, "answering_tutor")
+        self.assertEqual(result.conversation_action, "continue")
+
     def test_low_confidence_completion_is_softened(self) -> None:
         message = "Thanks, I think that is enough."
         result = classifier._validated_llm_classification(

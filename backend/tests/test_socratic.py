@@ -231,6 +231,18 @@ class SocraticPolicyTests(unittest.TestCase):
         self.assertTrue(answer.startswith("Imagine"))
         self.assertNotIn("is a process", answer)
 
+    def test_version_control_diagnostic_fallback_uses_concrete_shared_file_scenario(self) -> None:
+        decision = choose_socratic_strategy("what is the version control", [], [SOURCE])
+        answer = enforce_socratic_response(
+            "Version control tracks changes and coordinates developers.",
+            "what is the version control",
+            decision,
+        )
+        self.assertIn("two developers", answer)
+        self.assertIn("same file", answer)
+        self.assertIn("shared project", answer)
+        self.assertNotIn("encounters **version control**", answer)
+
     def test_classifier_selects_contrasting_examples_for_comparison(self) -> None:
         classification = MessageClassification(
             student_intent="comparison",

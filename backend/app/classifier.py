@@ -92,6 +92,11 @@ HINT_PATTERN = re.compile(r"\b(?:hint|clue|nudge|help me start|guide me)\b", re.
 DIRECT_ANSWER_PATTERN = re.compile(
     r"\b(?:just tell me|give me the answer|answer directly|no questions?|stop asking)\b", re.IGNORECASE,
 )
+CONFIRMATION_REQUEST_PATTERN = re.compile(
+    r"(?:\b(?:is that|am i|is this|would that be|does that mean)\s+(?:right|correct|accurate)\b|"
+    r"\b(?:right|correct|accurate)\s*\?)",
+    re.IGNORECASE,
+)
 UNCERTAIN_PATTERN = re.compile(
     r"\b(?:i (?:still )?(?:do not|don't) know|not sure|unsure|confused|no idea|stuck)\b", re.IGNORECASE,
 )
@@ -343,6 +348,15 @@ def _validated_llm_classification(
         action = "clarify"
         needs_clarification = True
         clarification = "What specific understanding would you like me to check?"
+    elif action == "verify_claim" and not CONFIRMATION_REQUEST_PATTERN.search(message):
+        # A student's answer to the tutor is evidence to evaluate, not an
+        # implicit request for a direct verdict and explanation.
+        intent = fallback.student_intent
+        state = fallback.conversation_state
+        dialogue_status = fallback.dialogue_status
+        action = fallback.conversation_action
+        needs_clarification = fallback.needs_clarification
+        clarification = fallback.clarification_question
     if action == "clarify":
         needs_clarification = True
         if not clarification:
@@ -419,6 +433,8 @@ async def _classify_with_llm(
         "must remain operational_request=none. Distinguish a bare understanding claim from a claim "
         "that contains reasoning. Treat thanks without a question as acknowledgement/soft_close, a clear goodbye "
         "as closing/complete, and a claim asking whether it is correct as requesting_confirmation/verify_claim. "
+        "A declarative answer to the tutor, including an answer ending with a period, is answering_tutor/continue; "
+        "do not classify it as verify_claim unless it explicitly asks whether the claim is right or correct. "
         "Never invent a concept, claim, or intention absent from the message and recent history."
     )
     client = AsyncOpenAI(api_key=api_key, base_url=base_url)

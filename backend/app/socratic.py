@@ -25,6 +25,11 @@ DIRECT_REQUEST_PATTERN = re.compile(
     r"stop asking|explain it directly)\b",
     re.IGNORECASE,
 )
+CONFIRMATION_REQUEST_PATTERN = re.compile(
+    r"(?:\b(?:is that|am i|is this|would that be|does that mean)\s+(?:right|correct|accurate)\b|"
+    r"\b(?:right|correct|accurate)\s*\?)",
+    re.IGNORECASE,
+)
 HINT_REQUEST_PATTERN = re.compile(
     r"\b(?:hint|small clue|give me a clue|nudge me|help me start|guide me)\b",
     re.IGNORECASE,
@@ -193,7 +198,7 @@ def _choose_socratic_strategy(
             tutor_question_type="application",
         )
 
-    if conversation_action == "verify_claim":
+    if conversation_action == "verify_claim" and CONFIRMATION_REQUEST_PATTERN.search(clean_message):
         return SocraticDecision(
             mode="socratic",
             student_state="requesting_confirmation",
@@ -596,6 +601,16 @@ def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
         if comparison:
             first, second = comparison
             question = f"Before we compare **{first}** and **{second}**, what difference comes to mind first?"
+        elif target.lower().rstrip("…") in {"version control", "the version control"}:
+            question = (
+                "Imagine two developers edit the same file in a shared project, and neither wants to overwrite "
+                "the other's work. What problem should they solve before combining their changes?"
+            )
+        elif target.lower().rstrip("…") in {"code review", "the code review"}:
+            question = (
+                "Imagine a developer finishes a change and asks a teammate to examine it before it joins the "
+                "shared project. What problem might the teammate help catch?"
+            )
         else:
             question = (
                 f"Imagine a team encounters **{target}** while building a project. "
@@ -694,7 +709,8 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
     )
     reveals_concept_fact = bool(
         re.search(
-            rf"\b{target}\b\s+(?:also\s+)?(?:checks|ensures|improves|prevents|detects|helps|allows|provides)\b",
+            rf"\b{target}\b(?:\s+systems?)?\s+(?:also\s+)?(?:checks?|coordinates?|tracks?|ensures?|improves?|"
+            rf"prevents?|detects?|helps?|allows?|provides?|avoids?)\b",
             clean_answer,
             re.IGNORECASE,
         )
@@ -719,13 +735,18 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
             re.match(r"^(?:Imagine|Suppose|Consider)\b", clean_answer, re.IGNORECASE)
         )
     elif scenario_progression:
-        valid_example_first_turn = valid_example_first_turn and bool(
-            re.search(
-                r"(?:^|[.!]\s+|\n)(?:Now suppose|Suppose|Imagine|Consider|Stay with|In (?:the same situation|our example|this situation))\b",
-                clean_answer,
-                re.IGNORECASE,
-            )
-        ) and not re.match(r"^(?:Partly|You are on the right track)\b", clean_answer, re.IGNORECASE)
+        scenario_marker = re.search(
+            r"(?:^|[.!]\s+|\n)(?:Now suppose|Suppose|Imagine|Consider|Stay with|In (?:the same situation|our example|this situation))\b",
+            clean_answer,
+            re.IGNORECASE,
+        )
+        feedback_prefix = clean_answer[: scenario_marker.start()].strip() if scenario_marker else ""
+        valid_example_first_turn = (
+            valid_example_first_turn
+            and bool(scenario_marker)
+            and _word_count(feedback_prefix) <= 12
+            and not re.match(r"^(?:Partly|You are on the right track)\b", clean_answer, re.IGNORECASE)
+        )
     if valid_example_first_turn:
         feedback, question = _split_feedback_and_question(clean_answer)
         incomplete_choice = bool(INCOMPLETE_CHOICE_PATTERN.search(question))

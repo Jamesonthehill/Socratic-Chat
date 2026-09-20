@@ -147,6 +147,27 @@ class ScenarioContinuityTests(unittest.TestCase):
         self.assertIn("edits files", answer)
         self.assertEqual(answer.count("?"), 1)
 
+    def test_plain_good_answer_cannot_be_forced_into_grounded_claim_explanation(self):
+        software_scenario = (
+            "Imagine two developers edit the same file in a shared project, and neither wants to overwrite the "
+            "other's work. What problem should they solve before combining their changes?"
+        )
+        misclassified = replace(
+            CLASSIFICATION,
+            conversation_action="verify_claim",
+            has_substantive_claim=True,
+            student_claim="Version control reduces code conflicts.",
+            target="version control",
+        )
+        decision = choose_socratic_strategy(
+            "It reduces code conflicts in a team.",
+            [ChatMessage(role="assistant", content=software_scenario)],
+            [SOURCE],
+            misclassified,
+            replace(EVALUATION, correctness=3, missing_concepts=()),
+        )
+        self.assertEqual(decision.strategy, "advance_scenario")
+
     def test_generated_same_scenario_complication_is_preserved(self):
         evaluation = replace(EVALUATION, correctness=2, missing_concepts=("clarity",))
         decision = choose_socratic_strategy(

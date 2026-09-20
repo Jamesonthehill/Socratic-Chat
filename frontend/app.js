@@ -25,6 +25,7 @@ const selectedCoursePanel = document.querySelector("#selectedCoursePanel");
 const selectedCourseCode = document.querySelector("#selectedCourseCode");
 const selectedCourseTitle = document.querySelector("#selectedCourseTitle");
 const previewCourseButton = document.querySelector("#previewCourseButton");
+const deleteCourseButton = document.querySelector("#deleteCourseButton");
 const courseDocumentForm = document.querySelector("#courseDocumentForm");
 const courseDocumentInput = document.querySelector("#courseDocumentInput");
 const courseDocumentsList = document.querySelector("#courseDocumentsList");
@@ -624,7 +625,12 @@ async function loadCourses() {
     else renderInstructorCourses();
     if (selectedInstructorCourse) {
       const refreshed = courses.find((course) => course.course_id === selectedInstructorCourse.course_id);
-      if (refreshed) selectedInstructorCourse = refreshed;
+      if (refreshed) {
+        selectedInstructorCourse = refreshed;
+      } else {
+        selectedInstructorCourse = null;
+        selectedCoursePanel?.classList.add("is-hidden");
+      }
     }
     if (status) status.textContent = "";
   } catch (error) {
@@ -654,6 +660,36 @@ async function selectInstructorCourse(course) {
   renderInstructorCourses();
   await Promise.all([loadCourseDocuments(), loadCourseAccessRequests(), loadEnrolledStudents()]);
   selectedCoursePanel?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function deleteSelectedCourse() {
+  if (!requireActiveSession() || !selectedInstructorCourse) return;
+  const course = selectedInstructorCourse;
+  const confirmed = confirm(
+    `Permanently delete ${course.course_code}: ${course.title}?\n\n`
+      + "This removes its documents, conversations, student access, and learning progress. This cannot be undone.",
+  );
+  if (!confirmed) return;
+
+  deleteCourseButton.disabled = true;
+  instructorCoursesStatus.textContent = `Deleting ${course.course_code}...`;
+  try {
+    const result = await deleteJson(`/api/courses/${encodeURIComponent(course.course_id)}`);
+    localStorage.removeItem(courseConversationKey(course.course_id));
+    if (activeCourse?.course_id === course.course_id) {
+      activeCourse = null;
+      localStorage.removeItem(ACTIVE_COURSE_KEY);
+      localStorage.removeItem(CONVERSATION_KEY);
+    }
+    selectedInstructorCourse = null;
+    selectedCoursePanel?.classList.add("is-hidden");
+    await loadCourses();
+    instructorCoursesStatus.textContent = result.message;
+  } catch (error) {
+    instructorCoursesStatus.textContent = `Could not delete course: ${error.message}`;
+  } finally {
+    deleteCourseButton.disabled = false;
+  }
 }
 
 function renderCourseDocuments(files = []) {
@@ -2055,6 +2091,8 @@ courseDocumentForm?.addEventListener("submit", async (event) => {
 previewCourseButton?.addEventListener("click", () => {
   if (selectedInstructorCourse) openCourseChat(selectedInstructorCourse, true);
 });
+
+deleteCourseButton?.addEventListener("click", deleteSelectedCourse);
 
 async function connectGitHubAccount() {
   if (!currentUser?.access_token) {

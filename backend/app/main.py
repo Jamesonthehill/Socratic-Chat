@@ -56,6 +56,7 @@ from app.schemas import (
     CourseAccessRequestResponse,
     CourseAccessReviewRequest,
     CourseCreateRequest,
+    CourseDeleteResponse,
     CourseListResponse,
     CourseMembership,
     CourseSummary,
@@ -403,6 +404,18 @@ async def create_course(payload: CourseCreateRequest, request: Request) -> Cours
     course["membership_role"] = "instructor"
     course["membership_status"] = "approved"
     return CourseSummary(**course)
+
+
+@app.delete("/api/courses/{course_id}", response_model=CourseDeleteResponse)
+async def delete_course(course_id: str, request: Request) -> CourseDeleteResponse:
+    instructor = _require_authority(request, 1)
+    deleted_course = db.delete_course(str(instructor["user_id"]), course_id)
+    if deleted_course is None:
+        raise HTTPException(status_code=404, detail="Course not found or you do not manage it.")
+    return CourseDeleteResponse(
+        **deleted_course,
+        message=f"{deleted_course['course_code']} was permanently deleted.",
+    )
 
 
 @app.post("/api/courses/{course_id}/request-access", response_model=CourseAccessRequestResponse)

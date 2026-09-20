@@ -69,6 +69,50 @@ class CourseAuthorizationTests(unittest.TestCase):
         self.assertEqual(response.membership_role, "instructor")
         self.assertEqual(response.membership_status, "approved")
 
+    @patch("app.main.db.delete_course")
+    @patch("app.main._require_authority", return_value={"user_id": "instructor-1"})
+    def test_instructor_can_delete_owned_course(self, _require_authority, delete_course) -> None:
+        delete_course.return_value = {
+            "course_id": "course-1",
+            "course_code": "ITCS 3153",
+            "title": "Artificial Intelligence",
+        }
+
+        response = asyncio.run(main.delete_course("course-1", _request()))
+
+        delete_course.assert_called_once_with("instructor-1", "course-1")
+        self.assertEqual(response.course_id, "course-1")
+        self.assertIn("permanently deleted", response.message)
+
+    @patch("app.main.db.delete_course", return_value=None)
+    @patch("app.main._require_authority", return_value={"user_id": "instructor-1"})
+    def test_instructor_cannot_delete_another_instructors_course(
+        self,
+        _require_authority,
+        _delete_course,
+    ) -> None:
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(main.delete_course("course-2", _request()))
+
+        self.assertEqual(context.exception.status_code, 404)
+
+    @patch("app.db.get_connection")
+    @patch("app.db.init_db")
+    def test_course_deletion_is_scoped_to_owner(self, _init_db, get_connection) -> None:
+        cursor = MagicMock()
+        cursor.fetchone.return_value = ("course-1", "ITCS 3153", "Artificial Intelligence")
+        connection = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        get_connection.return_value.__enter__.return_value = connection
+
+        course = db.delete_course("instructor-1", "course-1")
+
+        delete_sql, delete_params = cursor.execute.call_args.args
+        self.assertIn("instructor_id = %s", delete_sql)
+        self.assertEqual(delete_params, ("course-1", "instructor-1"))
+        self.assertEqual(course["course_code"], "ITCS 3153")
+        connection.commit.assert_called_once()
+
     @patch("app.main.db.remove_course_student")
     @patch("app.main._require_authority", return_value={"user_id": "instructor-1"})
     def test_instructor_can_remove_approved_student(self, _require_authority, remove_student) -> None:

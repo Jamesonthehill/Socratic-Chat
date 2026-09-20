@@ -1328,6 +1328,30 @@ def create_course(instructor_id: str, course_code: str, title: str, description:
     return get_course(course_id) or {}
 
 
+def delete_course(instructor_id: str, course_id: str) -> dict[str, object] | None:
+    """Delete a course owned by the instructor and cascade all course-owned records."""
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM courses
+                WHERE id = %s AND instructor_id = %s
+                RETURNING id::text, course_code, title
+                """,
+                (course_id, instructor_id),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    if row is None:
+        return None
+    return {
+        "course_id": row[0],
+        "course_code": row[1],
+        "title": row[2],
+    }
+
+
 def get_course(course_id: str) -> dict[str, object] | None:
     init_db()
     with get_connection() as conn:

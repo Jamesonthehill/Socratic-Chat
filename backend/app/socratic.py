@@ -56,6 +56,11 @@ GENERIC_VISIBLE_QUESTION_PATTERN = re.compile(
     r"what implications?|what limitations?|what alternative(?: viewpoint| factor)?s?)\b",
     re.IGNORECASE,
 )
+ABSTRACT_IMPORTANCE_QUESTION_PATTERN = re.compile(
+    r"^(?:why|how)\s+(?:do|would|could|might|should)\s+you\s+(?:think|say|believe)\b.*"
+    r"\b(?:important|useful|helpful|valuable|matter)\b",
+    re.IGNORECASE,
+)
 INCOMPLETE_CHOICE_PATTERN = re.compile(r"^(?:\*{0,2})?which (?:scenario|example|option)\b", re.IGNORECASE)
 
 
@@ -261,6 +266,39 @@ def _choose_socratic_strategy(
             tutor_question_type="application",
         )
 
+    if classified_state == "uncertain" or UNCERTAINTY_PATTERN.search(clean_message):
+        if question_turns >= 2:
+            return SocraticDecision(
+                mode="socratic",
+                student_state="repeated_difficulty",
+                strategy="explain_then_check",
+                instruction=(
+                    "Give a concise, evidence-grounded explanation now and simplify the current example, keeping "
+                    "the same people, objects, and goal. Walk through that example step by step, then ask exactly "
+                    "one easy, specific check question. Do not withhold the explanation again and do not repeat "
+                    "the previous question."
+                ),
+                disclosure_level=4,
+                target_concept=target,
+                example_type="simplified_current_example",
+                tutor_question_type="application",
+            )
+        return SocraticDecision(
+            mode="socratic",
+            student_state="uncertain",
+            strategy="scaffold_then_question",
+            instruction=(
+                "Return to the established scenario and its same people, objects, and goal. Add one smaller, "
+                "concrete event that helps the learner reconsider the point without stating the concept's value "
+                "or answer. Then ask exactly one question about what happens in that event. Never merely turn the "
+                "learner's uncertainty into an abstract question about why the concept is important."
+            ),
+            disclosure_level=2,
+            target_concept=target,
+            example_type="simplified_current_example",
+            tutor_question_type="application",
+        )
+
     if (
         intent == "hint" or (classification is None and HINT_REQUEST_PATTERN.search(clean_message))
     ) and support_level < 2:
@@ -358,39 +396,6 @@ def _choose_socratic_strategy(
             target_concept=target,
             example_type="familiar_scenario",
             tutor_question_type="clarification" if intent != "explanation" else "implication",
-        )
-
-    if classified_state == "uncertain" or (
-        classification is None and UNCERTAINTY_PATTERN.search(clean_message)
-    ):
-        if classification is None and question_turns >= 2:
-            return SocraticDecision(
-                mode="socratic",
-                student_state="repeated_difficulty",
-                strategy="explain_then_check",
-                instruction=(
-                    "Give a concise, evidence-grounded explanation now and simplify the current example, keeping "
-                    "the same people, objects, and goal. If support level is 3, "
-                    "walk through that example step by step. Then ask exactly one easy, specific check question. "
-                    "Do not withhold the explanation again and do not repeat the previous question."
-                ),
-                disclosure_level=4,
-                target_concept=target,
-                example_type="simplified_current_example",
-                tutor_question_type="application",
-            )
-        return SocraticDecision(
-            mode="socratic",
-            student_state="uncertain",
-            strategy="scaffold_then_question",
-            instruction=(
-                "Offer one brief contextual clue naturally, grounded in the retrieved context, without revealing "
-                "the entire answer. Do not introduce it with a label. Then ask exactly one focused question."
-            ),
-            disclosure_level=2,
-            target_concept=target,
-            example_type="simplified_example",
-            tutor_question_type="application",
         )
 
     if classified_state == "possible_misconception" or (
@@ -593,7 +598,11 @@ def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
         if decision.strategy == "guided_comparison":
             return "In our example, what could go wrong if you followed that approach?"
         if decision.strategy in {"scaffold_then_question", "explain_then_check"}:
-            return "In our example, what is the first small step you would take?"
+            scenario = _scenario_excerpt(decision.scenario_anchor)
+            return (
+                f"Stay with this situation: {scenario}. "
+                "Which moment in that example could cause the people the biggest problem?"
+            )
         return "In our example, why would your proposed action help achieve the goal?"
     target = _visible_target(decision.target_concept or _target_concept(message))
     if decision.strategy == "diagnostic_recall":
@@ -718,7 +727,9 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
     depends_on_unexplained_preamble = bool(
         re.search(r"\b(?:these|those|such|the above|this idea|that idea|these factors)\b", clean_answer, re.IGNORECASE)
     )
-    scenario_progression = decision.strategy in {"extend_scenario", "advance_scenario"}
+    scenario_progression = decision.strategy in {"extend_scenario", "advance_scenario"} or (
+        decision.strategy == "scaffold_then_question" and bool(decision.scenario_anchor)
+    )
     valid_example_first_turn = (
         (decision.disclosure_level == 0 or scenario_progression)
         and decision.example_type != "none"
@@ -751,7 +762,12 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
         feedback, question = _split_feedback_and_question(clean_answer)
         incomplete_choice = bool(INCOMPLETE_CHOICE_PATTERN.search(question))
         malformed_bold = clean_answer.count("**") % 2 != 0
-        if incomplete_choice or malformed_bold or GENERIC_VISIBLE_QUESTION_PATTERN.search(question):
+        if (
+            incomplete_choice
+            or malformed_bold
+            or GENERIC_VISIBLE_QUESTION_PATTERN.search(question)
+            or ABSTRACT_IMPORTANCE_QUESTION_PATTERN.search(question)
+        ):
             valid_example_first_turn = False
     if valid_example_first_turn:
         return clean_answer
@@ -797,6 +813,7 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
         not question
         or _word_count(question) > 25
         or GENERIC_VISIBLE_QUESTION_PATTERN.search(question)
+        or ABSTRACT_IMPORTANCE_QUESTION_PATTERN.search(question)
         or INCOMPLETE_CHOICE_PATTERN.search(question)
         or question.count("**") % 2 != 0
     ):

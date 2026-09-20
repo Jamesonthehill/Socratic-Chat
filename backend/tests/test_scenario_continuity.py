@@ -62,6 +62,42 @@ class ScenarioContinuityTests(unittest.TestCase):
         self.assertEqual(decision.scenario_anchor, SCENARIO)
         self.assertIn("same people", decision.instruction)
 
+    def test_explicit_uncertainty_overrides_incorrect_new_concept_classification(self):
+        misclassified = replace(
+            CLASSIFICATION,
+            student_intent="explanation",
+            conversation_state="new_concept",
+            target="version control",
+        )
+        decision = choose_socratic_strategy(
+            "I don't know why we have to do this in software engineering",
+            [ChatMessage(role="assistant", content=SCENARIO)],
+            [SOURCE],
+            misclassified,
+        )
+
+        self.assertEqual(decision.student_state, "uncertain")
+        self.assertEqual(decision.strategy, "scaffold_then_question")
+        self.assertEqual(decision.scenario_anchor, SCENARIO)
+
+    def test_abstract_importance_question_returns_to_existing_scenario(self):
+        decision = choose_socratic_strategy(
+            "I don't know why we have to do this in software engineering",
+            [ChatMessage(role="assistant", content=SCENARIO)],
+            [SOURCE],
+            replace(CLASSIFICATION, conversation_state="uncertain", target="version control"),
+        )
+        answer = enforce_socratic_response(
+            "Why do you think version control might be important in software engineering?",
+            "I don't know why we have to do this in software engineering",
+            decision,
+        )
+
+        self.assertIn("friend share a document", answer)
+        self.assertIn("earlier versions", answer)
+        self.assertNotIn("important in software engineering", answer)
+        self.assertEqual(answer.count("?"), 1)
+
     def test_evidence_drives_moves(self):
         cases = [(replace(EVALUATION, correctness=0), "scaffold_then_question"),
                  (replace(EVALUATION, critical_misconception=True), "guided_comparison"),

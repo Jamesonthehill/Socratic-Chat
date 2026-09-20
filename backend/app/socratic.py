@@ -278,20 +278,24 @@ def _choose_socratic_strategy(
             state, strategy, level = "no_understanding", "scaffold_then_question", 2
             instruction = "Restate the current situation simply, give one small clue, and ask for one concrete next action."
         elif evaluation.correctness <= 2 or evaluation.missing_concepts:
-            state, strategy, level = "partial_understanding", "extend_scenario", 0
+            state, strategy, level = "partial_understanding", "extend_scenario", 1
             instruction = (
                 "Do not state the missing concept, supply additional topic facts, or begin with an evaluation such "
-                "as 'Partly' or 'you are on the right track.' Continue the established scenario using the same "
+                "as 'Partly' or 'you are on the right track.' If the learner demonstrated a supported idea, first "
+                "acknowledge only that idea in one positive sentence of at most 10 words. Continue the established "
+                "scenario using the same "
                 "people, objects, and goal. Explicitly name at least one concrete actor, object, or action from the "
                 "original scenario; do not rely on vague phrases such as 'the same people' or 'another complication.' "
                 "Add one concrete complication that illustrates the missing connection, then ask exactly one "
                 "question that lets the learner infer it. Do not advance to transfer yet."
             )
         else:
-            state, strategy, level = "good_understanding", "probe_reasoning", 1
+            state, strategy, level = "good_understanding", "advance_scenario", 1
             instruction = (
-                "Name the supported reasoning briefly. Ask why the chosen action works or what happens if "
-                "one condition changes within the current example. Do not declare mastery or switch domains."
+                "Give one short positive sentence naming only the idea the learner actually demonstrated; do not "
+                "add a definition or another topic fact. Then advance the established scenario by one concrete "
+                "event involving its existing people and objects. Ask exactly one prediction or decision question "
+                "about that event. Do not declare mastery or switch examples."
             )
         return SocraticDecision(
             mode="socratic", student_state=state, strategy=strategy, instruction=instruction,
@@ -518,8 +522,9 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
         f"Example pattern: {decision.example_type}. Tutor question type: {decision.tutor_question_type}. "
         f"{decision.instruction} {_disclosure_instruction(decision.disclosure_level)} Ask only one question. "
         "Anchor feedback and questions in the retrieved learning context and the learner's latest response. "
-        "Calibrate feedback to the evidence: for a correct response, briefly name what the learner connected "
-        "correctly; for a nearly correct response, say they are on the right track and name only the supported part; "
+        "Calibrate feedback to the evidence: for a correct or nearly correct response, briefly name only the idea "
+        "that appears in the learner's response. Do not use canned evaluation labels such as 'Partly' or 'you are "
+        "on the right track,' and do not append missing course facts to the feedback; "
         "for an unsupported or incorrect response, do not praise it. Positive feedback must be specific, concise, "
         "and proportional—it must not imply complete mastery. "
         "Put the final question in its own paragraph. Write it in plain, conversational language and name the "
@@ -563,17 +568,20 @@ def _comparison_targets(message: str) -> tuple[str, str] | None:
 def _scenario_excerpt(anchor: str, limit: int = 38) -> str:
     """Keep concrete original-scenario wording available in a safe fallback."""
     excerpt = anchor.split("?", 1)[0].strip()
+    sentence_boundary = max(excerpt.rfind(". "), excerpt.rfind("! "), excerpt.rfind("\n"))
+    if sentence_boundary >= 0:
+        excerpt = excerpt[: sentence_boundary + 1]
     excerpt = " ".join(excerpt.replace("<", "").replace(">", "").split())
     return _truncate_words(excerpt, limit).rstrip(".")
 
 
 def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
     if decision.scenario_anchor:
-        if decision.strategy == "extend_scenario":
+        if decision.strategy in {"extend_scenario", "advance_scenario"}:
             scenario = _scenario_excerpt(decision.scenario_anchor)
             return (
-                f"Stay with this example: {scenario}. Now suppose their first idea helps but does not fully "
-                "resolve that situation. What should they examine next, and why?"
+                f"That answer addresses a real problem in the example. Stay with this situation: {scenario}. "
+                "Now suppose the team must make its next decision. What should they examine next, and why?"
             )
         if decision.strategy == "mastery_verification":
             return "For a transfer check, suppose the same goal must be achieved with less time. How would you adapt your approach?"
@@ -612,10 +620,10 @@ def socratic_fallback_question(message: str, decision: SocraticDecision) -> str:
         return "Which detail from the course example best supports your answer?"
     if decision.strategy == "justify_or_refine":
         return "Which detail from the course example would make your answer more precise?"
-    if decision.strategy == "extend_scenario":
+    if decision.strategy in {"extend_scenario", "advance_scenario"}:
         return (
-            "Stay with the original example. Now suppose the first idea helps but does not fully resolve the "
-            "problem. What should the people in that example examine next, and why?"
+            "That answer addresses a real problem in the example. Stay with the original situation. Now suppose "
+            "the people there must make their next decision. What should they examine next, and why?"
         )
     if decision.strategy == "examine_limitation":
         return f"When might **{target}** work differently from the way you described?"
@@ -694,12 +702,13 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
     depends_on_unexplained_preamble = bool(
         re.search(r"\b(?:these|those|such|the above|this idea|that idea|these factors)\b", clean_answer, re.IGNORECASE)
     )
+    scenario_progression = decision.strategy in {"extend_scenario", "advance_scenario"}
     valid_example_first_turn = (
-        decision.disclosure_level == 0
+        (decision.disclosure_level == 0 or scenario_progression)
         and decision.example_type != "none"
         and question_count == 1
         and clean_answer.endswith("?")
-        and _word_count(clean_answer) <= (80 if decision.strategy == "extend_scenario" else 60)
+        and _word_count(clean_answer) <= (80 if scenario_progression else 60)
         and not reveals_definition
         and not reveals_concept_fact
         and not depends_on_unexplained_preamble
@@ -709,14 +718,14 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
         valid_example_first_turn = valid_example_first_turn and bool(
             re.match(r"^(?:Imagine|Suppose|Consider)\b", clean_answer, re.IGNORECASE)
         )
-    elif decision.strategy == "extend_scenario":
+    elif scenario_progression:
         valid_example_first_turn = valid_example_first_turn and bool(
-            re.match(
-                r"^(?:Now suppose|Suppose|Imagine|Consider|Stay with|In (?:the same situation|our example))\b",
+            re.search(
+                r"(?:^|[.!]\s+|\n)(?:Now suppose|Suppose|Imagine|Consider|Stay with|In (?:the same situation|our example|this situation))\b",
                 clean_answer,
                 re.IGNORECASE,
             )
-        )
+        ) and not re.match(r"^(?:Partly|You are on the right track)\b", clean_answer, re.IGNORECASE)
     if valid_example_first_turn:
         feedback, question = _split_feedback_and_question(clean_answer)
         incomplete_choice = bool(INCOMPLETE_CHOICE_PATTERN.search(question))
@@ -728,7 +737,7 @@ def enforce_socratic_response(answer: str, message: str, decision: SocraticDecis
 
     if decision.strategy == "diagnostic_recall":
         return socratic_fallback_question(message, decision)
-    if decision.strategy == "extend_scenario":
+    if decision.strategy in {"extend_scenario", "advance_scenario"}:
         return socratic_fallback_question(message, decision)
 
     strict_discovery = decision.strategy in {"diagnostic_recall", "guided_comparison"}

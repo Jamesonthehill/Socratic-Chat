@@ -448,7 +448,9 @@ def evaluation_tutor_instruction(evaluation: AnswerEvaluation) -> str:
         action = (
             "Do not tell the learner the missing concept or add topic facts. Convert the most important missing "
             "concept into one observable complication within the established scenario, then ask exactly one "
-            "question that lets the learner infer it. Do not begin with an evaluation label such as 'Partly'."
+            "question that lets the learner infer it. Name a concrete actor, object, or action from the original "
+            "scenario instead of saying only 'the same people' or 'another complication'. Do not begin with an "
+            "evaluation label such as 'Partly'."
         )
     else:
         action = "Give calibrated feedback and one scaffolded question; do not mention a numeric score."

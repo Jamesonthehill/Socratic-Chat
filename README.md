@@ -3,9 +3,10 @@
 A clean personal workspace for a retrieval-augmented chatbot.
 
 The backend indexes course documents with OpenAI embeddings, retrieves relevant
-PostgreSQL chunks, and uses OpenAI `gpt-4.1-mini` for student-state
+PostgreSQL chunks, and uses either OpenAI or Groq for student-state
 classification, conditional learning evaluation, and grounded Socratic
-responses. Without `OPENAI_API_KEY`, model-backed features are unavailable.
+responses. OpenAI embedding credentials remain required for document indexing
+and semantic retrieval.
 
 ## Setup
 
@@ -17,18 +18,30 @@ python -m pip install -r backend/requirements.txt
 cp .env.example .env
 ```
 
-Add `OPENAI_API_KEY` for document embeddings and all three LLM roles. The
-default generation model is:
+Add `OPENAI_API_KEY` for document embeddings. The conversational LLM roles use
+Groq by default:
 
 ```env
 OPENAI_API_KEY=your-openai-key
-OPENAI_API_BASE_URL=https://api.openai.com/v1
-RAG_MODEL=gpt-4.1-mini
+LLM_PROVIDER=groq
+GROQ_API_KEY=your-groq-key
+GROQ_API_BASE_URL=https://api.groq.com/openai/v1
+GROQ_MODEL=openai/gpt-oss-20b
 ```
 
 Document ingestion and query retrieval continue to use
 `text-embedding-3-small` with 1,536 dimensions. Restart the service after
 changing these variables.
+
+The classifier, answer evaluator, and tutor generator all use the Groq model
+while document embeddings remain on OpenAI. To switch conversational roles back
+to OpenAI, set:
+
+```env
+LLM_PROVIDER=openai
+OPENAI_API_BASE_URL=https://api.openai.com/v1
+RAG_MODEL=gpt-4.1-mini
+```
 
 Hybrid retrieval applies a relevance gate before any answer or Socratic example
 is generated. A chunk is retained when PostgreSQL full-text search finds lexical

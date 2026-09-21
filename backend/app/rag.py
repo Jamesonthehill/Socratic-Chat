@@ -479,16 +479,8 @@ def answer_format_instruction(question: str) -> str:
 
 
 def generation_client_config() -> tuple[str, str, str, str] | None:
-    """Use the configured OpenAI model for tutor generation."""
-
-    if settings.OPENAI_API_KEY:
-        return (
-            "OpenAI",
-            settings.OPENAI_API_KEY,
-            settings.OPENAI_API_BASE_URL,
-            settings.RAG_MODEL,
-        )
-    return None
+    """Use the configured OpenAI-compatible provider for tutor generation."""
+    return settings.llm_client_config("generation")
 
 
 async def generate_answer(

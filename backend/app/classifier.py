@@ -388,9 +388,7 @@ def _validated_llm_classification(
 def _client_config() -> tuple[str, str, str, str] | None:
     if not settings.CLASSIFIER_ENABLED:
         return None
-    if settings.OPENAI_API_KEY:
-        return "OpenAI", settings.OPENAI_API_KEY, settings.OPENAI_API_BASE_URL, settings.CLASSIFIER_MODEL or settings.RAG_MODEL
-    return None
+    return settings.llm_client_config("classifier")
 
 
 async def _classify_with_llm(

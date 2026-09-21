@@ -313,10 +313,7 @@ def validated_evaluation(payload: dict[str, Any], message: str, fallback_concept
 
 
 def _client_config() -> tuple[str, str, str, str] | None:
-    model = settings.ANSWER_EVALUATION_MODEL.strip()
-    if settings.OPENAI_API_KEY:
-        return "OpenAI", settings.OPENAI_API_KEY, settings.OPENAI_API_BASE_URL, model or settings.RAG_MODEL
-    return None
+    return settings.llm_client_config("evaluation")
 
 
 async def evaluate_student_answer(

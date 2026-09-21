@@ -257,6 +257,7 @@ class CourseRagIsolationTests(unittest.TestCase):
         fake_openai = SimpleNamespace(AsyncOpenAI=FakeAsyncOpenAI)
 
         with (
+            patch.object(settings, "LLM_PROVIDER", "openai"),
             patch.object(settings, "OPENAI_API_KEY", "test-key"),
             patch.dict(sys.modules, {"openai": fake_openai}),
             self.assertLogs("app.rag", level="ERROR"),
@@ -296,6 +297,7 @@ class CourseRagIsolationTests(unittest.TestCase):
         fake_openai = SimpleNamespace(AsyncOpenAI=FakeAsyncOpenAI)
 
         with (
+            patch.object(settings, "LLM_PROVIDER", "openai"),
             patch.object(settings, "OPENAI_API_KEY", "openai-test-key"),
             patch.object(settings, "OPENAI_API_BASE_URL", "https://api.openai.com/v1"),
             patch.object(settings, "RAG_MODEL", "gpt-4.1-mini"),
@@ -326,6 +328,7 @@ class CourseRagIsolationTests(unittest.TestCase):
             text="Software projects use code review.", score=1.0,
         )
         with (
+            patch.object(settings, "LLM_PROVIDER", "openai"),
             patch.object(settings, "OPENAI_API_KEY", "test-key"),
             patch.dict(sys.modules, {"openai": SimpleNamespace(AsyncOpenAI=FakeAsyncOpenAI)}),
         ):

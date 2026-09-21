@@ -68,6 +68,7 @@ class AnswerEvaluationTests(unittest.TestCase):
         )
         with (
             patch("openai.AsyncOpenAI", return_value=client),
+            patch("app.answer_evaluation.settings.LLM_PROVIDER", "openai"),
             patch("app.answer_evaluation.settings.OPENAI_API_KEY", "test-key"),
             patch("app.answer_evaluation.settings.RAG_MODEL", "gpt-4.1-mini"),
         ):

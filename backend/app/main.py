@@ -864,6 +864,33 @@ def _save_assistant_message(conversation_id: str, answer: str) -> None:
     log_event(11, "conversation_saved", role="assistant")
 
 
+def _ensure_course_conversation(
+    requested_id: str | None,
+    title: str,
+    user_id: str,
+    course_id: str,
+) -> tuple[str, bool]:
+    """Return a conversation in this user/course scope, replacing stale client IDs."""
+    conversation_id = db.ensure_conversation(
+        requested_id,
+        title,
+        user_id=user_id,
+        course_id=course_id,
+    )
+    if db.conversation_belongs_to_course(conversation_id, user_id, course_id):
+        return conversation_id, False
+
+    return (
+        db.ensure_conversation(
+            None,
+            title,
+            user_id=user_id,
+            course_id=course_id,
+        ),
+        True,
+    )
+
+
 async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResponse:
     conversation_id = payload.conversation_id
     course_id = payload.course_id
@@ -878,16 +905,19 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
     log_event(2, "course_access_validated", course_id=course_id)
 
     if db.is_enabled():
-        conversation_id = db.ensure_conversation(
+        conversation_id, replaced_stale_id = _ensure_course_conversation(
             payload.conversation_id,
             payload.message,
-            user_id=user_id,
-            course_id=course_id,
+            user_id,
+            course_id,
         )
         set_conversation_id(conversation_id)
-        log_event(3, "conversation_ready", database_enabled=True)
-        if not db.conversation_belongs_to_course(conversation_id, user_id, course_id):
-            raise HTTPException(status_code=409, detail="This conversation belongs to a different course.")
+        log_event(
+            3,
+            "conversation_ready",
+            database_enabled=True,
+            replaced_stale_id=replaced_stale_id,
+        )
         stored_history = db.get_messages(conversation_id, limit=None)
         history = stored_history or payload.history
         log_event(3, "history_loaded", messages=len(history), source="database" if stored_history else "request")

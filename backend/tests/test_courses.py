@@ -20,6 +20,45 @@ def _request() -> Request:
 
 
 class CourseAuthorizationTests(unittest.TestCase):
+    @patch("app.main.db.ensure_conversation")
+    @patch("app.main.db.conversation_belongs_to_course", return_value=False)
+    def test_stale_conversation_id_is_replaced_for_current_course(
+        self,
+        _belongs_to_course,
+        ensure_conversation,
+    ) -> None:
+        ensure_conversation.side_effect = ["stale-conversation", "fresh-conversation"]
+
+        conversation_id, replaced = main._ensure_course_conversation(
+            "stale-conversation",
+            "What is code review?",
+            "student-1",
+            "course-1",
+        )
+
+        self.assertEqual(conversation_id, "fresh-conversation")
+        self.assertTrue(replaced)
+        self.assertEqual(ensure_conversation.call_count, 2)
+        self.assertIsNone(ensure_conversation.call_args_list[1].args[0])
+
+    @patch("app.main.db.ensure_conversation", return_value="current-conversation")
+    @patch("app.main.db.conversation_belongs_to_course", return_value=True)
+    def test_current_course_conversation_id_is_preserved(
+        self,
+        _belongs_to_course,
+        ensure_conversation,
+    ) -> None:
+        conversation_id, replaced = main._ensure_course_conversation(
+            "current-conversation",
+            "What is code review?",
+            "student-1",
+            "course-1",
+        )
+
+        self.assertEqual(conversation_id, "current-conversation")
+        self.assertFalse(replaced)
+        ensure_conversation.assert_called_once()
+
     @patch("app.main._current_user_id", return_value="student-1")
     def test_chat_requires_a_selected_course(self, _current_user_id) -> None:
         with self.assertRaises(HTTPException) as context:

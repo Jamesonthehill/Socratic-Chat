@@ -526,7 +526,8 @@ function showDashboard() {
 }
 
 function courseConversationKey(courseId) {
-  return `${CONVERSATION_KEY}:${courseId}`;
+  const userScope = currentUser?.user_id || "anonymous";
+  return `${CONVERSATION_KEY}:${userScope}:${courseId}`;
 }
 
 function emptyState(message) {

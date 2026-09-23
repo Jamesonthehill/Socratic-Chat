@@ -11,6 +11,8 @@ Role = Literal["system", "user", "assistant"]
 class ChatMessage(BaseModel):
     role: Role
     content: str = Field(min_length=1)
+    created_at: str | None = None
+    total_score: float | None = None
 
 
 class Source(BaseModel):
@@ -29,12 +31,26 @@ class ChatRequest(BaseModel):
     course_id: str | None = None
     history: list[ChatMessage] = Field(default_factory=list)
     top_k: int = Field(default=4, ge=1, le=10)
+    learning_topic: str | None = Field(default=None, max_length=500)
 
 
 class ChatResponse(BaseModel):
     answer: str
     conversation_id: str
     sources: list[Source] = Field(default_factory=list)
+    total_score: float | None = None
+    learning_topic: str | None = None
+
+
+class SampleAnswerRequest(BaseModel):
+    course_id: str = Field(min_length=1)
+    conversation_id: str | None = None
+    tutor_question: str = Field(min_length=1, max_length=4000)
+    history: list[ChatMessage] = Field(default_factory=list)
+
+
+class SampleAnswerResponse(BaseModel):
+    answer: str
 
 
 class TextDocumentRequest(BaseModel):
@@ -67,6 +83,7 @@ class ConversationListResponse(BaseModel):
 class ConversationResponse(BaseModel):
     conversation_id: str
     messages: list[ChatMessage] = Field(default_factory=list)
+    learning_topic: str | None = None
 
 
 class DatabaseStatus(BaseModel):

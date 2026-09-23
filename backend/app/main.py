@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
+import re
 from dataclasses import asdict
 from pathlib import Path
 import secrets
 import smtplib
 from time import monotonic
+from typing import AsyncIterator
 import uuid
 from email.message import EmailMessage
 from urllib.parse import quote, urlencode
@@ -13,7 +17,7 @@ from urllib.parse import quote, urlencode
 import requests
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
@@ -25,7 +29,7 @@ from app.answer_evaluation import (
     mastery_completion_answer,
     with_progress_status,
 )
-from app.classifier import MessageClassification, classify_message
+from app.classifier import ADMIN_PATTERN, MessageClassification, classify_message, is_contextual_meaning_request
 from app.pipeline_logging import (
     begin_trace,
     debug_digest,
@@ -33,12 +37,15 @@ from app.pipeline_logging import (
     end_trace,
     log_event,
     log_exception,
+    reset_event_sink,
+    set_event_sink,
     set_conversation_id,
 )
 from app.rag import (
     RAG_DOCUMENT_SUFFIXES,
     generate_answer,
     generate_conversation_transition,
+    generate_sample_student_answer,
     ingest_file,
     ingest_text,
     retrieve,
@@ -72,12 +79,50 @@ from app.schemas import (
     OnboardingRequest,
     RagFileListResponse,
     RegisterRequest,
+    SampleAnswerRequest,
+    SampleAnswerResponse,
     SessionRefreshResponse,
     TextDocumentRequest,
     UserProfile,
 )
 
 app = FastAPI(title="Socratic-Chat")
+
+EXPLICIT_TOPIC_CHANGE = re.compile(
+    r"^\s*(?:let(?:'s| us)\s+)?(?:change (?:the )?topic(?: to)?|switch (?:the )?topic to|"
+    r"switch to|move on to|talk about|now (?:talk about|discuss))\b",
+    re.IGNORECASE,
+)
+OPENING_LEARNING_QUESTION = re.compile(
+    r"^(?:what|why|how|can (?:you|we) (?:explain|discuss|learn)|could you explain|"
+    r"define|explain|tell me about|help me understand|"
+    r"i (?:want|need) to (?:learn|understand))\b",
+    re.IGNORECASE,
+)
+
+
+def _learning_topic_from_history(history: list[object]) -> str | None:
+    """Recover the first learning goal; a chat keeps that topic for its lifetime."""
+    for item in history:
+        if getattr(item, "role", None) != "user":
+            continue
+        content = str(getattr(item, "content", "")).strip()
+        if (OPENING_LEARNING_QUESTION.match(content) or EXPLICIT_TOPIC_CHANGE.match(content)) and not ADMIN_PATTERN.search(content):
+            return " ".join(content.split())[:500]
+    return None
+
+
+def _history_for_learning_topic(history: list[object], topic: str | None) -> list[object]:
+    """Keep dialogue since the chat's original learning topic was introduced."""
+    if not topic:
+        return history
+    normalized_topic = " ".join(topic.casefold().split())
+    for index, item in enumerate(history):
+        if getattr(item, "role", None) == "user" and " ".join(
+            str(getattr(item, "content", "")).casefold().split()
+        ) == normalized_topic:
+            return history[index:]
+    return history
 
 app.add_middleware(
     CORSMiddleware,
@@ -561,7 +606,12 @@ async def get_conversation(conversation_id: str, request: Request) -> Conversati
         return ConversationResponse(conversation_id=conversation_id, messages=[])
     if not db.conversation_belongs_to(conversation_id, user_id):
         raise HTTPException(status_code=404, detail="Chat not found.")
-    return ConversationResponse(conversation_id=conversation_id, messages=db.get_messages(conversation_id))
+    all_messages = db.get_messages(conversation_id, limit=None)
+    return ConversationResponse(
+        conversation_id=conversation_id,
+        messages=all_messages[-50:],
+        learning_topic=_learning_topic_from_history(all_messages),
+    )
 
 
 @app.delete("/api/conversations/{conversation_id}")
@@ -898,6 +948,7 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
     user_id = _current_user_id(request)
     pending: dict[str, object] | None = None
     user_message_id: int | None = None
+    learning_topic = payload.learning_topic
 
     if not course_id:
         raise HTTPException(status_code=400, detail="Choose an approved course before opening the chatbot.")
@@ -920,22 +971,44 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
         )
         stored_history = db.get_messages(conversation_id, limit=None)
         history = stored_history or payload.history
+        # The saved chat, not the browser's request, owns an established topic.
+        learning_topic = _learning_topic_from_history(stored_history) if stored_history else None
+        history = _history_for_learning_topic(history, learning_topic)
         log_event(3, "history_loaded", messages=len(history), source="database" if stored_history else "request")
         saved_message_id = db.add_message(conversation_id, "user", payload.message)
         user_message_id = saved_message_id if isinstance(saved_message_id, int) else None
         log_event(3, "user_message_saved")
         pending = db.get_pending_clarification(conversation_id) if hasattr(db, "get_pending_clarification") else None
     else:
+        history = _history_for_learning_topic(history, learning_topic)
         log_event(3, "history_loaded", messages=len(history), source="request")
 
     log_event(4, "message_classification_started")
-    classification = await classify_message(payload.message, history)
+    classification = await classify_message(payload.message, history, learning_topic=learning_topic)
+    if pending and is_contextual_meaning_request(payload.message, history):
+        # A retry after a mistaken clarification should reach the substantive tutor turn.
+        if hasattr(db, "clear_pending_clarification"):
+            db.clear_pending_clarification(conversation_id)
+        pending = None
+    if learning_topic and (
+        EXPLICIT_TOPIC_CHANGE.match(payload.message)
+        or (classification.route == "learning" and classification.conversation_state == "changing_topic")
+    ):
+        log_event(4, "topic_change_redirected_to_new_chat")
+        answer = "This chat is focused on its original topic. Start a new chat to explore a different topic."
+        if db.is_enabled() and conversation_id:
+            if hasattr(db, "clear_pending_clarification"):
+                db.clear_pending_clarification(conversation_id)
+            _save_assistant_message(conversation_id, answer)
+        return ChatResponse(answer=answer, conversation_id=conversation_id or "local", sources=[], learning_topic=learning_topic)
+    if classification.route == "learning" and not classification.needs_clarification and not learning_topic:
+        learning_topic = " ".join(payload.message.split())[:500]
+        log_event(4, "learning_topic_set")
     log_event(
         4,
         "message_classification_completed",
         source=classification.source,
         route=classification.route,
-        student_intent=classification.student_intent,
         question_type=classification.question_type,
         conversation_state=classification.conversation_state,
         dialogue_status=classification.dialogue_status,
@@ -950,6 +1023,7 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
         understanding_level=classification.understanding_level,
         support_level=classification.support_level,
         query_rewritten=bool(classification.rewritten_query and classification.rewritten_query != payload.message),
+        retrieval_subqueries=len(classification.retrieval_subqueries),
     )
 
     if db.is_enabled() and conversation_id and hasattr(db, "update_conversation_dialogue_state"):
@@ -969,7 +1043,7 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
             if hasattr(db, "clear_pending_clarification"):
                 db.clear_pending_clarification(conversation_id)
             _save_assistant_message(conversation_id, answer)
-        return ChatResponse(answer=answer, conversation_id=conversation_id or "local", sources=[])
+        return ChatResponse(answer=answer, conversation_id=conversation_id or "local", sources=[], learning_topic=learning_topic)
 
     current_files = db.list_rag_files(course_id=course_id) if db.is_enabled() else []
     course = db.get_course(course_id) if db.is_enabled() else None
@@ -986,7 +1060,7 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
             if hasattr(db, "clear_pending_clarification"):
                 db.clear_pending_clarification(conversation_id)
             _save_assistant_message(conversation_id, operational_answer)
-        return ChatResponse(answer=operational_answer, conversation_id=conversation_id or "local", sources=[])
+        return ChatResponse(answer=operational_answer, conversation_id=conversation_id or "local", sources=[], learning_topic=learning_topic)
 
     if pending:
         log_event(4, "route_selected", route="pending_clarification")
@@ -999,12 +1073,13 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
             top_k=payload.top_k,
             conversation_id=conversation_id,
             course_id=course_id,
+            subqueries=(learning_topic,) if learning_topic else (),
         )
-        answer = await generate_answer(combined_query, history, sources)
+        answer = await generate_answer(combined_query, history, sources, learning_topic=learning_topic)
         if answer.lower().startswith("i do not know from your uploaded notes"):
             sources = []
         _save_assistant_message(conversation_id, answer)
-        return ChatResponse(answer=answer, conversation_id=conversation_id, sources=sources)
+        return ChatResponse(answer=answer, conversation_id=conversation_id, sources=sources, learning_topic=learning_topic)
 
     if classification.needs_clarification:
         log_event(4, "route_selected", route="clarification_response")
@@ -1013,7 +1088,7 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
             if hasattr(db, "set_pending_clarification"):
                 db.set_pending_clarification(conversation_id, payload.message, classification.target)
             _save_assistant_message(conversation_id, answer)
-        return ChatResponse(answer=answer, conversation_id=conversation_id or "local", sources=[])
+        return ChatResponse(answer=answer, conversation_id=conversation_id or "local", sources=[], learning_topic=learning_topic)
 
     if classification.direct_answer:
         log_event(4, "route_selected", route="classified_direct_answer")
@@ -1022,7 +1097,7 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
             if hasattr(db, "clear_pending_clarification"):
                 db.clear_pending_clarification(conversation_id)
             _save_assistant_message(conversation_id, answer)
-        return ChatResponse(answer=answer, conversation_id=conversation_id or "local", sources=[])
+        return ChatResponse(answer=answer, conversation_id=conversation_id or "local", sources=[], learning_topic=learning_topic)
 
     query = answer_evaluation_query(payload.message, history, classification)
     log_event(4, "route_selected", route="rag_generation")
@@ -1031,6 +1106,7 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
         top_k=payload.top_k,
         conversation_id=conversation_id,
         course_id=course_id,
+        subqueries=((learning_topic,) if learning_topic else ()) + classification.retrieval_subqueries[:2],
     )
     if (
         not sources
@@ -1081,6 +1157,7 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
             sources,
             classification=classification,
             evaluation=evaluation,
+            learning_topic=learning_topic,
         )
     if answer.lower().startswith((
         "i do not know from your uploaded notes",
@@ -1093,7 +1170,13 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
             db.clear_pending_clarification(conversation_id)
         _save_assistant_message(conversation_id, answer)
 
-    return ChatResponse(answer=answer, conversation_id=conversation_id or "local", sources=sources)
+    return ChatResponse(
+        answer=answer,
+        conversation_id=conversation_id or "local",
+        sources=sources,
+        total_score=evaluation.total_score if evaluation else None,
+        learning_topic=learning_topic,
+    )
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -1140,5 +1223,122 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
         raise
     finally:
         end_trace(tokens)
+
+
+def _public_chat_status(event: str, fields: dict[str, object]) -> tuple[str, str] | None:
+    """Translate only real pipeline events into student-facing progress."""
+    stages = {
+        "chat_received": ("received", "Receiving your message"),
+        "history_loaded": ("conversation", "Reading this conversation"),
+        "classifier_llm_started": ("classifying", "Understanding your question"),
+        "retrieval_started": ("searching", "Searching course materials"),
+        "query_embedding_completed": ("matching", "Matching relevant passages"),
+        "answer_evaluation_started": ("evaluating", "Checking your answer"),
+        "socratic_strategy_selected": ("planning", "Planning the next teaching step"),
+        "llm_request_started": ("generating", "Generating the reply"),
+        "transition_llm_started": ("generating", "Generating the reply"),
+        "conversation_save_started": ("saving", "Saving the reply"),
+    }
+    if event == "retrieval_completed":
+        return (
+            "evidence", "Reviewing course evidence" if fields.get("chunks") else "No matching course passages found"
+        )
+    if event == "route_selected":
+        return {
+            "clarification_response": ("planning", "Preparing a clarification"),
+            "operational_context_answer": ("planning", "Reading course information"),
+            "pending_clarification": ("planning", "Using your clarification"),
+            "classified_direct_answer": ("planning", "Preparing a direct answer"),
+            "mastery_completed": ("planning", "Finishing your progress check"),
+            "soft_close": ("planning", "Preparing a closing reply"),
+            "complete": ("planning", "Preparing a closing reply"),
+        }.get(fields.get("route"))
+    return stages.get(event)
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(payload: ChatRequest, request: Request) -> StreamingResponse:
+    """Return actual request progress followed by the ordinary chat response."""
+
+    async def events() -> AsyncIterator[str]:
+        queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
+        response_loop = asyncio.get_running_loop()
+        last_status: tuple[str, str] | None = None
+
+        def on_event(event: str, fields: dict[str, object]) -> None:
+            nonlocal last_status
+            status = _public_chat_status(event, fields)
+            if status and status != last_status:
+                last_status = status
+                response_loop.call_soon_threadsafe(
+                    queue.put_nowait, {"type": "status", "stage": status[0], "label": status[1]}
+                )
+
+        def execute_chat() -> ChatResponse:
+            # The pipeline includes blocking database and embedding work. Give it
+            # its own loop so status events can reach the browser immediately.
+            sink_token = set_event_sink(on_event)
+            try:
+                return asyncio.run(chat(payload, request))
+            finally:
+                reset_event_sink(sink_token)
+
+        async def run_chat() -> None:
+            try:
+                result = await asyncio.to_thread(execute_chat)
+                queue.put_nowait({"type": "result", "data": result.model_dump(mode="json")})
+            except HTTPException as error:
+                queue.put_nowait({"type": "error", "message": str(error.detail)})
+            except Exception:
+                queue.put_nowait({"type": "error", "message": "The server could not complete the request. Please try again."})
+
+        task = asyncio.create_task(run_chat())
+        try:
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield json.dumps({"type": "heartbeat"}) + "\n"
+                    continue
+                yield json.dumps(item, ensure_ascii=False) + "\n"
+                if item["type"] in {"result", "error"}:
+                    break
+        finally:
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(
+        events(), media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/chat/sample-answer", response_model=SampleAnswerResponse)
+async def sample_answer(payload: SampleAnswerRequest, request: Request) -> SampleAnswerResponse:
+    user_id = _current_user_id(request)
+    _require_course_access(request, payload.course_id)
+    history = payload.history
+    if db.is_enabled() and payload.conversation_id:
+        if not db.conversation_belongs_to_course(payload.conversation_id, user_id, payload.course_id):
+            raise HTTPException(status_code=403, detail="This conversation is not in your course.")
+        history = db.get_messages(payload.conversation_id, limit=8) or history
+
+    latest_tutor = next((item.content for item in reversed(history) if item.role == "assistant"), None)
+    if latest_tutor != payload.tutor_question:
+        raise HTTPException(status_code=400, detail="Choose the latest tutor question to generate a sample answer.")
+
+    recent_student = next((item.content for item in reversed(history[:-1]) if item.role == "user"), "")
+    query = f"{recent_student} {payload.tutor_question}".strip()
+    try:
+        sources = retrieve(query, top_k=4, course_id=payload.course_id)
+        if not sources:
+            raise HTTPException(status_code=422, detail="No supporting course material was found for this question.")
+        answer = await generate_sample_student_answer(payload.tutor_question, history, sources)
+    except HTTPException:
+        raise
+    except Exception as error:
+        logging.getLogger(__name__).exception("Sample answer generation failed")
+        raise HTTPException(status_code=502, detail="Could not generate a sample answer. Please try again.") from error
+    return SampleAnswerResponse(answer=answer)
 
 app.mount("/", StaticFiles(directory=settings.FRONTEND_DIR, html=True), name="frontend")

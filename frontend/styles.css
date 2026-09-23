@@ -849,13 +849,12 @@ h2 {
   filter: drop-shadow(0 5px 7px color-mix(in srgb, var(--navy) 20%, transparent));
 }
 
-.thinking-mark-letter {
-  fill: var(--paper);
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 13px;
-  font-weight: 800;
-  text-anchor: middle;
-  dominant-baseline: central;
+.thinking-mark-stage {
+  fill: none;
+  stroke: var(--paper);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 @keyframes thinkingOrbit {
@@ -868,8 +867,8 @@ html[data-theme="dark"] .thinking-mark-center {
   fill: var(--accent);
 }
 
-html[data-theme="dark"] .thinking-mark-letter {
-  fill: #0b1020;
+html[data-theme="dark"] .thinking-mark-stage {
+  stroke: #0b1020;
 }
 
 .auth-screen {
@@ -2581,11 +2580,11 @@ html[data-theme="dark"] .brand-mark {
   font-weight: 800;
 }
 
-.question-type-badge {
+.score-badge {
   padding: 3px 7px;
   border-radius: 999px;
-  background: var(--teal-soft);
-  color: var(--teal);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
   font-size: 0.62rem;
   font-weight: 820;
   letter-spacing: 0.02em;
@@ -2764,6 +2763,18 @@ html[data-theme="dark"] .message.assistant .concept-emphasis {
   color: var(--muted);
   font-size: 0.7rem;
   animation: thinkingStatusBreathe 1.4s ease-in-out infinite;
+}
+
+.thinking-elapsed,
+.response-time {
+  color: var(--teal);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.response-time {
+  white-space: nowrap;
 }
 
 @keyframes thinkingStatusBreathe {

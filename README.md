@@ -59,10 +59,10 @@ course questions rather than lowering it simply to force results.
 
 Each learning message passes through a hybrid interpretation stage before RAG
 retrieval. Session commands, access checks, and safe fallbacks remain
-deterministic. OpenAI `gpt-4.1-mini` then returns validated labels
+deterministic. The configured classifier (Groq `openai/gpt-oss-120b` by default) returns validated labels
 for the student's intent, question type, target concepts, current demonstrated
 understanding, required support level, dialogue status, next conversation action,
-and a focused retrieval query. The status distinguishes
+and focused retrieval queries. The status distinguishes
 ordinary learning, a substantive claim asking for confirmation, a bare claim of
 understanding, acknowledgement, topic change, and a request to close. Invalid
 JSON, unsupported labels, or a provider failure automatically falls back to the
@@ -86,9 +86,9 @@ question; comparisons use contrasting cases; procedure, application, and
 debugging requests use an incomplete scenario. Uncertainty or an explicit hint
 request increases disclosure. Repeated difficulty raises the classifier's
 support level and produces a clear explanation plus a simpler, meaningfully
-different example; continued difficulty permits a step-by-step example. The response validator
-limits disclosure, rejects definition-first opening turns, and guarantees one
-focused question. A substantive claim receives a short grounded
+different example; continued difficulty permits a step-by-step example. Teaching
+instructions guide disclosure, examples, and a focused question; there is no
+deterministic response rewriter guaranteeing compliance. A substantive claim is prompted to receive a short grounded
 `Yes—`/`Partly—`/`Not quite—` check before one revision question. A bare “I
 understand” receives a transfer or teach-back check instead of unearned praise.
 Acknowledgements and clear endings are routed to a short, question-free response
@@ -98,8 +98,20 @@ Question categories remain internal planning labels. Student-facing questions
 use plain language and name a concrete action, choice, example, or outcome from
 the current topic rather than canned stems such as `What evidence?` or `What
 factor?`. A substantial pasted passage receives one neutral reflection before
-the question. The response validator rejects malformed Markdown and incomplete
+the question. Prompt instructions discourage malformed Markdown and incomplete
 choice prompts such as `Which scenario?` when no choices are presented.
+
+Conversations recover their original learning topic from stored history. A
+different topic is redirected to a new chat; short follow-ups and requests to
+define a term in the current scenario remain attached to that scenario. Retrieval
+combines the main query, original topic, and up to two classifier subqueries,
+deduplicating chunks while preserving coverage across queries.
+
+The frontend uses `POST /api/chat/stream` for real pipeline-stage updates followed
+by the final response (not token-by-token generation). The existing `/api/chat`
+endpoint remains available. Message timestamps and eligible answer scores are
+shown in the conversation. “Draft an example answer” retrieves course evidence
+and fills the composer without saving or submitting the draft.
 
 Substantive responses to tutor questions pass through a separate hybrid answer
 evaluator. It calculates deterministic course-concept coverage (20%), model-based
@@ -118,12 +130,12 @@ exponentially weighted estimate and evidence count are stored in
 After at least two supporting answers and an estimate of 80 or above, the tutor
 asks one transfer or teach-back verification question. A second high-quality
 application answer completes the current objective. Critical misconceptions cap
-the assessment below the verification threshold. Internal numbers are not shown
-to students and should be treated as adaptive tutoring signals, not official
+the assessment below the verification threshold. Displayed scores
+should be treated as adaptive tutoring signals, not official
 grades. Correct and nearly correct responses receive concise, specific feedback
 before the next learning step.
 
-The OpenAI evaluator uses strict JSON Schema output. Empty or incomplete
+The configured evaluator uses structured JSON output. Empty or incomplete
 evaluator responses are rejected and logged instead of being converted into
 zero-score database records. The persisted conversation concept is reused for
 follow-up answers so a short reply cannot be stored under a generic `current
@@ -131,7 +143,8 @@ concept` key.
 
 Set `CLASSIFIER_ENABLED=false` to use deterministic classification only. By
 default the classifier uses `RAG_MODEL`; set `CLASSIFIER_MODEL` only when a
-separate OpenAI classification model is desired.
+separate OpenAI classification model is desired. For Groq, use
+`GROQ_CLASSIFIER_MODEL` and `GROQ_ANSWER_EVALUATION_MODEL` overrides.
 Set `ANSWER_EVALUATION_ENABLED=false` to disable adaptive assessment. By default,
 the evaluator uses `RAG_MODEL`; `ANSWER_EVALUATION_MODEL` can override it.
 
@@ -255,18 +268,25 @@ The app creates these tables automatically on startup:
 
 ## Chat pipeline logs on Render
 
-Each `POST /api/chat` request writes concise structured events to stdout with a
-unique `trace_id`. Render is configured with `PYTHONUNBUFFERED=1`, so these
+Each chat request, including `POST /api/chat/stream`, writes concise structured events to stdout with a
+unique `trace_id` and elapsed milliseconds. Render is configured with `PYTHONUNBUFFERED=1`, so these
 events appear immediately in the service's Application Logs. Search for the
 exact field `trace_id=<id>` to follow one request across routing, retrieval,
-generation, validation, saving, and response return.
+generation, saving, and response return.
 
-Message and conversation-history content is never logged. Setting
+Message and conversation-history content is not logged by default. Setting
 `DEBUG_PIPELINE_LOGS=true` adds redacted, truncated previews of retrieved chunks,
-fixed prompt instructions, the model candidate, and the validated final answer,
+fixed prompt instructions and generated answers,
 along with character counts and non-reversible SHA-256 fingerprints. It never
 logs complete prompts or documents and remains disabled by default. Enable it
 only temporarily while diagnosing answer generation, then turn it off again.
+
+File logging is opt-in: `PIPELINE_LOG_FILE` sets a rotating log file.
+`LOG_FULL_PROMPTS=true` together with `PIPELINE_PROMPT_DIR` enables full
+request/result snapshots. These snapshots can contain private student messages
+and course content; leave them disabled on Render unless explicitly needed for
+authorized debugging. Do not commit snapshots. Hosted operation does not require
+these files, a local model, or a database/vector-dimension migration.
 
 Check the connection:
 

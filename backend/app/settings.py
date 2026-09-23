@@ -37,6 +37,27 @@ EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "64"))
 RAG_MIN_DENSE_SIMILARITY = float(os.getenv("RAG_MIN_DENSE_SIMILARITY", "0.42"))
 RAG_MIN_SPARSE_SCORE = float(os.getenv("RAG_MIN_SPARSE_SCORE", "0.05"))
 DEBUG_PIPELINE_LOGS = os.getenv("DEBUG_PIPELINE_LOGS", "false").lower() in {"1", "true", "yes"}
+_pipeline_log_file = os.getenv("PIPELINE_LOG_FILE", "").strip()
+PIPELINE_LOG_FILE = (ROOT_DIR / _pipeline_log_file) if _pipeline_log_file else None
+LOG_FULL_PROMPTS = os.getenv("LOG_FULL_PROMPTS", "false").lower() in {"1", "true", "yes"}
+_pipeline_prompt_dir = os.getenv("PIPELINE_PROMPT_DIR", "").strip()
+PIPELINE_PROMPT_DIR = (ROOT_DIR / _pipeline_prompt_dir) if _pipeline_prompt_dir else None
+
+
+def completion_token_parameters(provider: str, limit: int) -> dict[str, int]:
+    """Use the output-token parameter supported by the hosted providers."""
+    return {"max_completion_tokens": limit}
+
+
+def embedding_client_config() -> tuple[str, str, str, str] | None:
+    """Keep hosted retrieval on the existing OpenAI embedding space."""
+    if not OPENAI_API_KEY:
+        return None
+    return "OpenAI", OPENAI_API_KEY, OPENAI_API_BASE_URL, EMBEDDING_MODEL
+
+
+def embedding_model_name() -> str:
+    return EMBEDDING_MODEL
 
 
 def llm_client_config(role: str = "generation") -> tuple[str, str, str, str] | None:

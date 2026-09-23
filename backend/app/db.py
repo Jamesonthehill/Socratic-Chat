@@ -850,17 +850,32 @@ def get_messages(conversation_id: str, limit: int | None = 50) -> list[ChatMessa
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT role, content
-                FROM conversation_messages
-                WHERE conversation_id = %s
-                ORDER BY created_at DESC, id DESC
+                SELECT message.role, message.content, message.created_at::text,
+                    (
+                        SELECT assessment.total_score
+                        FROM mastery_assessments AS assessment
+                        WHERE assessment.student_message_id = message.id
+                        ORDER BY assessment.created_at DESC
+                        LIMIT 1
+                    ) AS total_score
+                FROM conversation_messages AS message
+                WHERE message.conversation_id = %s
+                ORDER BY message.created_at DESC, message.id DESC
                 LIMIT %s
                 """,
                 (conversation_id, limit),
             )
             rows = cur.fetchall()
 
-    return [ChatMessage(role=role, content=content) for role, content in reversed(rows)]
+    return [
+        ChatMessage(
+            role=role,
+            content=content,
+            created_at=created_at,
+            total_score=float(total_score) if total_score is not None else None,
+        )
+        for role, content, created_at, total_score in reversed(rows)
+    ]
 
 
 def list_conversations(

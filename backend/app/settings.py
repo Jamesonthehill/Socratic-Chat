@@ -94,9 +94,19 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 
 AUTH_MODE = os.getenv("AUTH_MODE", "open").strip().lower()
 SCHOOL_GOOGLE_AUTH_ENABLED = AUTH_MODE == "school_google"
+SCHOOL_GITHUB_AUTH_ENABLED = AUTH_MODE == "school_github"
+RESTRICTED_SCHOOL_AUTH_ENABLED = SCHOOL_GOOGLE_AUTH_ENABLED or SCHOOL_GITHUB_AUTH_ENABLED
 ALLOWED_GOOGLE_DOMAINS = {
     domain.strip().lower()
     for domain in os.getenv("ALLOWED_GOOGLE_DOMAINS", "").split(",")
+    if domain.strip()
+}
+ALLOWED_GITHUB_EMAIL_DOMAINS = {
+    domain.strip().lower()
+    for domain in os.getenv(
+        "ALLOWED_GITHUB_EMAIL_DOMAINS",
+        os.getenv("ALLOWED_GOOGLE_DOMAINS", ""),
+    ).split(",")
     if domain.strip()
 }
 AUTH_SESSION_SECRET = os.getenv("AUTH_SESSION_SECRET", "")

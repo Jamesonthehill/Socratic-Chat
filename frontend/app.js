@@ -434,6 +434,13 @@ function setAuthMode(mode) {
     showRegisterButton.classList.remove("is-active");
     return;
   }
+  if (authMode === "school_github") {
+    loginForm.classList.add("is-hidden");
+    registerForm.classList.add("is-hidden");
+    showLoginButton.classList.remove("is-active");
+    showRegisterButton.classList.remove("is-active");
+    return;
+  }
   const isLogin = mode === "login" || !registrationEnabled;
   loginForm.classList.toggle("is-hidden", !isLogin);
   registerForm.classList.toggle("is-hidden", isLogin);
@@ -901,10 +908,15 @@ function showGithubConnection() {
   googleSignInWrap?.classList.add("is-hidden");
   githubConnectWrap?.classList.remove("is-hidden");
   authStatus.textContent = "";
-  if (authCopy) authCopy.textContent = "Step 2 of 2: connect the GitHub account you want linked to this school account.";
+  const primarySignIn = authMode === "school_github" && !currentUser;
+  if (authCopy) authCopy.textContent = primarySignIn
+    ? "Sign in with GitHub using an account that has a verified charlotte.edu email."
+    : "Connect the GitHub account you want linked to this school account.";
   if (githubConnectMessage) {
     githubConnectMessage.textContent = githubOauthConfigured
-      ? "Your school identity is verified. Link the GitHub account you want to use with Socratic-Chat."
+      ? (primarySignIn
+        ? "GitHub will share your email addresses so Socratic-Chat can verify the charlotte.edu domain."
+        : "Link the GitHub account you want to use with Socratic-Chat.")
       : "GitHub authentication is not configured on the server yet.";
   }
   if (githubSchoolEmail) {
@@ -934,8 +946,12 @@ function showSignedOut() {
   authScreen.classList.remove("is-hidden");
   authScreen.classList.remove("is-github-linking");
   authStatus.textContent = "";
-  githubConnectWrap?.classList.add("is-hidden");
-  googleSignInWrap?.classList.remove("is-hidden");
+  if (authMode === "school_github") {
+    showGithubConnection();
+  } else {
+    githubConnectWrap?.classList.add("is-hidden");
+    googleSignInWrap?.classList.remove("is-hidden");
+  }
   updateSessionStatus();
   setAuthMode("login");
 }
@@ -2111,9 +2127,9 @@ async function loadInstructorRequests() {
 
 onboardingForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const password = document.querySelector("#onboardingPassword").value;
-  const passwordConfirmation = document.querySelector("#onboardingPasswordConfirmation").value;
-  if (password !== passwordConfirmation) {
+  const password = document.querySelector("#onboardingPassword").value || null;
+  const passwordConfirmation = document.querySelector("#onboardingPasswordConfirmation").value || null;
+  if (authMode !== "school_github" && password !== passwordConfirmation) {
     onboardingStatus.textContent = "Password and password confirmation must match.";
     return;
   }
@@ -2200,7 +2216,7 @@ previewCourseButton?.addEventListener("click", () => {
 deleteCourseButton?.addEventListener("click", deleteSelectedCourse);
 
 async function connectGitHubAccount() {
-  if (!currentUser?.access_token) {
+  if (authMode !== "school_github" && !currentUser?.access_token) {
     expireSession("Sign in with your school account first.");
     return;
   }
@@ -2299,19 +2315,29 @@ function applyAuthenticationMode(config) {
 
   const passwordAuthEnabled = config.password_auth_enabled !== false;
   if (!passwordAuthEnabled && currentUser && !currentUser.access_token) {
-    expireSession("Please sign in again with your school Google account.");
+    expireSession("Please sign in again with your verified school account.");
   }
   emailAuthDivider?.classList.toggle("is-hidden", !passwordAuthEnabled);
   authTabs?.classList.toggle("is-hidden", !passwordAuthEnabled);
   showRegisterButton?.classList.toggle("is-hidden", !registrationEnabled);
   loginForm?.classList.toggle("is-hidden", !passwordAuthEnabled);
   registerForm?.classList.add("is-hidden");
+  googleSignInWrap?.classList.toggle("is-hidden", authMode === "school_github");
+  const onboardingPasswordFields = document.querySelector("#onboardingPasswordFields");
+  onboardingPasswordFields?.classList.toggle("is-hidden", authMode === "school_github");
+  ["#onboardingPassword", "#onboardingPasswordConfirmation"].forEach((selector) => {
+    const field = document.querySelector(selector);
+    if (field) field.required = authMode !== "school_github";
+  });
 
   const domain = config.school_domain || "your school";
   if (authCopy && authMode === "school_google") {
     authCopy.textContent = passwordAuthEnabled
       ? `New users: verify your ${domain} Google account. Returning users: sign in with your Socratic-Chat ID and password.`
       : `Sign in with your ${domain} Google account to use the chatbot.`;
+  }
+  if (authCopy && authMode === "school_github") {
+    authCopy.textContent = `Sign in with GitHub using an account with a verified @${domain} email.`;
   }
 }
 
@@ -2549,13 +2575,23 @@ setInterval(() => {
 }, 1000);
 
 await setupAuthenticationMode();
-await setupGoogleSignIn();
+if (authMode === "school_google") await setupGoogleSignIn();
 
-const githubResult = new URLSearchParams(window.location.search).get("github");
+const githubParameters = new URLSearchParams(window.location.search);
+const githubResult = githubParameters.get("github");
 if (githubResult) {
   window.history.replaceState({}, "", window.location.pathname + window.location.hash);
-  if (githubResult !== "connected") {
-    authStatus.textContent = "GitHub connection was not completed. Please try again.";
+  if (githubResult === "verified" && githubParameters.get("code")) {
+    try {
+      const data = await postJson("/api/auth/github/exchange", { code: githubParameters.get("code") });
+      await finishAuth(data);
+    } catch (error) {
+      authStatus.textContent = `GitHub sign-in failed: ${error.message}`;
+    }
+  } else if (githubResult === "school_email_required") {
+    authStatus.textContent = "GitHub must contain a verified @charlotte.edu email address.";
+  } else if (githubResult !== "connected") {
+    authStatus.textContent = "GitHub sign-in was not completed. Please try again.";
   }
 }
 

@@ -15,7 +15,6 @@
       })();
     </script>
     <link rel="stylesheet" href="./styles.css?v=20260923-1" />
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
     <a class="skip-link" href="#messageInput">Skip to the learning conversation</a>
@@ -52,15 +51,15 @@
             <div class="account-logo github-account-logo">GH</div>
           </div>
           <div class="github-connect-heading">
-            <p class="eyebrow">Step 2 of 2</p>
-            <h2>Connect your GitHub account</h2>
-            <p id="githubConnectMessage">Your school account is verified. Link GitHub to finish signing in.</p>
+            <p class="eyebrow">Verified school access</p>
+            <h2>Continue with GitHub</h2>
+            <p id="githubConnectMessage">Use a GitHub account containing a verified charlotte.edu email address.</p>
           </div>
 
           <div class="verified-school-account">
             <span class="verified-account-check" aria-hidden="true">✓</span>
             <div>
-              <small>Verified UNC Charlotte account</small>
+              <small>Required verified email domain</small>
               <strong id="githubSchoolEmail">charlotte.edu</strong>
             </div>
           </div>
@@ -68,8 +67,8 @@
           <div class="github-permission-card">
             <div class="permission-card-icon" aria-hidden="true">↗</div>
             <div>
-              <strong>GitHub public identity</strong>
-              <p>Username and public profile only. Socratic-Chat does not request repository access.</p>
+              <strong>GitHub identity and email verification</strong>
+              <p>Socratic-Chat reads your GitHub email addresses only to verify charlotte.edu. It does not request repository access.</p>
             </div>
           </div>
 
@@ -139,7 +138,7 @@
             </select>
           </label>
         </div>
-        <p class="flow-copy">Your UNC Charlotte account is verified. Create your Socratic-Chat ID and choose your position.</p>
+        <p class="flow-copy">Your UNC Charlotte email is verified through GitHub. Create your Socratic-Chat ID and choose your position.</p>
         <div id="onboardingIdentity" class="verified-identity"></div>
 
         <form id="onboardingForm" class="onboarding-form">
@@ -149,7 +148,7 @@
             <span class="field-help">Use letters, numbers, periods, underscores, or hyphens.</span>
           </label>
 
-          <div class="password-grid">
+          <div id="onboardingPasswordFields" class="password-grid">
             <label>
               Password
               <input id="onboardingPassword" type="password" autocomplete="new-password" minlength="8" required />
@@ -181,7 +180,7 @@
           <button type="submit">Finish account setup</button>
         </form>
         <div id="onboardingStatus" class="auth-status" aria-live="polite"></div>
-        <button id="onboardingLogoutButton" class="text-button" type="button">Use a different Google account</button>
+        <button id="onboardingLogoutButton" class="text-button" type="button">Use a different GitHub account</button>
       </div>
     </section>
 

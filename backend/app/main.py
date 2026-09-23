@@ -72,6 +72,7 @@ from app.schemas import (
     EmailCodeRequest,
     EmailCodeResponse,
     GitHubAuthorizeResponse,
+    GitHubExchangeRequest,
     GoogleAuthRequest,
     GoogleClientConfigResponse,
     IngestResponse,
@@ -143,7 +144,12 @@ async def startup() -> None:
             missing.append("ALLOWED_GOOGLE_DOMAINS")
         if not settings.AUTH_SESSION_SECRET:
             missing.append("AUTH_SESSION_SECRET")
-    if settings.REQUIRE_GITHUB_ACCOUNT:
+    if settings.SCHOOL_GITHUB_AUTH_ENABLED:
+        if not settings.ALLOWED_GITHUB_EMAIL_DOMAINS:
+            missing.append("ALLOWED_GITHUB_EMAIL_DOMAINS")
+        if not settings.AUTH_SESSION_SECRET:
+            missing.append("AUTH_SESSION_SECRET")
+    if settings.REQUIRE_GITHUB_ACCOUNT or settings.SCHOOL_GITHUB_AUTH_ENABLED:
         if not settings.GITHUB_CLIENT_ID:
             missing.append("GITHUB_CLIENT_ID")
         if not settings.GITHUB_CLIENT_SECRET:
@@ -177,7 +183,7 @@ def _current_user_id(request: Request) -> str:
         raise HTTPException(status_code=401, detail="Account was not found.")
     if not user.get("onboarding_complete"):
         raise HTTPException(status_code=403, detail="Complete your one-time account setup to continue.")
-    if settings.REQUIRE_GITHUB_ACCOUNT and not db.user_has_github(user_id):
+    if (settings.REQUIRE_GITHUB_ACCOUNT or settings.SCHOOL_GITHUB_AUTH_ENABLED) and not db.user_has_github(user_id):
         raise HTTPException(status_code=403, detail="Connect your GitHub account to continue.")
     return user_id
 
@@ -224,16 +230,21 @@ def _auth_response(user: dict[str, object]) -> AuthResponse:
 
 @app.get("/api/auth/config", response_model=AuthConfigResponse)
 async def auth_config() -> AuthConfigResponse:
-    school_domain = sorted(settings.ALLOWED_GOOGLE_DOMAINS)[0] if settings.ALLOWED_GOOGLE_DOMAINS else None
+    allowed_domains = (
+        settings.ALLOWED_GITHUB_EMAIL_DOMAINS
+        if settings.SCHOOL_GITHUB_AUTH_ENABLED
+        else settings.ALLOWED_GOOGLE_DOMAINS
+    )
+    school_domain = sorted(allowed_domains)[0] if allowed_domains else None
     return AuthConfigResponse(
         email_verification_required=(
             settings.REQUIRE_EMAIL_VERIFICATION and not settings.SCHOOL_GOOGLE_AUTH_ENABLED
         ),
         auth_mode=settings.AUTH_MODE,
         password_auth_enabled=settings.ALLOW_PASSWORD_LOGIN,
-        registration_enabled=not settings.SCHOOL_GOOGLE_AUTH_ENABLED,
+        registration_enabled=not settings.RESTRICTED_SCHOOL_AUTH_ENABLED,
         school_domain=school_domain,
-        github_account_required=settings.REQUIRE_GITHUB_ACCOUNT,
+        github_account_required=settings.REQUIRE_GITHUB_ACCOUNT or settings.SCHOOL_GITHUB_AUTH_ENABLED,
         github_oauth_configured=bool(settings.GITHUB_CLIENT_ID and settings.GITHUB_CLIENT_SECRET),
     )
 
@@ -267,8 +278,8 @@ def _send_verification_email(email: str, code: str) -> None:
 
 @app.post("/api/auth/send-verification-code", response_model=EmailCodeResponse)
 async def send_verification_code(payload: EmailCodeRequest) -> EmailCodeResponse:
-    if settings.SCHOOL_GOOGLE_AUTH_ENABLED:
-        raise HTTPException(status_code=403, detail="Use your school Google account to sign in.")
+    if settings.RESTRICTED_SCHOOL_AUTH_ENABLED:
+        raise HTTPException(status_code=403, detail="Use the configured school account provider to sign in.")
     if not settings.REQUIRE_EMAIL_VERIFICATION:
         raise HTTPException(status_code=409, detail="Email verification is disabled.")
     if not db.is_enabled():
@@ -285,8 +296,8 @@ async def send_verification_code(payload: EmailCodeRequest) -> EmailCodeResponse
 
 @app.post("/api/auth/register", response_model=AuthResponse)
 async def register(payload: RegisterRequest) -> AuthResponse:
-    if settings.SCHOOL_GOOGLE_AUTH_ENABLED:
-        raise HTTPException(status_code=403, detail="Registration is limited to school Google accounts.")
+    if settings.RESTRICTED_SCHOOL_AUTH_ENABLED:
+        raise HTTPException(status_code=403, detail="Registration is limited to verified school accounts.")
     if not db.is_enabled():
         raise HTTPException(status_code=503, detail="PostgreSQL is not connected.")
     if settings.REQUIRE_EMAIL_VERIFICATION:
@@ -304,6 +315,8 @@ async def register(payload: RegisterRequest) -> AuthResponse:
 
 @app.get("/api/auth/google/config", response_model=GoogleClientConfigResponse)
 async def google_client_config() -> GoogleClientConfigResponse:
+    if settings.SCHOOL_GITHUB_AUTH_ENABLED:
+        return GoogleClientConfigResponse(client_id="", hosted_domain=None)
     hosted_domain = sorted(settings.ALLOWED_GOOGLE_DOMAINS)[0] if settings.ALLOWED_GOOGLE_DOMAINS else None
     return GoogleClientConfigResponse(client_id=settings.GOOGLE_CLIENT_ID, hosted_domain=hosted_domain)
 
@@ -348,6 +361,8 @@ def _verify_google_credential(credential: str) -> dict[str, str]:
 
 @app.post("/api/auth/google", response_model=AuthResponse)
 async def google_auth(payload: GoogleAuthRequest) -> AuthResponse:
+    if settings.SCHOOL_GITHUB_AUTH_ENABLED:
+        raise HTTPException(status_code=403, detail="Sign in with a verified school email through GitHub.")
     if not db.is_enabled():
         raise HTTPException(status_code=503, detail="PostgreSQL is not connected.")
 
@@ -366,11 +381,12 @@ async def login(payload: LoginRequest) -> AuthResponse:
         payload.identifier,
         payload.password,
         require_google=settings.SCHOOL_GOOGLE_AUTH_ENABLED,
+        require_github=settings.SCHOOL_GITHUB_AUTH_ENABLED,
     )
     if not user:
         detail = "Socratic-Chat ID/email or password is incorrect."
-        if settings.SCHOOL_GOOGLE_AUTH_ENABLED:
-            detail += " New users must complete Google verification first."
+        if settings.RESTRICTED_SCHOOL_AUTH_ENABLED:
+            detail += " New users must complete school verification first."
         raise HTTPException(status_code=401, detail=detail)
     return _auth_response(user)
 
@@ -385,10 +401,14 @@ async def refresh_session(request: Request) -> SessionRefreshResponse:
 @app.post("/api/auth/onboarding", response_model=CurrentUserResponse)
 async def complete_account_setup(payload: OnboardingRequest, request: Request) -> CurrentUserResponse:
     user_id = _session_user_id(request)
-    if payload.password != payload.password_confirmation:
+    if settings.SCHOOL_GITHUB_AUTH_ENABLED:
+        password = secrets.token_urlsafe(32)
+    elif not payload.password or payload.password != payload.password_confirmation:
         raise HTTPException(status_code=400, detail="Password and password confirmation must match.")
+    else:
+        password = payload.password
     try:
-        user = db.complete_onboarding(user_id, payload.username, payload.password, payload.position)
+        user = db.complete_onboarding(user_id, payload.username, password, payload.position)
     except ValueError as exc:
         detail = str(exc)
         status_code = 409 if "already" in detail.lower() or "in use" in detail.lower() else 400
@@ -521,23 +541,27 @@ async def remove_enrolled_course_student(membership_id: str, request: Request) -
 
 @app.post("/api/auth/github/start", response_model=GitHubAuthorizeResponse)
 async def github_start(request: Request) -> GitHubAuthorizeResponse:
-    user_id = _session_user_id(request)
     if not settings.GITHUB_CLIENT_ID or not settings.GITHUB_CLIENT_SECRET or not settings.GITHUB_CALLBACK_URL:
         raise HTTPException(status_code=503, detail="GitHub sign-in is not configured.")
+    user_id = None if settings.SCHOOL_GITHUB_AUTH_ENABLED else _session_user_id(request)
     state = db.create_github_oauth_state(user_id)
     query = urlencode(
         {
             "client_id": settings.GITHUB_CLIENT_ID,
             "redirect_uri": settings.GITHUB_CALLBACK_URL,
             "state": state,
+            "scope": "user:email",
         }
     )
     return GitHubAuthorizeResponse(authorize_url=f"https://github.com/login/oauth/authorize?{query}")
 
 
-def _frontend_github_redirect(result: str) -> RedirectResponse:
+def _frontend_github_redirect(result: str, code: str | None = None) -> RedirectResponse:
     separator = "&" if "?" in settings.FRONTEND_URL else "?"
-    return RedirectResponse(f"{settings.FRONTEND_URL}{separator}github={quote(result)}", status_code=303)
+    destination = f"{settings.FRONTEND_URL}{separator}github={quote(result)}"
+    if code:
+        destination += f"&code={quote(code)}"
+    return RedirectResponse(destination, status_code=303)
 
 
 @app.get("/api/auth/github/callback")
@@ -545,8 +569,8 @@ async def github_callback(code: str = "", state: str = "", error: str = "") -> R
     if error or not code or not state:
         return _frontend_github_redirect("cancelled")
 
-    user_id = db.consume_github_oauth_state(state)
-    if not user_id:
+    state_record = db.consume_github_oauth_state(state)
+    if state_record is None:
         return _frontend_github_redirect("invalid_state")
 
     try:
@@ -579,11 +603,58 @@ async def github_callback(code: str = "", state: str = "", error: str = "") -> R
         profile = profile_response.json()
         github_id = int(profile["id"])
         github_username = str(profile["login"])
+        if settings.SCHOOL_GITHUB_AUTH_ENABLED:
+            emails_response = requests.get(
+                "https://api.github.com/user/emails",
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "Authorization": f"Bearer {access_token}",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+                timeout=15,
+            )
+            emails_response.raise_for_status()
+            allowed_emails = [
+                item for item in emails_response.json()
+                if item.get("verified") is True
+                and str(item.get("email") or "").rsplit("@", 1)[-1].lower()
+                in settings.ALLOWED_GITHUB_EMAIL_DOMAINS
+            ]
+            if not allowed_emails:
+                return _frontend_github_redirect("school_email_required")
+            school_email = str(
+                sorted(allowed_emails, key=lambda item: not bool(item.get("primary")))[0]["email"]
+            ).lower()
+            user = db.find_or_create_github_user(
+                school_email,
+                github_id,
+                github_username,
+                str(profile.get("name") or github_username),
+            )
+            login_code = db.create_github_login_code(str(user["user_id"]))
+            return _frontend_github_redirect("verified", login_code)
+
+        user_id = state_record.get("user_id")
+        if not user_id:
+            return _frontend_github_redirect("invalid_state")
         db.link_github_account(user_id, github_id, github_username)
-    except (KeyError, TypeError, ValueError, requests.RequestException):
+    except (AttributeError, KeyError, TypeError, ValueError, requests.RequestException):
         return _frontend_github_redirect("error")
 
     return _frontend_github_redirect("connected")
+
+
+@app.post("/api/auth/github/exchange", response_model=AuthResponse)
+async def github_exchange(payload: GitHubExchangeRequest) -> AuthResponse:
+    if not settings.SCHOOL_GITHUB_AUTH_ENABLED:
+        raise HTTPException(status_code=409, detail="GitHub school sign-in is not enabled.")
+    user_id = db.consume_github_login_code(payload.code)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="GitHub sign-in expired or was already used.")
+    user = db.get_user_by_id(user_id)
+    if user is None or not user.get("github_connected"):
+        raise HTTPException(status_code=401, detail="Verified GitHub account was not found.")
+    return _auth_response(user)
 
 
 @app.get("/api/conversations", response_model=ConversationListResponse)

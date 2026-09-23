@@ -147,8 +147,8 @@ class LoginRequest(BaseModel):
 
 class OnboardingRequest(BaseModel):
     username: str = Field(min_length=3, max_length=80)
-    password: str = Field(min_length=8, max_length=200)
-    password_confirmation: str = Field(min_length=8, max_length=200)
+    password: str | None = Field(default=None, min_length=8, max_length=200)
+    password_confirmation: str | None = Field(default=None, min_length=8, max_length=200)
     position: Literal["student", "instructor"]
 
 
@@ -240,3 +240,7 @@ class CurrentUserResponse(BaseModel):
 
 class GitHubAuthorizeResponse(BaseModel):
     authorize_url: str
+
+
+class GitHubExchangeRequest(BaseModel):
+    code: str = Field(min_length=20, max_length=512)

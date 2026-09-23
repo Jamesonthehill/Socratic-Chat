@@ -296,28 +296,20 @@ http://127.0.0.1:8000/api/db/status
 
 ## UNC Charlotte account access
 
-The deployed app can be limited to UNC Charlotte Google Workspace accounts. In
-this mode, email/password registration is disabled and Google must return the
-verified hosted-domain claim `charlotte.edu`.
-
-Create a Google OAuth 2.0 **Web application** client and add these authorized
-JavaScript origins:
-
-```text
-https://jamesonthehill.github.io
-https://jamesonthehill.com
-http://127.0.0.1:8001
-http://localhost:8001
-```
+The deployed app uses GitHub as its school identity provider. It requests the
+read-only `user:email` OAuth scope, reads the authenticated user's email list,
+and accepts only an address that GitHub marks as verified with the exact domain
+`charlotte.edu`. Repository access is never requested. Google and Duo are not
+part of this sign-in path.
 
 Configure these environment variables on the Render backend:
 
 ```text
-GOOGLE_CLIENT_ID=YOUR_CLIENT_ID.apps.googleusercontent.com
-AUTH_MODE=school_google
-ALLOWED_GOOGLE_DOMAINS=charlotte.edu
+AUTH_MODE=school_github
+ALLOWED_GITHUB_EMAIL_DOMAINS=charlotte.edu
 AUTH_SESSION_SECRET=A_LONG_RANDOM_SECRET
 AUTH_SESSION_MINUTES=60
+ALLOW_PASSWORD_LOGIN=false
 CORS_ALLOWED_ORIGINS=https://jamesonthehill.github.io,https://jamesonthehill.com
 ```
 
@@ -325,16 +317,15 @@ Generate `AUTH_SESSION_SECRET` with `openssl rand -hex 32`. Keep it only in
 Render's environment settings or a local `.env`; never commit its value.
 
 The GitHub Pages frontend reads the Render API address from
-`frontend/config.js`. The backend verifies the Google ID token, issues a signed
-session, and requires that session on chat, file, and conversation endpoints.
+`frontend/config.js`. The backend exchanges the GitHub callback for a short-lived,
+single-use app login code and then issues a signed session.
 
 ## Roles and one-time account setup
 
-After the first successful school Google sign-in, a user completes one account
-setup form with a Socratic-Chat username, matching password confirmation, and a
-requested position. The password is stored as a salted PBKDF2 hash; it is never
-stored as plain text. The setup form is shown only once. Afterward, returning
-users may sign in with either Google or their Socratic-Chat ID and password.
+After the first successful school GitHub sign-in, a user completes one account
+setup form with a Socratic-Chat username and requested position. The setup form
+is shown only once. With `ALLOW_PASSWORD_LOGIN=false`, users return through
+GitHub so the verified school-email requirement is enforced each time.
 
 The `users.authority_level` column controls backend authorization:
 
@@ -347,20 +338,9 @@ request while the account remains at student authority. An administrator can
 approve or reject the request from the course dashboard. Users cannot grant
 themselves instructor or administrator access.
 
-The landing page keeps both authentication choices visible:
-
-- School Google is required for first-time verification and account setup.
-- Socratic-Chat ID/password is available only after Google verification and
-  onboarding have been completed.
-
-Control returning-user password login with:
-
-```text
-ALLOW_PASSWORD_LOGIN=true
-```
-
-Open registration remains disabled in `school_google` mode, so visitors cannot
-create password-only accounts without first verifying a school Google account.
+Open registration and password login are disabled in `school_github` mode, so
+visitors cannot create or access an account without a verified school address
+on GitHub.
 
 Set at least one administrator in the Render environment before deployment:
 
@@ -372,7 +352,7 @@ Multiple administrator emails may be separated with commas. The backend adds
 the role and onboarding columns automatically during startup. Instructor-only
 document APIs are also protected by the backend, not only hidden in the UI.
 
-### Require both UNC Charlotte and GitHub
+### Configure GitHub school authentication
 
 Create a GitHub OAuth App under **GitHub Settings → Developer settings → OAuth
 Apps** with:
@@ -393,10 +373,10 @@ GITHUB_CALLBACK_URL=https://socratic-chat-api.onrender.com/api/auth/github/callb
 FRONTEND_URL=https://jamesonthehill.com/Socratic-Chat/
 ```
 
-The user must first pass the `charlotte.edu` Google Workspace check and then
-authorize GitHub. Each GitHub numeric user ID can be linked to only one school
-account. The app requests no repository access. Until both identities are
-present, protected chatbot APIs return 403.
+The authorization request includes `user:email`. The callback lists the user's
+GitHub emails and requires a verified `@charlotte.edu` address. Each GitHub
+numeric user ID can be linked to only one school account, and protected APIs
+require the resulting signed application session.
 
 ## Keeping a teaching example consistent
 

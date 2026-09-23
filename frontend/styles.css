@@ -948,11 +948,8 @@ html[data-theme="dark"] .thinking-mark-stage {
 
 .github-connect-wrap {
   display: grid;
-  gap: 16px;
-  padding: 20px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--surface-soft);
+  gap: 10px;
+  margin: 18px 0 4px;
 }
 
 .github-connect-wrap.is-hidden {
@@ -967,6 +964,30 @@ html[data-theme="dark"] .thinking-mark-stage {
 .github-connect-wrap p {
   color: var(--muted);
   line-height: 1.45;
+}
+
+.github-login-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.github-button-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 0.65rem;
+  font-weight: 900;
+}
+
+.github-connect-wrap .github-login-help {
+  font-size: 0.76rem;
+  text-align: center;
 }
 
 .account-link-graphic {
@@ -1104,7 +1125,7 @@ html[data-theme="dark"] .thinking-mark-stage {
   text-align: center;
 }
 
-body:has(.github-connect-wrap:not(.is-hidden)) .auth-card {
+.auth-screen.is-github-linking .auth-card {
   width: min(540px, 100%);
 }
 

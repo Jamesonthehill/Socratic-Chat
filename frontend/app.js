@@ -900,22 +900,22 @@ async function openCourseChat(course, preview = false) {
 }
 
 function showGithubConnection() {
+  const primarySignIn = authMode === "school_github" && !currentUser;
   appShell.classList.add("is-hidden");
   onboardingScreen?.classList.add("is-hidden");
   dashboardScreen?.classList.add("is-hidden");
   authScreen.classList.remove("is-hidden");
-  authScreen.classList.add("is-github-linking");
+  authScreen.classList.toggle("is-github-linking", !primarySignIn);
   googleSignInWrap?.classList.add("is-hidden");
   githubConnectWrap?.classList.remove("is-hidden");
   authStatus.textContent = "";
-  const primarySignIn = authMode === "school_github" && !currentUser;
   if (authCopy) authCopy.textContent = primarySignIn
-    ? "Sign in with GitHub using an account that has a verified charlotte.edu email."
+    ? "Sign in to your learning workspace. School access is verified through GitHub."
     : "Connect the GitHub account you want linked to this school account.";
   if (githubConnectMessage) {
     githubConnectMessage.textContent = githubOauthConfigured
       ? (primarySignIn
-        ? "GitHub will share your email addresses so Socratic-Chat can verify the charlotte.edu domain."
+        ? "Your GitHub account must contain a verified @charlotte.edu email. No repository access is requested."
         : "Link the GitHub account you want to use with Socratic-Chat.")
       : "GitHub authentication is not configured on the server yet.";
   }

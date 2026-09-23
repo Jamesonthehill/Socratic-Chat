@@ -41,39 +41,13 @@
         </div>
 
         <div id="githubConnectWrap" class="github-connect-wrap is-hidden">
-          <div class="account-link-graphic" aria-hidden="true">
-            <div class="account-logo school-account-logo">CLT</div>
-            <div class="account-link-connector">
-              <span></span>
-              <strong>✓</strong>
-              <span></span>
-            </div>
-            <div class="account-logo github-account-logo">GH</div>
-          </div>
-          <div class="github-connect-heading">
-            <p class="eyebrow">Verified school access</p>
-            <h2>Continue with GitHub</h2>
-            <p id="githubConnectMessage">Use a GitHub account containing a verified charlotte.edu email address.</p>
-          </div>
-
-          <div class="verified-school-account">
-            <span class="verified-account-check" aria-hidden="true">✓</span>
-            <div>
-              <small>Required verified email domain</small>
-              <strong id="githubSchoolEmail">charlotte.edu</strong>
-            </div>
-          </div>
-
-          <div class="github-permission-card">
-            <div class="permission-card-icon" aria-hidden="true">↗</div>
-            <div>
-              <strong>GitHub identity and email verification</strong>
-              <p>Socratic-Chat reads your GitHub email addresses only to verify charlotte.edu. It does not request repository access.</p>
-            </div>
-          </div>
-
-          <button id="connectGithubButton" type="button">Authorize with GitHub</button>
-          <p class="github-redirect-note">You will continue securely to github.com and return here after authorization.</p>
+          <button id="connectGithubButton" class="github-login-button" type="button">
+            <span class="github-button-mark" aria-hidden="true">GH</span>
+            Continue with GitHub
+          </button>
+          <p id="githubConnectMessage" class="github-login-help">
+            Your GitHub account must contain a verified @charlotte.edu email. No repository access is requested.
+          </p>
         </div>
 
         <div id="emailAuthDivider" class="auth-divider"><span>or use your Socratic-Chat ID</span></div>

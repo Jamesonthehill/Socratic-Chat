@@ -309,7 +309,7 @@ AUTH_MODE=school_github
 ALLOWED_GITHUB_EMAIL_DOMAINS=charlotte.edu
 AUTH_SESSION_SECRET=A_LONG_RANDOM_SECRET
 AUTH_SESSION_MINUTES=60
-ALLOW_PASSWORD_LOGIN=false
+ALLOW_PASSWORD_LOGIN=true
 CORS_ALLOWED_ORIGINS=https://jamesonthehill.github.io,https://jamesonthehill.com
 ```
 
@@ -324,8 +324,8 @@ single-use app login code and then issues a signed session.
 
 After the first successful school GitHub sign-in, a user completes one account
 setup form with a Socratic-Chat username and requested position. The setup form
-is shown only once. With `ALLOW_PASSWORD_LOGIN=false`, users return through
-GitHub so the verified school-email requirement is enforced each time.
+is shown only once. New users must begin with GitHub verification; returning
+users can use either GitHub or the Socratic-Chat ID and password they created.
 
 The `users.authority_level` column controls backend authorization:
 
@@ -338,9 +338,10 @@ request while the account remains at student authority. An administrator can
 approve or reject the request from the course dashboard. Users cannot grant
 themselves instructor or administrator access.
 
-Open registration and password login are disabled in `school_github` mode, so
-visitors cannot create or access an account without a verified school address
-on GitHub.
+Open registration remains disabled in `school_github` mode, so a visitor cannot
+create an account without a verified school address on GitHub. Password login
+is available only to accounts that have already completed that verification and
+one-time setup.
 
 Set at least one administrator in the Render environment before deployment:
 

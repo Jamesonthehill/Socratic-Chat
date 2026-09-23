@@ -57,7 +57,7 @@ services:
       - key: AUTH_SESSION_MINUTES
         value: "60"
       - key: ALLOW_PASSWORD_LOGIN
-        value: "false"
+        value: "true"
       - key: ADMIN_EMAILS
         sync: false
       - key: CORS_ALLOWED_ORIGINS

@@ -144,7 +144,7 @@ async def startup() -> None:
             missing.append("ALLOWED_GOOGLE_DOMAINS")
         if not settings.AUTH_SESSION_SECRET:
             missing.append("AUTH_SESSION_SECRET")
-    if settings.SCHOOL_GITHUB_AUTH_ENABLED:
+    if settings.SCHOOL_GITHUB_AUTH_ENABLED and not settings.ALLOW_PASSWORD_LOGIN:
         if not settings.ALLOWED_GITHUB_EMAIL_DOMAINS:
             missing.append("ALLOWED_GITHUB_EMAIL_DOMAINS")
         if not settings.AUTH_SESSION_SECRET:

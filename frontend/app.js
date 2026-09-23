@@ -434,13 +434,6 @@ function setAuthMode(mode) {
     showRegisterButton.classList.remove("is-active");
     return;
   }
-  if (authMode === "school_github") {
-    loginForm.classList.add("is-hidden");
-    registerForm.classList.add("is-hidden");
-    showLoginButton.classList.remove("is-active");
-    showRegisterButton.classList.remove("is-active");
-    return;
-  }
   const isLogin = mode === "login" || !registrationEnabled;
   loginForm.classList.toggle("is-hidden", !isLogin);
   registerForm.classList.toggle("is-hidden", isLogin);
@@ -910,7 +903,7 @@ function showGithubConnection() {
   githubConnectWrap?.classList.remove("is-hidden");
   authStatus.textContent = "";
   if (authCopy) authCopy.textContent = primarySignIn
-    ? "Sign in to your learning workspace. School access is verified through GitHub."
+    ? "New users continue with GitHub. Returning users can also sign in with their Socratic-Chat ID below."
     : "Connect the GitHub account you want linked to this school account.";
   if (githubConnectMessage) {
     githubConnectMessage.textContent = githubOauthConfigured
@@ -2318,16 +2311,17 @@ function applyAuthenticationMode(config) {
     expireSession("Please sign in again with your verified school account.");
   }
   emailAuthDivider?.classList.toggle("is-hidden", !passwordAuthEnabled);
-  authTabs?.classList.toggle("is-hidden", !passwordAuthEnabled);
+  authTabs?.classList.toggle("is-hidden", !passwordAuthEnabled || !registrationEnabled);
   showRegisterButton?.classList.toggle("is-hidden", !registrationEnabled);
   loginForm?.classList.toggle("is-hidden", !passwordAuthEnabled);
   registerForm?.classList.add("is-hidden");
   googleSignInWrap?.classList.toggle("is-hidden", authMode === "school_github");
   const onboardingPasswordFields = document.querySelector("#onboardingPasswordFields");
-  onboardingPasswordFields?.classList.toggle("is-hidden", authMode === "school_github");
+  const onboardingNeedsPassword = authMode !== "school_github" || passwordAuthEnabled;
+  onboardingPasswordFields?.classList.toggle("is-hidden", !onboardingNeedsPassword);
   ["#onboardingPassword", "#onboardingPasswordConfirmation"].forEach((selector) => {
     const field = document.querySelector(selector);
-    if (field) field.required = authMode !== "school_github";
+    if (field) field.required = onboardingNeedsPassword;
   });
 
   const domain = config.school_domain || "your school";
@@ -2337,7 +2331,7 @@ function applyAuthenticationMode(config) {
       : `Sign in with your ${domain} Google account to use the chatbot.`;
   }
   if (authCopy && authMode === "school_github") {
-    authCopy.textContent = `Sign in with GitHub using an account with a verified @${domain} email.`;
+    authCopy.textContent = `New users verify a @${domain} email through GitHub. Returning users may use their Socratic-Chat ID.`;
   }
 }
 

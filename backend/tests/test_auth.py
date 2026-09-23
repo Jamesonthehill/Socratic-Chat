@@ -146,8 +146,10 @@ class OnboardingTests(unittest.TestCase):
     def test_school_github_onboarding_does_not_require_a_password(self, complete_onboarding) -> None:
         original_enabled = settings.SCHOOL_GITHUB_AUTH_ENABLED
         original_secret = settings.AUTH_SESSION_SECRET
+        original_password_login = settings.ALLOW_PASSWORD_LOGIN
         settings.SCHOOL_GITHUB_AUTH_ENABLED = True
         settings.AUTH_SESSION_SECRET = "test-secret-that-is-not-used-outside-tests"
+        settings.ALLOW_PASSWORD_LOGIN = False
         complete_onboarding.return_value = {
             "user_id": "school-user-1", "username": "student1", "email": "student@charlotte.edu",
             "display_name": "Student", "authority_level": 2, "role": "student",
@@ -162,6 +164,7 @@ class OnboardingTests(unittest.TestCase):
         finally:
             settings.SCHOOL_GITHUB_AUTH_ENABLED = original_enabled
             settings.AUTH_SESSION_SECRET = original_secret
+            settings.ALLOW_PASSWORD_LOGIN = original_password_login
 
         self.assertEqual(response.user.username, "student1")
         password = complete_onboarding.call_args.args[2]

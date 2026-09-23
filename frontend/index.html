@@ -14,7 +14,7 @@
         document.documentElement.dataset.themePreference = preference;
       })();
     </script>
-    <link rel="stylesheet" href="./styles.css?v=20260923-1" />
+    <link rel="stylesheet" href="./styles.css?v=20260923-2" />
   </head>
   <body>
     <a class="skip-link" href="#messageInput">Skip to the learning conversation</a>
@@ -36,7 +36,7 @@
         </div>
         <p id="authCopy" class="auth-copy">Sign in or create an account so your chats and uploaded files stay connected to you.</p>
 
-        <div id="googleSignInWrap" class="google-signin-wrap">
+        <div id="googleSignInWrap" class="google-signin-wrap is-hidden">
           <div id="googleSignInButton"></div>
         </div>
 
@@ -50,14 +50,14 @@
           </p>
         </div>
 
-        <div id="emailAuthDivider" class="auth-divider"><span>or use your Socratic-Chat ID</span></div>
+        <div id="emailAuthDivider" class="auth-divider is-hidden"><span>or use your Socratic-Chat ID</span></div>
 
-        <div id="authTabs" class="auth-tabs" role="tablist" aria-label="Authentication">
+        <div id="authTabs" class="auth-tabs is-hidden" role="tablist" aria-label="Authentication">
           <button id="showLoginButton" class="auth-tab is-active" type="button">Login</button>
           <button id="showRegisterButton" class="auth-tab" type="button">Register</button>
         </div>
 
-        <form id="loginForm" class="auth-form">
+        <form id="loginForm" class="auth-form is-hidden">
           <label>
             Email or username
             <input id="loginIdentifier" type="text" autocomplete="username" required />
@@ -462,6 +462,6 @@
       </div>
     </main>
     <script src="./config.js?v=20260901-8"></script>
-    <script src="./app.js?v=20260923-1" type="module"></script>
+    <script src="./app.js?v=20260923-2" type="module"></script>
   </body>
 </html>

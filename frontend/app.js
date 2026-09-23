@@ -2034,7 +2034,13 @@ async function startNewChat() {
 
 
 showLoginButton.addEventListener("click", () => setAuthMode("login"));
-showRegisterButton.addEventListener("click", () => setAuthMode("register"));
+showRegisterButton.addEventListener("click", () => {
+  if (authMode === "school_github") {
+    connectGitHubAccount();
+    return;
+  }
+  setAuthMode("register");
+});
 
 async function finishAuth(data) {
   saveUser(data.user, data.access_token, data.expires_in_seconds);
@@ -2311,8 +2317,11 @@ function applyAuthenticationMode(config) {
     expireSession("Please sign in again with your verified school account.");
   }
   emailAuthDivider?.classList.toggle("is-hidden", !passwordAuthEnabled);
-  authTabs?.classList.toggle("is-hidden", !passwordAuthEnabled || !registrationEnabled);
-  showRegisterButton?.classList.toggle("is-hidden", !registrationEnabled);
+  authTabs?.classList.toggle("is-hidden", !passwordAuthEnabled);
+  showRegisterButton?.classList.toggle(
+    "is-hidden",
+    !registrationEnabled && authMode !== "school_github",
+  );
   loginForm?.classList.toggle("is-hidden", !passwordAuthEnabled);
   registerForm?.classList.add("is-hidden");
   googleSignInWrap?.classList.toggle("is-hidden", authMode === "school_github");

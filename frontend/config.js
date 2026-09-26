@@ -6,8 +6,11 @@ const DEPLOYED_FRONTEND_HOSTS = new Set([
   "jamesonthehill.github.io",
 ]);
 
+const deployed = DEPLOYED_FRONTEND_HOSTS.has(window.location.hostname);
+const hostedRoot = `${window.location.origin}/Socratic-Chat/`;
+
 window.SOCRATIC_CONFIG = {
-  API_BASE_URL: DEPLOYED_FRONTEND_HOSTS.has(window.location.hostname)
-    ? "https://socratic-chat-api.onrender.com"
-    : "",
+  API_BASE_URL: deployed ? "https://socratic-chat-api.onrender.com" : "",
+  SOCRATIC_URL: deployed ? hostedRoot : "/",
+  PLATFORM_URL: deployed ? `${hostedRoot}platform/` : "/platform/",
 };

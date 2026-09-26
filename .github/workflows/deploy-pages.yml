@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - "frontend/**"
+      - "platform_frontend/**"
+      - "reflections-app/frontend/src/**"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -30,6 +32,22 @@ jobs:
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: platform_frontend/package-lock.json
+
+      - name: Build platform dashboard
+        working-directory: platform_frontend
+        run: |
+          npm ci
+          npm run build
+          rm -rf ../frontend/platform
+          mkdir -p ../frontend/platform
+          cp -R dist/. ../frontend/platform/
 
       - name: Upload frontend
         uses: actions/upload-pages-artifact@v4

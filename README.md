@@ -360,6 +360,25 @@ The GitHub Pages frontend reads the Render API address from
 `frontend/config.js`. The backend exchanges the GitHub callback for a short-lived,
 single-use app login code and then issues a signed session.
 
+## Professor dashboard
+
+Instructor and administrator accounts see a **Professor dashboard** link after
+sign-in. The dashboard is hosted at:
+
+```text
+https://jamesonthehill.com/Socratic-Chat/platform/#/professor
+```
+
+GitHub Pages builds `platform_frontend` and publishes it under
+`frontend/platform`. The hash-based routes keep direct dashboard links working
+on static hosting, while assignment APIs continue to run on the Render backend
+under `/api/platform`.
+
+Socratic Chat assignments work through the existing backend. Reflections and
+Student Agent assignments additionally require their learning services and the
+shared `PLATFORM_SERVICE_TOKEN`; those tools report that they are unavailable
+until `REFLECTIONS_URL`, `TUTOR_URL`, and the shared token are configured.
+
 ## Roles and one-time account setup
 
 After the first successful school GitHub sign-in, a user completes one account

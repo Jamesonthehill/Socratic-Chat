@@ -8,4 +8,5 @@ psycopg[binary]==3.2.3
 python-multipart==0.0.20
 google-auth[requests]>=2.40.0,<3.0.0
 requests>=2.30.0,<3.0.0
+httpx>=0.28,<0.29
 PyJWT[crypto]>=2.10,<3.0

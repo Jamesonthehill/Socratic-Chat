@@ -89,6 +89,8 @@ from app.schemas import (
     TextDocumentRequest,
     UserProfile,
 )
+from platform_app import store as platform_store
+from platform_app.routes import router as platform_router
 
 app = FastAPI(title="Socratic-Chat")
 
@@ -162,6 +164,8 @@ async def startup() -> None:
     if missing:
         raise RuntimeError(f"Authentication is enabled, but {', '.join(missing)} is not configured.")
     db.init_db()
+    if settings.DATABASE_URL:
+        platform_store.migrate()
 
 
 @app.get("/health")
@@ -1478,6 +1482,7 @@ async def sample_answer(payload: SampleAnswerRequest, request: Request) -> Sampl
     return SampleAnswerResponse(answer=answer)
 
 # Register API routers before the catch-all frontend mount.
+app.include_router(platform_router)
 app.include_router(lti_router)
 
 app.mount("/", StaticFiles(directory=settings.FRONTEND_DIR, html=True), name="frontend")

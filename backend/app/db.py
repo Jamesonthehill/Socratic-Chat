@@ -301,6 +301,17 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                CREATE TABLE IF NOT EXISTS github_login_codes_platform (
+                    code_hash TEXT PRIMARY KEY,
+                    user_id UUID NOT NULL REFERENCES users_platform(id) ON DELETE CASCADE,
+                    expires_at TIMESTAMPTZ NOT NULL,
+                    used_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS courses_platform (
                     id UUID PRIMARY KEY,
                     course_code TEXT NOT NULL,
@@ -1590,7 +1601,7 @@ def delete_course(instructor_id: str, course_id: str) -> dict[str, object] | Non
         with conn.cursor() as cur:
             cur.execute(
                 """
-                DELETE FROM courses
+                DELETE FROM courses_platform
                 WHERE id = %s AND instructor_id = %s
                 RETURNING id::text, course_code, title
                 """,
@@ -2122,7 +2133,7 @@ def create_github_login_code(user_id: str, expires_in_minutes: int = 5) -> str:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO github_login_codes (code_hash, user_id, expires_at)
+                INSERT INTO github_login_codes_platform (code_hash, user_id, expires_at)
                 VALUES (%s, %s, NOW() + (%s * INTERVAL '1 minute'))
                 """,
                 (code_hash, user_id, expires_in_minutes),
@@ -2138,7 +2149,7 @@ def consume_github_login_code(code: str) -> str | None:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                UPDATE github_login_codes
+                UPDATE github_login_codes_platform
                 SET used_at = NOW()
                 WHERE code_hash = %s
                   AND used_at IS NULL
@@ -2233,7 +2244,7 @@ def find_or_create_github_user(
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id::text FROM users WHERE github_id = %s OR lower(email) = %s FOR UPDATE",
+                "SELECT id::text FROM users_platform WHERE github_id = %s OR lower(email) = %s FOR UPDATE",
                 (github_id, normalized_email),
             )
             matches = cur.fetchall()
@@ -2246,7 +2257,7 @@ def find_or_create_github_user(
                 user_id = str(matches[0][0])
                 cur.execute(
                     """
-                    UPDATE users
+                    UPDATE users_platform
                     SET email = %s,
                         display_name = COALESCE(NULLIF(%s, ''), display_name, username),
                         github_id = %s,
@@ -2269,7 +2280,7 @@ def find_or_create_github_user(
                 authority_level = 0 if is_configured_admin else 2
                 cur.execute(
                     """
-                    INSERT INTO users (
+                    INSERT INTO users_platform (
                         id, username, display_name, email, password_salt, password_hash,
                         auth_provider, github_id, github_username, github_linked_at, authority_level
                     )

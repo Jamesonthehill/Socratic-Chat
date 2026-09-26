@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlparse
+from uuid import uuid4
 
 from fastapi import HTTPException
 from starlette.requests import Request
@@ -427,6 +429,45 @@ class SchoolGitHubAuthenticationTests(unittest.TestCase):
         response = asyncio.run(main.github_callback(code="oauth-code", state="valid-state"))
 
         self.assertIn("github=school_email_required", response.headers["location"])
+
+
+@unittest.skipUnless(os.getenv("TEST_DATABASE_URL"), "Set TEST_DATABASE_URL for PostgreSQL coverage.")
+class GitHubAuthenticationDatabaseTests(unittest.TestCase):
+    def setUp(self) -> None:
+        import psycopg
+        from psycopg import sql
+
+        dsn = os.environ["TEST_DATABASE_URL"]
+        self.schema = "github_auth_test_" + uuid4().hex
+        self.connection = psycopg.connect(dsn, autocommit=True)
+        self.addCleanup(self.connection.close)
+        self.connection.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(self.schema)))
+        self.addCleanup(
+            self.connection.execute,
+            sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(self.schema)),
+        )
+        for replacement in (
+            patch.object(settings, "DATABASE_URL", dsn),
+            patch.object(settings, "PLATFORM_DB_SCHEMA", self.schema),
+            patch.object(settings, "SOCRATIC_DB_SCHEMA", self.schema),
+        ):
+            replacement.start()
+            self.addCleanup(replacement.stop)
+        db.init_db()
+
+    def test_primary_github_login_database_round_trip(self) -> None:
+        state = db.create_github_oauth_state(None)
+        self.assertEqual(db.consume_github_oauth_state(state), {"user_id": None})
+
+        user = db.find_or_create_github_user(
+            "student@charlotte.edu",
+            123456789,
+            "student-gh",
+            "Student",
+        )
+        code = db.create_github_login_code(str(user["user_id"]))
+
+        self.assertEqual(db.consume_github_login_code(code), user["user_id"])
 
 
 if __name__ == "__main__":

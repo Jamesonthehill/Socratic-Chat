@@ -263,10 +263,26 @@ cd backend
 
 The app creates these tables automatically on startup:
 
-- `conversations`
-- `conversation_messages`
-- `mastery_assessments` (one immutable record per evaluated student answer)
-- `student_concept_progress` (the latest per-student, per-course concept state)
+- `socratic_chat.conversations_socratic_chat`
+- `socratic_chat.conversation_messages_socratic_chat`
+- `socratic_chat.mastery_assessments_socratic_chat` (one immutable record per evaluated student answer)
+- `socratic_chat.student_concept_progress_socratic_chat` (the latest per-student, per-course concept state)
+
+### Migrating a pre-platform deployment
+
+The platform-common schema uses `platform.*_platform` and
+`socratic_chat.*_socratic_chat` tables. If this app previously stored accounts,
+courses, and conversations in legacy `public` tables, copy them once after
+deploying the namespaced version:
+
+```bash
+python tools/migrate_legacy_public_data.py --dry-run
+python tools/migrate_legacy_public_data.py
+```
+
+The migration is transactional and idempotent. It merges matching GitHub/email
+accounts, preserves existing namespaced records, and leaves all legacy source
+tables untouched.
 
 ## Chat pipeline logs on Render
 

@@ -286,11 +286,17 @@ def init_db() -> None:
                 """
                 CREATE TABLE IF NOT EXISTS github_oauth_states_platform (
                     state_hash TEXT PRIMARY KEY,
-                    user_id UUID NOT NULL REFERENCES users_platform(id) ON DELETE CASCADE,
+                    user_id UUID REFERENCES users_platform(id) ON DELETE CASCADE,
                     expires_at TIMESTAMPTZ NOT NULL,
                     used_at TIMESTAMPTZ,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE github_oauth_states_platform
+                ALTER COLUMN user_id DROP NOT NULL
                 """
             )
             cur.execute(

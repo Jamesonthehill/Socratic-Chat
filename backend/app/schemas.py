@@ -8,13 +8,6 @@ from pydantic import BaseModel, Field
 Role = Literal["system", "user", "assistant"]
 
 
-class ChatMessage(BaseModel):
-    role: Role
-    content: str = Field(min_length=1)
-    created_at: str | None = None
-    total_score: float | None = None
-
-
 class Source(BaseModel):
     document_id: str
     chunk_id: str
@@ -23,6 +16,14 @@ class Source(BaseModel):
     score: float
     dense_similarity: float | None = None
     sparse_score: float | None = None
+
+
+class ChatMessage(BaseModel):
+    role: Role
+    content: str = Field(min_length=1)
+    created_at: str | None = None
+    total_score: float | None = None
+    sources: list[Source] = Field(default_factory=list)
 
 
 class ChatRequest(BaseModel):
@@ -219,6 +220,7 @@ class UserProfile(BaseModel):
     requested_role: Literal["instructor"] | None = None
     role_status: Literal["active", "pending", "onboarding_required"] = "onboarding_required"
     onboarding_complete: bool = False
+    canvas_connected: bool = False
 
 
 class AuthResponse(BaseModel):

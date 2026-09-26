@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import re
 from pathlib import Path
 from time import monotonic
@@ -16,6 +17,7 @@ from app.pipeline_logging import (
     debug_preview,
     log_event,
     log_exception,
+    publish_event,
     redacted_preview,
     trace_active,
     update_llm_request_snapshot,
@@ -23,6 +25,7 @@ from app.pipeline_logging import (
 )
 from app.schemas import ChatMessage, Source
 from app.socratic import (
+    SocraticDecision,
     choose_socratic_strategy,
     socratic_system_instruction,
 )
@@ -501,6 +504,110 @@ def retrieve_overview(
         raise
 
 
+def retrieve_snapshot(
+    query: str,
+    chunks: list[dict[str, Any]],
+    top_k: int = 4,
+) -> list[Source]:
+    """Run hybrid retrieval against an assignment's immutable chunk snapshot."""
+    if not chunks:
+        return []
+    log_event(5, "retrieval_started", retrieval_type="assignment_snapshot", top_k=top_k)
+    query_embedding = create_embeddings([query])[0]
+    query_tokens = set(tokenize(query))
+    requested_assignments = requested_assignment_numbers(query)
+    requested_page = requested_page_number(query)
+
+    candidates = [
+        chunk for chunk in chunks
+        if (not requested_assignments or item_assignment_number(chunk) in requested_assignments)
+        and (requested_page is None or chunk.get("page_number") == requested_page)
+    ]
+    if not candidates:
+        candidates = chunks
+
+    query_norm = math.sqrt(sum(value * value for value in query_embedding)) or 1.0
+    scored: list[dict[str, Any]] = []
+    for chunk in candidates:
+        embedding = [float(value) for value in chunk.get("embedding", [])]
+        embedding_norm = math.sqrt(sum(value * value for value in embedding)) or 1.0
+        dense = (
+            sum(left * right for left, right in zip(query_embedding, embedding))
+            / (query_norm * embedding_norm)
+            if embedding else 0.0
+        )
+        chunk_tokens = set(tokenize(str(chunk.get("text", ""))))
+        sparse = len(query_tokens & chunk_tokens) / max(1, len(query_tokens))
+        scored.append({**chunk, "dense_similarity": dense, "sparse_score": sparse})
+
+    dense_rank = {
+        item["chunk_id"]: rank
+        for rank, item in enumerate(
+            sorted(scored, key=lambda item: item["dense_similarity"], reverse=True), start=1,
+        )
+    }
+    sparse_rank = {
+        item["chunk_id"]: rank
+        for rank, item in enumerate(
+            sorted(
+                (item for item in scored if item["sparse_score"] > 0),
+                key=lambda item: item["sparse_score"], reverse=True,
+            ),
+            start=1,
+        )
+    }
+    for item in scored:
+        item["score"] = 1.0 / (60 + dense_rank[item["chunk_id"]])
+        if item["chunk_id"] in sparse_rank:
+            item["score"] += 1.0 / (60 + sparse_rank[item["chunk_id"]])
+
+    relevant = [
+        item for item in sorted(scored, key=lambda item: item["score"], reverse=True)
+        if is_relevant_search_result(item)
+    ][:top_k]
+    sources = [
+        Source(
+            document_id=str(item["document_id"]),
+            chunk_id=str(item["chunk_id"]),
+            title=(
+                f"{item['title']} p. {item['page_number']}"
+                if item.get("page_number") else str(item["title"])
+            ),
+            text=str(item["text"]),
+            score=float(item["score"]),
+            dense_similarity=float(item["dense_similarity"]),
+            sparse_score=float(item["sparse_score"]),
+        )
+        for item in relevant
+    ]
+    log_event(5, "retrieval_completed", retrieval_type="assignment_snapshot", chunks=len(sources))
+    return sources
+
+
+def snapshot_overview(chunks: list[dict[str, Any]], top_k: int = 4) -> list[Source]:
+    """Return the first chunks from each snapshotted document for overview requests."""
+    selected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for chunk in chunks:
+        document_id = str(chunk["document_id"])
+        if document_id in seen:
+            continue
+        seen.add(document_id)
+        selected.append(chunk)
+        if len(selected) >= top_k:
+            break
+    return [
+        Source(
+            document_id=str(item["document_id"]),
+            chunk_id=str(item["chunk_id"]),
+            title=str(item["title"]),
+            text=str(item["text"]),
+            score=1.0,
+        )
+        for item in selected
+    ]
+
+
 def fallback_answer(question: str, sources: list[Source]) -> str:
     if not sources:
         return "That topic is outside the currently published course documentation."
@@ -508,6 +615,42 @@ def fallback_answer(question: str, sources: list[Source]) -> str:
         "I found relevant course material, but I could not generate the explanation right now. "
         "Please try again."
     )
+
+
+_NON_REASONING_INVITATION = re.compile(
+    r"^(?:(?:would|could|do)\s+you\s+(?:like|want|prefer)\b|"
+    r"(?:are|were)\s+you\s+ready\b|"
+    r"(?:shall|should)\s+we\b)",
+    re.IGNORECASE,
+)
+
+
+def ensure_socratic_final_question(
+    answer: str,
+    decision: SocraticDecision,
+) -> str:
+    """Replace a closing activity offer with a question that requires reasoning."""
+    if decision.mode != "socratic":
+        return answer
+    sentences = [
+        sentence
+        for sentence in re.split(r"(?<=[.!?])\s+", answer.strip())
+        if sentence.strip()
+    ]
+    if not sentences:
+        return answer
+    final_question = sentences[-1].strip()
+    plain_question = re.sub(r"[*_`]", "", final_question).strip()
+    if not final_question.endswith("?") or not _NON_REASONING_INVITATION.match(plain_question):
+        return answer
+    concept = (decision.target_concept or "the main course concept").strip()
+    if len(concept.split()) > 6:
+        concept = "the main course concept"
+    replacement = (
+        f"What detail in this situation shows how {concept} works, "
+        "and why does that detail matter?"
+    )
+    return " ".join([*sentences[:-1], replacement])
 
 
 def answer_format_instruction(question: str) -> str:
@@ -563,6 +706,8 @@ async def generate_sample_student_answer(
         {"role": "user", "content": f"Write the student's answer to this tutor question:\n{tutor_question}"},
     ]
     request: dict[str, Any] = {"model": model, "messages": messages, "temperature": 0.2}
+    if provider == "Ollama":
+        request.update(settings.completion_token_parameters(provider, settings.OLLAMA_GENERATION_MAX_TOKENS))
     write_llm_request_snapshot("sample-student-answer", provider, request)
     started = monotonic()
     client = AsyncOpenAI(api_key=api_key, base_url=base_url)
@@ -653,6 +798,8 @@ async def generate_answer(
                 "Resolve references from the conversation; do not invent course facts."
                 if contextual_meaning else
                 "You are a concise RAG tutor whose objective is student understanding of instructor-published topics. "
+                "Write in a warm, natural conversational voice with complete sentences and smooth transitions. "
+                "Avoid robotic phrasing, canned headings, telegraphic fragments, and disconnected short sentences. "
                 "Use only the retrieved course context for factual course content. If that context does not support "
                 "the requested topic, respond exactly: 'That topic is outside the currently published course "
                 "documentation.' Never answer an unsupported topic from general knowledge, even if requested. "
@@ -691,11 +838,22 @@ async def generate_answer(
             "messages": messages,
             "temperature": settings.RAG_TEMPERATURE,
         }
+        if provider == "Ollama":
+            request.update(settings.completion_token_parameters(provider, settings.OLLAMA_GENERATION_MAX_TOKENS))
         write_llm_request_snapshot("tutor-generation", provider, request)
-        response = await client.chat.completions.create(
-            **request,
-        )
-        raw_answer = response.choices[0].message.content or fallback_answer(question, sources)
+        response = await client.chat.completions.create(**request, stream=True)
+        response_parts: list[str] = []
+        if hasattr(response, "__aiter__"):
+            async for chunk in response:
+                delta = chunk.choices[0].delta.content if chunk.choices else None
+                if delta:
+                    response_parts.append(delta)
+                    publish_event("llm_token", token=delta)
+        else:
+            content = response.choices[0].message.content if response.choices else None
+            if content:
+                response_parts.append(content)
+        raw_answer = "".join(response_parts) or fallback_answer(question, sources)
         llm_latency_ms = round((monotonic() - llm_started) * 1000)
         log_event(
             8,
@@ -706,8 +864,13 @@ async def generate_answer(
         )
         log_event(9, "candidate_response_generated", source="llm", response_chars=len(raw_answer))
         debug_preview("candidate_answer", raw_answer)
-        answer = raw_answer
-        log_event(10, "response_forwarded_unmodified", questions=answer.count("?"))
+        answer = ensure_socratic_final_question(raw_answer, socratic_decision)
+        log_event(
+            10,
+            "response_finalized",
+            questions=answer.count("?"),
+            invitation_replaced=answer != raw_answer,
+        )
         update_llm_request_snapshot(
             "tutor-generation",
             raw_response=raw_answer,
@@ -776,9 +939,22 @@ async def generate_conversation_transition(
             "temperature": 0.2,
             "max_tokens": 80,
         }
+        if provider == "Ollama":
+            request.update(settings.completion_token_parameters(provider, 80))
         write_llm_request_snapshot("conversation-transition", provider, request)
-        response = await client.chat.completions.create(**request)
-        answer = response.choices[0].message.content or fallback
+        response = await client.chat.completions.create(**request, stream=True)
+        response_parts: list[str] = []
+        if hasattr(response, "__aiter__"):
+            async for chunk in response:
+                delta = chunk.choices[0].delta.content if chunk.choices else None
+                if delta:
+                    response_parts.append(delta)
+                    publish_event("llm_token", token=delta)
+        else:
+            content = response.choices[0].message.content if response.choices else None
+            if content:
+                response_parts.append(content)
+        answer = "".join(response_parts) or fallback
         latency_ms = round((monotonic() - started) * 1000)
         log_event(
             8,

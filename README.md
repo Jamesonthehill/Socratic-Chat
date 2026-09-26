@@ -223,6 +223,8 @@ http://127.0.0.1:8000
 - `POST /api/documents/text`
 - `POST /api/documents/scan`
 - `POST /api/chat`
+- `GET /api/lti/status`, `GET /api/lti/canvas-config`, `GET /api/lti/jwks`
+- `GET|POST /api/lti/login`, `POST /api/lti/launch`, `POST /api/lti/exchange`
 
 
 ## PostgreSQL conversation memory
@@ -280,6 +282,28 @@ fixed prompt instructions and generated answers,
 along with character counts and non-reversible SHA-256 fingerprints. It never
 logs complete prompts or documents and remains disabled by default. Enable it
 only temporarily while diagnosing answer generation, then turn it off again.
+
+The `/pipeline-logs.html` diagnostics page reloads server-side traces, not browser
+session history. While visible it refreshes every five seconds, without overlapping
+reads or changing the selected request; returning to the tab also refreshes it.
+The most recent 100 requests are checkpointed to PostgreSQL when
+configured and to `PIPELINE_TRACE_FILE` (default:
+`backend/storage/pipeline-traces.json`; set an empty value to disable the file).
+Reads merge live and stored checkpoints, so a browser refresh or backend restart
+does not discard saved traces. Storage errors are logged; a failed read without
+recoverable traces is shown as an error rather than "No traces yet."
+
+**Delete stored logs** deletes trace records from memory, PostgreSQL, and the
+configured trace file; deletion failures are reported. It does not delete
+conversations, course data, rotating application logs, or separately enabled full
+prompt snapshots. Redaction and full-prompt opt-in settings are unchanged.
+
+Native development and Docker use different storage directories: the root Compose
+deployment keeps the trace file in its `socratic-index` volume, not the host
+checkout. An empty diagnostics response means the backend serving that origin has
+no available traces, not that a hard refresh cleared browser logs. Check that chat
+requests and diagnostics use the same backend. Restarting or rebuilding Compose
+without removing its volumes preserves its stored traces.
 
 File logging is opt-in: `PIPELINE_LOG_FILE` sets a rotating log file.
 `LOG_FULL_PROMPTS=true` together with `PIPELINE_PROMPT_DIR` enables full
@@ -378,6 +402,55 @@ The authorization request includes `user:email`. The callback lists the user's
 GitHub emails and requires a verified `@charlotte.edu` address. Each GitHub
 numeric user ID can be linked to only one school account, and protected APIs
 require the resulting signed application session.
+
+### Canvas LTI 1.3 course navigation (hosted testing)
+
+Socratic-Chat includes the same Canvas LTI 1.3 course-navigation launch used by
+ClubALL (`backend/app/lti.py`). Canvas users open Socratic-Chat from the course
+menu with a signed Canvas identity and course context; no password, GitHub link,
+or Canvas API token is needed.
+
+- The backend validates the launch signature (Canvas JWKS), issuer, client ID,
+  deployment ID, nonce, and one-time state.
+- The first instructor launch creates a private linked course; later instructor
+  and student launches create or link accounts by the signed Canvas identity and
+  approve the course membership. Students cannot launch before an instructor.
+- The backend redirects to `FRONTEND_URL` with a five-minute, one-time code that
+  the GitHub Pages frontend exchanges for a normal session. Students land in the
+  course chat; instructors land on course management.
+- A verified Canvas identity satisfies `REQUIRE_GITHUB_ACCOUNT`.
+
+LTI requires PostgreSQL (`DATABASE_URL`). The tables (`lti_*_platform`) are
+created automatically and match ClubALL's `002_lti.sql`.
+
+1. Generate a dedicated RSA key outside the repository and Base64-encode it:
+
+   ```bash
+   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out socratic-lti-private.pem
+   base64 < socratic-lti-private.pem | tr -d '\n'
+   ```
+
+2. In Render, set `LTI_TOOL_PRIVATE_KEY_B64` to that value (the other LTI values
+   are in `render.yaml`) and redeploy. Confirm
+   `https://socratic-chat-api.onrender.com/api/lti/status` reports
+   `tool_configuration_ready: true`.
+3. Ask a Canvas administrator to create an **LTI Developer Key** by importing
+   `https://socratic-chat-api.onrender.com/api/lti/canvas-config` (or entering
+   the OIDC login `/api/lti/login`, redirect/target `/api/lti/launch`, and public
+   JWK URL `/api/lti/jwks` manually). Enable it and copy the Client ID.
+4. In the Canvas course, open **Settings → Apps → View App Configurations → +
+   App**, choose **By Client ID**, and install it. Copy the Deployment ID.
+5. Set `LTI_CLIENT_ID` and `LTI_DEPLOYMENT_ID` in Render and redeploy. The status
+   endpoint must report `launch_configured: true`.
+6. Launch **Socratic-Chat** from the course menu once as an instructor, then as a
+   student.
+
+Instructure-hosted Canvas always uses the issuer `https://canvas.instructure.com`
+and the OIDC endpoint `https://sso.canvaslms.com/api/lti/authorize_redirect`,
+regardless of the school's Canvas domain (use the `beta`/`test` equivalents for
+those environments; self-hosted Canvas uses its own hostname). Never commit the
+private key. Deep linking, roster sync (NRPS), and grade return (AGS) are not
+implemented.
 
 ## Keeping a teaching example consistent
 

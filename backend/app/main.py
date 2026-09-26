@@ -23,6 +23,7 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 
 from app import auth, db, settings
+from app.lti import router as lti_router
 from app.answer_evaluation import (
     answer_evaluation_query,
     evaluate_student_answer,
@@ -37,6 +38,8 @@ from app.pipeline_logging import (
     end_trace,
     log_event,
     log_exception,
+    recent_traces,
+    delete_recent_traces,
     reset_event_sink,
     set_event_sink,
     set_conversation_id,
@@ -172,6 +175,33 @@ async def database_status() -> DatabaseStatus:
     return DatabaseStatus(enabled=db.is_enabled(), connected=connected, message=message)
 
 
+@app.get("/api/debug/pipeline/traces")
+async def pipeline_traces(request: Request, response: Response, limit: int = 25) -> dict[str, object]:
+    """Expose recent local pipeline traces for the development diagnostics page."""
+    if not settings.DEBUG_PIPELINE_LOGS:
+        raise HTTPException(status_code=404, detail="Pipeline diagnostics are disabled.")
+    if settings.RESTRICTED_SCHOOL_AUTH_ENABLED:
+        _current_user_id(request)
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return {"traces": recent_traces(limit)}
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.delete("/api/debug/pipeline/traces")
+async def delete_pipeline_traces(request: Request) -> dict[str, int]:
+    """Delete stored local diagnostics without changing learning data."""
+    if not settings.DEBUG_PIPELINE_LOGS:
+        raise HTTPException(status_code=404, detail="Pipeline diagnostics are disabled.")
+    if settings.RESTRICTED_SCHOOL_AUTH_ENABLED:
+        _current_user_id(request)
+    try:
+        return {"deleted": delete_recent_traces()}
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
 def _session_user_id(request: Request) -> str:
     return auth.current_user_id(request, required=True) or ""
 
@@ -183,7 +213,12 @@ def _current_user_id(request: Request) -> str:
         raise HTTPException(status_code=401, detail="Account was not found.")
     if not user.get("onboarding_complete"):
         raise HTTPException(status_code=403, detail="Complete your one-time account setup to continue.")
-    if (settings.REQUIRE_GITHUB_ACCOUNT or settings.SCHOOL_GITHUB_AUTH_ENABLED) and not db.user_has_github(user_id):
+    # A verified Canvas LTI identity satisfies the linked-account requirement.
+    if (
+        (settings.REQUIRE_GITHUB_ACCOUNT or settings.SCHOOL_GITHUB_AUTH_ENABLED)
+        and not user.get("canvas_connected")
+        and not db.user_has_github(user_id)
+    ):
         raise HTTPException(status_code=403, detail="Connect your GitHub account to continue.")
     return user_id
 
@@ -543,7 +578,11 @@ async def remove_enrolled_course_student(membership_id: str, request: Request) -
 async def github_start(request: Request) -> GitHubAuthorizeResponse:
     if not settings.GITHUB_CLIENT_ID or not settings.GITHUB_CLIENT_SECRET or not settings.GITHUB_CALLBACK_URL:
         raise HTTPException(status_code=503, detail="GitHub sign-in is not configured.")
-    user_id = None if settings.SCHOOL_GITHUB_AUTH_ENABLED else _session_user_id(request)
+    user_id = (
+        None
+        if settings.SCHOOL_GITHUB_AUTH_ENABLED
+        else auth.current_user_id(request, required=False)
+    )
     state = db.create_github_oauth_state(user_id)
     query = urlencode(
         {
@@ -603,7 +642,8 @@ async def github_callback(code: str = "", state: str = "", error: str = "") -> R
         profile = profile_response.json()
         github_id = int(profile["id"])
         github_username = str(profile["login"])
-        if settings.SCHOOL_GITHUB_AUTH_ENABLED:
+        user_id = state_record.get("user_id")
+        if settings.SCHOOL_GITHUB_AUTH_ENABLED or not user_id:
             emails_response = requests.get(
                 "https://api.github.com/user/emails",
                 headers={
@@ -614,19 +654,32 @@ async def github_callback(code: str = "", state: str = "", error: str = "") -> R
                 timeout=15,
             )
             emails_response.raise_for_status()
-            allowed_emails = [
+            verified_emails = [
                 item for item in emails_response.json()
                 if item.get("verified") is True
-                and str(item.get("email") or "").rsplit("@", 1)[-1].lower()
-                in settings.ALLOWED_GITHUB_EMAIL_DOMAINS
+                and item.get("email")
             ]
-            if not allowed_emails:
-                return _frontend_github_redirect("school_email_required")
-            school_email = str(
-                sorted(allowed_emails, key=lambda item: not bool(item.get("primary")))[0]["email"]
+            if settings.SCHOOL_GITHUB_AUTH_ENABLED:
+                verified_emails = [
+                    item
+                    for item in verified_emails
+                    if str(item["email"]).rsplit("@", 1)[-1].lower()
+                    in settings.ALLOWED_GITHUB_EMAIL_DOMAINS
+                ]
+            if not verified_emails:
+                return _frontend_github_redirect(
+                    "school_email_required"
+                    if settings.SCHOOL_GITHUB_AUTH_ENABLED
+                    else "verified_email_required"
+                )
+            verified_email = str(
+                sorted(
+                    verified_emails,
+                    key=lambda item: not bool(item.get("primary")),
+                )[0]["email"]
             ).lower()
             user = db.find_or_create_github_user(
-                school_email,
+                verified_email,
                 github_id,
                 github_username,
                 str(profile.get("name") or github_username),
@@ -634,9 +687,6 @@ async def github_callback(code: str = "", state: str = "", error: str = "") -> R
             login_code = db.create_github_login_code(str(user["user_id"]))
             return _frontend_github_redirect("verified", login_code)
 
-        user_id = state_record.get("user_id")
-        if not user_id:
-            return _frontend_github_redirect("invalid_state")
         db.link_github_account(user_id, github_id, github_username)
     except (AttributeError, KeyError, TypeError, ValueError, requests.RequestException):
         return _frontend_github_redirect("error")
@@ -646,8 +696,6 @@ async def github_callback(code: str = "", state: str = "", error: str = "") -> R
 
 @app.post("/api/auth/github/exchange", response_model=AuthResponse)
 async def github_exchange(payload: GitHubExchangeRequest) -> AuthResponse:
-    if not settings.SCHOOL_GITHUB_AUTH_ENABLED:
-        raise HTTPException(status_code=409, detail="GitHub school sign-in is not enabled.")
     user_id = db.consume_github_login_code(payload.code)
     if not user_id:
         raise HTTPException(status_code=401, detail="GitHub sign-in expired or was already used.")
@@ -979,9 +1027,18 @@ def _operational_context_answer(
 
 
 
-def _save_assistant_message(conversation_id: str, answer: str) -> None:
+def _save_assistant_message(
+    conversation_id: str,
+    answer: str,
+    sources: list[Source] | None = None,
+) -> None:
     log_event(11, "conversation_save_started", role="assistant")
-    db.add_message(conversation_id, "assistant", answer)
+    db.add_message(
+        conversation_id,
+        "assistant",
+        answer,
+        metadata={"sources": [source.model_dump(mode="json") for source in (sources or [])]},
+    )
     log_event(11, "conversation_saved", role="assistant")
 
 
@@ -1149,7 +1206,7 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
         answer = await generate_answer(combined_query, history, sources, learning_topic=learning_topic)
         if answer.lower().startswith("i do not know from your uploaded notes"):
             sources = []
-        _save_assistant_message(conversation_id, answer)
+        _save_assistant_message(conversation_id, answer, sources)
         return ChatResponse(answer=answer, conversation_id=conversation_id, sources=sources, learning_topic=learning_topic)
 
     if classification.needs_clarification:
@@ -1239,7 +1296,7 @@ async def _run_chat_pipeline(payload: ChatRequest, request: Request) -> ChatResp
     if db.is_enabled() and conversation_id:
         if hasattr(db, "clear_pending_clarification"):
             db.clear_pending_clarification(conversation_id)
-        _save_assistant_message(conversation_id, answer)
+        _save_assistant_message(conversation_id, answer, sources)
 
     return ChatResponse(
         answer=answer,
@@ -1338,6 +1395,13 @@ async def chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
 
         def on_event(event: str, fields: dict[str, object]) -> None:
             nonlocal last_status
+            if event == "llm_token":
+                token = fields.get("token")
+                if isinstance(token, str) and token:
+                    response_loop.call_soon_threadsafe(
+                        queue.put_nowait, {"type": "token", "content": token}
+                    )
+                return
             status = _public_chat_status(event, fields)
             if status and status != last_status:
                 last_status = status
@@ -1360,7 +1424,8 @@ async def chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
                 queue.put_nowait({"type": "result", "data": result.model_dump(mode="json")})
             except HTTPException as error:
                 queue.put_nowait({"type": "error", "message": str(error.detail)})
-            except Exception:
+            except Exception as error:
+                log_exception("error", "chat_stream_failed", error)
                 queue.put_nowait({"type": "error", "message": "The server could not complete the request. Please try again."})
 
         task = asyncio.create_task(run_chat())
@@ -1411,5 +1476,8 @@ async def sample_answer(payload: SampleAnswerRequest, request: Request) -> Sampl
         logging.getLogger(__name__).exception("Sample answer generation failed")
         raise HTTPException(status_code=502, detail="Could not generate a sample answer. Please try again.") from error
     return SampleAnswerResponse(answer=answer)
+
+# Register API routers before the catch-all frontend mount.
+app.include_router(lti_router)
 
 app.mount("/", StaticFiles(directory=settings.FRONTEND_DIR, html=True), name="frontend")

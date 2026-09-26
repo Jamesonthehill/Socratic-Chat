@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -17,6 +18,12 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_API_BASE_URL = os.getenv("OPENAI_API_BASE_URL", "https://api.openai.com/v1")
 RAG_MODEL = os.getenv("RAG_MODEL", "gpt-4.1-mini")
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").strip().lower()
+OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "ollama")
+OLLAMA_API_BASE_URL = os.getenv("OLLAMA_API_BASE_URL", "http://127.0.0.1:11434/v1")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b-q4_K_M")
+OLLAMA_CLASSIFIER_MODEL = os.getenv("OLLAMA_CLASSIFIER_MODEL", "").strip()
+OLLAMA_ANSWER_EVALUATION_MODEL = os.getenv("OLLAMA_ANSWER_EVALUATION_MODEL", "").strip()
+OLLAMA_GENERATION_MAX_TOKENS = int(os.getenv("OLLAMA_GENERATION_MAX_TOKENS", "600"))
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_API_BASE_URL = os.getenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
@@ -42,10 +49,14 @@ PIPELINE_LOG_FILE = (ROOT_DIR / _pipeline_log_file) if _pipeline_log_file else N
 LOG_FULL_PROMPTS = os.getenv("LOG_FULL_PROMPTS", "false").lower() in {"1", "true", "yes"}
 _pipeline_prompt_dir = os.getenv("PIPELINE_PROMPT_DIR", "").strip()
 PIPELINE_PROMPT_DIR = (ROOT_DIR / _pipeline_prompt_dir) if _pipeline_prompt_dir else None
+_pipeline_trace_file = os.getenv("PIPELINE_TRACE_FILE", "storage/pipeline-traces.json").strip()
+PIPELINE_TRACE_FILE = (BACKEND_DIR / _pipeline_trace_file) if _pipeline_trace_file else None
 
 
-def completion_token_parameters(provider: str, limit: int) -> dict[str, int]:
+def completion_token_parameters(provider: str, limit: int) -> dict[str, int | str]:
     """Use the output-token parameter supported by the hosted providers."""
+    if provider == "Ollama":
+        return {"max_tokens": limit, "reasoning_effort": "none"}
     return {"max_completion_tokens": limit}
 
 
@@ -62,6 +73,12 @@ def embedding_model_name() -> str:
 
 def llm_client_config(role: str = "generation") -> tuple[str, str, str, str] | None:
     """Return the configured chat provider while leaving embeddings on OpenAI."""
+    if LLM_PROVIDER in {"local", "ollama"}:
+        role_model = {
+            "classifier": OLLAMA_CLASSIFIER_MODEL,
+            "evaluation": OLLAMA_ANSWER_EVALUATION_MODEL,
+        }.get(role, "")
+        return "Ollama", OLLAMA_API_KEY or "ollama", OLLAMA_API_BASE_URL, role_model or OLLAMA_MODEL
     if LLM_PROVIDER == "groq":
         if not GROQ_API_KEY:
             return None
@@ -80,6 +97,17 @@ def llm_client_config(role: str = "generation") -> tuple[str, str, str, str] | N
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
+
+
+def _schema_name(variable: str, default: str) -> str:
+    value = os.getenv(variable, default).strip()
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
+        raise RuntimeError(f"{variable} must be a valid PostgreSQL identifier.")
+    return value
+
+
+PLATFORM_DB_SCHEMA = _schema_name("PLATFORM_DB_SCHEMA", "platform")
+SOCRATIC_DB_SCHEMA = _schema_name("SOCRATIC_DB_SCHEMA", "socratic_chat")
 
 REQUIRE_EMAIL_VERIFICATION = os.getenv("REQUIRE_EMAIL_VERIFICATION", "false").lower() in {"1", "true", "yes"}
 SMTP_HOST = os.getenv("SMTP_HOST", "")
@@ -129,3 +157,15 @@ GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
 GITHUB_CALLBACK_URL = os.getenv("GITHUB_CALLBACK_URL", "")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://jamesonthehill.com/Socratic-Chat/")
+
+LTI_CANVAS_ISSUER = os.getenv("LTI_CANVAS_ISSUER", "").strip().rstrip("/")
+LTI_CLIENT_ID = os.getenv("LTI_CLIENT_ID", "").strip()
+LTI_DEPLOYMENT_ID = os.getenv("LTI_DEPLOYMENT_ID", "").strip()
+LTI_PLATFORM_JWKS_URL = os.getenv("LTI_PLATFORM_JWKS_URL", "").strip()
+# Instructure-hosted Canvas always uses this OIDC endpoint, regardless of the school domain.
+LTI_AUTHORIZATION_URL = os.getenv(
+    "LTI_AUTHORIZATION_URL", "https://sso.canvaslms.com/api/lti/authorize_redirect"
+).strip()
+LTI_PUBLIC_BASE_URL = os.getenv("LTI_PUBLIC_BASE_URL", "").strip().rstrip("/")
+LTI_TOOL_PRIVATE_KEY_B64 = os.getenv("LTI_TOOL_PRIVATE_KEY_B64", "").strip()
+LTI_TOOL_KEY_ID = os.getenv("LTI_TOOL_KEY_ID", "cluball-lti-1").strip()

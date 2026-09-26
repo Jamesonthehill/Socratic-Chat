@@ -13,7 +13,7 @@ services:
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: DEBUG_PIPELINE_LOGS
-        value: "false"
+        value: "true"
       - key: DATABASE_URL
         sync: false
       - key: OPENAI_API_KEY
@@ -62,3 +62,24 @@ services:
         sync: false
       - key: CORS_ALLOWED_ORIGINS
         value: "https://jamesonthehill.github.io,https://jamesonthehill.com"
+      - key: PLATFORM_DB_SCHEMA
+        value: platform
+      - key: SOCRATIC_DB_SCHEMA
+        value: socratic_chat
+      # Canvas LTI 1.3 course navigation. See README "Canvas LTI 1.3".
+      - key: LTI_PUBLIC_BASE_URL
+        value: https://socratic-chat-api.onrender.com
+      - key: LTI_TOOL_PRIVATE_KEY_B64
+        sync: false
+      - key: LTI_TOOL_KEY_ID
+        value: socratic-chat-lti-1
+      - key: LTI_CANVAS_ISSUER
+        value: https://canvas.instructure.com
+      - key: LTI_PLATFORM_JWKS_URL
+        value: https://sso.canvaslms.com/api/lti/security/jwks
+      - key: LTI_AUTHORIZATION_URL
+        value: https://sso.canvaslms.com/api/lti/authorize_redirect
+      - key: LTI_CLIENT_ID
+        sync: false
+      - key: LTI_DEPLOYMENT_ID
+        sync: false

@@ -1,3 +1,4 @@
+# Publishes both the course-access site and the integrated learning workspace.
 name: Deploy frontend to GitHub Pages
 
 on:

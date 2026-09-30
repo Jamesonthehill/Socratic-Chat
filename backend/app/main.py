@@ -83,6 +83,8 @@ from app.schemas import (
     OnboardingRequest,
     RagFileListResponse,
     RegisterRequest,
+    PublicSocraticRequest,
+    PublicSocraticResponse,
     SampleAnswerRequest,
     SampleAnswerResponse,
     SessionRefreshResponse,
@@ -90,6 +92,7 @@ from app.schemas import (
     UserProfile,
 )
 from platform_app import store as platform_store
+from platform_app import engines as platform_engines
 from platform_app.routes import router as platform_router
 
 app = FastAPI(title="Socratic-Chat")
@@ -1355,6 +1358,24 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
         raise
     finally:
         end_trace(tokens)
+
+
+@app.post("/api/public/socratic", response_model=PublicSocraticResponse)
+async def public_socratic_chat(payload: PublicSocraticRequest) -> PublicSocraticResponse:
+    """Public, stateless Socratic tutor used by the portfolio chat widget."""
+    conversation_id = payload.conversation_id or uuid.uuid4().hex
+    result, learning_topic = await platform_engines.public_socratic_message(
+        payload.message,
+        payload.history[-12:],
+        payload.engine_state,
+        payload.learning_topic,
+    )
+    return PublicSocraticResponse(
+        answer=result["reply"],
+        conversation_id=conversation_id,
+        learning_topic=learning_topic,
+        socratic=result["socratic"],
+    )
 
 
 def _public_chat_status(event: str, fields: dict[str, object]) -> tuple[str, str] | None:

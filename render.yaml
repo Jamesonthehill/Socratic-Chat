@@ -23,7 +23,7 @@ services:
       - key: RAG_MODEL
         value: gpt-4.1-mini
       - key: LLM_PROVIDER
-        value: groq
+        value: openai
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_API_BASE_URL

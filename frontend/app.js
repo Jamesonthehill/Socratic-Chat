@@ -123,6 +123,7 @@ const reflectionSummary = document.querySelector("#reflectionSummary");
 const reflectionButton = document.querySelector("#reflectionButton");
 
 const API_BASE_URL = (window.SOCRATIC_CONFIG?.API_BASE_URL || "").replace(/\/+$/, "");
+const PLATFORM_URL = window.SOCRATIC_CONFIG?.PLATFORM_URL || "/platform/";
 
 function apiUrl(path) {
   if (/^https?:\/\//i.test(path)) return path;
@@ -1014,6 +1015,11 @@ function routeAuthenticatedUser() {
   if (githubAccountRequired && !currentUser?.github_connected && !currentUser?.canvas_connected) {
     showGithubConnection();
     return "github";
+  }
+  const manualManagementRequested = new URLSearchParams(window.location.search).get("manage") === "1";
+  if (getRole() !== "student" && !manualManagementRequested) {
+    window.location.assign(`${PLATFORM_URL}#/professor`);
+    return "professor-dashboard";
   }
   showDashboard();
   return "dashboard";

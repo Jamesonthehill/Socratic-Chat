@@ -148,17 +148,22 @@ export default function ProfessorCourses({ assignments, assignmentsError }) {
             </button>
           </div>
           <h4>Create a chatbot assignment</h4>
-          <div className="professor-course-actions">
-            {Object.entries(TOOLS).map(([toolId, tool]) => (
-              <Link
-                key={toolId}
-                className="button secondary"
-                to={`/professor/tools/${toolId}/assignments/new?course=${selectedCourse.course_id}`}
-              >
-                {tool.name}
-              </Link>
-            ))}
-          </div>
+          <p className="help">
+            Choose an assignment from Canvas, then review its chatbot draft.
+          </p>
+          {selectedCourse.canvas_course_id ? (
+            <CanvasAssignments
+              key={selectedCourse.course_id}
+              course={selectedCourse}
+              onImported={(draft) =>
+                navigate(
+                  `/professor/tools/${draft.tool}/assignments/${draft.id}`,
+                )
+              }
+            />
+          ) : (
+            <CanvasCourseLink course={selectedCourse} onLinked={linkCourse} />
+          )}
           <h4>CourseLab assignments</h4>
           {assignmentsError ? (
             <Notice error={assignmentsError} />
@@ -182,19 +187,6 @@ export default function ProfessorCourses({ assignments, assignmentsError }) {
             </ul>
           ) : (
             <p className="help">No CourseLab assignments in this course yet.</p>
-          )}
-          {selectedCourse.canvas_course_id ? (
-            <CanvasAssignments
-              key={selectedCourse.course_id}
-              course={selectedCourse}
-              onImported={(draft) =>
-                navigate(
-                  `/professor/tools/${draft.tool}/assignments/${draft.id}`,
-                )
-              }
-            />
-          ) : (
-            <CanvasCourseLink course={selectedCourse} onLinked={linkCourse} />
           )}
         </div>
       )}

@@ -56,15 +56,15 @@ test("loads only when opened and creates a draft with the selected chatbot", asy
   render(<CanvasAssignments course={course} onImported={onImported} />);
 
   expect(fetch).not.toHaveBeenCalled();
-  await user.click(screen.getByText("Browse Canvas assignments"));
+  await user.click(screen.getByText("Choose a Canvas assignment"));
   expect(await screen.findByText("2 available")).toBeInTheDocument();
   expect(screen.getByText("First essay")).toBeInTheDocument();
   expect(screen.getByText("Second essay")).toBeInTheDocument();
   expect(fetch).toHaveBeenCalledTimes(1);
   expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ course_id: "77" });
 
-  await user.click(screen.getByText("Browse Canvas assignments"));
-  await user.click(screen.getByText("Browse Canvas assignments"));
+  await user.click(screen.getByText("Choose a Canvas assignment"));
+  await user.click(screen.getByText("Choose a Canvas assignment"));
   expect(fetch).toHaveBeenCalledTimes(1);
   await user.selectOptions(screen.getByLabelText("Chatbot"), "reflections");
   await user.type(screen.getByLabelText("Find an assignment"), "First");
@@ -98,7 +98,7 @@ test("shows a load error, retries, and explains an empty Canvas course", async (
   const user = userEvent.setup();
   render(<CanvasAssignments course={course} onImported={vi.fn()} />);
 
-  await user.click(screen.getByText("Browse Canvas assignments"));
+  await user.click(screen.getByText("Choose a Canvas assignment"));
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Canvas is temporarily unavailable.",
   );

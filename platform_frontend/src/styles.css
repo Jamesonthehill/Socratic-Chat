@@ -821,13 +821,6 @@ small,
 .professor-course-management h3 {
   margin-bottom: 10px;
 }
-.professor-course-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin: 18px 0;
-}
 .professor-course-assignment-list {
   background: var(--surface);
   border: 1px solid var(--line);

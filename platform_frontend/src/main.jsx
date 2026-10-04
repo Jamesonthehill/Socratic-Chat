@@ -97,31 +97,6 @@ function BrandLockup({ compact = false }) {
   );
 }
 
-function ToolIcon({ tool }) {
-  if (tool === "socratic") {
-    return (
-      <svg viewBox="0 0 32 32" aria-hidden="true">
-        <path d="M6 7.5h14a4 4 0 0 1 4 4v5a4 4 0 0 1-4 4h-7l-5 4v-4H6a4 4 0 0 1-4-4v-5a4 4 0 0 1 4-4Z" />
-        <path d="M15 24.5h8l4 3v-3h1a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-1" />
-      </svg>
-    );
-  }
-  if (tool === "reflections") {
-    return (
-      <svg viewBox="0 0 32 32" aria-hidden="true">
-        <path d="M8 3.5h13l5 5v20H8a3 3 0 0 1-3-3v-19a3 3 0 0 1 3-3Z" />
-        <path d="M21 3.5v6h5M10 15h11M10 20h8M10 25h6" />
-      </svg>
-    );
-  }
-  return (
-    <svg viewBox="0 0 32 32" aria-hidden="true">
-      <path d="M16 3.5 27 9.8v12.4L16 28.5 5 22.2V9.8Z" />
-      <path d="m11 16 3 3 7-7M16 3.5v4M5 9.8l3.5 2M27 9.8l-3.5 2" />
-    </svg>
-  );
-}
-
 export function App() {
   const [user, setUser] = useState(null);
   const [error, setError] = useState("");
@@ -570,43 +545,6 @@ function Dashboard({ professor = false }) {
       </div>
       {professor && (
         <ProfessorCourses assignments={items} assignmentsError={error} />
-      )}
-      {professor && (
-        <section
-          className="learning-path"
-          aria-labelledby="learning-path-title"
-        >
-          <div className="learning-path-heading">
-            <div>
-              <span className="eyebrow">Your teaching toolkit</span>
-              <h2 id="learning-path-title">Three ways to deepen learning</h2>
-            </div>
-            <p>Choose the experience that fits what students need next.</p>
-          </div>
-          <div className="tool-grid">
-            {Object.entries(TOOLS).map(([id, tool]) => (
-              <Link
-                className="tool-card"
-                to={`/professor/tools/${id}`}
-                key={id}
-                style={{ "--tool-color": tool.color }}
-              >
-                <div className="tool-card-topline">
-                  <div className="tool-mark">
-                    <ToolIcon tool={id} />
-                  </div>
-                  <span className="tool-step">{tool.step}</span>
-                </div>
-                <span className="tool-mode">{tool.mode}</span>
-                <h3>{tool.name}</h3>
-                <p>{tool.description}</p>
-                <span className="tool-action">
-                  Open workspace <span aria-hidden="true">→</span>
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
       )}
       <section className="section">
         <div className="section-heading">

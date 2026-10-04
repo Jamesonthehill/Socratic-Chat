@@ -114,7 +114,7 @@ test("user selects and persists the platform color theme", async () => {
   expect(localStorage.getItem("socratic_chat_theme")).toBe("dark");
 });
 
-test("professor sees courses before tools and can open a tool dashboard", async () => {
+test("professor starts chatbot assignment creation from a course", async () => {
   mockApi();
   open("/professor");
   const user = userEvent.setup();
@@ -127,35 +127,28 @@ test("professor sees courses before tools and can open a tool dashboard", async 
     await screen.findByRole("heading", { name: "Your courses" }),
   ).toBeInTheDocument();
   expect(
-    screen
-      .getByRole("heading", { name: "Your courses" })
-      .compareDocumentPosition(
-        screen.getByRole("heading", { name: "Three ways to deepen learning" }),
-      ) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
+    screen.queryByRole("heading", { name: "Three ways to deepen learning" }),
+  ).not.toBeInTheDocument();
   const theme = screen.getByLabelText("Choose color theme");
   const logout = screen.getByRole("button", { name: "Log out" });
   expect(
     logout.compareDocumentPosition(theme) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-  const reflection = screen.getByRole("link", { name: /Reflect Reflections/ });
+  await user.click(
+    screen.getByRole("button", {
+      name: /SE101.*Software Engineering.*Manage course/,
+    }),
+  );
   expect(
-    screen.getByRole("link", { name: /Guide Socratic Chat/ }),
-  ).toHaveAttribute("href", "/professor/tools/socratic");
-  expect(
-    screen.getByRole("link", { name: /Practice Student Agent Bot/ }),
-  ).toHaveAttribute("href", "/professor/tools/student-agent");
-  await user.click(reflection);
-  expect(
-    await screen.findByRole("heading", { level: 1, name: "Reflections" }),
+    screen.getByRole("heading", { name: "Create a chatbot assignment" }),
   ).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "New assignment" })).toBeDisabled();
-  await user.selectOptions(screen.getByLabelText("Course"), course);
-  await user.click(screen.getByRole("button", { name: "New assignment" }));
+  expect(screen.getByText("Link Canvas course")).toBeInTheDocument();
   expect(
-    await screen.findByRole("heading", { name: "Reflections settings" }),
-  ).toBeInTheDocument();
-  expect(screen.getByLabelText("Reflection type")).toHaveValue("topic_based");
+    screen.queryByRole("heading", { name: "A new learning assignment" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("link", { name: "Reflections" }),
+  ).not.toBeInTheDocument();
 });
 
 test("professor manages a Canvas-linked course and opens its folded assignments on demand", async () => {
@@ -215,17 +208,20 @@ test("professor manages a Canvas-linked course and opens its folded assignments 
   expect(
     screen.getByRole("region", { name: "Software Engineering management" }),
   ).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Socratic Chat" })).toHaveAttribute(
-    "href",
-    `/professor/tools/socratic/assignments/new?course=${course}`,
-  );
+  expect(
+    screen.getByRole("heading", { name: "Create a chatbot assignment" }),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Choose a Canvas assignment")).toBeInTheDocument();
+  expect(
+    screen.queryByRole("link", { name: "Socratic Chat" }),
+  ).not.toBeInTheDocument();
   expect(
     fetch.mock.calls.some(([url]) =>
       url.includes("/integrations/canvas/assignments"),
     ),
   ).toBe(false);
 
-  await user.click(screen.getByText("Browse Canvas assignments"));
+  await user.click(screen.getByText("Choose a Canvas assignment"));
   expect(
     await screen.findByText("Architecture reflection"),
   ).toBeInTheDocument();
@@ -262,6 +258,9 @@ test("professor manages a Canvas-linked course and opens its folded assignments 
       name: "Architecture reflection",
     }),
   ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("heading", { name: "A new learning assignment" }),
+  ).not.toBeInTheDocument();
 });
 
 test("professor explicitly links a manual course to Canvas before browsing assignments", async () => {
@@ -297,7 +296,7 @@ test("professor explicitly links a manual course to Canvas before browsing assig
     }),
   );
   expect(
-    screen.queryByText("Browse Canvas assignments"),
+    screen.queryByText("Choose a Canvas assignment"),
   ).not.toBeInTheDocument();
   await user.click(screen.getByText("Link Canvas course"));
   await user.selectOptions(await screen.findByLabelText("Canvas course"), "77");
@@ -313,7 +312,7 @@ test("professor explicitly links a manual course to Canvas before browsing assig
     course_id: "77",
   });
   expect(
-    await screen.findByText("Browse Canvas assignments"),
+    await screen.findByText("Choose a Canvas assignment"),
   ).toBeInTheDocument();
   expect(
     fetch.mock.calls.some(([url]) =>

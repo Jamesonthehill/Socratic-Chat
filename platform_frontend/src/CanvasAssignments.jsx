@@ -88,7 +88,7 @@ function CanvasAssignmentsForCourse({ course, onImported }) {
       }}
     >
       <summary>
-        <span>Browse Canvas assignments</span>
+        <span>Choose a Canvas assignment</span>
         {assignments && <small>{assignments.length} available</small>}
       </summary>
       <div className="canvas-assignments-content">

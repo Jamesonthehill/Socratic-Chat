@@ -242,22 +242,15 @@ test("student requests course access from the integrated dashboard", async () =>
   ).toBe(true);
 });
 
-test("professor imports a visible UNC Charlotte Canvas assignment as a Socratic draft", async () => {
-  const imported = {
-    ...assignment,
-    id: "canvas-draft",
-    title: "Canvas architecture reflection",
-    instructions: "Explain one tradeoff.",
-    status: "draft",
-    audience: "course",
-    recipient_ids: [],
-    config: {
-      document_ids: [],
-      prompt: "Use the published course materials.",
-      minimum_messages: 1,
-    },
+test("professor can add another Canvas course without loading assignments", async () => {
+  const createdCourse = {
+    course_id: "second-platform-course",
+    course_code: "ITSC 3155",
+    title: "Software Engineering",
+    membership_role: "instructor",
   };
   const fetch = mockApi("instructor", {
+    "POST /api/platform/integrations/canvas/course": createdCourse,
     "POST /api/platform/integrations/canvas/connection": {
       connected: true,
       encryption_configured: true,
@@ -270,15 +263,6 @@ test("professor imports a visible UNC Charlotte Canvas assignment as a Socratic 
         },
       ],
     },
-    "POST /api/platform/integrations/canvas/assignments": [
-      {
-        id: "88",
-        name: "Canvas architecture reflection",
-        due_at: null,
-      },
-    ],
-    "POST /api/platform/integrations/canvas/import": imported,
-    "/api/platform/assignments/canvas-draft": imported,
   });
   open("/professor/tools/socratic");
   const user = userEvent.setup();
@@ -292,31 +276,27 @@ test("professor imports a visible UNC Charlotte Canvas assignment as a Socratic 
   await user.click(screen.getByRole("button", { name: "Connect Canvas" }));
   await user.selectOptions(await screen.findByLabelText("Canvas course"), "77");
   await user.click(
-    screen.getByRole("button", { name: "Load visible assignments" }),
-  );
-  await user.selectOptions(
-    await screen.findByLabelText("Canvas assignment"),
-    "88",
-  );
-  await user.click(
-    screen.getByRole("button", { name: "Import as Socratic Chat draft" }),
+    screen.getByRole("button", { name: "Add course to CourseLab" }),
   );
 
   expect(
-    await screen.findByDisplayValue("Canvas architecture reflection"),
+    await screen.findByText("Software Engineering was added to CourseLab."),
   ).toBeInTheDocument();
-  expect(screen.getByLabelText("Assigned chatbot")).toHaveValue(
-    "Socratic Chat",
-  );
-  const importCall = fetch.mock.calls.find(
-    ([url]) => url === "/api/platform/integrations/canvas/import",
-  );
-  expect(JSON.parse(importCall[1].body)).toMatchObject({
-    course_id: "77",
-    assignment_id: "88",
-    platform_course_id: course,
-    tool: "socratic",
-  });
+  expect(screen.getByLabelText("Course")).toHaveValue("second-platform-course");
+  expect(
+    screen.queryByLabelText("Chatbot for imported assignment"),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Canvas assignment")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Load visible assignments" }),
+  ).not.toBeInTheDocument();
+  expect(
+    fetch.mock.calls.some(
+      ([url]) =>
+        url.includes("/integrations/canvas/assignments") ||
+        url.includes("/integrations/canvas/import"),
+    ),
+  ).toBe(false);
   expect(localStorage.length).toBe(1);
   expect(localStorage.getItem(SESSION_KEY)).not.toContain("canvas-token-value");
 });
@@ -360,7 +340,7 @@ test("professor can create the destination CourseLab course from Canvas", async 
   await user.selectOptions(await screen.findByLabelText("Canvas course"), "77");
   await user.click(
     screen.getByRole("button", {
-      name: "Create CourseLab course from Canvas",
+      name: "Add course to CourseLab",
     }),
   );
 
@@ -412,7 +392,7 @@ test("connected Canvas account shows an empty state after instructor courses loa
   expect(screen.queryByLabelText("Canvas course")).not.toBeInTheDocument();
   expect(
     screen.queryByRole("button", {
-      name: "Create CourseLab course from Canvas",
+      name: "Add course to CourseLab",
     }),
   ).not.toBeInTheDocument();
   expect(

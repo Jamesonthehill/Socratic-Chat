@@ -768,10 +768,6 @@ small,
   gap: 9px;
   align-items: center;
 }
-.canvas-create-course {
-  grid-column: 1 / -1;
-  justify-self: start;
-}
 .editor-grid {
   display: grid;
   grid-template-columns: 1.15fr 1fr;
@@ -1791,9 +1787,6 @@ html[data-theme="dark"] .result-stats strong {
   }
   .canvas-import-grid button {
     margin: 10px 0 18px;
-  }
-  .canvas-create-course {
-    grid-column: auto;
   }
   .panel {
     padding: 22px 18px;

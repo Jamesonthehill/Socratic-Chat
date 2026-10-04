@@ -713,15 +713,10 @@ function ToolDashboard() {
         </p>
       )}
       <CanvasImport
-        defaultTool={tool}
-        platformCourseId={course}
         onCourseCreated={(created) => {
           setCourses((current) => [...current, created]);
           setCourse(created.course_id);
         }}
-        onImported={(draft) =>
-          navigate(`/professor/tools/${draft.tool}/assignments/${draft.id}`)
-        }
       />
       <section className="section">
         <h2>{course ? "Course assignments" : "Assignments in this tool"}</h2>

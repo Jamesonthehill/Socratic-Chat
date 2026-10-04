@@ -7,6 +7,7 @@ const onboardingLogoutButton = document.querySelector("#onboardingLogoutButton")
 const dashboardScreen = document.querySelector("#dashboardScreen");
 const dashboardAccountName = document.querySelector("#dashboardAccountName");
 const professorDashboardLink = document.querySelector("#professorDashboardLink");
+const coursesAccessLink = document.querySelector("#coursesAccessLink");
 const dashboardGreeting = document.querySelector("#dashboardGreeting");
 const dashboardRoleBadge = document.querySelector("#dashboardRoleBadge");
 const dashboardAuthorityLevel = document.querySelector("#dashboardAuthorityLevel");
@@ -565,6 +566,18 @@ function renderDashboard() {
   dashboardRoleBadge.textContent = getRoleLabel();
   dashboardAuthorityLevel.textContent = `Authority level ${currentUser?.authority_level ?? 2}`;
   professorDashboardLink?.classList.toggle("is-hidden", role === "student");
+  if (coursesAccessLink) {
+    const professorCourseSetup = role !== "student";
+    coursesAccessLink.href = professorCourseSetup
+      ? "./platform/#/professor/tools/socratic"
+      : "./";
+    coursesAccessLink.classList.toggle("is-current", !professorCourseSetup);
+    if (professorCourseSetup) {
+      coursesAccessLink.removeAttribute("aria-current");
+    } else {
+      coursesAccessLink.setAttribute("aria-current", "page");
+    }
+  }
   dashboardPendingNotice.classList.toggle("is-hidden", !isPending);
   dashboardPendingNotice.textContent = isPending
     ? "Your instructor request is waiting for administrator approval. You currently have student access."

@@ -182,7 +182,7 @@ export function App() {
           {isProfessor ? (
             <>
               <Link to={home}>Professor dashboard</Link>
-              <a href={`${SOCRATIC_URL}?manage=1`}>Courses &amp; access</a>
+              <Link to="/professor/tools/socratic">Courses &amp; access</Link>
             </>
           ) : (
             <Link to={home}>Dashboard</Link>
@@ -704,8 +704,8 @@ function ToolDashboard() {
       <Notice error={error || courseError} />
       {!courses.length && !courseError && (
         <p className="notice">
-          Create a course and approve student enrollments in{" "}
-          <a href={`${SOCRATIC_URL}?manage=1`}>Courses &amp; access</a> to start assigning work.
+          Import a Canvas course below to create the course workspace and start
+          assigning work.
         </p>
       )}
       <CanvasImport

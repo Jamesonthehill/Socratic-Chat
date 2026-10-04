@@ -119,6 +119,9 @@ test("professor selects each explicit tool dashboard", async () => {
       name: "Design the next learning moment.",
     }),
   ).toBeInTheDocument();
+  expect(
+    screen.getByRole("link", { name: "Courses & access" }),
+  ).toHaveAttribute("href", "/professor/tools/socratic");
   const reflection = screen.getByRole("link", { name: /Reflect Reflections/ });
   expect(
     screen.getByRole("link", { name: /Guide Socratic Chat/ }),

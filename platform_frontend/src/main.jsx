@@ -49,7 +49,10 @@ function ThemeSelector() {
       document.documentElement.dataset.themePreference = preference;
       document
         .querySelector('meta[name="theme-color"]')
-        ?.setAttribute("content", resolvedTheme === "dark" ? "#0c1020" : "#4f46e5");
+        ?.setAttribute(
+          "content",
+          resolvedTheme === "dark" ? "#0c1020" : "#4f46e5",
+        );
     };
 
     applyTheme();
@@ -80,11 +83,7 @@ function ThemeSelector() {
 function BrandLockup({ compact = false }) {
   return (
     <span className={`brand-lockup${compact ? " compact-brand" : ""}`}>
-      <svg
-        className="brand-mark"
-        viewBox="0 0 44 44"
-        aria-hidden="true"
-      >
+      <svg className="brand-mark" viewBox="0 0 44 44" aria-hidden="true">
         <path d="M13 11.5h18a6 6 0 0 1 6 6v9a6 6 0 0 1-6 6H19l-7 6v-6a6 6 0 0 1-6-6v-9a6 6 0 0 1 6-6Z" />
         <circle cx="16" cy="22" r="2.2" />
         <circle cx="22" cy="22" r="2.2" />
@@ -189,11 +188,11 @@ export function App() {
           )}
         </nav>
         <div className="identity">
-          <ThemeSelector />
           <span>{user.display_name || user.username}</span>
           <button className="quiet" onClick={logout}>
             Log out
           </button>
+          <ThemeSelector />
         </div>
       </header>
       <main className="main">
@@ -434,7 +433,9 @@ function StudentDashboard() {
                   >
                     <div className="student-course-summary">
                       <div className="student-course-topline">
-                        <span className="course-code">{course.course_code}</span>
+                        <span className="course-code">
+                          {course.course_code}
+                        </span>
                         <Badge
                           value={
                             course.membership_status ||
@@ -571,7 +572,10 @@ function Dashboard({ professor = false }) {
         </div>
       </div>
       {professor && (
-        <section className="learning-path" aria-labelledby="learning-path-title">
+        <section
+          className="learning-path"
+          aria-labelledby="learning-path-title"
+        >
           <div className="learning-path-heading">
             <div>
               <span className="eyebrow">Your teaching toolkit</span>

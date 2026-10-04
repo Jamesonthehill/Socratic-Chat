@@ -18,6 +18,21 @@ python -m pip install -r backend/requirements.txt
 cp .env.example .env
 ```
 
+To let instructors connect Canvas once and safely reuse that connection, create
+a unique encryption secret for the deployment and add it to `.env`. Never share
+or commit this value, and keep it stable across redeployments:
+
+```bash
+openssl rand -base64 48
+```
+
+```env
+CANVAS_TOKEN_ENCRYPTION_KEY=paste-the-generated-value-here
+```
+
+Changing or losing this secret does not expose saved Canvas tokens, but every
+instructor will need to reconnect Canvas.
+
 Add `OPENAI_API_KEY` for document embeddings. The conversational LLM roles use
 Groq by default:
 

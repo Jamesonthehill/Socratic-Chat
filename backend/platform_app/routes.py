@@ -5,13 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from psycopg.types.json import Jsonb
 
 from app import auth, db, settings
-from platform_app import canvas_lms, engines, store
+from platform_app import canvas_lms, canvas_tokens, engines, store
 from platform_app.schemas import (
     ActionInput,
     AssignmentInput,
     CanvasCourseRequest,
     CanvasCredentials,
     CanvasImportRequest,
+    CanvasTokenInput,
     GenerateSubtopicsInput,
     GenerateTopicInput,
     MessageInput,
@@ -129,15 +130,56 @@ def canvas_result(operation):
         raise HTTPException(error.status_code, error.detail) from error
 
 
+def canvas_access_token(body: CanvasCredentials, account) -> str:
+    if body.access_token is not None:
+        return body.access_token.get_secret_value()
+    try:
+        token = canvas_tokens.load(str(account["user_id"]))
+    except canvas_tokens.CanvasTokenConfigurationError as error:
+        raise HTTPException(503, str(error)) from error
+    except canvas_tokens.CanvasTokenReconnectRequired as error:
+        raise HTTPException(409, str(error)) from error
+    if not token:
+        raise HTTPException(422, "Connect your Canvas account before loading Canvas data.")
+    return token
+
+
+@router.get("/integrations/canvas/connection")
+def canvas_connection(account=Depends(professor)):
+    return canvas_tokens.status(str(account["user_id"]))
+
+
+@router.post("/integrations/canvas/connection")
+def connect_canvas(body: CanvasTokenInput, account=Depends(professor)):
+    if not canvas_tokens.is_configured():
+        raise HTTPException(503, "Canvas token storage is not configured on this server.")
+    token = body.access_token.get_secret_value()
+    courses = canvas_result(lambda: canvas_lms.list_courses(token))
+    try:
+        canvas_tokens.save(str(account["user_id"]), token)
+    except canvas_tokens.CanvasTokenConfigurationError as error:
+        raise HTTPException(503, str(error)) from error
+    return {**canvas_tokens.status(str(account["user_id"])), "courses": courses}
+
+
+@router.delete("/integrations/canvas/connection")
+def disconnect_canvas(account=Depends(professor)):
+    canvas_tokens.delete(str(account["user_id"]))
+    return {"connected": False, "encryption_configured": canvas_tokens.is_configured()}
+
+
 @router.post("/integrations/canvas/courses")
-def canvas_courses(body: CanvasCredentials, _account=Depends(professor)):
-    return canvas_result(lambda: canvas_lms.list_courses(body.access_token.get_secret_value()))
+def canvas_courses(body: CanvasCredentials, account=Depends(professor)):
+    courses = canvas_result(lambda: canvas_lms.list_courses(canvas_access_token(body, account)))
+    if body.access_token is None:
+        canvas_tokens.mark_verified(str(account["user_id"]))
+    return courses
 
 
 @router.post("/integrations/canvas/assignments")
-def canvas_assignments(body: CanvasCourseRequest, _account=Depends(professor)):
+def canvas_assignments(body: CanvasCourseRequest, account=Depends(professor)):
     return canvas_result(
-        lambda: canvas_lms.list_assignments(body.course_id, body.access_token.get_secret_value())
+        lambda: canvas_lms.list_assignments(body.course_id, canvas_access_token(body, account))
     )
 
 
@@ -148,7 +190,7 @@ def import_canvas_assignment(body: CanvasImportRequest, account=Depends(professo
         lambda: canvas_lms.get_assignment(
             body.course_id,
             body.assignment_id,
-            body.access_token.get_secret_value(),
+            canvas_access_token(body, account),
         )
     )
     source = canvas_assignment.get("html_url")

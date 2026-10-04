@@ -4,7 +4,8 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from platform_app import canvas_lms, engines, store
+from app import settings
+from platform_app import canvas_lms, canvas_tokens, engines, store
 
 
 def test_shared_login_and_public_frontend(client, roster):
@@ -99,6 +100,79 @@ def test_canvas_import_requires_professor_and_creates_socratic_draft(client, ros
     assert reflection.status_code == 201, reflection.text
     assert reflection.json()['tool'] == 'reflections'
     assert reflection.json()['config']['module_type'] == 'topic_based'
+
+
+def test_canvas_connection_is_saved_and_reused_server_side(client, roster, monkeypatch):
+    saved = {}
+    monkeypatch.setattr(canvas_tokens, 'is_configured', lambda: True)
+    monkeypatch.setattr(
+        canvas_tokens,
+        'save',
+        lambda user_id, token: saved.update(user_id=user_id, token=token),
+    )
+    monkeypatch.setattr(
+        canvas_tokens,
+        'status',
+        lambda user_id: {
+            'connected': saved.get('user_id') == user_id,
+            'encryption_configured': True,
+        },
+    )
+    monkeypatch.setattr(canvas_tokens, 'load', lambda user_id: saved.get('token'))
+    monkeypatch.setattr(canvas_tokens, 'mark_verified', lambda user_id: None)
+    monkeypatch.setattr(canvas_tokens, 'delete', lambda user_id: bool(saved.clear() is None))
+
+    calls = []
+    monkeypatch.setattr(
+        canvas_lms,
+        'list_courses',
+        lambda token: calls.append(token) or [
+            {'id': '77', 'name': 'Software Engineering', 'course_code': 'ITSC 3155'}
+        ],
+    )
+
+    connected = client.post(
+        '/api/platform/integrations/canvas/connection',
+        headers=roster['headers']['prof'],
+        json={'access_token': 'canvas-test-token'},
+    )
+    assert connected.status_code == 200, connected.text
+    assert connected.json()['connected'] is True
+    assert connected.json()['courses'][0]['id'] == '77'
+    assert saved['token'] == 'canvas-test-token'
+
+    reused = client.post(
+        '/api/platform/integrations/canvas/courses',
+        headers=roster['headers']['prof'],
+        json={},
+    )
+    assert reused.status_code == 200, reused.text
+    assert calls == ['canvas-test-token', 'canvas-test-token']
+
+    disconnected = client.delete(
+        '/api/platform/integrations/canvas/connection',
+        headers=roster['headers']['prof'],
+    )
+    assert disconnected.status_code == 200
+    assert disconnected.json()['connected'] is False
+
+
+def test_canvas_token_migration_and_encrypted_round_trip(database, roster, monkeypatch):
+    monkeypatch.setenv('CANVAS_TOKEN_ENCRYPTION_KEY', 'integration-test-secret-' + 'x' * 32)
+    canvas_tokens.save(roster['prof'], 'canvas-integration-token')
+
+    assert canvas_tokens.load(roster['prof']) == 'canvas-integration-token'
+    assert canvas_tokens.status(roster['prof'])['connected'] is True
+    with store.connection() as conn:
+        row = conn.execute(
+            "SELECT token_ciphertext, current_schema() AS schema_name "
+            "FROM canvas_api_connections_platform WHERE user_id=%s",
+            (roster['prof'],),
+        ).fetchone()
+    assert b'canvas-integration-token' not in bytes(row['token_ciphertext'])
+    assert row['schema_name'] == settings.PLATFORM_DB_SCHEMA
+
+    assert canvas_tokens.delete(roster['prof']) is True
 
 
 def test_draft_publish_visibility_and_frozen_config(client, roster, monkeypatch):

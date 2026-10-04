@@ -748,6 +748,26 @@ small,
 .canvas-import-grid button {
   min-height: 45px;
 }
+.canvas-connection-status {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+.canvas-connection-status span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.canvas-connection-actions {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
 .canvas-create-course {
   grid-column: 1 / -1;
   justify-self: start;

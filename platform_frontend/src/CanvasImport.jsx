@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, TOOLS } from "./api";
 import { Notice } from "./ui";
 
@@ -14,8 +14,29 @@ export default function CanvasImport({
   const [assignments, setAssignments] = useState([]);
   const [assignmentId, setAssignmentId] = useState("");
   const [selectedTool, setSelectedTool] = useState(defaultTool);
+  const [connection, setConnection] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    api("/platform/integrations/canvas/connection")
+      .then(async (status) => {
+        if (!active) return;
+        setConnection(status);
+        if (status.connected) {
+          const courses = await api("/platform/integrations/canvas/courses", {
+            method: "POST",
+            body: {},
+          });
+          if (active) setCanvasCourses(courses);
+        }
+      })
+      .catch((caught) => active && setError(caught.message));
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function perform(action) {
     setBusy(true);
@@ -29,13 +50,41 @@ export default function CanvasImport({
     }
   }
 
+  function connectCanvas() {
+    return perform(async () => {
+      const result = await api("/platform/integrations/canvas/connection", {
+        method: "POST",
+        body: { access_token: accessToken },
+      });
+      setConnection(result);
+      setCanvasCourses(result.courses || []);
+      setAccessToken("");
+      setCanvasCourseId("");
+      setAssignments([]);
+      setAssignmentId("");
+    });
+  }
+
   function loadCourses() {
     return perform(async () => {
       const courses = await api("/platform/integrations/canvas/courses", {
         method: "POST",
-        body: { access_token: accessToken },
+        body: {},
       });
       setCanvasCourses(courses);
+      setCanvasCourseId("");
+      setAssignments([]);
+      setAssignmentId("");
+    });
+  }
+
+  function disconnectCanvas() {
+    return perform(async () => {
+      const result = await api("/platform/integrations/canvas/connection", {
+        method: "DELETE",
+      });
+      setConnection(result);
+      setCanvasCourses([]);
       setCanvasCourseId("");
       setAssignments([]);
       setAssignmentId("");
@@ -46,7 +95,7 @@ export default function CanvasImport({
     return perform(async () => {
       const visible = await api("/platform/integrations/canvas/assignments", {
         method: "POST",
-        body: { access_token: accessToken, course_id: canvasCourseId },
+        body: { course_id: canvasCourseId },
       });
       setAssignments(visible);
       setAssignmentId("");
@@ -58,14 +107,12 @@ export default function CanvasImport({
       const draft = await api("/platform/integrations/canvas/import", {
         method: "POST",
         body: {
-          access_token: accessToken,
           course_id: canvasCourseId,
           assignment_id: assignmentId,
           platform_course_id: platformCourseId,
           tool: selectedTool,
         },
       });
-      setAccessToken("");
       onImported(draft);
     });
   }
@@ -95,9 +142,9 @@ export default function CanvasImport({
     <section className="panel canvas-import">
       <h2>Import from UNC Charlotte Canvas</h2>
       <p>
-        Use your Canvas account to read active courses and assignments visible
-        to you. Your access token is sent only to this server for the current
-        request and is not saved.
+        Connect Canvas once to read the active courses and assignments visible
+        to you. The token is encrypted on the server, is never returned to your
+        browser, and can be disconnected whenever you choose.
       </p>
       <Notice error={error} />
       <div className="canvas-import-grid">
@@ -115,24 +162,69 @@ export default function CanvasImport({
           </select>
         </label>
         <span />
-        <label>
-          Canvas access token
-          <input
-            type="password"
-            autoComplete="off"
-            value={accessToken}
-            onChange={(event) => setAccessToken(event.target.value)}
-            placeholder="Paste a current Canvas token"
-          />
-        </label>
-        <button
-          type="button"
-          className="secondary"
-          disabled={busy || accessToken.length < 10}
-          onClick={loadCourses}
-        >
-          Load Canvas courses
-        </button>
+        {connection?.connected ? (
+          <>
+            <div className="canvas-connection-status" role="status">
+              <strong>Canvas connected</strong>
+              <span>
+                Your saved connection will be reused for future sign-ins.
+              </span>
+            </div>
+            <div className="canvas-connection-actions">
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={loadCourses}
+              >
+                Refresh Canvas courses
+              </button>
+              <button
+                type="button"
+                className="quiet"
+                disabled={busy}
+                onClick={disconnectCanvas}
+              >
+                Disconnect Canvas
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <label>
+              Canvas access token
+              <input
+                type="password"
+                autoComplete="off"
+                value={accessToken}
+                onChange={(event) => setAccessToken(event.target.value)}
+                placeholder="Paste a current Canvas token once"
+              />
+            </label>
+            <button
+              type="button"
+              className="secondary"
+              disabled={
+                busy ||
+                !connection?.encryption_configured ||
+                accessToken.length < 10
+              }
+              onClick={connectCanvas}
+            >
+              Connect Canvas
+            </button>
+            {connection && !connection.encryption_configured && (
+              <p className="help">
+                Secure Canvas connections are not configured on this server yet.
+              </p>
+            )}
+            {connection?.reconnect_required && (
+              <p className="help">
+                Your saved Canvas connection must be reconnected.
+              </p>
+            )}
+          </>
+        )}
         {canvasCourses.length > 0 && (
           <>
             <label>

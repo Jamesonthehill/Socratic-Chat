@@ -117,8 +117,12 @@ class GenerateSubtopicsInput(StrictModel):
     main_topics: list[str] = Field(min_length=1, max_length=50)
 
 
-class CanvasCredentials(StrictModel):
+class CanvasTokenInput(StrictModel):
     access_token: SecretStr = Field(min_length=10, max_length=4096)
+
+
+class CanvasCredentials(StrictModel):
+    access_token: SecretStr | None = Field(default=None, min_length=10, max_length=4096)
 
 
 class CanvasCourseRequest(CanvasCredentials):

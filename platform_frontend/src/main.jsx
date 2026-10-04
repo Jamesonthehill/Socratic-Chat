@@ -19,7 +19,7 @@ import {
   SOCRATIC_URL,
 } from "./api";
 import AssignmentEditor from "./AssignmentEditor";
-import CanvasImport from "./CanvasImport";
+import ProfessorCourses from "./ProfessorCourses";
 import StudentWorkspace from "./StudentWorkspace";
 import "./styles.css";
 
@@ -179,10 +179,7 @@ export function App() {
         </Link>
         <nav aria-label="Main navigation">
           {isProfessor ? (
-            <>
-              <Link to={home}>Professor dashboard</Link>
-              <Link to="/professor/tools/socratic">Courses &amp; access</Link>
-            </>
+            <Link to={home}>Professor dashboard</Link>
           ) : (
             <Link to={home}>Dashboard</Link>
           )}
@@ -572,6 +569,9 @@ function Dashboard({ professor = false }) {
         </div>
       </div>
       {professor && (
+        <ProfessorCourses assignments={items} assignmentsError={error} />
+      )}
+      {professor && (
         <section
           className="learning-path"
           aria-labelledby="learning-path-title"
@@ -708,16 +708,10 @@ function ToolDashboard() {
       <Notice error={error || courseError} />
       {!courses.length && !courseError && (
         <p className="notice">
-          Import a Canvas course below to create the course workspace and start
-          assigning work.
+          Add a course from the professor dashboard to start assigning work.
+          <Link to="/professor"> Open your courses</Link>.
         </p>
       )}
-      <CanvasImport
-        onCourseCreated={(created) => {
-          setCourses((current) => [...current, created]);
-          setCourse(created.course_id);
-        }}
-      />
       <section className="section">
         <h2>{course ? "Course assignments" : "Assignments in this tool"}</h2>
         {items ? (

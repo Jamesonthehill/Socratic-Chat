@@ -317,12 +317,19 @@ def init_db() -> None:
                     course_code TEXT NOT NULL,
                     title TEXT NOT NULL,
                     description TEXT NOT NULL DEFAULT '',
+                    canvas_course_id TEXT,
                     instructor_id UUID NOT NULL REFERENCES users_platform(id) ON DELETE CASCADE,
                     is_discoverable BOOLEAN NOT NULL DEFAULT TRUE,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     UNIQUE (instructor_id, course_code)
                 )
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE courses_platform
+                ADD COLUMN IF NOT EXISTS canvas_course_id TEXT
                 """
             )
             cur.execute(
@@ -1568,28 +1575,123 @@ def conversation_belongs_to_course(conversation_id: str, user_id: str, course_id
             return cur.fetchone() is not None
 
 
-def create_course(instructor_id: str, course_code: str, title: str, description: str = "") -> dict[str, object]:
+def create_course(
+    instructor_id: str,
+    course_code: str,
+    title: str,
+    description: str = "",
+    *,
+    canvas_course_id: str | None = None,
+) -> dict[str, object]:
     init_db()
     course_id = str(uuid.uuid4())
     membership_id = str(uuid.uuid4())
     normalized_code = " ".join(course_code.upper().split())
     clean_title = " ".join(title.split())
+    source_id = str(canvas_course_id) if canvas_course_id is not None else None
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            existing = None
+            if source_id is not None:
+                cur.execute(
+                    """
+                    SELECT id::text FROM courses_platform
+                    WHERE instructor_id = %s AND canvas_course_id = %s
+                    """,
+                    (instructor_id, source_id),
+                )
+                existing = cur.fetchone()
+            if existing:
+                course_id = existing[0]
+                inserted = None
+            else:
+                conflict_clause = (
+                    "ON CONFLICT (instructor_id, canvas_course_id) "
+                    "WHERE canvas_course_id IS NOT NULL DO NOTHING"
+                    if source_id is not None else ""
+                )
+                cur.execute(
+                    f"""
+                    INSERT INTO courses_platform (id, course_code, title, description, instructor_id, canvas_course_id)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    {conflict_clause}
+                    RETURNING id::text
+                    """,
+                    (course_id, normalized_code, clean_title, description.strip(), instructor_id, source_id),
+                )
+                inserted = cur.fetchone()
+            if inserted:
+                cur.execute(
+                    """
+                    INSERT INTO course_memberships_platform (id, course_id, user_id, course_role, status, reviewed_at, reviewed_by)
+                    VALUES (%s, %s, %s, 'instructor', 'approved', NOW(), %s)
+                    """,
+                    (membership_id, course_id, instructor_id, instructor_id),
+                )
+            elif existing is None:
+                cur.execute(
+                    """
+                    SELECT id::text FROM courses_platform
+                    WHERE instructor_id = %s AND canvas_course_id = %s
+                    """,
+                    (instructor_id, source_id),
+                )
+                existing = cur.fetchone()
+                if existing is None:
+                    raise RuntimeError("Canvas course import could not find the existing course.")
+                course_id = existing[0]
+        conn.commit()
+    return get_course(course_id) or {}
+
+
+def link_course_to_canvas(course_id: str, user_id: str, canvas_course_id: str) -> dict[str, object]:
+    """Link a managed course to a verified Canvas source without replacing a different link."""
+    init_db()
+    source_id = str(canvas_course_id)
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO courses_platform (id, course_code, title, description, instructor_id)
-                VALUES (%s, %s, %s, %s, %s)
+                UPDATE courses_platform AS course
+                SET canvas_course_id = %s,
+                    updated_at = CASE
+                        WHEN course.canvas_course_id IS DISTINCT FROM %s THEN NOW()
+                        ELSE course.updated_at
+                    END
+                WHERE course.id = %s
+                  AND (course.canvas_course_id IS NULL OR course.canvas_course_id = %s)
+                  AND EXISTS (
+                      SELECT 1 FROM course_memberships_platform AS membership
+                      WHERE membership.course_id = course.id
+                        AND membership.user_id = %s
+                        AND membership.course_role = 'instructor'
+                        AND membership.status = 'approved'
+                  )
+                RETURNING course.id::text
                 """,
-                (course_id, normalized_code, clean_title, description.strip(), instructor_id),
+                (source_id, source_id, course_id, source_id, user_id),
             )
-            cur.execute(
-                """
-                INSERT INTO course_memberships_platform (id, course_id, user_id, course_role, status, reviewed_at, reviewed_by)
-                VALUES (%s, %s, %s, 'instructor', 'approved', NOW(), %s)
-                """,
-                (membership_id, course_id, instructor_id, instructor_id),
-            )
+            linked = cur.fetchone()
+            if linked is None:
+                cur.execute(
+                    """
+                    SELECT course.canvas_course_id,
+                           EXISTS (
+                               SELECT 1 FROM course_memberships_platform AS membership
+                               WHERE membership.course_id = course.id
+                                 AND membership.user_id = %s
+                                 AND membership.course_role = 'instructor'
+                                 AND membership.status = 'approved'
+                           )
+                    FROM courses_platform AS course
+                    WHERE course.id = %s
+                    """,
+                    (user_id, course_id),
+                )
+                current = cur.fetchone()
+                if current is None or not current[1]:
+                    raise PermissionError("You do not manage this course.")
+                raise ValueError("This class is already linked to a different Canvas course.")
         conn.commit()
     return get_course(course_id) or {}
 
@@ -1629,6 +1731,7 @@ def get_course(course_id: str) -> dict[str, object] | None:
                     c.course_code,
                     c.title,
                     c.description,
+                    c.canvas_course_id,
                     c.instructor_id::text,
                     COALESCE(NULLIF(u.display_name, ''), u.username),
                     (SELECT COUNT(*)::int FROM rag_files_socratic_chat rf WHERE rf.course_id = c.id AND rf.is_published),
@@ -1647,12 +1750,13 @@ def get_course(course_id: str) -> dict[str, object] | None:
         "course_code": row[1],
         "title": row[2],
         "description": row[3] or "",
-        "instructor_id": row[4],
-        "instructor_name": row[5],
+        "canvas_course_id": row[4],
+        "instructor_id": row[5],
+        "instructor_name": row[6],
         "membership_role": None,
         "membership_status": None,
-        "document_count": row[6],
-        "pending_request_count": row[7],
+        "document_count": row[7],
+        "pending_request_count": row[8],
     }
 
 
@@ -1667,6 +1771,7 @@ def list_courses_for_user(user_id: str) -> list[dict[str, object]]:
                     c.course_code,
                     c.title,
                     c.description,
+                    c.canvas_course_id,
                     c.instructor_id::text,
                     COALESCE(NULLIF(instructor.display_name, ''), instructor.username),
                     cm.course_role,
@@ -1692,12 +1797,13 @@ def list_courses_for_user(user_id: str) -> list[dict[str, object]]:
             "course_code": row[1],
             "title": row[2],
             "description": row[3] or "",
-            "instructor_id": row[4],
-            "instructor_name": row[5],
-            "membership_role": row[6],
-            "membership_status": row[7],
-            "document_count": row[8],
-            "pending_request_count": row[9],
+            "canvas_course_id": row[4],
+            "instructor_id": row[5],
+            "instructor_name": row[6],
+            "membership_role": row[7],
+            "membership_status": row[8],
+            "document_count": row[9],
+            "pending_request_count": row[10],
         }
         for row in rows
     ]

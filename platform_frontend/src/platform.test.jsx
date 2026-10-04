@@ -114,7 +114,7 @@ test("user selects and persists the platform color theme", async () => {
   expect(localStorage.getItem("socratic_chat_theme")).toBe("dark");
 });
 
-test("professor selects each explicit tool dashboard", async () => {
+test("professor sees courses before tools and can open a tool dashboard", async () => {
   mockApi();
   open("/professor");
   const user = userEvent.setup();
@@ -124,8 +124,15 @@ test("professor selects each explicit tool dashboard", async () => {
     }),
   ).toBeInTheDocument();
   expect(
-    screen.getByRole("link", { name: "Courses & access" }),
-  ).toHaveAttribute("href", "/professor/tools/socratic");
+    await screen.findByRole("heading", { name: "Your courses" }),
+  ).toBeInTheDocument();
+  expect(
+    screen
+      .getByRole("heading", { name: "Your courses" })
+      .compareDocumentPosition(
+        screen.getByRole("heading", { name: "Three ways to deepen learning" }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
   const theme = screen.getByLabelText("Choose color theme");
   const logout = screen.getByRole("button", { name: "Log out" });
   expect(
@@ -149,6 +156,170 @@ test("professor selects each explicit tool dashboard", async () => {
     await screen.findByRole("heading", { name: "Reflections settings" }),
   ).toBeInTheDocument();
   expect(screen.getByLabelText("Reflection type")).toHaveValue("topic_based");
+});
+
+test("professor manages a Canvas-linked course and opens its folded assignments on demand", async () => {
+  const imported = {
+    ...assignment,
+    id: "canvas-draft",
+    status: "draft",
+    title: "Architecture reflection",
+    audience: "course",
+    recipient_ids: [],
+    config: { document_ids: [], prompt: "", minimum_messages: 1 },
+  };
+  const fetch = mockApi("instructor", {
+    "/api/courses": {
+      courses: [
+        {
+          course_id: course,
+          course_code: "SE101",
+          title: "Software Engineering",
+          membership_role: "instructor",
+          canvas_course_id: "77",
+        },
+        {
+          course_id: "student-only",
+          course_code: "HIS101",
+          title: "History",
+          membership_role: "student",
+          canvas_course_id: null,
+        },
+      ],
+    },
+    "/api/platform/assignments": [],
+    "POST /api/platform/integrations/canvas/assignments": [
+      { id: "88", name: "Architecture reflection", due_at: null },
+      { id: "89", name: "Design tradeoffs", due_at: null },
+    ],
+    "POST /api/platform/integrations/canvas/import": imported,
+    "/api/platform/assignments/canvas-draft": imported,
+  });
+  open("/professor");
+  const user = userEvent.setup();
+
+  const courseCard = await screen.findByRole("button", {
+    name: /SE101.*Software Engineering.*Manage course/,
+  });
+  expect(
+    screen.queryByRole("button", { name: /HIS101.*History/ }),
+  ).not.toBeInTheDocument();
+  expect(
+    fetch.mock.calls.some(([url]) =>
+      url.includes("/integrations/canvas/assignments"),
+    ),
+  ).toBe(false);
+
+  await user.click(courseCard);
+  expect(courseCard).toHaveAttribute("aria-expanded", "true");
+  expect(
+    screen.getByRole("region", { name: "Software Engineering management" }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Socratic Chat" })).toHaveAttribute(
+    "href",
+    `/professor/tools/socratic/assignments/new?course=${course}`,
+  );
+  expect(
+    fetch.mock.calls.some(([url]) =>
+      url.includes("/integrations/canvas/assignments"),
+    ),
+  ).toBe(false);
+
+  await user.click(screen.getByText("Browse Canvas assignments"));
+  expect(
+    await screen.findByText("Architecture reflection"),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Design tradeoffs")).toBeInTheDocument();
+  const listCall = fetch.mock.calls.find(
+    ([url]) => url === "/api/platform/integrations/canvas/assignments",
+  );
+  expect(JSON.parse(listCall[1].body)).toEqual({ course_id: "77" });
+
+  await user.click(
+    screen.getByRole("button", {
+      name: "Create Socratic Chat draft for Architecture reflection",
+    }),
+  );
+  await waitFor(() =>
+    expect(
+      fetch.mock.calls.some(
+        ([url]) => url === "/api/platform/integrations/canvas/import",
+      ),
+    ).toBe(true),
+  );
+  const importCall = fetch.mock.calls.find(
+    ([url]) => url === "/api/platform/integrations/canvas/import",
+  );
+  expect(JSON.parse(importCall[1].body)).toEqual({
+    course_id: "77",
+    assignment_id: "88",
+    platform_course_id: course,
+    tool: "socratic",
+  });
+  expect(
+    await screen.findByRole("heading", {
+      level: 1,
+      name: "Architecture reflection",
+    }),
+  ).toBeInTheDocument();
+});
+
+test("professor explicitly links a manual course to Canvas before browsing assignments", async () => {
+  const manualCourse = {
+    course_id: course,
+    course_code: "SE101",
+    title: "Software Engineering",
+    membership_role: "instructor",
+    canvas_course_id: null,
+  };
+  const fetch = mockApi("instructor", {
+    "/api/courses": { courses: [manualCourse] },
+    "POST /api/platform/integrations/canvas/courses": [
+      {
+        id: "77",
+        name: "Software Engineering",
+        course_code: "SE101",
+        enrollment_role: "teacher",
+      },
+    ],
+    "POST /api/platform/integrations/canvas/link-course": {
+      ...manualCourse,
+      canvas_course_id: "77",
+    },
+    "POST /api/platform/integrations/canvas/assignments": [],
+  });
+  open("/professor");
+  const user = userEvent.setup();
+
+  await user.click(
+    await screen.findByRole("button", {
+      name: /SE101.*Software Engineering.*Manage course/,
+    }),
+  );
+  expect(
+    screen.queryByText("Browse Canvas assignments"),
+  ).not.toBeInTheDocument();
+  await user.click(screen.getByText("Link Canvas course"));
+  await user.selectOptions(await screen.findByLabelText("Canvas course"), "77");
+  await user.click(
+    screen.getByRole("button", { name: "Link selected Canvas course" }),
+  );
+
+  const linkCall = fetch.mock.calls.find(
+    ([url]) => url === "/api/platform/integrations/canvas/link-course",
+  );
+  expect(JSON.parse(linkCall[1].body)).toEqual({
+    platform_course_id: course,
+    course_id: "77",
+  });
+  expect(
+    await screen.findByText("Browse Canvas assignments"),
+  ).toBeInTheDocument();
+  expect(
+    fetch.mock.calls.some(([url]) =>
+      url.includes("/integrations/canvas/assignments"),
+    ),
+  ).toBe(false);
 });
 
 test("student sees mixed assignments and opens the assigned tool without selecting configuration", async () => {
@@ -248,6 +419,7 @@ test("professor can add another Canvas course without loading assignments", asyn
     course_code: "ITSC 3155",
     title: "Software Engineering",
     membership_role: "instructor",
+    canvas_course_id: "77",
   };
   const fetch = mockApi("instructor", {
     "POST /api/platform/integrations/canvas/course": createdCourse,
@@ -264,11 +436,13 @@ test("professor can add another Canvas course without loading assignments", asyn
       ],
     },
   });
-  open("/professor/tools/socratic");
+  open("/professor");
   const user = userEvent.setup();
 
-  await screen.findByRole("option", { name: /SE101/ });
-  await user.selectOptions(screen.getByLabelText("Course"), course);
+  expect(
+    await screen.findByRole("button", { name: /SE101.*Software Engineering/ }),
+  ).toBeInTheDocument();
+  await user.click(screen.getByText("Add a course from Canvas"));
   await user.type(
     screen.getByLabelText("Canvas access token"),
     "canvas-token-value",
@@ -280,9 +454,25 @@ test("professor can add another Canvas course without loading assignments", asyn
   );
 
   expect(
-    await screen.findByText("Software Engineering was added to CourseLab."),
+    await screen.findByText("Software Engineering is ready in CourseLab."),
   ).toBeInTheDocument();
-  expect(screen.getByLabelText("Course")).toHaveValue("second-platform-course");
+  expect(
+    screen.getByRole("button", { name: /ITSC 3155.*Software Engineering/ }),
+  ).toHaveAttribute("aria-expanded", "true");
+  await user.selectOptions(screen.getByLabelText("Canvas course"), "77");
+  await user.click(
+    screen.getByRole("button", { name: "Add course to CourseLab" }),
+  );
+  await waitFor(() =>
+    expect(
+      fetch.mock.calls.filter(
+        ([url]) => url === "/api/platform/integrations/canvas/course",
+      ),
+    ).toHaveLength(2),
+  );
+  expect(
+    screen.getAllByRole("button", { name: /ITSC 3155.*Software Engineering/ }),
+  ).toHaveLength(1);
   expect(
     screen.queryByLabelText("Chatbot for imported assignment"),
   ).not.toBeInTheDocument();
@@ -307,6 +497,7 @@ test("professor can create the destination CourseLab course from Canvas", async 
     course_code: "ITSC 3155",
     title: "Software Engineering",
     membership_role: "instructor",
+    canvas_course_id: "77",
   };
   const fetch = mockApi("instructor", {
     "/api/courses": { courses: [] },
@@ -324,9 +515,10 @@ test("professor can create the destination CourseLab course from Canvas", async 
       ],
     },
   });
-  open("/professor/tools/socratic");
+  open("/professor");
   const user = userEvent.setup();
 
+  await user.click(await screen.findByText("Add a course from Canvas"));
   await user.type(
     await screen.findByLabelText("Canvas access token"),
     "canvas-token-value",
@@ -344,9 +536,11 @@ test("professor can create the destination CourseLab course from Canvas", async 
     }),
   );
 
-  expect(await screen.findByLabelText("Course")).toHaveValue(
-    "canvas-platform-course",
-  );
+  expect(
+    await screen.findByRole("button", {
+      name: /ITSC 3155.*Software Engineering/,
+    }),
+  ).toHaveAttribute("aria-expanded", "true");
   const createCall = fetch.mock.calls.find(
     ([url, options]) =>
       url === "/api/platform/integrations/canvas/course" &&
@@ -374,7 +568,9 @@ test("connected Canvas account shows an empty state after instructor courses loa
         resolveCourses = resolve;
       }),
   });
-  open("/professor/tools/socratic");
+  open("/professor");
+  const user = userEvent.setup();
+  await user.click(await screen.findByText("Add a course from Canvas"));
 
   expect(await screen.findByText("Canvas connected")).toBeInTheDocument();
   await waitFor(() => expect(resolveCourses).toBeTypeOf("function"));
@@ -421,7 +617,9 @@ test("professor reuses a saved Canvas connection without entering the token agai
     ],
   });
 
-  open("/professor/tools/socratic");
+  open("/professor");
+  const user = userEvent.setup();
+  await user.click(await screen.findByText("Add a course from Canvas"));
 
   expect(await screen.findByText("Canvas connected")).toBeInTheDocument();
   expect(

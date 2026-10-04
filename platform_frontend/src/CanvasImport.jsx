@@ -102,7 +102,7 @@ export default function CanvasImport({ onCourseCreated }) {
       });
       onCourseCreated(created);
       setCanvasCourseId("");
-      setSuccess(`${created.title} was added to CourseLab.`);
+      setSuccess(`${created.title} is ready in CourseLab.`);
     });
   }
 

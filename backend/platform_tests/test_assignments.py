@@ -1,10 +1,11 @@
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
 
-from app import settings
+from app import db, settings
 from platform_app import canvas_lms, canvas_tokens, engines, store
 
 
@@ -196,6 +197,7 @@ def test_canvas_assignment_endpoints_reject_student_only_source_course(client, r
 
 def test_create_canvas_course_checks_live_role_and_server_metadata(client, roster, monkeypatch):
     enrollment_type = {'value': 'StudentEnrollment'}
+    canvas_code = {'value': 'ITSC 3155'}
 
     def enrollments(path, _token, **_kwargs):
         assert path == 'users/self/enrollments'
@@ -208,7 +210,7 @@ def test_create_canvas_course_checks_live_role_and_server_metadata(client, roste
         lambda path, _token, **_kwargs: {
             'id': 77,
             'name': 'Software Engineering',
-            'course_code': 'ITSC 3155',
+            'course_code': canvas_code['value'],
         },
     )
     request = {'course_id': 77, 'access_token': 'inline-token'}
@@ -222,7 +224,169 @@ def test_create_canvas_course_checks_live_role_and_server_metadata(client, roste
     assert created.status_code == 201, created.text
     assert created.json()['course_code'] == 'ITSC 3155'
     assert created.json()['title'] == 'Software Engineering'
+    assert created.json()['canvas_course_id'] == '77'
     assert created.json()['membership_role'] == 'instructor'
+    canvas_code['value'] = 'ITSC 3155 NEW'
+    repeated = client.post(path, headers=roster['headers']['prof'], json=request)
+    assert repeated.status_code == 201, repeated.text
+    assert repeated.json()['course_id'] == created.json()['course_id']
+    courses = client.get('/api/courses', headers=roster['headers']['prof']).json()['courses']
+    mapped = next(course for course in courses if course['course_id'] == created.json()['course_id'])
+    manual = next(course for course in courses if course['course_id'] == roster['course'])
+    assert mapped['canvas_course_id'] == '77'
+    assert manual['canvas_course_id'] is None
+    created_manually = client.post(
+        '/api/courses',
+        headers=roster['headers']['prof'],
+        json={'course_code': 'MANUAL 101', 'title': 'Manual course'},
+    )
+    assert created_manually.status_code == 200, created_manually.text
+    assert created_manually.json()['canvas_course_id'] is None
+
+
+def test_canvas_assignment_import_rejects_wrong_mapped_course(client, roster, monkeypatch):
+    monkeypatch.setattr(
+        canvas_lms,
+        'get_instructor_course',
+        lambda course_id, _token: {
+            'id': str(course_id),
+            'name': 'Canvas course',
+            'course_code': 'MAPPED 101',
+        },
+    )
+    created = client.post(
+        '/api/platform/integrations/canvas/course',
+        headers=roster['headers']['prof'],
+        json={'course_id': 77, 'access_token': 'canvas-test-token'},
+    )
+    assert created.status_code == 201, created.text
+    course_id = created.json()['course_id']
+    calls = []
+    monkeypatch.setattr(
+        canvas_lms,
+        'get_assignment',
+        lambda source_id, assignment_id, _token: calls.append(source_id) or {
+            'id': str(assignment_id), 'name': 'Essay', 'description': '',
+            'due_at': None, 'html_url': None,
+        },
+    )
+    request = {
+        'course_id': 78,
+        'assignment_id': 88,
+        'platform_course_id': course_id,
+        'access_token': 'canvas-test-token',
+    }
+    wrong = client.post('/api/platform/integrations/canvas/import', headers=roster['headers']['prof'], json=request)
+    assert wrong.status_code == 422
+    assert calls == []
+    right = client.post(
+        '/api/platform/integrations/canvas/import',
+        headers=roster['headers']['prof'],
+        json={**request, 'course_id': 77},
+    )
+    assert right.status_code == 201, right.text
+    assert calls == [77]
+    assert right.json()['course_id'] == course_id
+
+
+def test_professor_can_explicitly_link_manual_course_to_verified_canvas_course(client, roster, monkeypatch):
+    calls = []
+    monkeypatch.setattr(canvas_tokens, 'load', lambda _user_id: 'saved-canvas-token')
+
+    def enrollments(path, token, **_kwargs):
+        calls.append((path, token))
+        return [
+            {'course_id': course_id, 'type': 'TeacherEnrollment', 'enrollment_state': 'active'}
+            for course_id in (77, 78)
+        ]
+
+    monkeypatch.setattr(canvas_lms, '_get_pages', enrollments)
+    monkeypatch.setattr(
+        canvas_lms,
+        '_get_one',
+        lambda path, _token, **_kwargs: {
+            'id': int(path.rsplit('/', 1)[1]), 'name': 'Canvas course', 'course_code': 'CANVAS 101'
+        },
+    )
+    request = {'platform_course_id': roster['course'], 'course_id': 77}
+    path = '/api/platform/integrations/canvas/link-course'
+    assert client.post(path, headers=roster['headers']['student'], json=request).status_code == 403
+    assert client.post(path, headers=roster['headers']['other_prof'], json=request).status_code == 403
+    assert calls == []
+
+    linked = client.post(path, headers=roster['headers']['prof'], json=request)
+    assert linked.status_code == 200, linked.text
+    assert linked.json()['course_id'] == roster['course']
+    assert linked.json()['course_code'] == 'SE101'
+    assert linked.json()['canvas_course_id'] == '77'
+    assert linked.json()['membership_role'] == 'instructor'
+    assert linked.json()['membership_status'] == 'approved'
+    assert calls == [('users/self/enrollments', 'saved-canvas-token')]
+    assert db.get_course(roster['course'])['canvas_course_id'] == '77'
+    again = client.post(path, headers=roster['headers']['prof'], json=request)
+    assert again.status_code == 200, again.text
+    assert again.json()['course_id'] == roster['course']
+
+    different_source = client.post(
+        path, headers=roster['headers']['prof'], json={**request, 'course_id': 78}
+    )
+    assert different_source.status_code == 409
+    assert db.get_course(roster['course'])['canvas_course_id'] == '77'
+
+    another_class = client.post(
+        '/api/courses', headers=roster['headers']['prof'],
+        json={'course_code': 'ANOTHER 101', 'title': 'Another class'},
+    )
+    assert another_class.status_code == 200, another_class.text
+    duplicate_source = client.post(
+        path, headers=roster['headers']['prof'],
+        json={**request, 'platform_course_id': another_class.json()['course_id']},
+    )
+    assert duplicate_source.status_code == 409
+    assert db.get_course(another_class.json()['course_id'])['canvas_course_id'] is None
+
+
+def test_canvas_link_requires_live_instructor_role(client, roster, monkeypatch):
+    monkeypatch.setattr(canvas_lms, '_get_pages', lambda *_args, **_kwargs: [
+        {'course_id': 77, 'type': 'StudentEnrollment', 'enrollment_state': 'active'}
+    ])
+    monkeypatch.setattr(canvas_lms, '_get_one', lambda *_args, **_kwargs: pytest.fail('Canvas course must not be fetched'))
+    response = client.post(
+        '/api/platform/integrations/canvas/link-course',
+        headers=roster['headers']['prof'],
+        json={
+            'platform_course_id': roster['course'],
+            'course_id': 77,
+            'access_token': 'inline-canvas-token',
+        },
+    )
+    assert response.status_code == 403
+    assert db.get_course(roster['course'])['canvas_course_id'] is None
+
+
+def test_canvas_mapping_migration_only_backfills_exact_legacy_description(database, roster):
+    prefix = uuid4().hex[:8]
+    descriptions = [
+        'Imported from UNC Charlotte Canvas course 991.',
+        'Imported from UNC Charlotte Canvas course 991.',
+        'Imported from UNC Charlotte Canvas course 992. Extra text',
+    ]
+    course_ids = [str(uuid4()) for _ in descriptions]
+    migration = Path(__file__).resolve().parents[1] / 'platform_app/migrations/003_canvas_course_mapping.sql'
+    with store.connection() as conn:
+        for index, (course_id, description) in enumerate(zip(course_ids, descriptions)):
+            conn.execute(
+                "INSERT INTO courses_platform(id, course_code, title, description, instructor_id) "
+                "VALUES (%s, %s, 'Legacy course', %s, %s)",
+                (course_id, f'{prefix}-{index}', description, roster['prof']),
+            )
+        conn.execute(migration.read_text())
+        rows = conn.execute(
+            "SELECT canvas_course_id FROM courses_platform WHERE id = ANY(%s::uuid[]) ORDER BY course_code",
+            (course_ids,),
+        ).fetchall()
+    assert [row['canvas_course_id'] for row in rows].count('991') == 1
+    assert [row['canvas_course_id'] for row in rows].count(None) == 2
 
 
 def test_canvas_token_migration_and_encrypted_round_trip(database, roster, monkeypatch):

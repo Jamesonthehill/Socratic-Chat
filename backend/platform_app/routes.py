@@ -3,6 +3,7 @@ from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from psycopg.types.json import Jsonb
+from psycopg.errors import UniqueViolation
 
 from app import auth, db, settings
 from platform_app import canvas_lms, canvas_tokens, engines, store
@@ -12,6 +13,7 @@ from platform_app.schemas import (
     CanvasCourseRequest,
     CanvasCredentials,
     CanvasImportRequest,
+    CanvasLinkCourseRequest,
     CanvasTokenInput,
     GenerateSubtopicsInput,
     GenerateTopicInput,
@@ -191,12 +193,36 @@ def create_course_from_canvas(body: CanvasCourseRequest, account=Depends(profess
             course_code,
             title,
             f"Imported from UNC Charlotte Canvas course {body.course_id}.",
+            canvas_course_id=source["id"],
         )
     except Exception as error:
         detail = str(error)
         if "courses_instructor_id_course_code_key" in detail or "duplicate key" in detail:
             raise HTTPException(409, "You already have a course with that code.") from error
         raise
+    course["membership_role"] = "instructor"
+    course["membership_status"] = "approved"
+    return course
+
+
+@router.post("/integrations/canvas/link-course")
+def link_canvas_course(body: CanvasLinkCourseRequest, account=Depends(professor)):
+    manage_course(body.platform_course_id, account)
+    source = canvas_result(
+        lambda: canvas_lms.get_instructor_course(
+            body.course_id, canvas_access_token(body, account)
+        )
+    )
+    try:
+        course = db.link_course_to_canvas(
+            str(body.platform_course_id), str(account["user_id"]), source["id"]
+        )
+    except PermissionError as error:
+        raise HTTPException(403, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
+    except UniqueViolation as error:
+        raise HTTPException(409, "This Canvas course is already linked to another class.") from error
     course["membership_role"] = "instructor"
     course["membership_status"] = "approved"
     return course
@@ -212,6 +238,9 @@ def canvas_assignments(body: CanvasCourseRequest, account=Depends(professor)):
 @router.post("/integrations/canvas/import", status_code=201)
 def import_canvas_assignment(body: CanvasImportRequest, account=Depends(professor)):
     manage_course(body.platform_course_id, account)
+    destination = db.get_course(str(body.platform_course_id))
+    if destination and destination["canvas_course_id"] is not None and destination["canvas_course_id"] != str(body.course_id):
+        raise HTTPException(422, "This class is linked to a different Canvas course.")
     canvas_assignment = canvas_result(
         lambda: canvas_lms.get_assignment(
             body.course_id,

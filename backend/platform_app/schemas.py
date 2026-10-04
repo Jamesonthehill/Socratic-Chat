@@ -129,6 +129,10 @@ class CanvasCourseRequest(CanvasCredentials):
     course_id: int = Field(gt=0)
 
 
+class CanvasLinkCourseRequest(CanvasCourseRequest):
+    platform_course_id: UUID
+
+
 class CanvasImportRequest(CanvasCourseRequest):
     assignment_id: int = Field(gt=0)
     platform_course_id: UUID

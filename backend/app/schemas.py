@@ -183,6 +183,7 @@ class CourseSummary(BaseModel):
     course_code: str
     title: str
     description: str = ""
+    canvas_course_id: str | None = None
     instructor_id: str
     instructor_name: str
     membership_role: Literal["instructor", "student"] | None = None

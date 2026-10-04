@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import { api, TOOLS } from "./api";
 import { Notice } from "./ui";
 
+const CANVAS_ROLE_LABELS = {
+  teacher: "Teacher",
+  ta: "TA",
+  designer: "Designer",
+};
+
 export default function CanvasImport({
   defaultTool,
   platformCourseId,
@@ -15,6 +21,7 @@ export default function CanvasImport({
   const [assignmentId, setAssignmentId] = useState("");
   const [selectedTool, setSelectedTool] = useState(defaultTool);
   const [connection, setConnection] = useState(null);
+  const [coursesLoaded, setCoursesLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -29,7 +36,10 @@ export default function CanvasImport({
             method: "POST",
             body: {},
           });
-          if (active) setCanvasCourses(courses);
+          if (active) {
+            setCanvasCourses(courses);
+            setCoursesLoaded(true);
+          }
         }
       })
       .catch((caught) => active && setError(caught.message));
@@ -58,6 +68,7 @@ export default function CanvasImport({
       });
       setConnection(result);
       setCanvasCourses(result.courses || []);
+      setCoursesLoaded(true);
       setAccessToken("");
       setCanvasCourseId("");
       setAssignments([]);
@@ -67,11 +78,13 @@ export default function CanvasImport({
 
   function loadCourses() {
     return perform(async () => {
+      setCoursesLoaded(false);
       const courses = await api("/platform/integrations/canvas/courses", {
         method: "POST",
         body: {},
       });
       setCanvasCourses(courses);
+      setCoursesLoaded(true);
       setCanvasCourseId("");
       setAssignments([]);
       setAssignmentId("");
@@ -85,6 +98,7 @@ export default function CanvasImport({
       });
       setConnection(result);
       setCanvasCourses([]);
+      setCoursesLoaded(false);
       setCanvasCourseId("");
       setAssignments([]);
       setAssignmentId("");
@@ -119,20 +133,10 @@ export default function CanvasImport({
 
   function createPlatformCourse() {
     return perform(async () => {
-      const selected = canvasCourses.find(
-        (course) => course.id === canvasCourseId,
-      );
-      if (!selected) throw new Error("Select a Canvas course first.");
-      const created = await api("/courses", {
+      if (!canvasCourseId) throw new Error("Select a Canvas course first.");
+      const created = await api("/platform/integrations/canvas/course", {
         method: "POST",
-        body: {
-          course_code: (selected.course_code || `CANVAS-${selected.id}`).slice(
-            0,
-            40,
-          ),
-          title: selected.name.slice(0, 160),
-          description: `Imported from UNC Charlotte Canvas course ${selected.id}.`,
-        },
+        body: { course_id: canvasCourseId },
       });
       onCourseCreated(created);
     });
@@ -142,9 +146,10 @@ export default function CanvasImport({
     <section className="panel canvas-import">
       <h2>Import from UNC Charlotte Canvas</h2>
       <p>
-        Connect Canvas once to read the active courses and assignments visible
-        to you. The token is encrypted on the server, is never returned to your
-        browser, and can be disconnected whenever you choose.
+        Connect Canvas once to read active courses where you are a teacher, TA,
+        or designer and their assignments. The token is encrypted on the server,
+        is never returned to your browser, and can be disconnected whenever you
+        choose.
       </p>
       <Notice error={error} />
       <div className="canvas-import-grid">
@@ -243,6 +248,9 @@ export default function CanvasImport({
                     {course.course_code
                       ? `${course.course_code} — ${course.name}`
                       : course.name}
+                    {CANVAS_ROLE_LABELS[course.enrollment_role]
+                      ? ` (${CANVAS_ROLE_LABELS[course.enrollment_role]})`
+                      : ""}
                   </option>
                 ))}
               </select>
@@ -267,6 +275,14 @@ export default function CanvasImport({
             )}
           </>
         )}
+        {connection?.connected &&
+          coursesLoaded &&
+          canvasCourses.length === 0 && (
+            <p className="help">
+              No active Canvas courses where you are a teacher, TA, or designer
+              were found.
+            </p>
+          )}
         {assignments.length > 0 && (
           <>
             <label>

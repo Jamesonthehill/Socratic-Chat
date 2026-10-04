@@ -266,6 +266,7 @@ test("professor imports a visible UNC Charlotte Canvas assignment as a Socratic 
           id: "77",
           name: "Software Engineering",
           course_code: "ITSC 3155",
+          enrollment_role: "teacher",
         },
       ],
     },
@@ -329,7 +330,7 @@ test("professor can create the destination CourseLab course from Canvas", async 
   };
   const fetch = mockApi("instructor", {
     "/api/courses": { courses: [] },
-    "POST /api/courses": createdCourse,
+    "POST /api/platform/integrations/canvas/course": createdCourse,
     "POST /api/platform/integrations/canvas/connection": {
       connected: true,
       encryption_configured: true,
@@ -338,6 +339,7 @@ test("professor can create the destination CourseLab course from Canvas", async 
           id: "77",
           name: "Software Engineering",
           course_code: "ITSC 3155",
+          enrollment_role: "teacher",
         },
       ],
     },
@@ -350,6 +352,11 @@ test("professor can create the destination CourseLab course from Canvas", async 
     "canvas-token-value",
   );
   await user.click(screen.getByRole("button", { name: "Connect Canvas" }));
+  expect(
+    await screen.findByRole("option", {
+      name: "ITSC 3155 — Software Engineering (Teacher)",
+    }),
+  ).toBeInTheDocument();
   await user.selectOptions(await screen.findByLabelText("Canvas course"), "77");
   await user.click(
     screen.getByRole("button", {
@@ -361,13 +368,60 @@ test("professor can create the destination CourseLab course from Canvas", async 
     "canvas-platform-course",
   );
   const createCall = fetch.mock.calls.find(
-    ([url, options]) => url === "/api/courses" && options.method === "POST",
+    ([url, options]) =>
+      url === "/api/platform/integrations/canvas/course" &&
+      options.method === "POST",
   );
   expect(JSON.parse(createCall[1].body)).toEqual({
-    course_code: "ITSC 3155",
-    title: "Software Engineering",
-    description: "Imported from UNC Charlotte Canvas course 77.",
+    course_id: "77",
   });
+  expect(
+    fetch.mock.calls.some(
+      ([url, options]) => url === "/api/courses" && options.method === "POST",
+    ),
+  ).toBe(false);
+});
+
+test("connected Canvas account shows an empty state after instructor courses load", async () => {
+  let resolveCourses;
+  const fetch = mockApi("instructor", {
+    "/api/platform/integrations/canvas/connection": {
+      connected: true,
+      encryption_configured: true,
+    },
+    "POST /api/platform/integrations/canvas/courses": () =>
+      new Promise((resolve) => {
+        resolveCourses = resolve;
+      }),
+  });
+  open("/professor/tools/socratic");
+
+  expect(await screen.findByText("Canvas connected")).toBeInTheDocument();
+  await waitFor(() => expect(resolveCourses).toBeTypeOf("function"));
+  expect(
+    screen.queryByText(/No active Canvas courses/),
+  ).not.toBeInTheDocument();
+
+  await act(async () => resolveCourses([]));
+
+  expect(
+    await screen.findByText(
+      /No active Canvas courses where you are a teacher, TA, or designer were found/,
+    ),
+  ).toBeInTheDocument();
+  expect(screen.queryByLabelText("Canvas course")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", {
+      name: "Create CourseLab course from Canvas",
+    }),
+  ).not.toBeInTheDocument();
+  expect(
+    fetch.mock.calls.some(
+      ([url, options]) =>
+        url === "/api/platform/integrations/canvas/courses" &&
+        options.method === "POST",
+    ),
+  ).toBe(true);
 });
 
 test("professor reuses a saved Canvas connection without entering the token again", async () => {
@@ -382,6 +436,7 @@ test("professor reuses a saved Canvas connection without entering the token agai
         id: "77",
         name: "Software Engineering",
         course_code: "ITSC 3155",
+        enrollment_role: "teacher",
       },
     ],
   });

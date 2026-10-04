@@ -10,6 +10,11 @@ import httpx
 CANVAS_ORIGIN = "https://instructure.charlotte.edu"
 CANVAS_API_BASE = f"{CANVAS_ORIGIN}/api/v1"
 MAX_PAGES = 20
+INSTRUCTOR_ENROLLMENT_TYPES = {
+    "TeacherEnrollment": "teacher",
+    "TaEnrollment": "ta",
+    "DesignerEnrollment": "designer",
+}
 
 
 class CanvasAPIError(RuntimeError):
@@ -160,7 +165,46 @@ def _get_one(
             active_client.close()
 
 
+def _active_instructor_enrollments(
+    access_token: str, *, client: httpx.Client | None = None
+) -> dict[str, str]:
+    enrollments = _get_pages(
+        "users/self/enrollments",
+        access_token,
+        params={
+            "type[]": list(INSTRUCTOR_ENROLLMENT_TYPES),
+            "state[]": "active",
+            "per_page": 100,
+        },
+        client=client,
+    )
+    roles: dict[str, str] = {}
+    for enrollment in enrollments:
+        role = INSTRUCTOR_ENROLLMENT_TYPES.get(enrollment.get("type"))
+        course_id = enrollment.get("course_id")
+        if enrollment.get("enrollment_state") != "active" or not role or course_id is None:
+            continue
+        # Multiple sections can produce multiple enrollments for one course.
+        # Prefer the teacher role if a user has more than one role there.
+        key = str(course_id)
+        if key not in roles or role == "teacher":
+            roles[key] = role
+    return roles
+
+
+def require_instructor_course(
+    course_id: int, access_token: str, *, client: httpx.Client | None = None
+) -> str:
+    role = _active_instructor_enrollments(access_token, client=client).get(str(course_id))
+    if role:
+        return role
+    raise CanvasAPIError(403, "Your Canvas account does not have an active instructor role in this course.")
+
+
 def list_courses(access_token: str, *, client: httpx.Client | None = None) -> list[dict[str, Any]]:
+    roles = _active_instructor_enrollments(access_token, client=client)
+    if not roles:
+        return []
     courses = _get_pages(
         "courses",
         access_token,
@@ -174,10 +218,25 @@ def list_courses(access_token: str, *, client: httpx.Client | None = None) -> li
             "course_code": str(course.get("course_code") or ""),
             "start_at": course.get("start_at"),
             "end_at": course.get("end_at"),
+            "enrollment_role": roles[str(course["id"])],
         }
         for course in courses
-        if course.get("id") is not None
+        if course.get("id") is not None and str(course["id"]) in roles
     ]
+
+
+def get_instructor_course(
+    course_id: int, access_token: str, *, client: httpx.Client | None = None
+) -> dict[str, Any]:
+    require_instructor_course(course_id, access_token, client=client)
+    course = _get_one(f"courses/{course_id}", access_token, client=client)
+    if str(course.get("id")) != str(course_id):
+        raise CanvasAPIError(502, "Canvas returned a different course than requested.")
+    return {
+        "id": str(course_id),
+        "name": str(course.get("name") or course.get("course_code") or f"Course {course_id}"),
+        "course_code": str(course.get("course_code") or ""),
+    }
 
 
 def list_assignments(
@@ -186,6 +245,7 @@ def list_assignments(
     *,
     client: httpx.Client | None = None,
 ) -> list[dict[str, Any]]:
+    require_instructor_course(course_id, access_token, client=client)
     assignments = _get_pages(
         f"courses/{course_id}/assignments",
         access_token,
@@ -213,6 +273,7 @@ def get_assignment(
     *,
     client: httpx.Client | None = None,
 ) -> dict[str, Any]:
+    require_instructor_course(course_id, access_token, client=client)
     assignment = _get_one(
         f"courses/{course_id}/assignments/{assignment_id}",
         access_token,

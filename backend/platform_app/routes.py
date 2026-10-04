@@ -176,6 +176,32 @@ def canvas_courses(body: CanvasCredentials, account=Depends(professor)):
     return courses
 
 
+@router.post("/integrations/canvas/course", status_code=201)
+def create_course_from_canvas(body: CanvasCourseRequest, account=Depends(professor)):
+    source = canvas_result(
+        lambda: canvas_lms.get_instructor_course(
+            body.course_id, canvas_access_token(body, account)
+        )
+    )
+    course_code = (source["course_code"] or f"CANVAS-{body.course_id}")[:40]
+    title = source["name"][:160]
+    try:
+        course = db.create_course(
+            str(account["user_id"]),
+            course_code,
+            title,
+            f"Imported from UNC Charlotte Canvas course {body.course_id}.",
+        )
+    except Exception as error:
+        detail = str(error)
+        if "courses_instructor_id_course_code_key" in detail or "duplicate key" in detail:
+            raise HTTPException(409, "You already have a course with that code.") from error
+        raise
+    course["membership_role"] = "instructor"
+    course["membership_status"] = "approved"
+    return course
+
+
 @router.post("/integrations/canvas/assignments")
 def canvas_assignments(body: CanvasCourseRequest, account=Depends(professor)):
     return canvas_result(

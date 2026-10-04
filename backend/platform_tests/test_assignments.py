@@ -157,6 +157,74 @@ def test_canvas_connection_is_saved_and_reused_server_side(client, roster, monke
     assert disconnected.json()['connected'] is False
 
 
+def test_canvas_assignment_endpoints_reject_student_only_source_course(client, roster, monkeypatch):
+    calls = []
+
+    def learner_enrollments(path, token, **_kwargs):
+        calls.append((path, token))
+        assert path == 'users/self/enrollments'
+        return [{'course_id': 77, 'type': 'StudentEnrollment', 'enrollment_state': 'active'}]
+
+    monkeypatch.setattr(canvas_lms, '_get_pages', learner_enrollments)
+    monkeypatch.setattr(canvas_lms, '_get_one', lambda *_args, **_kwargs: pytest.fail('Canvas content must not be fetched'))
+    monkeypatch.setattr(canvas_tokens, 'load', lambda _user_id: 'saved-token')
+
+    assignments = client.post(
+        '/api/platform/integrations/canvas/assignments',
+        headers=roster['headers']['prof'],
+        json={'course_id': 77, 'access_token': 'inline-token'},
+    )
+    assert assignments.status_code == 403
+
+    imported = client.post(
+        '/api/platform/integrations/canvas/import',
+        headers=roster['headers']['prof'],
+        json={
+            'course_id': 77,
+            'assignment_id': 88,
+            'platform_course_id': roster['course'],
+            'tool': 'socratic',
+        },
+    )
+    assert imported.status_code == 403
+    assert calls == [
+        ('users/self/enrollments', 'inline-token'),
+        ('users/self/enrollments', 'saved-token'),
+    ]
+    assert client.get('/api/platform/assignments', headers=roster['headers']['prof']).json() == []
+
+
+def test_create_canvas_course_checks_live_role_and_server_metadata(client, roster, monkeypatch):
+    enrollment_type = {'value': 'StudentEnrollment'}
+
+    def enrollments(path, _token, **_kwargs):
+        assert path == 'users/self/enrollments'
+        return [{'course_id': 77, 'type': enrollment_type['value'], 'enrollment_state': 'active'}]
+
+    monkeypatch.setattr(canvas_lms, '_get_pages', enrollments)
+    monkeypatch.setattr(
+        canvas_lms,
+        '_get_one',
+        lambda path, _token, **_kwargs: {
+            'id': 77,
+            'name': 'Software Engineering',
+            'course_code': 'ITSC 3155',
+        },
+    )
+    request = {'course_id': 77, 'access_token': 'inline-token'}
+    path = '/api/platform/integrations/canvas/course'
+
+    assert client.post(path, headers=roster['headers']['student'], json=request).status_code == 403
+    assert client.post(path, headers=roster['headers']['prof'], json=request).status_code == 403
+
+    enrollment_type['value'] = 'TeacherEnrollment'
+    created = client.post(path, headers=roster['headers']['prof'], json=request)
+    assert created.status_code == 201, created.text
+    assert created.json()['course_code'] == 'ITSC 3155'
+    assert created.json()['title'] == 'Software Engineering'
+    assert created.json()['membership_role'] == 'instructor'
+
+
 def test_canvas_token_migration_and_encrypted_round_trip(database, roster, monkeypatch):
     monkeypatch.setenv('CANVAS_TOKEN_ENCRYPTION_KEY', 'integration-test-secret-' + 'x' * 32)
     canvas_tokens.save(roster['prof'], 'canvas-integration-token')

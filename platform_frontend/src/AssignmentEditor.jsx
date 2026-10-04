@@ -22,6 +22,16 @@ function localDate(value) {
     .slice(0, 16);
 }
 
+function AssignmentSettings({ optional, children }) {
+  if (!optional) return children;
+  return (
+    <details className="canvas-optional-settings">
+      <summary>Customize details (optional)</summary>
+      {children}
+    </details>
+  );
+}
+
 export default function AssignmentEditor() {
   const { tool, id } = useParams(),
     [query] = useSearchParams(),
@@ -128,6 +138,7 @@ export default function AssignmentEditor() {
       </>
     );
   const frozen = item.status !== "draft";
+  const importedFromCanvas = query.get("from") === "canvas";
   const Config = {
     socratic: SocraticConfig,
     reflections: ReflectionConfig,
@@ -145,7 +156,9 @@ export default function AssignmentEditor() {
           <p>
             {frozen
               ? "Published settings are frozen. Duplicate this assignment to use different settings."
-              : "Set the learning experience, choose your students, then publish."}
+              : importedFromCanvas
+                ? "Canvas filled in this assignment. You can publish it as-is or optionally adjust the settings below."
+                : "Set the learning experience, choose your students, then publish."}
           </p>
         </div>
         <Badge value={item.status} />
@@ -158,113 +171,129 @@ export default function AssignmentEditor() {
           perform(() => save(false));
         }}
       >
-        <fieldset disabled={busy || frozen} className="editor-fieldset">
-          <div className="editor-grid">
-            <section className="panel">
-              <h2>Assignment details</h2>
-              <label>
-                Title
-                <input
-                  required
-                  maxLength={200}
-                  value={item.title}
-                  onChange={(e) => change("title", e.target.value)}
-                  placeholder="e.g. Week 3: Requirements in practice"
-                />
-              </label>
-              <label>
-                Assigned chatbot
-                <input value={TOOLS[item.tool].name} readOnly />
-              </label>
-              <label>
-                Instructions
-                <textarea
-                  rows={4}
-                  value={item.instructions}
-                  onChange={(e) => change("instructions", e.target.value)}
-                  placeholder="What should students focus on?"
-                />
-              </label>
-              <label>
-                Due date (your local time)
-                <input
-                  type="datetime-local"
-                  value={localDate(item.due_at)}
-                  onChange={(e) =>
-                    change(
-                      "due_at",
-                      e.target.value
-                        ? new Date(e.target.value).toISOString()
-                        : null,
-                    )
-                  }
-                />
-              </label>
-              <p className="help">
-                Due dates are shown as guidance; students may continue after the
-                due date.
-              </p>
-            </section>
-            <section className="panel">
-              <h2>Who receives this?</h2>
-              <label>
-                Assign to
-                <select
-                  value={item.audience}
-                  onChange={(e) => change("audience", e.target.value)}
-                >
-                  <option value="course">
-                    All currently enrolled students
-                  </option>
-                  <option value="selected">Selected students</option>
-                </select>
-              </label>
-              <p className="help">
-                The recipient list is fixed when you publish. Later enrollments
-                are not added automatically.
-              </p>
-              {item.audience === "selected" && (
-                <div className="student-options">
-                  {students.map((s) => (
-                    <label className="check" key={s.user_id}>
-                      <input
-                        type="checkbox"
-                        checked={
-                          item.recipient_ids?.includes(s.user_id) || false
-                        }
-                        onChange={(e) =>
-                          change(
-                            "recipient_ids",
-                            e.target.checked
-                              ? [...(item.recipient_ids || []), s.user_id]
-                              : item.recipient_ids.filter(
-                                  (x) => x !== s.user_id,
-                                ),
-                          )
-                        }
-                      />
-                      <span>
-                        {s.display_name || s.email}
-                        <small>{s.email}</small>
-                      </span>
-                    </label>
-                  ))}
-                  {!students.length && <p>No enrolled students yet.</p>}
-                </div>
-              )}
-              <a href={`${SOCRATIC_URL}?manage=1`}>Manage course enrollment</a>
-            </section>
-          </div>
-          <section className="panel tool-config">
-            <h2>{TOOLS[tool].name} settings</h2>
-            <Config
-              value={item.config}
-              onChange={config}
-              courseId={item.course_id}
-              frozen={frozen}
-            />
+        {importedFromCanvas && !frozen && (
+          <section className="panel canvas-import-review">
+            <h2>Ready to publish from Canvas</h2>
+            <p>
+              The title, instructions, due date, and chatbot settings are
+              prefilled. You can publish without editing them.
+            </p>
+            <p className="canvas-import-instructions">
+              {item.instructions || "No instructions were provided in Canvas."}
+            </p>
           </section>
-        </fieldset>
+        )}
+        <AssignmentSettings optional={importedFromCanvas && !frozen}>
+          <fieldset disabled={busy || frozen} className="editor-fieldset">
+            <div className="editor-grid">
+              <section className="panel">
+                <h2>Assignment details</h2>
+                <label>
+                  Title
+                  <input
+                    required
+                    maxLength={200}
+                    value={item.title}
+                    onChange={(e) => change("title", e.target.value)}
+                    placeholder="e.g. Week 3: Requirements in practice"
+                  />
+                </label>
+                <label>
+                  Assigned chatbot
+                  <input value={TOOLS[item.tool].name} readOnly />
+                </label>
+                <label>
+                  Instructions
+                  <textarea
+                    rows={4}
+                    value={item.instructions}
+                    onChange={(e) => change("instructions", e.target.value)}
+                    placeholder="What should students focus on?"
+                  />
+                </label>
+                <label>
+                  Due date (your local time)
+                  <input
+                    type="datetime-local"
+                    value={localDate(item.due_at)}
+                    onChange={(e) =>
+                      change(
+                        "due_at",
+                        e.target.value
+                          ? new Date(e.target.value).toISOString()
+                          : null,
+                      )
+                    }
+                  />
+                </label>
+                <p className="help">
+                  Due dates are shown as guidance; students may continue after
+                  the due date.
+                </p>
+              </section>
+              <section className="panel">
+                <h2>Who receives this?</h2>
+                <label>
+                  Assign to
+                  <select
+                    value={item.audience}
+                    onChange={(e) => change("audience", e.target.value)}
+                  >
+                    <option value="course">
+                      All currently enrolled students
+                    </option>
+                    <option value="selected">Selected students</option>
+                  </select>
+                </label>
+                <p className="help">
+                  The recipient list is fixed when you publish. Later
+                  enrollments are not added automatically.
+                </p>
+                {item.audience === "selected" && (
+                  <div className="student-options">
+                    {students.map((s) => (
+                      <label className="check" key={s.user_id}>
+                        <input
+                          type="checkbox"
+                          checked={
+                            item.recipient_ids?.includes(s.user_id) || false
+                          }
+                          onChange={(e) =>
+                            change(
+                              "recipient_ids",
+                              e.target.checked
+                                ? [...(item.recipient_ids || []), s.user_id]
+                                : item.recipient_ids.filter(
+                                    (x) => x !== s.user_id,
+                                  ),
+                            )
+                          }
+                        />
+                        <span>
+                          {s.display_name || s.email}
+                          <small>{s.email}</small>
+                        </span>
+                      </label>
+                    ))}
+                    {!students.length && <p>No enrolled students yet.</p>}
+                  </div>
+                )}
+                <a href={`${SOCRATIC_URL}?manage=1`}>
+                  Manage course enrollment
+                </a>
+              </section>
+            </div>
+            <section className="panel tool-config">
+              <h2>{TOOLS[tool].name} settings</h2>
+              <Config
+                value={item.config}
+                onChange={config}
+                courseId={item.course_id}
+                frozen={frozen}
+              />
+            </section>
+          </fieldset>
+        </AssignmentSettings>
         <div className="editor-actions">
           {!frozen ? (
             <>

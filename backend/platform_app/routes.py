@@ -7,6 +7,7 @@ from psycopg.errors import UniqueViolation
 
 from app import auth, db, settings
 from platform_app import canvas_lms, canvas_tokens, engines, store
+from platform_app.canvas_assignment_config import config_from_canvas
 from platform_app.schemas import (
     ActionInput,
     AssignmentInput,
@@ -252,20 +253,13 @@ def import_canvas_assignment(body: CanvasImportRequest, account=Depends(professo
     source_note = f"\n\nCanvas source: {source}" if source else ""
     description_limit = max(0, 10_000 - len(source_note))
     instructions = f"{canvas_assignment['description'][:description_limit]}{source_note}".strip()
-    config = {}
-    if body.tool == "socratic":
-        config = {
-            "prompt": (
-                "Help the learner reason through this Canvas assignment using only the "
-                f"published course materials: {canvas_assignment['name']}"
-            ),
-            "minimum_messages": 1,
-        }
+    title = canvas_assignment["name"][:200]
+    config = config_from_canvas(body.tool, canvas_assignment, body.course_id, body.assignment_id)
     return create_assignment(
         AssignmentInput(
             course_id=body.platform_course_id,
             tool=body.tool,
-            title=canvas_assignment["name"][:200],
+            title=title,
             instructions=instructions,
             due_at=canvas_assignment.get("due_at"),
             audience="course",

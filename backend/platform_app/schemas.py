@@ -41,6 +41,7 @@ class SocraticConfig(StrictModel):
     document_ids: list[str] = Field(default_factory=list, max_length=100)
     prompt: str = Field(default="", max_length=10000)
     minimum_messages: int = Field(default=1, ge=1, le=100)
+    canvas_context: str = Field(default="", max_length=10000)
 
 
 class ReflectionConfig(StrictModel):

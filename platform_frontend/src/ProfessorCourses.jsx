@@ -10,6 +10,7 @@ export default function ProfessorCourses({ assignments, assignmentsError }) {
   const navigate = useNavigate();
   const [courses, setCourses] = useState(null);
   const [selectedCourseId, setSelectedCourseId] = useState("");
+  const [selectedTool, setSelectedTool] = useState("");
   const [importOpen, setImportOpen] = useState(false);
   const [error, setError] = useState("");
   const managementRef = useRef(null);
@@ -102,11 +103,12 @@ export default function ProfessorCourses({ assignments, assignmentsError }) {
                   ? "professor-course-management"
                   : undefined
               }
-              onClick={() =>
+              onClick={() => {
+                setSelectedTool("");
                 setSelectedCourseId((current) =>
                   current === course.course_id ? "" : course.course_id,
-                )
-              }
+                );
+              }}
             >
               <span className="eyebrow">{course.course_code}</span>
               <strong>{course.title}</strong>
@@ -140,6 +142,7 @@ export default function ProfessorCourses({ assignments, assignmentsError }) {
               className="quiet"
               onClick={() => {
                 setSelectedCourseId("");
+                setSelectedTool("");
                 courseButtons.current[selectedCourse.course_id]?.focus();
               }}
               aria-label="Close course management"
@@ -149,20 +152,50 @@ export default function ProfessorCourses({ assignments, assignmentsError }) {
           </div>
           <h4>Create a chatbot assignment</h4>
           <p className="help">
-            Choose an assignment from Canvas, then review its chatbot draft.
+            Choose how students will learn, then use an assignment from Canvas.
+            Its details will be filled in for you.
           </p>
-          {selectedCourse.canvas_course_id ? (
-            <CanvasAssignments
-              key={selectedCourse.course_id}
-              course={selectedCourse}
-              onImported={(draft) =>
-                navigate(
-                  `/professor/tools/${draft.tool}/assignments/${draft.id}`,
-                )
-              }
-            />
-          ) : (
-            <CanvasCourseLink course={selectedCourse} onLinked={linkCourse} />
+          <div
+            className="professor-chatbot-options"
+            role="group"
+            aria-label="Choose a chatbot"
+          >
+            {Object.entries(TOOLS).map(([toolId, tool]) => (
+              <button
+                key={toolId}
+                type="button"
+                className="professor-chatbot-option"
+                style={{ "--tool-color": tool.color }}
+                aria-pressed={selectedTool === toolId}
+                onClick={() => setSelectedTool(toolId)}
+              >
+                <span className="eyebrow">{tool.mode}</span>
+                <strong>{tool.name}</strong>
+                <span>{tool.description}</span>
+              </button>
+            ))}
+          </div>
+          {selectedTool && (
+            <div className="professor-chatbot-source">
+              <h5>Choose Canvas content for {TOOLS[selectedTool].name}</h5>
+              {selectedCourse.canvas_course_id ? (
+                <CanvasAssignments
+                  key={selectedCourse.course_id}
+                  course={selectedCourse}
+                  tool={selectedTool}
+                  onImported={(draft) =>
+                    navigate(
+                      `/professor/tools/${draft.tool}/assignments/${draft.id}?from=canvas`,
+                    )
+                  }
+                />
+              ) : (
+                <CanvasCourseLink
+                  course={selectedCourse}
+                  onLinked={linkCourse}
+                />
+              )}
+            </div>
           )}
           <h4>CourseLab assignments</h4>
           {assignmentsError ? (

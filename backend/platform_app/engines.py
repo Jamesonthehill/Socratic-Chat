@@ -61,11 +61,22 @@ def publish_snapshot(assignment):
         files = db.list_rag_files(course_id=str(assignment["course_id"]))
         allowed = {str(f["document_id"]) for f in files if f.get("document_id")}
         chosen = set(config["document_ids"]) or allowed
-        if not chosen or not chosen.issubset(allowed):
+        canvas_context = (config.get("canvas_context") or "").strip()
+        if (not chosen and not canvas_context) or not chosen.issubset(allowed):
             raise HTTPException(422, "Select documents belonging to this course, or upload course materials first.")
         chunks = db.snapshot_document_chunks(str(assignment["course_id"]), sorted(chosen))
         if chosen - {c["document_id"] for c in chunks}:
             raise HTTPException(422, "Some course materials have no indexed content. Re-upload them before publishing.")
+        if canvas_context:
+            chunks.insert(0, {
+                "document_id": f"canvas-assignment:{assignment['id']}",
+                "chunk_id": f"canvas-assignment:{assignment['id']}:0",
+                "title": f"Canvas assignment: {assignment['title']}",
+                "text": f"{assignment['title']}\n{canvas_context}",
+                "page_number": None,
+                "metadata": {"source": "canvas_assignment"},
+                "embedding": [],
+            })
         course = db.get_course(str(assignment["course_id"])) or {}
         return {
             "config": config,

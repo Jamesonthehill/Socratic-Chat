@@ -142,6 +142,21 @@ test("professor starts chatbot assignment creation from a course", async () => {
   expect(
     screen.getByRole("heading", { name: "Create a chatbot assignment" }),
   ).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: /Socratic Chat/ }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: /Reflections/ }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: /Student Agent Bot/ }),
+  ).toBeInTheDocument();
+  expect(screen.queryByText("Link Canvas course")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Reflections/ }));
+  expect(screen.getByRole("button", { name: /Reflections/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   expect(screen.getByText("Link Canvas course")).toBeInTheDocument();
   expect(
     screen.queryByRole("heading", { name: "A new learning assignment" }),
@@ -211,6 +226,14 @@ test("professor manages a Canvas-linked course and opens its folded assignments 
   expect(
     screen.getByRole("heading", { name: "Create a chatbot assignment" }),
   ).toBeInTheDocument();
+  const socraticMode = screen.getByRole("button", { name: /Socratic Chat/ });
+  await user.click(socraticMode);
+  expect(socraticMode).toHaveAttribute("aria-pressed", "true");
+  await user.click(screen.getByRole("button", { name: /Reflections/ }));
+  expect(
+    screen.getByText("Choose Canvas content for Reflections"),
+  ).toBeInTheDocument();
+  await user.click(socraticMode);
   expect(screen.getByText("Choose a Canvas assignment")).toBeInTheDocument();
   expect(
     screen.queryByRole("link", { name: "Socratic Chat" }),
@@ -259,6 +282,16 @@ test("professor manages a Canvas-linked course and opens its folded assignments 
     }),
   ).toBeInTheDocument();
   expect(
+    screen.getByText(/Canvas filled in this assignment/),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "Ready to publish from Canvas" }),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Customize details (optional)")).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Publish assignment" }),
+  ).toBeEnabled();
+  expect(
     screen.queryByRole("heading", { name: "A new learning assignment" }),
   ).not.toBeInTheDocument();
 });
@@ -295,6 +328,7 @@ test("professor explicitly links a manual course to Canvas before browsing assig
       name: /SE101.*Software Engineering.*Manage course/,
     }),
   );
+  await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
   expect(
     screen.queryByText("Choose a Canvas assignment"),
   ).not.toBeInTheDocument();

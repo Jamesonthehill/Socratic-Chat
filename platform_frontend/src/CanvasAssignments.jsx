@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { api, date, TOOLS } from "./api";
 import { Notice } from "./ui";
 
-function CanvasAssignmentsForCourse({ course, onImported }) {
+function CanvasAssignmentsForCourse({ course, tool, onImported }) {
   const [assignments, setAssignments] = useState(null);
   const [status, setStatus] = useState("idle");
-  const [tool, setTool] = useState("socratic");
   const [search, setSearch] = useState("");
   const [importingId, setImportingId] = useState(null);
   const [imported, setImported] = useState(() => new Set());
@@ -93,7 +92,8 @@ function CanvasAssignmentsForCourse({ course, onImported }) {
       </summary>
       <div className="canvas-assignments-content">
         <p className="canvas-assignments-intro">
-          Choose a chatbot and an assignment to create a draft in CourseLab.
+          Select a Canvas assignment to create a prefilled {TOOLS[tool].name}{" "}
+          draft.
         </p>
         {status === "loading" && (
           <p role="status">Loading Canvas assignments…</p>
@@ -116,19 +116,6 @@ function CanvasAssignmentsForCourse({ course, onImported }) {
         {status === "ready" && assignments.length > 0 && (
           <>
             <div className="canvas-assignments-controls">
-              <label>
-                Chatbot
-                <select
-                  value={tool}
-                  onChange={(event) => setTool(event.target.value)}
-                >
-                  {Object.entries(TOOLS).map(([id, choice]) => (
-                    <option key={id} value={id}>
-                      {choice.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
               <label>
                 Find an assignment
                 <input
@@ -191,12 +178,14 @@ function CanvasAssignmentsForCourse({ course, onImported }) {
   );
 }
 
-export default function CanvasAssignments({ course, onImported }) {
+export default function CanvasAssignments({ course, tool, onImported }) {
   if (!course?.canvas_course_id) return null;
+  if (!TOOLS[tool]) return null;
   return (
     <CanvasAssignmentsForCourse
       key={`${course.course_id}:${course.canvas_course_id}`}
       course={course}
+      tool={tool}
       onImported={onImported}
     />
   );

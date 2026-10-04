@@ -53,7 +53,13 @@ test("loads only when opened and creates a draft with the selected chatbot", asy
   ]);
   const onImported = vi.fn();
   const user = userEvent.setup();
-  render(<CanvasAssignments course={course} onImported={onImported} />);
+  render(
+    <CanvasAssignments
+      course={course}
+      tool="reflections"
+      onImported={onImported}
+    />,
+  );
 
   expect(fetch).not.toHaveBeenCalled();
   await user.click(screen.getByText("Choose a Canvas assignment"));
@@ -66,7 +72,7 @@ test("loads only when opened and creates a draft with the selected chatbot", asy
   await user.click(screen.getByText("Choose a Canvas assignment"));
   await user.click(screen.getByText("Choose a Canvas assignment"));
   expect(fetch).toHaveBeenCalledTimes(1);
-  await user.selectOptions(screen.getByLabelText("Chatbot"), "reflections");
+  expect(screen.queryByLabelText("Chatbot")).not.toBeInTheDocument();
   await user.type(screen.getByLabelText("Find an assignment"), "First");
   expect(screen.queryByText("Second essay")).not.toBeInTheDocument();
   await user.click(
@@ -96,7 +102,9 @@ test("shows a load error, retries, and explains an empty Canvas course", async (
     ++attempts === 1 ? { error: "Canvas is temporarily unavailable." } : [],
   );
   const user = userEvent.setup();
-  render(<CanvasAssignments course={course} onImported={vi.fn()} />);
+  render(
+    <CanvasAssignments course={course} tool="socratic" onImported={vi.fn()} />,
+  );
 
   await user.click(screen.getByText("Choose a Canvas assignment"));
   expect(await screen.findByRole("alert")).toHaveTextContent(

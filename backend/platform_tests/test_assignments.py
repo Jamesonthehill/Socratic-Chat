@@ -101,6 +101,25 @@ def test_canvas_import_requires_professor_and_creates_socratic_draft(client, ros
     assert reflection.status_code == 201, reflection.text
     assert reflection.json()['tool'] == 'reflections'
     assert reflection.json()['config']['module_type'] == 'topic_based'
+    assert reflection.json()['config']['sub_topics'] == [assignment['name']]
+    assert reflection.json()['config']['custom_notes'] == assignment['description']
+
+    agent = client.post(
+        '/api/platform/integrations/canvas/import',
+        headers=roster['headers']['prof'],
+        json={
+            **credentials,
+            'course_id': 77,
+            'assignment_id': 88,
+            'platform_course_id': roster['course'],
+            'tool': 'student-agent',
+        },
+    )
+    assert agent.status_code == 201, agent.text
+    assert agent.json()['tool'] == 'student-agent'
+    assert agent.json()['config']['topic']['name'] == assignment['name']
+    assert assignment['description'] in agent.json()['config']['topic']['practice_prompt']
+    assert agent.json()['config']['topic']['resource']['url'] == assignment['html_url']
 
 
 def test_canvas_connection_is_saved_and_reused_server_side(client, roster, monkeypatch):

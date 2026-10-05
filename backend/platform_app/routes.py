@@ -1,11 +1,13 @@
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from psycopg.types.json import Jsonb
 from psycopg.errors import UniqueViolation
 
-from app import auth, db, settings
+from app import auth, db, rag, settings
 from platform_app import canvas_lms, canvas_tokens, engines, store
 from platform_app.canvas_assignment_config import config_from_canvas
 from platform_app.schemas import (
@@ -13,6 +15,7 @@ from platform_app.schemas import (
     AssignmentInput,
     CanvasCourseRequest,
     CanvasCredentials,
+    CanvasFileImportRequest,
     CanvasImportRequest,
     CanvasLinkCourseRequest,
     CanvasTokenInput,
@@ -267,6 +270,105 @@ def import_canvas_assignment(body: CanvasImportRequest, account=Depends(professo
         ),
         account,
     )
+
+
+def canvas_assignment_files_context(assignment_id: UUID, account):
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account, manage=True)
+    if item["tool"] != "socratic" or item["status"] != "draft":
+        raise HTTPException(409, "Canvas files can only be added to a Socratic Chat draft.")
+    course = db.get_course(str(item["course_id"])) or {}
+    canvas_course_id = course.get("canvas_course_id")
+    if not canvas_course_id:
+        raise HTTPException(422, "Link this class to its Canvas course before importing files.")
+    course_id = int(canvas_course_id)
+    context = str(item["config"].get("canvas_context") or "")
+    if not context:
+        raise HTTPException(422, "This draft was not imported from Canvas.")
+    linked = canvas_lms.linked_file_ids(context, course_id)
+    token = canvas_access_token(CanvasCredentials(), account)
+    canvas_result(lambda: canvas_lms.require_instructor_course(course_id, token))
+    return item, course_id, linked, token
+
+
+@router.get("/assignments/{assignment_id}/canvas-files")
+def canvas_assignment_files(assignment_id: UUID, account=Depends(professor)):
+    item, course_id, linked, token = canvas_assignment_files_context(assignment_id, account)
+    existing = {f["filename"] for f in db.list_rag_files(course_id=str(item["course_id"]), limit=500)}
+    files = []
+    for file_id in linked:
+        try:
+            metadata = canvas_lms.get_course_file(course_id, file_id, token)
+            if str(metadata.get("id")) != str(file_id):
+                raise canvas_lms.CanvasAPIError(502, "Canvas returned a different file.")
+            filename = Path(str(metadata.get("filename") or metadata.get("display_name") or f"File {file_id}")).name
+            stored_name = f"Canvas {file_id} - {filename}"
+            reason = canvas_lms.file_import_reason(metadata)
+            files.append({
+                "id": file_id, "filename": filename, "size": metadata.get("size"),
+                "imported": stored_name in existing, "importable": not reason,
+                "reason": reason,
+            })
+        except canvas_lms.CanvasAPIError:
+            files.append({"id": file_id, "filename": f"Canvas file {file_id}", "size": None,
+                          "imported": False, "importable": False, "reason": "This file is unavailable in Canvas."})
+    return {"files": files}
+
+
+@router.post("/assignments/{assignment_id}/canvas-files")
+def import_canvas_assignment_files(
+    assignment_id: UUID, body: CanvasFileImportRequest, account=Depends(professor)
+):
+    item, course_id, linked, token = canvas_assignment_files_context(assignment_id, account)
+    selected = list(dict.fromkeys(body.file_ids))
+    if any(file_id not in linked for file_id in selected):
+        raise HTTPException(422, "Choose only files linked in this Canvas assignment.")
+    platform_course_id = str(item["course_id"])
+    existing = {f["filename"] for f in db.list_rag_files(course_id=platform_course_id, limit=500)}
+    imported = []
+    skipped = []
+    for file_id in selected:
+        file_row_id = None
+        filename = f"Canvas file {file_id}"
+        try:
+            metadata = canvas_lms.get_course_file(course_id, file_id, token)
+            if str(metadata.get("id")) != str(file_id):
+                raise canvas_lms.CanvasAPIError(502, "Canvas returned a different file.")
+            filename = Path(str(metadata.get("filename") or metadata.get("display_name") or filename)).name
+            stored_name = f"Canvas {file_id} - {filename}"
+            if stored_name in existing:
+                skipped.append({"id": file_id, "filename": filename, "reason": "Already in course materials."})
+                continue
+            content = canvas_lms.download_course_file(metadata, token)
+            with TemporaryDirectory(prefix="canvas-material-") as directory:
+                target = Path(directory) / stored_name
+                target.write_bytes(content)
+                file_row_id = db.save_rag_file(
+                    stored_name, str(metadata.get("content-type") or "application/octet-stream"), content,
+                    user_id=str(account["user_id"]), course_id=platform_course_id,
+                )
+                if not file_row_id:
+                    raise HTTPException(503, "PostgreSQL is required to import course materials.")
+                document_id, chunks = rag.ingest_file(target, course_id=platform_course_id, file_id=file_row_id)
+            if not chunks:
+                db.delete_course_document(file_row_id, platform_course_id)
+                file_row_id = None
+                skipped.append({"id": file_id, "filename": filename,
+                                "reason": "No searchable text was found in this file."})
+                continue
+            imported.append({"id": file_id, "filename": filename, "document_id": document_id, "chunks_added": chunks})
+            existing.add(stored_name)
+        except canvas_lms.CanvasAPIError as error:
+            skipped.append({"id": file_id, "filename": filename, "reason": error.detail})
+        except HTTPException:
+            if file_row_id:
+                db.delete_course_document(file_row_id, platform_course_id)
+            raise
+        except Exception:
+            if file_row_id:
+                db.delete_course_document(file_row_id, platform_course_id)
+            skipped.append({"id": file_id, "filename": filename, "reason": "The file could not be indexed."})
+    return {"imported": imported, "skipped": skipped}
 
 
 @router.get("/assignments")

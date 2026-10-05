@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Markdown from "react-markdown";
 import {
   Link,
   useNavigate,
@@ -7,6 +8,7 @@ import {
 } from "react-router-dom";
 import { api, SOCRATIC_URL, TOOLS, date, label } from "./api";
 import { Notice, Badge } from "./ui";
+import CanvasLinkedFiles from "./CanvasLinkedFiles";
 import {
   SocraticConfig,
   ReflectionConfig,
@@ -41,6 +43,7 @@ export default function AssignmentEditor() {
   const [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false);
+  const [materialsRevision, setMaterialsRevision] = useState(0);
   useEffect(() => {
     let active = true;
     setItem(null);
@@ -178,10 +181,18 @@ export default function AssignmentEditor() {
               The title, instructions, due date, and chatbot settings are
               prefilled. You can publish without editing them.
             </p>
-            <p className="canvas-import-instructions">
-              {item.instructions || "No instructions were provided in Canvas."}
-            </p>
+            <div className="canvas-import-instructions">
+              <Markdown components={{ a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" /> }}>
+                {item.instructions || "No instructions were provided in Canvas."}
+              </Markdown>
+            </div>
           </section>
+        )}
+        {!frozen && id !== "new" && tool === "socratic" && item.config?.canvas_context && (
+          <CanvasLinkedFiles
+            assignmentId={id}
+            onImported={() => setMaterialsRevision((revision) => revision + 1)}
+          />
         )}
         <AssignmentSettings optional={importedFromCanvas && !frozen}>
           <fieldset disabled={busy || frozen} className="editor-fieldset">
@@ -289,6 +300,7 @@ export default function AssignmentEditor() {
                 value={item.config}
                 onChange={config}
                 courseId={item.course_id}
+                materialsRevision={materialsRevision}
                 frozen={frozen}
               />
             </section>

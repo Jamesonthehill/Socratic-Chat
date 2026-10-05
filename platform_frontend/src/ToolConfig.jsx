@@ -31,7 +31,7 @@ function Lines({ label, value = [], onChange, rows = 4 }) {
   );
 }
 
-export function SocraticConfig({ value, onChange, courseId, frozen }) {
+export function SocraticConfig({ value, onChange, courseId, materialsRevision, frozen }) {
   const [files, setFiles] = useState([]),
     [error, setError] = useState(""),
     [uploading, setUploading] = useState(false);
@@ -43,7 +43,7 @@ export function SocraticConfig({ value, onChange, courseId, frozen }) {
   }
   useEffect(() => {
     if (courseId) load().catch((e) => setError(e.message));
-  }, [courseId]);
+  }, [courseId, materialsRevision]);
   return (
     <>
       <Notice error={error} />

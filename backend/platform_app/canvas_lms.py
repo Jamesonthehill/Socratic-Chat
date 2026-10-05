@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import re
+from datetime import datetime, timezone
 from html.parser import HTMLParser
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urljoin, urlparse
 
@@ -10,6 +13,9 @@ import httpx
 CANVAS_ORIGIN = "https://instructure.charlotte.edu"
 CANVAS_API_BASE = f"{CANVAS_ORIGIN}/api/v1"
 MAX_PAGES = 20
+MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024
+IMPORTABLE_SUFFIXES = {".txt", ".md", ".pdf", ".tex", ".html", ".htm"}
+DOWNLOAD_HOST_SUFFIXES = (".instructure.com", ".amazonaws.com", ".cloudfront.net", ".inscloudgate.net")
 INSTRUCTOR_ENROLLMENT_TYPES = {
     "TeacherEnrollment": "teacher",
     "TaEnrollment": "ta",
@@ -86,6 +92,102 @@ def description_text(value: str | None, *, preserve_links: bool = False) -> str:
     parser.feed(value)
     lines = (" ".join(line.split()) for line in "".join(parser.parts).splitlines())
     return "\n".join(line for line in lines if line)[:10_000]
+
+
+def linked_file_ids(description: str, course_id: int) -> list[int]:
+    """Only return Canvas file links embedded in this course's assignment text."""
+    pattern = re.compile(
+        rf"https://instructure\.charlotte\.edu/(?:courses/(?P<course>\d+)/)?files/(?P<file>\d+)(?:[/?#]|$)"
+    )
+    found: list[int] = []
+    for match in pattern.finditer(description):
+        linked_course = match.group("course")
+        file_id = int(match.group("file"))
+        if linked_course and int(linked_course) != course_id:
+            continue
+        if file_id not in found:
+            found.append(file_id)
+    return found[:20]
+
+
+def get_course_file(course_id: int, file_id: int, access_token: str, *, client: httpx.Client | None = None) -> dict[str, Any]:
+    return _get_one(f"courses/{course_id}/files/{file_id}", access_token, client=client)
+
+
+def file_import_reason(file: dict[str, Any]) -> str | None:
+    filename = Path(str(file.get("filename") or file.get("display_name") or "")).name
+    if Path(filename).suffix.lower() not in IMPORTABLE_SUFFIXES:
+        return "This file type cannot be indexed. Its Canvas link remains available."
+    if any(file.get(key) for key in ("hidden", "hidden_for_user", "locked", "locked_for_user")):
+        return "This file is hidden or locked in Canvas."
+    now = datetime.now(timezone.utc)
+    for key, before in (("unlock_at", True), ("lock_at", False)):
+        raw = file.get(key)
+        if raw:
+            try:
+                limit = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+                if limit.tzinfo is None or (now < limit if before else now >= limit):
+                    return "This file is not currently available to students in Canvas."
+            except ValueError:
+                return "Canvas returned an unreadable file access date."
+    size = file.get("size")
+    if not isinstance(size, int) or size < 1 or size > MAX_IMPORT_FILE_BYTES:
+        return "Only files from 1 byte through 10 MB can be imported."
+    if not file.get("url"):
+        return "Canvas did not provide a download URL."
+    return None
+
+
+def _validate_download_url(url: str) -> None:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if (
+        parsed.scheme != "https"
+        or parsed.username
+        or parsed.password
+        or not (host == urlparse(CANVAS_ORIGIN).hostname or host.endswith(DOWNLOAD_HOST_SUFFIXES))
+    ):
+        raise CanvasAPIError(502, "Canvas returned an unsupported file download host.")
+
+
+def download_course_file(file: dict[str, Any], access_token: str, *, client: httpx.Client | None = None) -> bytes:
+    reason = file_import_reason(file)
+    if reason:
+        raise CanvasAPIError(422, reason)
+    url = str(file["url"])
+    owned_client = client is None
+    active_client = client or httpx.Client(timeout=20.0, follow_redirects=False)
+    try:
+        for _ in range(4):
+            _validate_download_url(url)
+            host = urlparse(url).hostname
+            headers = {"Authorization": f"Bearer {access_token}"} if host == urlparse(CANVAS_ORIGIN).hostname else {}
+            try:
+                with active_client.stream("GET", url, headers=headers) as response:
+                    if response.status_code in {301, 302, 303, 307, 308}:
+                        location = response.headers.get("location")
+                        if not location:
+                            raise CanvasAPIError(502, "Canvas returned a file redirect without a destination.")
+                        url = urljoin(url, location)
+                        continue
+                    if not response.is_success:
+                        raise _request_error(response)
+                    content = bytearray()
+                    for part in response.iter_bytes():
+                        content.extend(part)
+                        if len(content) > MAX_IMPORT_FILE_BYTES:
+                            raise CanvasAPIError(422, "Canvas file exceeds the 10 MB import limit.")
+                    if not content:
+                        raise CanvasAPIError(502, "Canvas returned an empty file.")
+                    return bytes(content)
+            except httpx.TimeoutException as error:
+                raise CanvasAPIError(504, "Canvas file download timed out.") from error
+            except httpx.HTTPError as error:
+                raise CanvasAPIError(502, "Canvas file could not be downloaded.") from error
+        raise CanvasAPIError(502, "Canvas file redirected too many times.")
+    finally:
+        if owned_client:
+            active_client.close()
 
 
 def _next_url(link_header: str | None) -> str | None:

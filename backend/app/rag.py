@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import re
 from pathlib import Path
@@ -9,7 +10,7 @@ from typing import Any
 
 from app import db, settings
 from app.answer_evaluation import AnswerEvaluation, evaluation_tutor_instruction
-from app.classifier import MessageClassification
+from app.classifier import MessageClassification, is_contextual_meaning_request
 from app.chunking import CHUNKING_VERSION, chunk_document
 from app.pipeline_logging import (
     debug_digest,
@@ -18,9 +19,14 @@ from app.pipeline_logging import (
     log_exception,
     redacted_preview,
     trace_active,
+    update_llm_request_snapshot,
+    write_llm_request_snapshot,
 )
-from app.schemas import ChatMessage, Source
-from app.socratic import choose_socratic_strategy, enforce_socratic_response, socratic_system_instruction
+from app.schemas import ChatMessage, CompletionSummary, Source
+from app.socratic import (
+    choose_socratic_strategy,
+    socratic_system_instruction,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -101,6 +107,9 @@ def chunk_text(text: str) -> list[str]:
 
 def is_relevant_search_result(item: dict[str, Any]) -> bool:
     """Require lexical evidence or sufficiently strong absolute semantic similarity."""
+    # Reciprocal-rank fusion orders candidates, but rank alone does not prove
+    # that a chunk is about the student's question. Require either word-level
+    # or semantic evidence before it can ground a tutor reply.
     try:
         dense_similarity = float(item.get("dense_similarity"))
     except (TypeError, ValueError):
@@ -129,25 +138,38 @@ def document_id(
 def create_embeddings(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
-    if not settings.OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY is required to index and search documents.")
+    config = settings.embedding_client_config()
+    if config is None:
+        raise RuntimeError("Configure a supported embedding provider to index and search documents.")
 
     from openai import OpenAI
 
-    client = OpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_API_BASE_URL)
+    _provider, api_key, base_url, model = config
+    client = OpenAI(api_key=api_key, base_url=base_url)
     vectors: list[list[float]] = []
+    # Batch calls reduce provider round trips during upload; dimension checks
+    # prevent writing vectors that the PostgreSQL vector column cannot hold.
     batch_size = max(1, settings.EMBEDDING_BATCH_SIZE)
     for start in range(0, len(texts), batch_size):
         response = client.embeddings.create(
-            model=settings.EMBEDDING_MODEL,
+            model=model,
             input=texts[start : start + batch_size],
             dimensions=settings.EMBEDDING_DIMENSIONS,
         )
-        vectors.extend(item.embedding for item in response.data)
+        batch_vectors = [item.embedding for item in response.data]
+        invalid_dimensions = [len(vector) for vector in batch_vectors if len(vector) != settings.EMBEDDING_DIMENSIONS]
+        if invalid_dimensions:
+            raise RuntimeError(
+                f"Embedding model {model} returned {invalid_dimensions[0]} dimensions; "
+                f"PostgreSQL expects {settings.EMBEDDING_DIMENSIONS}."
+            )
+        vectors.extend(batch_vectors)
     return vectors
 
 
 def _semantic_chunk_rows(title: str, text: str) -> list[dict[str, object]]:
+    # Keep structural labels with the text. They help retrieval distinguish,
+    # for example, Assignment 1 from Assignment 2 in the same source file.
     suffix = Path(title).suffix.lower()
     return [
         {
@@ -173,11 +195,13 @@ def ingest_text(
 ) -> tuple[str, int]:
     if not file_id:
         raise ValueError("A PostgreSQL rag_files file_id is required for ingestion.")
+    # The original upload already has a rag_files row. Index its text under
+    # that file ID so deleting the file also removes its searchable chunks.
     doc_id = document_id(title, text, conversation_id, course_id)
     chunks = _semantic_chunk_rows(title, text)
     embeddings = create_embeddings([str(chunk["text"]) for chunk in chunks])
     added = db.replace_document_chunks(
-        file_id, doc_id, title, chunks, embeddings, settings.EMBEDDING_MODEL,
+        file_id, doc_id, title, chunks, embeddings, settings.embedding_model_name(),
         conversation_id=conversation_id, course_id=course_id,
     )
     return doc_id, added
@@ -220,7 +244,7 @@ def ingest_pdf_file(
             )
     embeddings = create_embeddings([str(chunk["text"]) for chunk in chunks])
     added = db.replace_document_chunks(
-        file_id, doc_id, path.name, chunks, embeddings, settings.EMBEDDING_MODEL,
+        file_id, doc_id, path.name, chunks, embeddings, settings.embedding_model_name(),
         conversation_id=conversation_id, course_id=course_id,
     )
     return doc_id, added
@@ -317,28 +341,70 @@ def retrieve(
     top_k: int = 4,
     conversation_id: str | None = None,
     course_id: str | None = None,
+    subqueries: tuple[str, ...] = (),
 ) -> list[Source]:
-    log_event(5, "retrieval_started", retrieval_type="hybrid", top_k=top_k)
+    # One student turn can contain multiple information needs. Search each
+    # distinct subquery, then combine results under one final chunk budget.
+    queries = [query]
+    seen_queries = {query.casefold()}
+    for candidate in subqueries[:3]:
+        candidate = " ".join(candidate.split())
+        if candidate and candidate.casefold() not in seen_queries:
+            queries.append(candidate)
+            seen_queries.add(candidate.casefold())
+    log_event(5, "retrieval_started", retrieval_type="hybrid", top_k=top_k, query_count=len(queries))
     debug_digest("retrieval_query", query)
+    for index, subquery in enumerate(queries[1:], start=1):
+        debug_digest(f"retrieval_subquery_{index}", subquery)
     retrieval_started = monotonic()
     try:
-        requested_assignments = requested_assignment_numbers(query)
         embedding_started = monotonic()
-        query_embedding = create_embeddings([query])[0]
+        # Use the same embedding configuration for questions and stored chunks;
+        # mixing models or dimensions would make similarity meaningless.
+        query_embeddings = create_embeddings(queries)
         log_event(
             5,
             "query_embedding_completed",
-            model=settings.EMBEDDING_MODEL,
-            dimensions=len(query_embedding),
+            model=settings.embedding_model_name(),
+            dimensions=len(query_embeddings[0]),
+            query_count=len(queries),
             latency_ms=round((monotonic() - embedding_started) * 1000),
         )
         search_started = monotonic()
-        ranked = db.hybrid_search_chunks(
-            query, query_embedding, top_k, conversation_id=conversation_id,
-            course_id=course_id, assignment_numbers=requested_assignments,
-        )
-        accepted = [item for item in ranked if is_relevant_search_result(item)]
-        relevant = accepted[:top_k]
+        ranked_by_query = [
+            db.hybrid_search_chunks(
+                search_query, query_embedding, top_k,
+                conversation_id=conversation_id, course_id=course_id,
+                assignment_numbers=requested_assignment_numbers(search_query),
+            )
+            for search_query, query_embedding in zip(queries, query_embeddings, strict=True)
+        ]
+        # Filter before generation so irrelevant but high-ranked chunks cannot
+        # be turned into a confident-looking Socratic example.
+        accepted_by_query = [
+            [item for item in ranked if is_relevant_search_result(item)]
+            for ranked in ranked_by_query
+        ]
+        # Take the strongest available result from each query in turn. This
+        # preserves coverage of distinct question parts without repeating chunks.
+        relevant: list[dict[str, Any]] = []
+        seen_chunks: set[str] = set()
+        # Interleave subquery matches and deduplicate IDs so a multi-part
+        # question does not spend every context slot on its first part.
+        coverage_order = accepted_by_query[1:] + accepted_by_query[:1] if len(queries) > 1 else accepted_by_query
+        for rank in range(top_k):
+            for accepted in coverage_order:
+                if rank >= len(accepted):
+                    continue
+                item = accepted[rank]
+                chunk_id = str(item["chunk_id"])
+                if chunk_id not in seen_chunks:
+                    relevant.append(item)
+                    seen_chunks.add(chunk_id)
+                if len(relevant) >= top_k:
+                    break
+            if len(relevant) >= top_k:
+                break
         sources = [
             Source(
                 document_id=item["document_id"],
@@ -355,9 +421,10 @@ def retrieve(
             5,
             "hybrid_search_completed",
             chunks=len(sources),
-            candidates=len(ranked),
-            relevant_candidates=len(accepted),
-            rejected=len(ranked) - len(accepted),
+            candidates=sum(len(ranked) for ranked in ranked_by_query),
+            relevant_candidates=sum(len(accepted) for accepted in accepted_by_query),
+            rejected=sum(len(ranked) - len(accepted) for ranked, accepted in zip(ranked_by_query, accepted_by_query)),
+            query_count=len(queries),
             min_dense_similarity=settings.RAG_MIN_DENSE_SIMILARITY,
             min_sparse_score=settings.RAG_MIN_SPARSE_SCORE,
             latency_ms=round((monotonic() - search_started) * 1000),
@@ -483,14 +550,177 @@ def generation_client_config() -> tuple[str, str, str, str] | None:
     return settings.llm_client_config("generation")
 
 
+async def generate_completion_summary(
+    original_question: str,
+    latest_answer: str,
+    history: list[ChatMessage],
+    sources: list[Source],
+    evaluation: AnswerEvaluation,
+) -> CompletionSummary:
+    """Close a strong learning turn with evidence-grounded feedback and answers."""
+    from app.socratic import conversation_scenario
+
+    # These are the student's own words, not claims inferred from a score.
+    student_answers = [
+        " ".join(item.content.split())[:350]
+        for item in history if item.role == "user" and item.total_score is not None
+    ]
+    student_answers.append(" ".join(latest_answer.split())[:350])
+    demonstrated = list(dict.fromkeys(student_answers))[-3:]
+    scenario = conversation_scenario(history) or "No opening scenario was established."
+    evidence = "\n\n".join(
+        f"[{index + 1}] {source.title}: {source.text[:2400]}"
+        for index, source in enumerate(sources[:3])
+    )
+    config = generation_client_config()
+    if config is None:
+        raise RuntimeError("The tutor model is unavailable for the final summary.")
+    from openai import AsyncOpenAI
+
+    provider, api_key, base_url, model = config
+    request: dict[str, Any] = {
+        "model": model,
+        "temperature": 0.2,
+        "messages": [
+            {"role": "system", "content": (
+                "Finish this Socratic learning sequence. Return only one JSON object with four fields: "
+                "final_comment, misconception_correction, scenario_wrap_up, opening_answer. "
+                "Comment specifically on what the student demonstrated in their own answers; do not claim they "
+                "said anything absent from the transcript. If the supplied misconception is nonempty, correct it "
+                "briefly using the course evidence; otherwise use null. Resolve the ORIGINAL opening scenario and "
+                "its question, then answer the student's ORIGINAL learning question directly. Keep the original "
+                "people and project; if no opening scenario was established, state that plainly without inventing one. "
+                "Do not introduce a new example, ask another question, or invent course facts. "
+                "Use only the retrieved instructor material for factual claims. Keep each field concise."
+            )},
+            {"role": "user", "content": (
+                f"Original learning question: {original_question}\n\n"
+                f"Opening scenario: {scenario}\n\n"
+                f"Student's own answers: {json.dumps(demonstrated, ensure_ascii=False)}\n\n"
+                f"Latest student answer: {latest_answer}\n\n"
+                f"Evaluator's supported ideas: {', '.join(evaluation.supported_concepts) or 'none listed'}\n"
+                f"Evaluator's feedback: {evaluation.feedback}\n"
+                f"Misconception to correct: {evaluation.misconception or 'none'}\n\n"
+                f"Instructor evidence:\n{evidence}"
+            )},
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "learning_completion",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "final_comment": {"type": "string"},
+                        "misconception_correction": {"type": ["string", "null"]},
+                        "scenario_wrap_up": {"type": "string"},
+                        "opening_answer": {"type": "string"},
+                    },
+                    "required": ["final_comment", "misconception_correction", "scenario_wrap_up", "opening_answer"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+    }
+    if provider == "Ollama":
+        request.update(settings.completion_token_parameters(provider, settings.OLLAMA_GENERATION_MAX_TOKENS))
+    write_llm_request_snapshot("learning-completion", provider, request)
+    log_event(8, "completion_llm_started", provider=provider, model=model)
+    started = monotonic()
+    response = await AsyncOpenAI(api_key=api_key, base_url=base_url).chat.completions.create(**request)
+    raw = (response.choices[0].message.content or "").strip()
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        # Some local models wrap otherwise valid structured output in a fence.
+        start, end = raw.find("{"), raw.rfind("}")
+        if start < 0 or end <= start:
+            raise
+        payload = json.loads(raw[start : end + 1])
+    required = ("final_comment", "scenario_wrap_up", "opening_answer")
+    if not isinstance(payload, dict) or any(not isinstance(payload.get(key), str) or not payload[key].strip() for key in required):
+        raise ValueError("The tutor did not return a complete learning summary.")
+    correction = payload.get("misconception_correction") if evaluation.misconception else None
+    if evaluation.misconception and (not isinstance(correction, str) or not correction.strip()):
+        raise ValueError("The tutor did not correct the identified misconception.")
+    summary = CompletionSummary(
+        original_question=original_question,
+        demonstrated=demonstrated,
+        final_comment=payload["final_comment"].strip(),
+        misconception_correction=correction.strip() if isinstance(correction, str) and correction.strip() else None,
+        scenario_wrap_up=payload["scenario_wrap_up"].strip(),
+        opening_answer=payload["opening_answer"].strip(),
+    )
+    latency_ms = round((monotonic() - started) * 1000)
+    log_event(8, "completion_llm_completed", provider=provider, model=model, latency_ms=latency_ms)
+    update_llm_request_snapshot(
+        "learning-completion", raw_response=raw, final_response=summary.model_dump_json(), latency_ms=latency_ms,
+    )
+    return summary
+
+
+async def generate_sample_student_answer(
+    tutor_question: str,
+    history: list[ChatMessage],
+    sources: list[Source],
+) -> str:
+    """Draft a grounded student response without advancing the learning session."""
+    client_config = generation_client_config()
+    if client_config is None:
+        raise RuntimeError("The generation model is not configured.")
+    from openai import AsyncOpenAI
+
+    provider, api_key, base_url, model = client_config
+    context = "\n\n".join(f"[{index + 1}] {source.title}\n{source.text}" for index, source in enumerate(sources))
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Write a good example STUDENT answer to the tutor's latest question. "
+                "Answer the question directly in first person as a student, using the current conversation's "
+                "scenario, people, and terms. Build on the student's prior reasoning without merely repeating it. "
+                "Use only facts supported by the instructor's retrieved material. "
+                "Keep it to one or two clear sentences, preferably under 40 words. "
+                "Do not ask a new question, add tutor feedback, or mention the documents. "
+                "If the material does not support the question, say you cannot answer it from the course material."
+            ),
+        },
+        {"role": "system", "content": f"Instructor material:\n{context}"},
+        *[{"role": item.role, "content": item.content} for item in history[-8:]],
+        {"role": "user", "content": f"Write the student's answer to this tutor question:\n{tutor_question}"},
+    ]
+    request: dict[str, Any] = {"model": model, "messages": messages, "temperature": 0.2}
+    if provider == "Ollama":
+        request.update(settings.completion_token_parameters(provider, settings.OLLAMA_GENERATION_MAX_TOKENS))
+    write_llm_request_snapshot("sample-student-answer", provider, request)
+    started = monotonic()
+    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+    response = await client.chat.completions.create(**request)
+    answer = (response.choices[0].message.content or "").strip()
+    if not answer:
+        raise RuntimeError("The generation model returned an empty answer.")
+    update_llm_request_snapshot(
+        "sample-student-answer",
+        raw_response=answer,
+        final_response=answer,
+        latency_ms=round((monotonic() - started) * 1000),
+    )
+    return answer
+
+
 async def generate_answer(
     question: str,
     history: list[ChatMessage],
     sources: list[Source],
     classification: MessageClassification | None = None,
     evaluation: AnswerEvaluation | None = None,
+    learning_topic: str | None = None,
 ) -> str:
-    if not sources:
+    contextual_meaning = is_contextual_meaning_request(question, history)
+    # No accepted course evidence means no factual answer from general model
+    # knowledge; the boundary response is generated without an LLM call.
+    if not sources and not contextual_meaning:
         log_event(8, "generation_stopped", reason="no_relevant_context")
         answer = fallback_answer(question, sources)
         log_event(9, "candidate_response_generated", source="unsupported_topic_fallback", response_chars=len(answer))
@@ -506,6 +736,8 @@ async def generate_answer(
     from openai import AsyncOpenAI
 
     provider, api_key, base_url, model = client_config
+    # Teaching policy is selected in code, then expressed as an instruction
+    # to the model. This keeps the decision inspectable in pipeline logs.
     socratic_decision = choose_socratic_strategy(question, history, sources, classification, evaluation)
     log_event(
         6,
@@ -514,30 +746,64 @@ async def generate_answer(
         strategy=socratic_decision.strategy,
         mode=socratic_decision.mode,
         scaffolding_level=socratic_decision.disclosure_level,
-        input_intent=classification.student_intent if classification else "rules",
         input_question_type=classification.question_type if classification else "rules",
         target_concept=socratic_decision.target_concept or "unknown",
         example_type=socratic_decision.example_type,
         tutor_question_type=socratic_decision.tutor_question_type,
     )
+    # Send source titles together with chunk text so the model can ground its
+    # explanation and the UI can later identify supporting documents.
     context = "\n\n".join(f"[{index + 1}] {source.title}\n{source.text}" for index, source in enumerate(sources))
     teaching_instruction = socratic_system_instruction(socratic_decision)
+    if learning_topic:
+        teaching_instruction += (
+            f" The student's original learning question is <learning_topic>{learning_topic}</learning_topic>. "
+            "That question is the primary teaching objective, not background context. Every Socratic follow-up "
+            "must help the student reason about that objective. If the recent exchange has narrowed to a technical "
+            "detail, briefly relate the detail to the original objective and ask about the original concept's "
+            "purpose, decision, or review in the established scenario. Do not keep quizzing the student on the "
+            "detail's inner workings. Do not invent new implementation details merely to extend the example. "
+            "A different main learning goal requires a new chat."
+        )
+    # Specific feedback from an assessed answer should influence the next
+    # question; the model should not treat a score as a request to lecture.
     if evaluation:
         teaching_instruction = f"{teaching_instruction} {evaluation_tutor_instruction(evaluation)}"
+    recent_tutor_turns = [item for item in history[-8:] if item.role == "assistant" and "?" in item.content]
+    if recent_tutor_turns and socratic_decision.mode == "socratic":
+        teaching_instruction += (
+            " The learner's latest message responds to a prior tutor question. Build on what they actually "
+            "said; do not repeat or paraphrase a question they have already answered. If their answer is wrong, "
+            "ask a smaller question about the specific mistaken assumption in the same scenario. "
+            "Prior tutor questions are omitted from the dialogue below because they have already been answered. "
+            "Do not reconstruct them from the learner's reply; move to the next consequence or decision."
+        )
+    generation_history = [
+        {"role": item.role, "content": item.content}
+        for item in history[-8:]
+        if socratic_decision.mode == "direct" or item.role != "assistant" or "?" not in item.content
+    ]
+    # The factual boundary, teaching policy, output format, retrieved evidence,
+    # and recent dialogue are separate prompt parts for easier inspection.
     messages = [
         {
             "role": "system",
             "content": (
+                "Explain wording from the previous tutor message using that message and its scenario. "
+                "Resolve references from the conversation; do not invent course facts."
+                if contextual_meaning else
                 "You are a concise RAG tutor whose objective is student understanding of instructor-published topics. "
                 "Use only the retrieved course context for factual course content. If that context does not support "
                 "the requested topic, respond exactly: 'That topic is outside the currently published course "
-                "documentation.' Never answer an unsupported topic from general knowledge, even if requested."
+                "documentation.' Never answer an unsupported topic from general knowledge, even if requested. "
+                "Earlier tutor-generated examples are conversation context, not course evidence. Do not assert "
+                "guarantees about identifiers or unseen state that the retrieved passage does not establish."
             ),
         },
         {"role": "system", "content": teaching_instruction},
         {"role": "system", "content": answer_format_instruction(question)},
         {"role": "system", "content": f"Retrieved context:\n{context or 'No context retrieved.'}"},
-        *[{"role": item.role, "content": item.content} for item in history[-8:]],
+        *generation_history,
         {"role": "user", "content": question},
     ]
     prompt_chars = sum(len(str(message["content"])) for message in messages)
@@ -550,8 +816,8 @@ async def generate_answer(
         log_event(
             "debug",
             "prompt_inputs",
-            history_roles=",".join(item.role for item in history[-8:]) or "none",
-            history_messages=len(history[-8:]),
+            history_roles=",".join(item["role"] for item in generation_history) or "none",
+            history_messages=len(generation_history),
             retrieved_chunks=len(sources),
             question_chars=len(question),
         )
@@ -560,47 +826,37 @@ async def generate_answer(
         client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         log_event(8, "llm_request_started", provider=provider, model=model)
         llm_started = monotonic()
+        request: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": settings.RAG_TEMPERATURE,
+        }
+        if provider == "Ollama":
+            request.update(settings.completion_token_parameters(provider, settings.OLLAMA_GENERATION_MAX_TOKENS))
+        write_llm_request_snapshot("tutor-generation", provider, request)
         response = await client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=settings.RAG_TEMPERATURE,
+            **request,
         )
         raw_answer = response.choices[0].message.content or fallback_answer(question, sources)
+        llm_latency_ms = round((monotonic() - llm_started) * 1000)
         log_event(
             8,
             "llm_request_completed",
             provider=provider,
             model=model,
-            latency_ms=round((monotonic() - llm_started) * 1000),
+            latency_ms=llm_latency_ms,
         )
         log_event(9, "candidate_response_generated", source="llm", response_chars=len(raw_answer))
         debug_preview("candidate_answer", raw_answer)
-        unsupported = raw_answer.strip().lower().startswith(
-            "that topic is outside the currently published course documentation"
-        ) or raw_answer.strip().lower().startswith("i do not know from your uploaded notes")
-        answer = (
-            "That topic is outside the currently published course documentation."
-            if unsupported
-            else enforce_socratic_response(raw_answer, question, socratic_decision)
-        )
-        changed = answer != raw_answer.strip()
-        adjustment = "none"
-        if changed:
-            if socratic_decision.strategy == "diagnostic_recall":
-                adjustment = "diagnostic_question_substituted"
-            elif raw_answer.count("?") == 0:
-                adjustment = "missing_question_repaired"
-            elif raw_answer.count("?") > 1:
-                adjustment = "multiple_questions_reduced"
-            else:
-                adjustment = "socratic_length_or_disclosure_policy"
-        log_event(
-            10,
-            "response_validated",
-            result="adjusted" if changed else "accepted",
-            adjustment=adjustment,
-            candidate_questions=raw_answer.count("?"),
-            final_questions=answer.count("?"),
+        # This version forwards the model reply as-is. Prompt instructions ask
+        # for one focused question, but there is no post-generation validator.
+        answer = raw_answer
+        log_event(10, "response_forwarded_unmodified", questions=answer.count("?"))
+        update_llm_request_snapshot(
+            "tutor-generation",
+            raw_response=raw_answer,
+            final_response=answer,
+            latency_ms=llm_latency_ms,
         )
         debug_preview("validated_answer", answer)
         return answer
@@ -613,7 +869,7 @@ async def generate_answer(
         fallback = fallback_answer(question, sources)
         log_event(9, "candidate_response_generated", source="service_fallback", response_chars=len(fallback))
         debug_preview("candidate_answer", fallback)
-        log_event(10, "response_validated", result="accepted", adjustment="service_fallback")
+        log_event(10, "service_fallback_returned")
         debug_preview("validated_answer", fallback)
         return fallback
 
@@ -655,27 +911,33 @@ async def generate_conversation_transition(
         client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         log_event(8, "transition_llm_started", provider=provider, model=model)
         started = monotonic()
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[
+        request: dict[str, Any] = {
+            "model": model,
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Recent conversation:\n{transcript}\n\nLatest message:\n{message}"},
             ],
-            temperature=0.2,
-            max_tokens=80,
-        )
-        answer = " ".join((response.choices[0].message.content or "").strip().split())
+            "temperature": 0.2,
+            "max_tokens": 80,
+        }
+        if provider == "Ollama":
+            request["reasoning_effort"] = "none"
+        write_llm_request_snapshot("conversation-transition", provider, request)
+        response = await client.chat.completions.create(**request)
+        answer = response.choices[0].message.content or fallback
+        latency_ms = round((monotonic() - started) * 1000)
         log_event(
             8,
             "transition_llm_completed",
             provider=provider,
             model=model,
-            latency_ms=round((monotonic() - started) * 1000),
+            latency_ms=latency_ms,
         )
-        if not answer or "?" in answer or len(answer.split()) > 35:
-            log_event(10, "transition_response_rejected", reason="format_policy")
-            return fallback
-        log_event(10, "transition_response_validated", result="accepted")
+        log_event(10, "transition_response_forwarded_unmodified")
+        update_llm_request_snapshot(
+            "conversation-transition", raw_response=answer,
+            final_response=answer, latency_ms=latency_ms,
+        )
         return answer
     except Exception as error:
         log_exception(8, "transition_llm_failed", error, provider=provider, model=model, fallback="safe_close")

@@ -9,32 +9,62 @@ Role = Literal["system", "user", "assistant"]
 
 
 class ChatMessage(BaseModel):
-    role: Role
-    content: str = Field(min_length=1)
+    role: Role  # Who wrote the turn: student, tutor, or system.
+    content: str = Field(min_length=1)  # Exact saved message text.
+    created_at: str | None = None  # Timestamp when loaded from PostgreSQL.
+    total_score: float | None = None  # Present only for an evaluated answer.
 
 
 class Source(BaseModel):
-    document_id: str
-    chunk_id: str
-    title: str
-    text: str
-    score: float
-    dense_similarity: float | None = None
-    sparse_score: float | None = None
+    document_id: str  # Source document identity.
+    chunk_id: str  # Exact passage identity for tracing.
+    title: str  # File title shown as an evidence reference.
+    text: str  # Retrieved passage supplied to the tutor.
+    score: float  # Hybrid search rank score, not a student grade.
+    dense_similarity: float | None = None  # Meaning-based similarity.
+    sparse_score: float | None = None  # PostgreSQL exact-word relevance.
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(min_length=1)
-    conversation_id: str | None = None
-    course_id: str | None = None
-    history: list[ChatMessage] = Field(default_factory=list)
-    top_k: int = Field(default=4, ge=1, le=10)
+    message: str = Field(min_length=1)  # Student's latest text.
+    conversation_id: str | None = None  # Saved thread to continue, if any.
+    course_id: str | None = None  # Course whose published files may be searched.
+    history: list[ChatMessage] = Field(default_factory=list)  # Browser fallback; DB history wins.
+    top_k: int = Field(default=4, ge=1, le=10)  # Maximum evidence chunks to return.
+    learning_topic: str | None = Field(default=None, max_length=500)  # Original objective.
+
+
+class CompletionSummary(BaseModel):
+    original_question: str
+    demonstrated: list[str] = Field(default_factory=list)
+    final_comment: str
+    misconception_correction: str | None = None
+    scenario_wrap_up: str
+    opening_answer: str
 
 
 class ChatResponse(BaseModel):
+    answer: str  # Student-facing tutor reply.
+    conversation_id: str  # Thread ID for the student's next turn.
+    sources: list[Source] = Field(default_factory=list)  # Accepted supporting chunks.
+    total_score: float | None = None  # Null when no answer was evaluated.
+    learning_topic: str | None = None  # Objective to keep subsequent turns focused.
+    completion_summary: CompletionSummary | None = None
+
+
+class SubmissionResponse(BaseModel):
+    submitted_at: str
+
+
+class SampleAnswerRequest(BaseModel):
+    course_id: str = Field(min_length=1)
+    conversation_id: str | None = None
+    tutor_question: str = Field(min_length=1, max_length=4000)
+    history: list[ChatMessage] = Field(default_factory=list)
+
+
+class SampleAnswerResponse(BaseModel):
     answer: str
-    conversation_id: str
-    sources: list[Source] = Field(default_factory=list)
 
 
 class TextDocumentRequest(BaseModel):
@@ -58,6 +88,8 @@ class ConversationSummary(BaseModel):
     created_at: str
     updated_at: str
     message_count: int = 0
+    completion_ready: bool = False
+    submitted_at: str | None = None
 
 
 class ConversationListResponse(BaseModel):
@@ -67,6 +99,9 @@ class ConversationListResponse(BaseModel):
 class ConversationResponse(BaseModel):
     conversation_id: str
     messages: list[ChatMessage] = Field(default_factory=list)
+    learning_topic: str | None = None
+    completion_summary: CompletionSummary | None = None
+    submitted_at: str | None = None
 
 
 class DatabaseStatus(BaseModel):

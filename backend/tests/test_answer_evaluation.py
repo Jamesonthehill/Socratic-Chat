@@ -22,7 +22,6 @@ from app.schemas import ChatMessage, Source
 
 def answering_classification() -> MessageClassification:
     return MessageClassification(
-        student_intent="reflection",
         question_type="follow_up",
         target_concepts=("version control",),
         conversation_state="answering_tutor",
@@ -85,13 +84,11 @@ class AnswerEvaluationTests(unittest.TestCase):
         self.assertEqual(request["model"], "gpt-4.1-mini")
         self.assertNotIn("extra_body", request)
 
-    def test_mastery_requires_repeated_evidence_then_transfer_verification(self) -> None:
-        first = db._mastery_progress_update(None, 85, 4, 2, False)
-        second = db._mastery_progress_update(first, 88, 4, 2, False)
-        final = db._mastery_progress_update(second, 90, 4, 3, False)
-        self.assertEqual(first[2], "developing")
-        self.assertEqual(second[2], "ready_for_verification")
-        self.assertEqual(final[2], "mastered")
+    def test_score_at_least_80_completes_without_an_extra_transfer_turn(self) -> None:
+        strong = db._mastery_progress_update(None, 85, 4, None, False)
+        developing = db._mastery_progress_update(None, 79, 3, None, False)
+        self.assertEqual(strong[2], "mastered")
+        self.assertEqual(developing[2], "developing")
 
     def test_critical_misconception_routes_to_support(self) -> None:
         progress = db._mastery_progress_update((90, 2, "ready_for_verification"), 59, 1, 0, True)
@@ -241,9 +238,9 @@ class AnswerEvaluationTests(unittest.TestCase):
             "version control",
         )
         self.assertEqual(evaluation.total_score, 59.0)
-        self.assertFalse(evaluation.ready_for_verification)
+        self.assertFalse(evaluation.ready_to_complete)
 
-    def test_recorded_high_score_waits_for_persistent_ready_status(self) -> None:
+    def test_high_score_is_ready_to_complete_without_another_check(self) -> None:
         evaluation = validated_evaluation(
             {
                 "concept": "version control",
@@ -264,10 +261,8 @@ class AnswerEvaluationTests(unittest.TestCase):
             "history",
             "version control",
         )
-        developing = with_progress_status(evaluation, "developing")
-        ready = with_progress_status(evaluation, "ready_for_verification")
-        self.assertNotIn("final verification task", evaluation_tutor_instruction(developing))
-        self.assertIn("final verification task", evaluation_tutor_instruction(ready))
+        self.assertTrue(evaluation.ready_to_complete)
+        self.assertIn("no further question", evaluation_tutor_instruction(evaluation))
 
     def test_partial_evaluation_requests_scenario_complication_not_missing_facts(self) -> None:
         evaluation = validated_evaluation(
@@ -298,6 +293,35 @@ class AnswerEvaluationTests(unittest.TestCase):
         self.assertIn("observable complication", instruction)
         self.assertIn("lets the learner infer it", instruction)
         self.assertIn("Do not begin with an evaluation label", instruction)
+
+    def test_complete_answer_below_eighty_advances_instead_of_reasking(self) -> None:
+        evaluation = validated_evaluation(
+            {
+                "concept": "version control",
+                "expected_concepts": [
+                    {"name": "version control", "accepted_terms": ["VCS"]},
+                    {"name": "undo capability", "accepted_terms": ["revert"]},
+                    {"name": "manual tracking", "accepted_terms": ["manually track"]},
+                ],
+                "semantic_alignment": 1,
+                "correctness": 4,
+                "completeness": 3,
+                "reasoning": 3,
+                "application": None,
+                "understanding_improved": True,
+                "supported_concepts": ["undo capability", "manual tracking"],
+                "missing_concepts": [],
+                "critical_misconception": False,
+                "misconception": None,
+                "feedback": "Josh can restore an earlier project state.",
+                "confidence": 0.95,
+            },
+            "Josh can revert his project without manually tracking versions.",
+            "version control",
+        )
+        instruction = evaluation_tutor_instruction(with_progress_status(evaluation, "developing"))
+        self.assertIn("next decision", instruction)
+        self.assertNotIn("Convert the most important missing concept", instruction)
 
 
 if __name__ == "__main__":

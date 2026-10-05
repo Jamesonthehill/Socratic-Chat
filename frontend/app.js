@@ -5,6 +5,9 @@ const onboardingIdentity = document.querySelector("#onboardingIdentity");
 const onboardingStatus = document.querySelector("#onboardingStatus");
 const onboardingLogoutButton = document.querySelector("#onboardingLogoutButton");
 const dashboardScreen = document.querySelector("#dashboardScreen");
+const dashboardAccountName = document.querySelector("#dashboardAccountName");
+const professorDashboardLink = document.querySelector("#professorDashboardLink");
+const dashboardPageIntro = document.querySelector(".cluball-page-intro");
 const dashboardGreeting = document.querySelector("#dashboardGreeting");
 const dashboardRoleBadge = document.querySelector("#dashboardRoleBadge");
 const dashboardAuthorityLevel = document.querySelector("#dashboardAuthorityLevel");
@@ -12,7 +15,6 @@ const dashboardRoleTitle = document.querySelector("#dashboardRoleTitle");
 const dashboardRoleDescription = document.querySelector("#dashboardRoleDescription");
 const dashboardPendingNotice = document.querySelector("#dashboardPendingNotice");
 const dashboardLogoutButton = document.querySelector("#dashboardLogoutButton");
-const openWorkspaceButton = document.querySelector("#openWorkspaceButton");
 const studentCoursesSection = document.querySelector("#studentCoursesSection");
 const studentCoursesList = document.querySelector("#studentCoursesList");
 const studentCoursesStatus = document.querySelector("#studentCoursesStatus");
@@ -55,7 +57,6 @@ const googleSignInWrap = document.querySelector("#googleSignInWrap");
 const googleSignInButton = document.querySelector("#googleSignInButton");
 const githubConnectWrap = document.querySelector("#githubConnectWrap");
 const githubConnectMessage = document.querySelector("#githubConnectMessage");
-const githubSchoolEmail = document.querySelector("#githubSchoolEmail");
 const connectGithubButton = document.querySelector("#connectGithubButton");
 const logoutButton = document.querySelector("#logoutButton");
 const userIdentity = document.querySelector("#userIdentity");
@@ -68,6 +69,15 @@ const sessionWarningText = document.querySelector("#sessionWarningText");
 const extendSessionButton = document.querySelector("#extendSessionButton");
 const sessionLogoutButton = document.querySelector("#sessionLogoutButton");
 const messagesEl = document.querySelector("#messages");
+const completionCard = document.querySelector("#completionCard");
+const completionQuestion = document.querySelector("#completionQuestion");
+const completionDemonstrated = document.querySelector("#completionDemonstrated");
+const completionFeedback = document.querySelector("#completionFeedback");
+const completionCorrection = document.querySelector("#completionCorrection");
+const completionScenario = document.querySelector("#completionScenario");
+const completionOpeningAnswer = document.querySelector("#completionOpeningAnswer");
+const completionStatus = document.querySelector("#completionStatus");
+const submitChatButton = document.querySelector("#submitChatButton");
 const formEl = document.querySelector("#chatForm");
 const inputEl = document.querySelector("#messageInput");
 const sendButton = document.querySelector("#sendButton");
@@ -90,9 +100,19 @@ const sidebarScrim = document.querySelector("#sidebarScrim");
 const progressNavButton = document.querySelector("#progressNavButton");
 const settingsNavButton = document.querySelector("#settingsNavButton");
 const themeToggle = document.querySelector("#themeToggle");
+const learningLayout = document.querySelector(".learning-layout");
 const learningPanel = document.querySelector("#learningPanel");
 const learningPanelToggle = document.querySelector("#learningPanelToggle");
 const learningPanelClose = document.querySelector("#learningPanelClose");
+const learningPanelResizeHandle = document.querySelector("#learningPanelResizeHandle");
+const learningPanelKicker = document.querySelector("#learningPanelKicker");
+const evidenceViewer = document.querySelector("#evidenceViewer");
+const evidenceViewerBack = document.querySelector("#evidenceViewerBack");
+const evidenceViewerTitle = document.querySelector("#evidenceViewerTitle");
+const evidenceViewerMeta = document.querySelector("#evidenceViewerMeta");
+const evidenceViewerText = document.querySelector("#evidenceViewerText");
+const evidenceViewerStrength = document.querySelector("#evidenceViewerStrength");
+const evidenceViewerWhy = document.querySelector("#evidenceViewerWhy");
 const currentTopicLabel = document.querySelector("#currentTopicLabel");
 const sessionProgressLabel = document.querySelector("#sessionProgressLabel");
 const topbarUserInitial = document.querySelector("#topbarUserInitial");
@@ -124,6 +144,7 @@ const THEME_KEY = "socratic_chat_theme";
 const ACTIVE_COURSE_KEY = "socratic_chat_active_course";
 const SIDEBAR_STATE_KEY = "socratic_chat_sidebar_collapsed";
 const LEARNING_PANEL_STATE_KEY = "socratic_chat_learning_panel_open";
+const LEARNING_PANEL_WIDTH_KEY = "socratic_chat_learning_panel_width";
 const BOOKMARKS_KEY = "socratic_chat_question_bookmarks";
 const AUTH_SESSION_MS = 60 * 60 * 1000;
 const SESSION_WARNING_MS = 5 * 60 * 1000;
@@ -141,6 +162,9 @@ let courses = [];
 let selectedInstructorCourse = null;
 let activeCourse = null;
 let isInstructorPreview = false;
+let learningTopic = null;
+let completionSummary = null;
+let submittedAt = null;
 
 const history = [];
 const pendingFiles = [];
@@ -205,7 +229,9 @@ function persistQuestionBookmarks() {
 }
 
 function formatClock(date = new Date()) {
-  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
+  const parsedDate = date instanceof Date ? date : new Date(date);
+  const validDate = Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(validDate);
 }
 
 function inferQuestionType(content) {
@@ -297,12 +323,76 @@ function setLearningPanelOpen(open) {
   localStorage.setItem(LEARNING_PANEL_STATE_KEY, String(open));
 }
 
+function setLearningPanelWidth(width) {
+  if (!learningLayout || !learningPanelResizeHandle) return;
+  const maxWidth = Math.max(240, Math.min(700, window.innerWidth - 64));
+  const minWidth = Math.min(280, maxWidth);
+  const nextWidth = Math.round(Math.max(minWidth, Math.min(maxWidth, width)));
+  learningLayout.style.setProperty("--learning-panel-width", `${nextWidth}px`);
+  learningPanelResizeHandle.setAttribute("aria-valuemin", String(minWidth));
+  learningPanelResizeHandle.setAttribute("aria-valuemax", String(maxWidth));
+  learningPanelResizeHandle.setAttribute("aria-valuenow", String(nextWidth));
+  localStorage.setItem(LEARNING_PANEL_WIDTH_KEY, String(nextWidth));
+}
+
+function initializeLearningPanelWidth() {
+  const storedWidth = localStorage.getItem(LEARNING_PANEL_WIDTH_KEY);
+  const savedWidth = storedWidth === null ? 326 : Number(storedWidth);
+  setLearningPanelWidth(Number.isFinite(savedWidth) ? savedWidth : 326);
+}
+
+window.addEventListener("resize", () => {
+  const currentWidth = Number(learningPanelResizeHandle?.getAttribute("aria-valuenow"));
+  if (Number.isFinite(currentWidth)) setLearningPanelWidth(currentWidth);
+});
+
+function showEvidence(source) {
+  if (!evidenceViewer || !source) return;
+  const question = [...history].reverse().find((item) => item.role === "user")?.content || "";
+  const terms = [...new Set((question.toLowerCase().match(/[a-z][a-z'-]{3,}/g) || []))]
+    .filter((term) => !["about", "after", "also", "does", "from", "have", "that", "their", "this", "what", "when", "where", "which", "with", "your"].includes(term));
+  evidenceViewerTitle.textContent = source.title || "Selected source";
+  evidenceViewerMeta.textContent = source.chunk_id ? `Passage ${source.chunk_id}` : "";
+  evidenceViewerStrength.textContent = "Retrieved evidence";
+  evidenceViewerWhy.textContent = terms.length
+    ? `This passage was retrieved because it connects to ${terms.slice(0, 3).join(", ")} from your question.`
+    : "This passage was retrieved from the published course documentation for this response.";
+  evidenceViewerText.replaceChildren();
+  const passage = source.text || "No passage text was returned for this source.";
+  const matcher = terms.length
+    ? new RegExp(`(${terms.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "gi")
+    : null;
+  passage.split(matcher || /$^/).forEach((part) => {
+    if (matcher && matcher.test(part)) {
+      const mark = document.createElement("mark");
+      mark.textContent = part;
+      evidenceViewerText.appendChild(mark);
+      matcher.lastIndex = 0;
+    } else {
+      evidenceViewerText.appendChild(document.createTextNode(part));
+    }
+  });
+  evidenceViewer.hidden = false;
+  learningPanelKicker.textContent = "Evidence viewer";
+  learningPanel.setAttribute("aria-labelledby", "evidenceViewerTitle");
+  setLearningPanelOpen(true);
+  evidenceViewerBack.focus();
+}
+
+function hideEvidence() {
+  if (!evidenceViewer) return;
+  evidenceViewer.hidden = true;
+  learningPanelKicker.textContent = "Session guide";
+  learningPanel.setAttribute("aria-labelledby", "learningPanelTitle");
+}
+
 function applyWorkspaceChrome() {
   const sidebarCollapsed = localStorage.getItem(SIDEBAR_STATE_KEY) === "true";
   const compactLayout = window.matchMedia("(max-width: 1120px)").matches;
   const panelOpen = !compactLayout && localStorage.getItem(LEARNING_PANEL_STATE_KEY) !== "false";
   setSidebarCollapsed(sidebarCollapsed);
   setMobileSidebar(false);
+  initializeLearningPanelWidth();
   setLearningPanelOpen(panelOpen);
 }
 
@@ -485,6 +575,13 @@ function renderDashboard() {
   const role = getRole();
   const isPending = currentUser?.role_status === "pending";
   dashboardGreeting.textContent = `Welcome, ${getDisplayName()}`;
+  if (dashboardAccountName) dashboardAccountName.textContent = getDisplayName();
+  professorDashboardLink?.classList.toggle("is-hidden", role === "student");
+  if (dashboardPageIntro) {
+    dashboardPageIntro.textContent = role === "student"
+      ? "Open your courses and continue learning."
+      : "Create and manage courses, learning materials, and student access.";
+  }
   dashboardRoleBadge.textContent = getRoleLabel();
   dashboardAuthorityLevel.textContent = `Authority level ${currentUser?.authority_level ?? 2}`;
   dashboardPendingNotice.classList.toggle("is-hidden", !isPending);
@@ -508,7 +605,6 @@ function renderDashboard() {
   };
   dashboardRoleTitle.textContent = copy[role].title;
   dashboardRoleDescription.textContent = copy[role].description;
-  openWorkspaceButton.textContent = role === "student" ? "View available classes" : "Manage my courses";
   studentCoursesSection?.classList.toggle("is-hidden", role !== "student");
   instructorWorkspaceSection?.classList.toggle("is-hidden", role === "student");
   adminRequestsSection.classList.toggle("is-hidden", role !== "admin");
@@ -904,9 +1000,6 @@ function showGithubConnection() {
       ? "Your school identity is verified. Link the GitHub account you want to use with Socratic-Chat."
       : "GitHub authentication is not configured on the server yet.";
   }
-  if (githubSchoolEmail) {
-    githubSchoolEmail.textContent = currentUser?.email || "Verified charlotte.edu account";
-  }
   if (connectGithubButton) connectGithubButton.disabled = !githubOauthConfigured;
 }
 
@@ -962,11 +1055,48 @@ function createConversationId() {
 
 function clearMessages() {
   messagesEl.replaceChildren();
+  completionSummary = null;
+  submittedAt = null;
+  completionCard.hidden = true;
+  formEl.hidden = false;
+  suggestedResponses.hidden = false;
+  submitChatButton.disabled = true;
+  hideEvidence();
   history.length = 0;
   messageRecords.length = 0;
   questionTypesSeen = new Set();
+  learningTopic = null;
   renderSuggestedResponses();
   updateLearningPanel();
+}
+
+function renderCompletion(summary, submittedTime = null) {
+  if (!summary) return;
+  completionSummary = summary;
+  submittedAt = submittedTime;
+  completionQuestion.textContent = summary.original_question || learningTopic || "Your opening question";
+  completionDemonstrated.replaceChildren();
+  (summary.demonstrated || []).forEach((answer) => {
+    const item = document.createElement("li");
+    item.textContent = answer;
+    completionDemonstrated.appendChild(item);
+  });
+  completionFeedback.textContent = summary.final_comment || "";
+  completionCorrection.textContent = summary.misconception_correction || "";
+  completionCorrection.hidden = !summary.misconception_correction;
+  completionScenario.textContent = summary.scenario_wrap_up || "";
+  completionOpeningAnswer.textContent = summary.opening_answer || "";
+  completionStatus.textContent = submittedAt
+    ? `Submitted ${new Date(submittedAt).toLocaleString()}`
+    : "Review the summary, then submit this chat.";
+  submitChatButton.disabled = Boolean(submittedAt);
+  submitChatButton.textContent = submittedAt ? "Submitted" : "Submit assignment";
+  completionCard.hidden = false;
+  messagesEl.appendChild(completionCard);
+  formEl.hidden = true;
+  suggestedResponses.hidden = true;
+  if (sessionProgressLabel) sessionProgressLabel.textContent = submittedAt ? "Submitted" : "Ready to submit";
+  messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
 function showWelcome() {
@@ -1021,12 +1151,38 @@ function renderSuggestedResponses(content = "") {
   suggestedResponses.replaceChildren();
   if (!String(content).trim().endsWith("?")) return;
 
-  ["I’m not sure yet", "My reasoning is…", "Could you guide me?"].forEach((suggestion) => {
+  ["I’m not sure yet", "Generate a good question", "Could you guide me?"].forEach((suggestion) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "suggestion-chip";
     button.textContent = suggestion;
-    button.addEventListener("click", () => {
+    if (suggestion === "Generate a good question") {
+      button.title = "Draft a strong answer to the tutor’s latest question for testing";
+      button.setAttribute("aria-label", "Generate a good example answer to the tutor’s question");
+      button.addEventListener("click", async () => {
+        if (!requireActiveSession() || !activeCourse) return;
+        button.disabled = true;
+        button.textContent = "Generating answer…";
+        try {
+          const data = await postJson("/api/chat/sample-answer", {
+            course_id: activeCourse.course_id,
+            conversation_id: conversationId,
+            tutor_question: content,
+            history: history.slice(-8),
+          });
+          inputEl.value = data.answer;
+          resizeComposer();
+          inputEl.focus();
+          button.textContent = "Answer drafted";
+        } catch (error) {
+          button.textContent = "Try again";
+          button.title = error.message;
+          scanStatus.textContent = `Sample answer failed: ${error.message}`;
+        } finally {
+          button.disabled = false;
+        }
+      });
+    } else button.addEventListener("click", () => {
       inputEl.value = suggestion;
       resizeComposer();
       inputEl.focus();
@@ -1336,7 +1492,9 @@ function renderThreadList(conversations = []) {
 
     const meta = document.createElement("span");
     meta.className = "thread-meta";
-    meta.textContent = `${conversation.message_count || 0} messages · ${formatThreadDate(conversation.updated_at)}`;
+    const sessionState = conversation.submitted_at
+      ? "Submitted" : (conversation.completion_ready ? "Ready to submit" : "In progress");
+    meta.textContent = `${sessionState} · ${conversation.message_count || 0} messages · ${formatThreadDate(conversation.updated_at)}`;
 
     const settings = document.createElement("button");
     settings.type = "button";
@@ -1352,6 +1510,8 @@ function renderThreadList(conversations = []) {
     deleteButton.type = "button";
     deleteButton.className = "thread-delete";
     deleteButton.textContent = "Delete chat";
+    deleteButton.disabled = Boolean(conversation.submitted_at);
+    if (conversation.submitted_at) deleteButton.title = "Submitted assignments cannot be deleted.";
 
     button.append(title, meta);
     menu.appendChild(deleteButton);
@@ -1402,7 +1562,7 @@ async function deleteConversation(targetConversationId) {
   try {
     const result = await deleteJson(`/api/conversations/${targetConversationId}`);
     if (!result.deleted) {
-      scanStatus.textContent = "Chat was not found in the database.";
+      scanStatus.textContent = "Chat was not found or has already been submitted.";
       await loadThreadList();
       return;
     }
@@ -1565,21 +1725,30 @@ function appendMessage(role, content, sources = [], options = {}) {
   roleLabel.textContent = role === "assistant" ? "Socratic tutor" : "You";
   identity.append(avatar, roleLabel);
 
-  if (isQuestion) {
-    const typeBadge = document.createElement("span");
-    typeBadge.className = "question-type-badge";
-    typeBadge.textContent = questionType;
-    identity.appendChild(typeBadge);
-    questionTypesSeen.add(questionType);
+  if (isQuestion) questionTypesSeen.add(questionType);
+
+  if (role === "assistant" && options.totalScore != null && Number.isFinite(Number(options.totalScore))) {
+    const scoreBadge = document.createElement("span");
+    scoreBadge.className = "score-badge";
+    const score = Math.round(Number(options.totalScore) * 100) / 100;
+    scoreBadge.textContent = `Score ${score}/100`;
+    scoreBadge.title = "Evaluation of your previous answer";
+    identity.appendChild(scoreBadge);
   }
 
   const meta = document.createElement("div");
   meta.className = "message-meta";
-  if (!options.saved) {
-    const time = document.createElement("time");
-    time.textContent = formatClock();
-    time.dateTime = new Date().toISOString();
-    meta.appendChild(time);
+  const messageDate = options.createdAt ? new Date(options.createdAt) : new Date();
+  const time = document.createElement("time");
+  time.textContent = formatClock(messageDate);
+  time.dateTime = Number.isNaN(messageDate.getTime()) ? new Date().toISOString() : messageDate.toISOString();
+  meta.appendChild(time);
+
+  if (role === "assistant" && Number.isFinite(options.responseTimeSeconds)) {
+    const responseTime = document.createElement("span");
+    responseTime.className = "response-time";
+    responseTime.textContent = `Generated in ${options.responseTimeSeconds}s`;
+    meta.appendChild(responseTime);
   }
 
   if (isQuestion) {
@@ -1663,8 +1832,18 @@ function appendMessage(role, content, sources = [], options = {}) {
     sourceBlock.className = "sources";
     const sourceLabel = document.createElement("strong");
     sourceLabel.textContent = "Evidence context";
-    const sourceNames = document.createElement("span");
-    sourceNames.textContent = [...new Set(sources.map((source) => source.title))].join(" · ");
+    const sourceNames = document.createElement("div");
+    sourceNames.className = "source-list";
+    const uniqueSources = [...new Map(sources.map((source) => [source.title, source])).values()];
+    uniqueSources.forEach((source) => {
+      const sourceButton = document.createElement("button");
+      sourceButton.type = "button";
+      sourceButton.className = "source-button";
+      sourceButton.textContent = source.title;
+      sourceButton.title = `Open evidence from ${source.title}`;
+      sourceButton.addEventListener("click", () => showEvidence(source));
+      sourceNames.appendChild(sourceButton);
+    });
     sourceBlock.append(sourceLabel, sourceNames);
     item.appendChild(sourceBlock);
   }
@@ -1679,18 +1858,23 @@ function appendMessage(role, content, sources = [], options = {}) {
 
 
 function showThinkingIndicator() {
-  const steps = [
-    "Reading your question",
-    "Searching uploaded documents",
-    "Tracing the strongest evidence",
-    "Preparing your next question",
-  ];
-  let stepIndex = 0;
+  const stageIcons = {
+    received: '<path d="M16 22h12m-5-5 5 5-5 5"/>',
+    conversation: '<path d="M17 18h10m-10 4h10m-10 4h7"/>',
+    classifying: '<path d="M19 19a3 3 0 1 1 5 2c-1 1-2 1-2 3"/><circle cx="22" cy="27" r=".7"/>',
+    searching: '<circle cx="21" cy="21" r="4"/><path d="m24 24 4 4"/>',
+    matching: '<path d="M17 16h10v12H17z M19 20h6m-6 4h4"/>',
+    evidence: '<path d="M17 16h10v12H17z M19 20h6m-6 4h4"/>',
+    evaluating: '<path d="m17 22 3 3 7-7"/>',
+    planning: '<circle cx="18" cy="19" r="1.5"/><circle cx="26" cy="19" r="1.5"/><circle cx="22" cy="26" r="1.5"/><path d="m19 20 2 5m4-5-2 5"/>',
+    generating: '<path d="m17 27 2-1 9-9-2-2-9 9-1 4z"/>',
+    saving: '<path d="M17 16h10l2 2v10H17z M19 16v5h7v-5m-6 12v-4h6v4"/>',
+  };
+  const startedAt = performance.now();
 
   const item = document.createElement("article");
   item.className = "message assistant thinking-message";
-  item.setAttribute("aria-live", "polite");
-  item.setAttribute("aria-label", "Socratic tutor is thinking");
+  item.setAttribute("aria-label", "Socratic tutor is working");
 
   const mark = document.createElement("span");
   mark.className = "thinking-mark";
@@ -1703,8 +1887,9 @@ function showThinkingIndicator() {
         <circle class="thinking-particle thinking-particle-secondary" cx="22" cy="38" r="2.4"></circle>
       </g>
       <circle class="thinking-mark-center" cx="22" cy="22" r="10"></circle>
-      <text class="thinking-mark-letter" x="22" y="22">S</text>
+      <g class="thinking-mark-stage" aria-hidden="true">${stageIcons.received}</g>
     </svg>`;
+  const icon = mark.querySelector(".thinking-mark-stage");
 
   const statusWrap = document.createElement("div");
   statusWrap.className = "thinking-copy";
@@ -1712,22 +1897,35 @@ function showThinkingIndicator() {
   tutor.textContent = "Socratic tutor";
   const status = document.createElement("span");
   status.className = "thinking-status";
-  status.textContent = steps[stepIndex];
-  statusWrap.append(tutor, status);
+  status.setAttribute("aria-live", "polite");
+  status.textContent = "Sending your message";
+  const elapsed = document.createElement("span");
+  elapsed.className = "thinking-elapsed";
+  elapsed.setAttribute("aria-hidden", "true");
+  elapsed.textContent = "0s elapsed";
+  statusWrap.append(tutor, status, elapsed);
 
   item.append(mark, statusWrap);
   messagesEl.appendChild(item);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
-  const timer = window.setInterval(() => {
-    stepIndex = (stepIndex + 1) % steps.length;
-    status.textContent = steps[stepIndex];
-  }, 1400);
+  const elapsedTimer = window.setInterval(() => {
+    const elapsedSeconds = Math.floor((performance.now() - startedAt) / 1000);
+    elapsed.textContent = `${elapsedSeconds}s elapsed`;
+  }, 250);
 
   return {
-    remove() {
-      window.clearInterval(timer);
+    setStatus(stage, label) {
+      if (!stageIcons[stage] || !label) return;
+      status.textContent = label;
+      icon.innerHTML = stageIcons[stage];
+      mark.dataset.stage = stage;
+      item.setAttribute("aria-label", `Socratic tutor: ${label}`);
+    },
+    stop() {
+      window.clearInterval(elapsedTimer);
       item.remove();
+      return Math.max(1, Math.round((performance.now() - startedAt) / 1000));
     },
   };
 }
@@ -1777,6 +1975,48 @@ async function postJson(url, payload = {}) {
   }
 
   return response.json();
+}
+
+async function postChatStream(payload, onStatus) {
+  // The same backend chat pipeline sends progress events before the final
+  // answer, letting students see activity without exposing internal prompts.
+  const response = await fetch(apiUrl("/api/chat/stream"), {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(await responseErrorMessage(response));
+  if (!response.body) throw new Error("Live chat progress is unavailable in this browser.");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result = null;
+  const processLine = (line) => {
+    if (!line.trim()) return;
+    const update = JSON.parse(line);
+    // Status updates drive the loading indicator; only "result" becomes a
+    // tutor message, and "error" becomes a visible request failure.
+    if (update.type === "status") onStatus(update.stage, update.label);
+    if (update.type === "result") result = update.data;
+    if (update.type === "error") throw new Error(update.message || "The chat request failed.");
+  };
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+      lines.forEach(processLine);
+    }
+    buffer += decoder.decode();
+    processLine(buffer);
+  } finally {
+    reader.releaseLock();
+  }
+  if (!result) throw new Error("The chat connection ended before a reply arrived.");
+  return result;
 }
 
 async function postForm(url, formData) {
@@ -1890,15 +2130,24 @@ async function loadConversation() {
 
   try {
     const data = await getJson(`/api/conversations/${conversationId}`);
+    learningTopic = data.learning_topic || null;
     if (!data.messages?.length) {
       showWelcome();
       return;
     }
 
+    let previousAnswerScore = null;
     data.messages.forEach((message) => {
-      appendMessage(message.role, message.content, [], { saved: true });
+      if (message.role === "user") previousAnswerScore = message.total_score;
+      appendMessage(message.role, message.content, [], {
+        saved: true,
+        createdAt: message.created_at,
+        totalScore: message.role === "assistant" ? previousAnswerScore : null,
+      });
+      if (message.role === "assistant") previousAnswerScore = null;
       history.push({ role: message.role, content: message.content });
     });
+    renderCompletion(data.completion_summary, data.submitted_at);
   } catch (error) {
     showWelcome();
   }
@@ -2035,10 +2284,6 @@ onboardingForm?.addEventListener("submit", async (event) => {
   }
 });
 
-openWorkspaceButton?.addEventListener("click", () => {
-  const target = getRole() === "student" ? studentCoursesSection : instructorWorkspaceSection;
-  target?.scrollIntoView({ behavior: "smooth", block: "start" });
-});
 dashboardButton?.addEventListener("click", showDashboard);
 refreshStudentCoursesButton?.addEventListener("click", loadCourses);
 
@@ -2325,7 +2570,40 @@ learningPanelToggle?.addEventListener("click", () => {
   setLearningPanelOpen(appShell.classList.contains("learning-panel-closed"));
 });
 
+let resizingLearningPanel = false;
+
+learningPanelResizeHandle?.addEventListener("pointerdown", (event) => {
+  resizingLearningPanel = true;
+  learningPanelResizeHandle.classList.add("is-resizing");
+  learningLayout?.classList.add("is-resizing");
+  learningPanelResizeHandle.setPointerCapture(event.pointerId);
+  event.preventDefault();
+});
+
+learningPanelResizeHandle?.addEventListener("pointermove", (event) => {
+  if (!resizingLearningPanel) return;
+  setLearningPanelWidth(window.innerWidth - event.clientX);
+});
+
+const stopResizingLearningPanel = () => {
+  if (!resizingLearningPanel) return;
+  resizingLearningPanel = false;
+  learningPanelResizeHandle?.classList.remove("is-resizing");
+  learningLayout?.classList.remove("is-resizing");
+};
+
+learningPanelResizeHandle?.addEventListener("pointerup", stopResizingLearningPanel);
+learningPanelResizeHandle?.addEventListener("pointercancel", stopResizingLearningPanel);
+learningPanelResizeHandle?.addEventListener("keydown", (event) => {
+  const currentWidth = Number(learningPanelResizeHandle.getAttribute("aria-valuenow")) || 326;
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+    event.preventDefault();
+    setLearningPanelWidth(currentWidth + (event.key === "ArrowLeft" ? 16 : -16));
+  }
+});
+
 learningPanelClose?.addEventListener("click", () => setLearningPanelOpen(false));
+evidenceViewerBack?.addEventListener("click", hideEvidence);
 
 reflectionButton?.addEventListener("click", () => {
   const userTurns = messageRecords.filter((record) => record.role === "user").length;
@@ -2354,6 +2632,9 @@ inputEl.addEventListener("input", resizeComposer);
 
 formEl.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (completionSummary) return;
+  // A chat turn must belong to an authenticated student and a selected course
+  // before the browser asks the backend for any model-assisted response.
   if (!requireActiveSession()) return;
   if (!activeCourse) {
     showDashboard();
@@ -2381,30 +2662,55 @@ formEl.addEventListener("submit", async (event) => {
     }
 
     thinkingIndicator = showThinkingIndicator();
-    const data = await postJson("/api/chat", {
+    // Send the current course and thread so the backend can retrieve approved
+    // documents and continue the correct saved learning conversation.
+    const data = await postChatStream({
       message,
       conversation_id: conversationId,
       course_id: activeCourse?.course_id || null,
       history: history.slice(-8),
       top_k: 4,
-    });
+      learning_topic: learningTopic,
+    }, (stage, label) => thinkingIndicator?.setStatus(stage, label));
+    learningTopic = data.learning_topic || learningTopic;
     if (data.conversation_id) {
       conversationId = data.conversation_id;
       localStorage.setItem(CONVERSATION_KEY, conversationId);
       if (activeCourse) localStorage.setItem(courseConversationKey(activeCourse.course_id), conversationId);
     }
-    thinkingIndicator?.remove();
+    const responseTimeSeconds = thinkingIndicator?.stop();
     thinkingIndicator = null;
-    appendMessage("assistant", data.answer, data.sources || []);
+    // Display evidence and an assessment score only when the backend actually
+    // returned them; the frontend does not invent learning scores.
+    appendMessage("assistant", data.answer, data.sources || [], {
+      responseTimeSeconds,
+      totalScore: data.total_score,
+    });
     history.push({ role: "assistant", content: data.answer });
+    renderCompletion(data.completion_summary);
     await loadThreadList();
   } catch (error) {
-    thinkingIndicator?.remove();
+    thinkingIndicator?.stop();
     thinkingIndicator = null;
     appendMessage("assistant", `Request failed: ${error.message}`);
   } finally {
     setBusy(false);
-    inputEl.focus();
+    if (!completionSummary) inputEl.focus();
+  }
+});
+
+submitChatButton?.addEventListener("click", async () => {
+  if (!completionSummary || submittedAt || !requireActiveSession()) return;
+  submitChatButton.disabled = true;
+  completionStatus.textContent = "Submitting your chat…";
+  try {
+    const result = await postJson(`/api/conversations/${encodeURIComponent(conversationId)}/submit`);
+    submittedAt = result.submitted_at;
+    renderCompletion(completionSummary, submittedAt);
+    await loadThreadList();
+  } catch (error) {
+    completionStatus.textContent = `Submission failed: ${error.message}`;
+    submitChatButton.disabled = false;
   }
 });
 

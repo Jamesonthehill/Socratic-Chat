@@ -2,11 +2,11 @@
 
 A clean personal workspace for a retrieval-augmented chatbot.
 
-The backend indexes course documents with OpenAI embeddings, retrieves relevant
-PostgreSQL chunks, and uses either OpenAI or Groq for student-state
-classification, conditional learning evaluation, and grounded Socratic
-responses. OpenAI embedding credentials remain required for document indexing
-and semantic retrieval.
+The backend indexes course documents with local Qwen embeddings, retrieves relevant
+PostgreSQL chunks, and runs student-state classification, conditional learning
+evaluation, and grounded Socratic responses locally through Ollama. The default
+local model is Qwen3.5 9B Q4_K_M, with Qwen3 Embedding 0.6B for local semantic
+retrieval. No hosted model API key is required.
 
 ## Setup
 
@@ -18,27 +18,35 @@ python -m pip install -r backend/requirements.txt
 cp .env.example .env
 ```
 
-Add `OPENAI_API_KEY` for document embeddings. The conversational LLM roles use
-Groq by default:
+Install Ollama, pull the selected 6.6 GB Q4 model, and keep Ollama running:
 
-```env
-OPENAI_API_KEY=your-openai-key
-LLM_PROVIDER=groq
-GROQ_API_KEY=your-groq-key
-GROQ_API_BASE_URL=https://api.groq.com/openai/v1
-GROQ_MODEL=openai/gpt-oss-120b
-GROQ_CLASSIFIER_MODEL=openai/gpt-oss-120b
-GROQ_ANSWER_EVALUATION_MODEL=openai/gpt-oss-120b
+```bash
+ollama pull qwen3.5:9b-q4_K_M
+ollama pull qwen3-embedding:0.6b
+ollama serve
 ```
 
-Document ingestion and query retrieval continue to use
-`text-embedding-3-small` with 1,536 dimensions. Restart the service after
-changing these variables.
+The conversational roles use this local configuration:
 
-The classifier, answer evaluator, and tutor generator all use Groq's
-`openai/gpt-oss-120b` model
-while document embeddings remain on OpenAI. To switch conversational roles back
-to OpenAI, set:
+```env
+LLM_PROVIDER=ollama
+OLLAMA_API_KEY=ollama
+OLLAMA_API_BASE_URL=http://127.0.0.1:11434/v1
+OLLAMA_MODEL=qwen3.5:9b-q4_K_M
+OLLAMA_CLASSIFIER_MODEL=qwen3.5:9b-q4_K_M
+OLLAMA_ANSWER_EVALUATION_MODEL=qwen3.5:9b-q4_K_M
+```
+
+`OLLAMA_API_KEY` is only a placeholder required by the OpenAI-compatible client;
+the local Ollama server ignores it. No hosted chat API key is required.
+
+Document ingestion and dense semantic retrieval use `qwen3-embedding:0.6b`
+locally with its native 1,024-dimensional vectors. PostgreSQL validates this
+dimension at startup; changing embedding models requires re-indexing old chunks.
+Restart the backend after changing provider variables.
+
+To switch conversational roles to a hosted provider later, set the matching
+provider variables. For OpenAI:
 
 ```env
 LLM_PROVIDER=openai
@@ -59,10 +67,14 @@ course questions rather than lowering it simply to force results.
 
 Each learning message passes through a hybrid interpretation stage before RAG
 retrieval. Session commands, access checks, and safe fallbacks remain
-deterministic. OpenAI `gpt-4.1-mini` then returns validated labels
+deterministic. The configured conversational model then returns validated labels
 for the student's intent, question type, target concepts, current demonstrated
 understanding, required support level, dialogue status, next conversation action,
-and a focused retrieval query. The status distinguishes
+and a focused retrieval query. For a compound question, it can also provide up
+to three standalone subqueries. Each subquery runs through the same course-scoped
+hybrid search and relevance filter; retrieved chunks are deduplicated and
+selected across the question's parts before answer generation. A single-topic
+message keeps the original one-query path. The status distinguishes
 ordinary learning, a substantive claim asking for confirmation, a bare claim of
 understanding, acknowledgement, topic change, and a request to close. Invalid
 JSON, unsupported labels, or a provider failure automatically falls back to the
@@ -86,9 +98,9 @@ question; comparisons use contrasting cases; procedure, application, and
 debugging requests use an incomplete scenario. Uncertainty or an explicit hint
 request increases disclosure. Repeated difficulty raises the classifier's
 support level and produces a clear explanation plus a simpler, meaningfully
-different example; continued difficulty permits a step-by-step example. The response validator
-limits disclosure, rejects definition-first opening turns, and guarantees one
-focused question. A substantive claim receives a short grounded
+different example; continued difficulty permits a step-by-step example. The tutor prompt
+asks for limited disclosure and one focused question, but model replies are shown without
+post-generation rewriting. A substantive claim is intended to receive a short grounded
 `Yes—`/`Partly—`/`Not quite—` check before one revision question. A bare “I
 understand” receives a transfer or teach-back check instead of unearned praise.
 Acknowledgements and clear endings are routed to a short, question-free response
@@ -97,9 +109,8 @@ instead of another Socratic prompt.
 Question categories remain internal planning labels. Student-facing questions
 use plain language and name a concrete action, choice, example, or outcome from
 the current topic rather than canned stems such as `What evidence?` or `What
-factor?`. A substantial pasted passage receives one neutral reflection before
-the question. The response validator rejects malformed Markdown and incomplete
-choice prompts such as `Which scenario?` when no choices are presented.
+factor?`. A substantial pasted passage is intended to receive one neutral reflection before
+the question. These are model instructions; no response validator replaces a generated reply.
 
 Substantive responses to tutor questions pass through a separate hybrid answer
 evaluator. It calculates deterministic course-concept coverage (20%), model-based
@@ -114,31 +125,72 @@ requests for help, and unsupported topics are not scored.
 
 Each eligible assessment is appended to `mastery_assessments`, while an
 exponentially weighted estimate and evidence count are stored in
-`student_concept_progress`. A single strong answer cannot complete a concept.
-After at least two supporting answers and an estimate of 80 or above, the tutor
-asks one transfer or teach-back verification question. A second high-quality
-application answer completes the current objective. Critical misconceptions cap
-the assessment below the verification threshold. Internal numbers are not shown
-to students and should be treated as adaptive tutoring signals, not official
-grades. Correct and nearly correct responses receive concise, specific feedback
-before the next learning step.
+`student_concept_progress`. An eligible answer scoring at least 80 completes
+the teaching sequence without another verification question. The tutor gives
+final feedback, corrects any identified misconception, resolves the original
+scenario, and answers the student's opening question in a saved summary. The
+student can then submit the completed chat; the summary and submission time
+remain available when the chat is reopened. Submitted chats are read-only and
+cannot be deleted by the student. Critical misconceptions cap the
+assessment below 80. Scores are adaptive tutoring signals, not official grades.
 
-The OpenAI evaluator uses strict JSON Schema output. Empty or incomplete
+The evaluator uses strict JSON Schema output. Empty or incomplete
 evaluator responses are rejected and logged instead of being converted into
 zero-score database records. The persisted conversation concept is reused for
 follow-up answers so a short reply cannot be stored under a generic `current
 concept` key.
 
-Set `CLASSIFIER_ENABLED=false` to use deterministic classification only. By
-default the classifier uses `RAG_MODEL`; set `CLASSIFIER_MODEL` only when a
-separate OpenAI classification model is desired.
-Set `ANSWER_EVALUATION_ENABLED=false` to disable adaptive assessment. By default,
-the evaluator uses `RAG_MODEL`; `ANSWER_EVALUATION_MODEL` can override it.
+Set `CLASSIFIER_ENABLED=false` to use deterministic classification only.
+`OLLAMA_CLASSIFIER_MODEL` and `OLLAMA_ANSWER_EVALUATION_MODEL` can override the
+local model for those roles. Set `ANSWER_EVALUATION_ENABLED=false` to disable
+adaptive assessment.
 
 These are three logical LLM roles: student-state classification, conditional
 learning-progress evaluation, and grounded response generation. The evaluator is
 skipped for a new topic, acknowledgement, unsupported request, or other message
 that does not demonstrate an answer to a tutor question.
+Classifier concept labels are inferred from the current message and conversation;
+they are not a fixed list of course topics. Retrieved instructor documents supply
+the factual content for tutor answers.
+
+## Pipeline Logs
+
+Set `DEBUG_PIPELINE_LOGS=true` to record an end-to-end trace for every chat turn.
+Logs are written to `backend/storage/pipeline.log` as well as the server console.
+Every event includes a request `trace_id`, numbered pipeline stage, conversation
+ID, and cumulative `elapsed_ms`. Use the trace ID to follow one request from
+`chat_received` through `response_returned`. Log files rotate at 10 MB and retain
+five backups. Message and prompt digests are non-reversible; displayed previews
+redact email addresses and secret-like values.
+
+Set `LOG_FULL_PROMPTS=true` to additionally save the exact request sent to each
+LLM stage. Pretty-printed JSON snapshots are written under
+`backend/storage/pipeline_prompts/`, grouped by the same trace ID and labeled as
+`classifier`, `answer-evaluation`, `tutor-generation`, or
+`conversation-transition`. Completed learning chats add a `learning-completion`
+snapshot. These local files contain the complete system
+instructions, conversation history, retrieved document passages, and student
+message. After each model call finishes, the same snapshot records the raw model
+response, parsed classifier or evaluator result, unchanged tutor answer, and
+model latency. They are excluded from Git and created with owner-only
+permissions.
+
+Run the local trace viewer to inspect this automatically instead of opening the
+JSON files individually:
+
+```bash
+.venv/bin/python tools/trace_viewer.py
+```
+
+Open `http://127.0.0.1:8765`. The page groups all model calls from one chat turn
+under its trace ID and refreshes every three seconds while the pipeline runs.
+Open a phase's **Exact messages sent to Qwen** section to inspect its full prompt.
+Use **Copy request** on a phase to copy its full JSON request, including model
+settings and every message.
+Use **Delete trace** beside a selected trace to remove only that trace's local
+prompt snapshots after confirmation. This does not delete the chat conversation
+or the rotating pipeline log. Use **Traces** to fold or reopen the sidebar; on
+small screens it opens over the page and closes when you tap outside it.
 
 ## Add Documents
 
@@ -259,14 +311,14 @@ Each `POST /api/chat` request writes concise structured events to stdout with a
 unique `trace_id`. Render is configured with `PYTHONUNBUFFERED=1`, so these
 events appear immediately in the service's Application Logs. Search for the
 exact field `trace_id=<id>` to follow one request across routing, retrieval,
-generation, validation, saving, and response return.
+generation, forwarding, saving, and response return.
 
 Message and conversation-history content is never logged. Setting
 `DEBUG_PIPELINE_LOGS=true` adds redacted, truncated previews of retrieved chunks,
-fixed prompt instructions, the model candidate, and the validated final answer,
+fixed prompt instructions, the model candidate, and the forwarded final answer,
 along with character counts and non-reversible SHA-256 fingerprints. It never
-logs complete prompts or documents and remains disabled by default. Enable it
-only temporarily while diagnosing answer generation, then turn it off again.
+logs complete prompts or documents. The local configuration enables it for
+pipeline analysis; production deployments can disable it after diagnosis.
 
 Check the connection:
 
@@ -388,12 +440,15 @@ An explicit request such as “use a different example” resets the example.
 
 Hints and corrections simplify the same people, objects, and goal. Evaluated
 misconceptions trigger a counterexample within that situation; partial answers
-lead to a missing connection; supported reasoning leads to a why/what-if question.
-The tutor no longer advances to synthesis or reflection merely because a fixed
-number of questions has been asked. Once the existing mastery checks indicate
-readiness, it asks a signposted transfer problem that changes one condition of
-the same example. A claim such as “I understand” still needs demonstrated evidence.
+lead to a missing connection. Scores below 80 continue the guided exchange in
+the same scenario. A strong assessed answer ends the teaching sequence and
+opens the summary and Submit assignment button. A claim such as “I understand”
+still needs demonstrated evidence before it can receive a score.
+
+The tutor is strongly encouraged to keep each response within 40 words. This is a writing
+preference, not a hard rejection threshold: the complete model response is displayed even
+when it is longer or contains multiple questions.
 
 Scenario continuity is a model instruction supported by retained context and
-scenario-aware fallback questions; it is not a guarantee that every generated
-response will stay on topic. The existing course-grounding checks still apply.
+retrieved course material; it is not a guarantee that every generated response will stay on
+topic. Requests without relevant course material are still stopped before generation.

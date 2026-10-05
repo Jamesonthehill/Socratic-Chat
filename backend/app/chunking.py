@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 
 
+# This approximate count is intentionally model-independent; it is used to
+# choose practical chunk sizes, not to report provider billing tokens.
 TOKEN_PATTERN = re.compile(r"\w+|[^\w\s]", re.UNICODE)
 SENTENCE_PATTERN = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'])")
 MARKDOWN_HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
@@ -14,29 +16,30 @@ CHUNKING_VERSION = "semantic-html-v2"
 
 @dataclass(frozen=True)
 class ChunkProfile:
-    name: str
-    target_tokens: int
-    max_tokens: int
-    overlap_tokens: int
+    name: str  # Profile recorded with each chunk for later inspection.
+    target_tokens: int  # Preferred passage size before starting another chunk.
+    max_tokens: int  # Hard cap so one passage cannot dominate retrieval context.
+    overlap_tokens: int  # Context carried across size-based boundaries.
 
 
 @dataclass(frozen=True)
 class SemanticChunk:
-    text: str
-    section_path: tuple[str, ...] = ()
-    assignment_number: int | None = None
-    token_count: int = 0
-    profile: str = "default"
+    text: str  # Searchable passage, including its context header.
+    section_path: tuple[str, ...] = ()  # Headings that locate the passage.
+    assignment_number: int | None = None  # Keeps assignment queries scoped.
+    token_count: int = 0  # Approximate size for indexing/debugging.
+    profile: str = "default"  # Which size policy produced the passage.
 
 
 @dataclass(frozen=True)
 class _Block:
-    text: str
-    section_path: tuple[str, ...] = ()
-    assignment_number: int | None = None
-    kind: str = "paragraph"
+    text: str  # One extracted paragraph, list item, code block, or similar unit.
+    section_path: tuple[str, ...] = ()  # Structural position before chunking.
+    assignment_number: int | None = None  # Assignment detected in this unit.
+    kind: str = "paragraph"  # Helps preserve useful document boundaries.
 
 
+# Shorter course-core chunks make precise requirements easier to retrieve.
 COURSE_CORE_PROFILE = ChunkProfile(
     name="course_core",
     target_tokens=300,
@@ -44,6 +47,7 @@ COURSE_CORE_PROFILE = ChunkProfile(
     overlap_tokens=40,
 )
 
+# Longer reference-book chunks retain more surrounding explanation.
 REFERENCE_BOOK_PROFILE = ChunkProfile(
     name="reference_book",
     target_tokens=650,
@@ -51,6 +55,7 @@ REFERENCE_BOOK_PROFILE = ChunkProfile(
     overlap_tokens=100,
 )
 
+# General documents use a middle-sized policy when no special profile matches.
 DEFAULT_PROFILE = ChunkProfile(
     name="default",
     target_tokens=450,
@@ -71,6 +76,8 @@ def assignment_number_from_text(text: str) -> int | None:
 
 
 def select_profile(title: str, text: str = "") -> ChunkProfile:
+    # Choose a size policy from recognizable source characteristics; this
+    # changes passage boundaries, not the student's course access rules.
     marker = f"{title}\n{text[:1000]}".lower()
     if "software-engineering-3155-core" in marker or "software engineering 3155" in marker:
         return COURSE_CORE_PROFILE
@@ -309,6 +316,8 @@ def build_semantic_chunks(
     blocks: list[_Block],
     profile: ChunkProfile,
 ) -> list[SemanticChunk]:
+    # Split unusually long source blocks first so a single paragraph cannot
+    # exceed the model-context budget chosen for this document profile.
     blocks = _expand_long_blocks(blocks, document_title, profile.max_tokens)
     chunks: list[SemanticChunk] = []
     current: list[_Block] = []
@@ -320,6 +329,8 @@ def build_semantic_chunks(
         if not current:
             return
         body = "\n\n".join(block.text for block in current)
+        # Repeat the document/section header inside each chunk. A retrieved
+        # chunk must still make sense when viewed without its neighboring text.
         header = _context_header(document_title, current_path)
         text = f"{header}\n\n{body}"
         chunks.append(
@@ -333,6 +344,8 @@ def build_semantic_chunks(
         )
 
     for block in blocks:
+        # Never carry text across section or assignment boundaries; this helps
+        # prevent a query about one assignment from receiving another's rules.
         if current and (block.section_path != current_path or block.assignment_number != current_assignment):
             emit()
             current = []
@@ -346,6 +359,8 @@ def build_semantic_chunks(
         would_exceed_max = current and approximate_token_count(proposed) + header_size > profile.max_tokens
         reached_target = current and approximate_token_count(" ".join(item.text for item in current)) >= profile.target_tokens
 
+        # Aim for useful semantic units, cap their size, and retain a small
+        # overlap so a sentence near a boundary is not stripped of context.
         if would_exceed_max or reached_target:
             previous = current
             emit()

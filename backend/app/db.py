@@ -42,6 +42,8 @@ def is_enabled() -> bool:
 
 
 def init_db() -> None:
+    # Startup creates or updates the PostgreSQL schema. Tables are grouped by
+    # responsibility below: identity, courses, dialogue, mastery, and RAG.
     if not is_enabled():
         return
 
@@ -50,6 +52,7 @@ def init_db() -> None:
 
             cur.execute(
                 """
+                -- Account identity, roles, and onboarding status.
                 CREATE TABLE IF NOT EXISTS users (
                     id UUID PRIMARY KEY,
                     username TEXT NOT NULL UNIQUE,
@@ -189,6 +192,7 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                -- Instructor-owned classes that scope documents and chats.
                 CREATE TABLE IF NOT EXISTS courses (
                     id UUID PRIMARY KEY,
                     course_code TEXT NOT NULL,
@@ -204,6 +208,7 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                -- Student access requests and instructor approval decisions.
                 CREATE TABLE IF NOT EXISTS course_memberships (
                     id UUID PRIMARY KEY,
                     course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
@@ -232,6 +237,7 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                -- One student's saved learning thread in a course.
                 CREATE TABLE IF NOT EXISTS conversations (
                     id UUID PRIMARY KEY,
                     title TEXT NOT NULL DEFAULT 'New conversation',
@@ -274,7 +280,25 @@ def init_db() -> None:
             cur.execute(
                 """
                 ALTER TABLE conversations
+                DROP COLUMN IF EXISTS learning_topic
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE conversations
                 ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE conversations
+                ADD COLUMN IF NOT EXISTS completion_summary JSONB
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE conversations
+                ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ
                 """
             )
             cur.execute(
@@ -303,6 +327,7 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                -- The actual ordered student and tutor messages in a thread.
                 CREATE TABLE IF NOT EXISTS conversation_messages (
                     id BIGSERIAL PRIMARY KEY,
                     conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
@@ -320,6 +345,7 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                -- Latest per-student, per-course, per-concept mastery estimate.
                 CREATE TABLE IF NOT EXISTS student_concept_progress (
                     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
@@ -337,6 +363,7 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                -- Append-only evidence from each eligible student answer.
                 CREATE TABLE IF NOT EXISTS mastery_assessments (
                     id UUID PRIMARY KEY,
                     conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
@@ -379,6 +406,8 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                -- A pending clarification so the next short reply can be joined
+                -- with the student's original, incomplete question.
                 CREATE TABLE IF NOT EXISTS conversation_state (
                     conversation_id UUID PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
                     pending_type TEXT NOT NULL,
@@ -390,6 +419,7 @@ def init_db() -> None:
             )
             cur.execute(
                 """
+                -- Original document bytes and their owner/course publication state.
                 CREATE TABLE IF NOT EXISTS rag_files (
                     id UUID PRIMARY KEY,
                     conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
@@ -432,8 +462,10 @@ def init_db() -> None:
                 """
             )
             cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            embedding_dimensions = int(settings.EMBEDDING_DIMENSIONS)
             cur.execute(
-                """
+                f"""
+                -- Searchable passage text, structural metadata, and embedding.
                 CREATE TABLE IF NOT EXISTS document_chunks (
                     id UUID PRIMARY KEY,
                     file_id UUID NOT NULL REFERENCES rag_files(id) ON DELETE CASCADE,
@@ -444,9 +476,9 @@ def init_db() -> None:
                     page_number INTEGER,
                     title TEXT NOT NULL,
                     chunk_text TEXT NOT NULL,
-                    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
                     embedding_model TEXT NOT NULL,
-                    embedding vector(1536) NOT NULL,
+                    embedding vector({embedding_dimensions}) NOT NULL,
                     text_search TSVECTOR GENERATED ALWAYS AS (
                         setweight(to_tsvector('english'::regconfig, coalesce(title, '')), 'A') ||
                         setweight(to_tsvector('english'::regconfig, coalesce(chunk_text, '')), 'B')
@@ -456,6 +488,28 @@ def init_db() -> None:
                 )
                 """
             )
+            cur.execute(
+                """
+                SELECT format_type(attribute.atttypid, attribute.atttypmod)
+                FROM pg_attribute attribute
+                WHERE attribute.attrelid = 'document_chunks'::regclass
+                  AND attribute.attname = 'embedding'
+                """
+            )
+            current_embedding_type = str(cur.fetchone()[0])
+            expected_embedding_type = f"vector({embedding_dimensions})"
+            if current_embedding_type != expected_embedding_type:
+                cur.execute("SELECT COUNT(*) FROM document_chunks")
+                existing_chunks = int(cur.fetchone()[0])
+                if existing_chunks:
+                    raise RuntimeError(
+                        "The embedding dimension changed. Remove and re-index existing document chunks "
+                        f"before switching from {current_embedding_type} to {expected_embedding_type}."
+                    )
+                cur.execute("DROP INDEX IF EXISTS idx_document_chunks_embedding")
+                cur.execute(
+                    f"ALTER TABLE document_chunks ALTER COLUMN embedding TYPE vector({embedding_dimensions})"
+                )
             cur.execute(
                 "CREATE INDEX IF NOT EXISTS idx_document_chunks_text_search ON document_chunks USING GIN (text_search)"
             )
@@ -689,29 +743,23 @@ def _mastery_progress_update(
     application: int | None,
     critical: bool,
 ) -> tuple[float, int, str]:
-    previous_score = float(existing[0]) if existing else score
-    previous_count = int(existing[1]) if existing else 0
-    previous_status = str(existing[2]) if existing else "emerging"
-    evidence_count = previous_count + 1
+    previous_score = float(existing[0]) if existing else score  # Prior smoothed estimate, if any.
+    previous_count = int(existing[1]) if existing else 0  # Number of earlier assessed answers.
+    previous_status = str(existing[2]) if existing else "emerging"  # Prior learning stage.
+    evidence_count = previous_count + 1  # Count this newly assessed answer.
+    # Smooth one unusually good or bad answer against prior evidence instead
+    # of allowing a single turn to redefine the student's current level.
     estimated_mastery = score if existing is None else 0.65 * previous_score + 0.35 * score
-    verification_passed = (
-        previous_status == "ready_for_verification"
-        and score >= 80
-        and correctness >= 3
-        and application is not None
-        and application >= 3
-        and not critical
-    )
-    if previous_status == "mastered" or verification_passed:
+    # A strong assessed answer now ends the teaching sequence; application is
+    # still recorded when it was asked, but no extra verification turn is required.
+    if previous_status == "mastered" or (score >= 80 and not critical):
         status = "mastered"
     elif critical:
-        status = "needs_support"
-    elif estimated_mastery >= 80 and evidence_count >= 2:
-        status = "ready_for_verification"
+        status = "needs_support"  # Address a serious contradiction first.
     elif estimated_mastery >= 60:
-        status = "developing"
+        status = "developing"  # Continue probing and supporting understanding.
     else:
-        status = "emerging"
+        status = "emerging"  # Early evidence; continue building the concept.
     return round(estimated_mastery, 2), evidence_count, status
 
 
@@ -734,6 +782,8 @@ def save_mastery_assessment(
     application = int(application_value) if application_value is not None else None
     with get_connection() as conn:
         with conn.cursor() as cur:
+            # Lock this student's concept row during the read/update so two
+            # simultaneous replies cannot overwrite each other's progress.
             cur.execute(
                 """
                 SELECT estimated_mastery, evidence_count, status
@@ -748,6 +798,8 @@ def save_mastery_assessment(
                 existing, score, correctness, application, critical,
             )
 
+            # Keep an append-only record of each evaluated answer for later
+            # inspection, while the progress table stores the current estimate.
             cur.execute(
                 """
                 INSERT INTO mastery_assessments (
@@ -810,7 +862,7 @@ def update_conversation_dialogue_state(
                 UPDATE conversations
                 SET conversation_status = %s,
                     last_dialogue_status = %s,
-                    active_concept = COALESCE(%s, active_concept),
+                    active_concept = COALESCE(active_concept, %s),
                     understanding_level = %s,
                     support_level = %s,
                     completed_at = CASE WHEN %s = 'completed' THEN NOW() ELSE NULL END,
@@ -844,23 +896,92 @@ def get_conversation_active_concept(conversation_id: str) -> str | None:
     return str(row[0])
 
 
+def get_conversation_completion(conversation_id: str) -> tuple[dict[str, object] | None, str | None]:
+    """Return the saved wrap-up and submission time for one conversation."""
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT completion_summary, submitted_at FROM conversations WHERE id = %s",
+                (conversation_id,),
+            )
+            row = cur.fetchone()
+    if not row:
+        return None, None
+    return row[0], row[1].isoformat() if row[1] else None
+
+
+def save_conversation_completion(conversation_id: str, summary: dict[str, object]) -> None:
+    """Persist the summary before the student can submit the assignment."""
+    from psycopg.types.json import Jsonb
+
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE conversations
+                SET completion_summary = %s, conversation_status = 'ready_to_submit',
+                    completed_at = NOW(), updated_at = NOW()
+                WHERE id = %s AND completion_summary IS NULL
+                """,
+                (Jsonb(summary), conversation_id),
+            )
+        conn.commit()
+
+
+def submit_conversation(conversation_id: str, user_id: str) -> str | None:
+    """Submit a completed student chat once; repeated submits return the same time."""
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE conversations
+                SET submitted_at = COALESCE(submitted_at, NOW()),
+                    conversation_status = 'submitted', updated_at = NOW()
+                WHERE id = %s AND user_id = %s AND completion_summary IS NOT NULL
+                RETURNING submitted_at
+                """,
+                (conversation_id, user_id),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    return row[0].isoformat() if row else None
+
+
 def get_messages(conversation_id: str, limit: int | None = 50) -> list[ChatMessage]:
     init_db()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT role, content
-                FROM conversation_messages
-                WHERE conversation_id = %s
-                ORDER BY created_at DESC, id DESC
+                SELECT message.role, message.content, message.created_at::text,
+                    (
+                        SELECT assessment.total_score
+                        FROM mastery_assessments AS assessment
+                        WHERE assessment.student_message_id = message.id
+                        ORDER BY assessment.created_at DESC
+                        LIMIT 1
+                    ) AS total_score
+                FROM conversation_messages AS message
+                WHERE message.conversation_id = %s
+                ORDER BY message.created_at DESC, message.id DESC
                 LIMIT %s
                 """,
                 (conversation_id, limit),
             )
             rows = cur.fetchall()
 
-    return [ChatMessage(role=role, content=content) for role, content in reversed(rows)]
+    return [
+        ChatMessage(
+            role=role,
+            content=content,
+            created_at=created_at,
+            total_score=float(total_score) if total_score is not None else None,
+        )
+        for role, content, created_at, total_score in reversed(rows)
+    ]
 
 
 def list_conversations(
@@ -880,11 +1001,14 @@ def list_conversations(
                         c.title,
                         c.created_at::text,
                         c.updated_at::text,
-                        COUNT(m.id)::int AS message_count
+                        COUNT(m.id)::int AS message_count,
+                        BOOL_OR(c.completion_summary IS NOT NULL) AS completion_ready,
+                        c.submitted_at::text
                     FROM conversations c
                     LEFT JOIN conversation_messages m ON m.conversation_id = c.id
                     WHERE c.user_id = %s AND c.course_id = %s
-                    GROUP BY c.id, c.course_id, c.title, c.created_at, c.updated_at
+                    GROUP BY c.id, c.course_id, c.title, c.created_at, c.updated_at,
+                             c.submitted_at
                     HAVING COUNT(m.id) > 0
                     ORDER BY c.updated_at DESC
                     LIMIT %s
@@ -900,11 +1024,14 @@ def list_conversations(
                         c.title,
                         c.created_at::text,
                         c.updated_at::text,
-                        COUNT(m.id)::int AS message_count
+                        COUNT(m.id)::int AS message_count,
+                        BOOL_OR(c.completion_summary IS NOT NULL) AS completion_ready,
+                        c.submitted_at::text
                     FROM conversations c
                     LEFT JOIN conversation_messages m ON m.conversation_id = c.id
                     WHERE c.user_id = %s
-                    GROUP BY c.id, c.course_id, c.title, c.created_at, c.updated_at
+                    GROUP BY c.id, c.course_id, c.title, c.created_at, c.updated_at,
+                             c.submitted_at
                     HAVING COUNT(m.id) > 0
                     ORDER BY c.updated_at DESC
                     LIMIT %s
@@ -920,10 +1047,13 @@ def list_conversations(
                         c.title,
                         c.created_at::text,
                         c.updated_at::text,
-                        COUNT(m.id)::int AS message_count
+                        COUNT(m.id)::int AS message_count,
+                        BOOL_OR(c.completion_summary IS NOT NULL) AS completion_ready,
+                        c.submitted_at::text
                     FROM conversations c
                     LEFT JOIN conversation_messages m ON m.conversation_id = c.id
-                    GROUP BY c.id, c.course_id, c.title, c.created_at, c.updated_at
+                    GROUP BY c.id, c.course_id, c.title, c.created_at, c.updated_at,
+                             c.submitted_at
                     HAVING COUNT(m.id) > 0
                     ORDER BY c.updated_at DESC
                     LIMIT %s
@@ -940,6 +1070,8 @@ def list_conversations(
             "created_at": row[3],
             "updated_at": row[4],
             "message_count": row[5],
+            "completion_ready": row[6],
+            "submitted_at": row[7],
         }
         for row in rows
     ]
@@ -949,6 +1081,13 @@ def delete_conversation(conversation_id: str) -> bool:
     init_db()
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute(
+                "SELECT submitted_at FROM conversations WHERE id = %s FOR UPDATE",
+                (conversation_id,),
+            )
+            row = cur.fetchone()
+            if not row or row[0] is not None:
+                return False
             cur.execute("DELETE FROM rag_files WHERE conversation_id = %s", (conversation_id,))
             cur.execute(
                 """
@@ -1160,14 +1299,18 @@ def hybrid_search_chunks(
 ) -> list[dict[str, object]]:
     """Fuse pgvector semantic rank and PostgreSQL full-text rank with RRF."""
     init_db()
+    # Only instructor-published material is eligible to ground a student reply.
     conditions = ["rf.is_published = TRUE"]
     filter_params: list[object] = []
+    # Apply course isolation inside both SQL searches, not just after ranking.
     if course_id:
         conditions.append("dc.course_id = %s")
         filter_params.append(course_id)
     elif conversation_id:
         conditions.append("dc.conversation_id = %s")
         filter_params.append(conversation_id)
+    # Assignment-number metadata prevents similarly worded requirements from
+    # different assignments being silently mixed together.
     if assignment_numbers:
         conditions.append("dc.metadata->>'assignment_number' = ANY(%s)")
         filter_params.append([str(number) for number in sorted(assignment_numbers)])
@@ -1176,6 +1319,7 @@ def hybrid_search_chunks(
         filter_params.append(titles)
 
     where_clause = " AND ".join(conditions)
+    # Search a wider candidate pool before relevance filtering and final top_k.
     candidate_k = max(top_k * 4, 20)
     vector = "[" + ",".join(str(value) for value in query_embedding) + "]"
     with get_connection() as conn:

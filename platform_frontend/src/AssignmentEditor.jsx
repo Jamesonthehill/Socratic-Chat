@@ -120,7 +120,11 @@ export default function AssignmentEditor() {
         });
         setItem(await api(`/platform/assignments/${saved.id}`));
         setNotice(
-          "Published. The selected students can now open this assignment.",
+          item.audience === "course"
+            ? "Published. Enrolled students can open this assignment, including students who enroll later."
+            : item.recipient_ids?.length
+              ? "Published. Selected students can now open this assignment."
+              : "Published with no students selected. This assignment is not visible to students.",
         );
       } else setNotice("Draft saved.");
     } finally {
@@ -250,15 +254,15 @@ export default function AssignmentEditor() {
                     value={item.audience}
                     onChange={(e) => change("audience", e.target.value)}
                   >
-                    <option value="course">
-                      All currently enrolled students
-                    </option>
+                    <option value="course">All enrolled students</option>
                     <option value="selected">Selected students</option>
                   </select>
                 </label>
                 <p className="help">
-                  The recipient list is fixed when you publish. Later
-                  enrollments are not added automatically.
+                  You can publish before students enroll. All enrolled students,
+                  including those who join later, can access a course-wide
+                  assignment. For selected students, only those chosen before
+                  publishing can access it.
                 </p>
                 {item.audience === "selected" && (
                   <div className="student-options">
@@ -286,7 +290,11 @@ export default function AssignmentEditor() {
                         </span>
                       </label>
                     ))}
-                    {!students.length && <p>No enrolled students yet.</p>}
+                    {!students.length && (
+                      <p>No enrolled students yet. To make this available when
+                        students enroll, choose “All enrolled students” before
+                        publishing.</p>
+                    )}
                   </div>
                 )}
                 <a href={`${SOCRATIC_URL}?manage=1`}>

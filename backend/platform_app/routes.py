@@ -65,10 +65,11 @@ def get_assignment(conn, assignment_id, account, manage=False, lock=False):
         manage_course(item["course_id"], account)
     else:
         # Enrollment revocation takes effect immediately, even for existing attempts.
-        allowed = conn.execute("""SELECT 1 FROM assignment_recipients_platform r JOIN course_memberships_platform m
-            ON m.user_id=r.student_id AND m.course_id=%s
-            WHERE r.assignment_id=%s AND r.student_id=%s AND m.status='approved' AND m.course_role='student'""",
-            (item["course_id"], assignment_id, account["user_id"])).fetchone()
+        allowed = conn.execute("""SELECT 1 FROM course_memberships_platform m
+            WHERE m.course_id=%s AND m.user_id=%s AND m.status='approved' AND m.course_role='student'
+            AND (EXISTS (SELECT 1 FROM assignment_recipients_platform r
+                         WHERE r.assignment_id=%s AND r.student_id=m.user_id) OR %s='course')""",
+            (item["course_id"], account["user_id"], assignment_id, item["audience"])).fetchone()
         if item["status"] != "published" or not allowed:
             raise HTTPException(404, "Assignment not found or no longer available.")
     return item
@@ -377,17 +378,23 @@ def assignments(account=Depends(user)):
     with store.connection() as conn:
         if is_prof:
             rows = conn.execute("""SELECT a.*, c.title AS course_title, c.course_code,
-                (SELECT count(*) FROM assignment_recipients_platform WHERE assignment_id=a.id) AS recipient_count,
+                (SELECT count(*) FROM course_memberships_platform m
+                 WHERE a.audience='course' AND m.course_id=a.course_id AND m.status='approved' AND m.course_role='student')
+                + (SELECT count(*) FROM assignment_recipients_platform r
+                   WHERE a.audience='selected' AND r.assignment_id=a.id) AS recipient_count,
                 (SELECT count(*) FROM assignment_attempts_platform WHERE assignment_id=a.id AND status='completed') AS completed_count
                 FROM assignments_platform a JOIN courses_platform c ON c.id=a.course_id
                 WHERE c.instructor_id=%s ORDER BY a.created_at DESC""", (account["user_id"],)).fetchall()
         else:
             rows = conn.execute("""SELECT a.*, c.title AS course_title, c.course_code, coalesce(t.status, 'not_started') AS progress
                 FROM assignments_platform a JOIN courses_platform c ON c.id=a.course_id
-                JOIN assignment_recipients_platform r ON r.assignment_id=a.id AND r.student_id=%s
-                JOIN course_memberships_platform m ON m.course_id=a.course_id AND m.user_id=r.student_id AND m.status='approved'
-                LEFT JOIN assignment_attempts_platform t ON t.assignment_id=a.id AND t.student_id=r.student_id
-                WHERE a.status='published' AND m.course_role='student' ORDER BY a.due_at NULLS LAST, a.created_at DESC""", (account["user_id"],)).fetchall()
+                JOIN course_memberships_platform m ON m.course_id=a.course_id AND m.user_id=%s
+                    AND m.status='approved' AND m.course_role='student'
+                LEFT JOIN assignment_attempts_platform t ON t.assignment_id=a.id AND t.student_id=m.user_id
+                WHERE a.status='published' AND (a.audience='course' OR EXISTS
+                    (SELECT 1 FROM assignment_recipients_platform r
+                     WHERE r.assignment_id=a.id AND r.student_id=m.user_id))
+                ORDER BY a.due_at NULLS LAST, a.created_at DESC""", (account["user_id"],)).fetchall()
         return [public_assignment(row, is_prof) for row in rows]
 
 
@@ -413,9 +420,13 @@ def assignment_detail(assignment_id: UUID, account=Depends(user)):
             result["recipient_ids"] = [r["student_id"] for r in conn.execute("SELECT student_id FROM assignment_recipients_platform WHERE assignment_id=%s", (assignment_id,))]
             result["students"] = conn.execute("""SELECT u.display_name, u.username, u.id AS student_id,
                 coalesce(t.status, 'not_started') AS progress, t.completed_at, t.result
-                FROM assignment_recipients_platform r JOIN users_platform u ON u.id=r.student_id
-                LEFT JOIN assignment_attempts_platform t ON t.assignment_id=r.assignment_id AND t.student_id=r.student_id
-                WHERE r.assignment_id=%s ORDER BY u.username""", (assignment_id,)).fetchall()
+                FROM course_memberships_platform m JOIN users_platform u ON u.id=m.user_id
+                LEFT JOIN assignment_attempts_platform t ON t.assignment_id=%s AND t.student_id=m.user_id
+                WHERE m.course_id=%s AND m.status='approved' AND m.course_role='student'
+                  AND (%s='course' OR EXISTS
+                    (SELECT 1 FROM assignment_recipients_platform r
+                     WHERE r.assignment_id=%s AND r.student_id=m.user_id))
+                ORDER BY u.username""", (assignment_id, item["course_id"], item["audience"], assignment_id)).fetchall()
         return result
 
 
@@ -442,12 +453,7 @@ def publish(assignment_id: UUID, account=Depends(professor)):
             return public_assignment(item, True)
         if item["status"] != "draft":
             raise HTTPException(409, "Archived assignments cannot be published.")
-        if item["audience"] == "course":
-            conn.execute("""INSERT INTO assignment_recipients_platform SELECT %s, user_id FROM course_memberships_platform
-                WHERE course_id=%s AND status='approved' AND course_role='student' ON CONFLICT DO NOTHING""", (assignment_id, item["course_id"]))
-        count = conn.execute("SELECT count(*) AS n FROM assignment_recipients_platform WHERE assignment_id=%s", (assignment_id,)).fetchone()["n"]
-        if not count:
-            raise HTTPException(422, "Enroll at least one student before publishing.")
+        # Course-wide assignments are visible to approved students, including those who enroll later.
         # Recheck selected recipients in case enrollment changed after saving the draft.
         invalid = conn.execute("""SELECT 1 FROM assignment_recipients_platform r WHERE assignment_id=%s AND NOT EXISTS
             (SELECT 1 FROM course_memberships_platform m WHERE m.course_id=%s AND m.user_id=r.student_id AND m.status='approved' AND m.course_role='student')""",

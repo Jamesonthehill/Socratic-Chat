@@ -93,8 +93,6 @@ class AssignmentInput(StrictModel):
         self.config = CONFIG_MODELS[self.tool].model_validate(self.config).model_dump(mode="json")
         if self.due_at and self.due_at.tzinfo is None:
             raise ValueError("Due date must include a time zone.")
-        if self.audience == "selected" and not self.recipient_ids:
-            raise ValueError("Select at least one student.")
         return self
 
 

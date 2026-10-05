@@ -705,6 +705,19 @@ test("failed publish retains a saved draft and shows an actionable error", async
   ).toHaveLength(1);
 });
 
+test("instructor can prepare a course-wide assignment before students enroll", async () => {
+  mockApi("instructor", {
+    [`/api/instructor/enrolled-students?course_id=${course}`]: [],
+  });
+  open(`/professor/tools/socratic/assignments/new?course=${course}`);
+
+  expect(await screen.findByRole("option", { name: "All enrolled students" })).toBeInTheDocument();
+  expect(screen.getByText(/You can publish before students enroll/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Publish assignment" })).toBeDisabled();
+  await userEvent.setup().type(screen.getByLabelText("Title"), "Discuss requirements");
+  expect(screen.getByRole("button", { name: "Publish assignment" })).toBeEnabled();
+});
+
 test("retrying a failed student message reuses its idempotency key", async () => {
   let count = 0;
   const fetch = mockApi("student", {

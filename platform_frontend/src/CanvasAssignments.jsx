@@ -93,7 +93,9 @@ function CanvasAssignmentsForCourse({ course, tool, onImported }) {
       <div className="canvas-assignments-content">
         <p className="canvas-assignments-intro">
           Select a Canvas assignment to create a prefilled {TOOLS[tool].name}{" "}
-          draft.
+          draft. Links to Canvas files stay clickable; students need their own
+          Canvas access to open them. File contents are not copied into the
+          chatbot's course materials.
         </p>
         {status === "loading" && (
           <p role="status">Loading Canvas assignments…</p>

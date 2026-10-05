@@ -582,7 +582,7 @@ export default function StudentWorkspace() {
         <aside className="assignment-info">
           <h2>Your assignment</h2>
           <div className="prose">
-            <Markdown>
+            <Markdown components={{ a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" /> }}>
               {assignment.instructions ||
                 "Follow the prompts in this learning activity."}
             </Markdown>

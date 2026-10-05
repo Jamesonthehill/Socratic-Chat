@@ -249,8 +249,8 @@ def import_canvas_assignment(body: CanvasImportRequest, account=Depends(professo
             canvas_access_token(body, account),
         )
     )
-    source = canvas_assignment.get("html_url")
-    source_note = f"\n\nCanvas source: {source}" if source else ""
+    source = canvas_lms.safe_canvas_assignment_url(canvas_assignment.get("html_url"))
+    source_note = f"\n\n[Open original assignment in Canvas]({source})" if source else ""
     description_limit = max(0, 10_000 - len(source_note))
     instructions = f"{canvas_assignment['description'][:description_limit]}{source_note}".strip()
     title = canvas_assignment["name"][:200]

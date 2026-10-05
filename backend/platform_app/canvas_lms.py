@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urljoin, urlparse
 
 import httpx
 
@@ -25,20 +25,31 @@ class CanvasAPIError(RuntimeError):
 
 
 class _TextExtractor(HTMLParser):
-    def __init__(self) -> None:
+    def __init__(self, *, preserve_links: bool = False) -> None:
         super().__init__()
         self.parts: list[str] = []
         self.ignored_depth = 0
+        self.preserve_links = preserve_links
+        self.links: list[tuple[int, str | None]] = []
 
-    def handle_starttag(self, tag: str, _attrs: list[tuple[str, str | None]]) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in {"script", "style"}:
             self.ignored_depth += 1
+        elif not self.ignored_depth and tag == "a" and self.preserve_links:
+            href = next((value for name, value in attrs if name == "href"), None)
+            self.links.append((len(self.parts), _safe_link(href)))
         elif not self.ignored_depth and tag in {"br", "li", "p", "div", "h1", "h2", "h3", "h4"}:
             self.parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
         if tag in {"script", "style"} and self.ignored_depth:
             self.ignored_depth -= 1
+        elif not self.ignored_depth and tag == "a" and self.preserve_links and self.links:
+            start, href = self.links.pop()
+            label = " ".join("".join(self.parts[start:]).split())
+            if href and label:
+                label = label.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+                self.parts[start:] = [f"[{label}]({href})"]
         elif not self.ignored_depth and tag in {"li", "p", "div"}:
             self.parts.append("\n")
 
@@ -47,10 +58,31 @@ class _TextExtractor(HTMLParser):
             self.parts.append(data)
 
 
-def description_text(value: str | None) -> str:
+def _safe_link(href: str | None) -> str | None:
+    if not href:
+        return None
+    href = href.strip()
+    if not href or any(ord(char) < 32 for char in href):
+        return None
+    url = urljoin(CANVAS_ORIGIN, href)
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+        return None
+    # Encode Markdown delimiters so a URL cannot be cut short while rendering.
+    return quote(url, safe=":/?#[]@!$&'*+,;=%-._~")
+
+
+def safe_canvas_assignment_url(url: str | None) -> str | None:
+    safe_url = _safe_link(url)
+    if safe_url and urlparse(safe_url).netloc == urlparse(CANVAS_ORIGIN).netloc:
+        return safe_url
+    return None
+
+
+def description_text(value: str | None, *, preserve_links: bool = False) -> str:
     if not value:
         return ""
-    parser = _TextExtractor()
+    parser = _TextExtractor(preserve_links=preserve_links)
     parser.feed(value)
     lines = (" ".join(line.split()) for line in "".join(parser.parts).splitlines())
     return "\n".join(line for line in lines if line)[:10_000]
@@ -282,7 +314,7 @@ def get_assignment(
     return {
         "id": str(assignment["id"]),
         "name": str(assignment.get("name") or f"Assignment {assignment['id']}"),
-        "description": description_text(assignment.get("description")),
+        "description": description_text(assignment.get("description"), preserve_links=True),
         "due_at": assignment.get("due_at"),
         "html_url": assignment.get("html_url"),
         "points_possible": assignment.get("points_possible"),

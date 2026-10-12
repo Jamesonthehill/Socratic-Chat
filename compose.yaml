@@ -26,9 +26,6 @@ services:
     ports: ["8000:8000"]
     extra_hosts:
       - "host.docker.internal:192.168.65.254"
-    depends_on:
-      reflections: {condition: service_started}
-      tutor: {condition: service_started}
     volumes:
       - socratic-index:/workspace/Socratic-Chat/backend/storage
       - socratic-documents:/workspace/Socratic-Chat/backend/data/raw_docs

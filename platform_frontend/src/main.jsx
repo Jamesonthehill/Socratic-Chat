@@ -379,6 +379,8 @@ function AssignmentList({ items, professor }) {
 }
 
 function StudentDashboard() {
+  const [searchParams] = useSearchParams();
+  const selectedTool = searchParams.get("tool");
   const assignments = useAssignments();
   const courseData = useCourses();
   const [expandedCourse, setExpandedCourse] = useState(
@@ -422,6 +424,16 @@ function StudentDashboard() {
         </button>
       </div>
       <Notice error={assignments.error || courseData.error || actionError} />
+      <div className="tool-grid">
+        {Object.entries(TOOLS).map(([id, tool]) => (
+          <AssignmentLink key={id} separateTab={id === "student-agent"}
+            to={id === "student-agent" ? "/platform/self-directed.html" : `/student?tool=${id}`}
+            className="tool-card" style={{ "--tool-color": tool.color }}>
+            <div className="tool-mark">{tool.short}</div><h2>{tool.name}</h2><p>{tool.description}</p>
+            <span>{id === "student-agent" ? "Open student workspace ↗" : "View assignments ↗"}</span>
+          </AssignmentLink>
+        ))}
+      </div>
       <section className="section student-courses">
         <div className="section-heading">
           <h2>Your courses</h2>
@@ -434,7 +446,7 @@ function StudentDashboard() {
                 const expanded =
                   approved && expandedCourse === course.course_id;
                 const courseAssignments = assignments.items.filter(
-                  (item) => item.course_id === course.course_id,
+                  (item) => item.course_id === course.course_id && (!selectedTool || item.tool === selectedTool),
                 );
                 return (
                   <article

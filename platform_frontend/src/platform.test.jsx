@@ -122,7 +122,7 @@ test("professor selects each explicit tool dashboard", async () => {
   ).toBeInTheDocument();
   const reflection = screen.getByRole("link", { name: /Reflect Reflections/ });
   expect(
-    screen.getByRole("link", { name: /Guide Socratic Chat/ }),
+    screen.getByRole("link", { name: /Guide Socratic Reasoning/ }),
   ).toHaveAttribute("href", "/professor/tools/socratic");
   expect(
     screen.getByRole("link", { name: /Practice Self-Directed Learning/ }),
@@ -417,14 +417,14 @@ test("professor imports a visible UNC Charlotte Canvas assignment as a Socratic 
     "88",
   );
   await user.click(
-    screen.getByRole("button", { name: "Import as Socratic Chat draft" }),
+    screen.getByRole("button", { name: "Import as Socratic Reasoning draft" }),
   );
 
   expect(
     await screen.findByDisplayValue("Canvas architecture reflection"),
   ).toBeInTheDocument();
   expect(screen.getByLabelText("Assigned chatbot")).toHaveValue(
-    "Socratic Chat",
+    "Socratic Reasoning",
   );
   const importCall = fetch.mock.calls.find(
     ([url]) => url === "/api/platform/integrations/canvas/import",
@@ -735,6 +735,7 @@ test("student tool selector and SDL assignments open the existing student interf
   expect(workspace).toHaveAttribute("target", "_blank");
   expect(screen.getByRole("heading", {name:"Reflections"})).toBeInTheDocument();
   expect(screen.getByRole("heading", {name:"Socratic Reasoning"})).toBeInTheDocument();
+  await userEvent.setup().click(await screen.findByRole("button", {name:"Assignments"}));
   const lesson = await screen.findByRole("link", {name:"SDL Lesson"});
   expect(lesson).toHaveAttribute("href", "/platform/self-directed.html?assignment=sdl-live");
   expect(lesson).toHaveAttribute("target", "_blank");

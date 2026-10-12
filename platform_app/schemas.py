@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, StrictInt, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, SecretStr, StrictInt, model_validator
 
 
 class StrictModel(BaseModel):
@@ -593,3 +593,17 @@ class GenerateTopicInput(StrictModel):
 
 class GenerateSubtopicsInput(StrictModel):
     main_topics: list[str] = Field(min_length=1, max_length=50)
+
+
+class CanvasCredentials(StrictModel):
+    access_token: SecretStr = Field(min_length=10, max_length=4096)
+
+
+class CanvasCourseRequest(CanvasCredentials):
+    course_id: int = Field(gt=0)
+
+
+class CanvasImportRequest(CanvasCourseRequest):
+    assignment_id: int = Field(gt=0)
+    platform_course_id: UUID
+    tool: Literal["socratic", "reflections", "student-agent"] = "socratic"

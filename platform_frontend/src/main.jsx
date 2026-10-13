@@ -110,8 +110,8 @@ function ToolIcon({ tool }) {
   }
   return (
     <svg viewBox="0 0 32 32" aria-hidden="true">
-      <path d="M16 3.5 27 9.8v12.4L16 28.5 5 22.2V9.8Z" />
-      <path d="m11 16 3 3 7-7M16 3.5v4M5 9.8l3.5 2M27 9.8l-3.5 2" />
+      <path d="M16 8C12 5 7 5 3 6v20c4-1 9-1 13 2 4-3 9-3 13-2V6c-4-1-9-1-13 2ZM16 8v20" />
+      <path d="M7 11h5M7 16h5M20 11h5M20 16h5" />
     </svg>
   );
 }

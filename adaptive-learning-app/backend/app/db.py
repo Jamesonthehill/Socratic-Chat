@@ -32,10 +32,26 @@ CREATE TABLE IF NOT EXISTS assignments (
     published_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS lab_sessions (
+    token_hash TEXT PRIMARY KEY,
+    student_id TEXT NOT NULL UNIQUE REFERENCES users(id),
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS recipients (
     assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
     student_id TEXT NOT NULL REFERENCES users(id),
     PRIMARY KEY (assignment_id, student_id)
+);
+
+CREATE TABLE IF NOT EXISTS lab_codes (
+    assignment_id TEXT PRIMARY KEY REFERENCES assignments(id) ON DELETE CASCADE,
+    code TEXT NOT NULL UNIQUE
+);
+CREATE TABLE IF NOT EXISTS lab_enrollments (
+    assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+    student_id TEXT NOT NULL REFERENCES users(id),
+    PRIMARY KEY (assignment_id,student_id)
 );
 
 CREATE TABLE IF NOT EXISTS documents (
@@ -52,7 +68,8 @@ CREATE TABLE IF NOT EXISTS chunks (
     document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     position INTEGER NOT NULL,
     content TEXT NOT NULL,
-    embedding TEXT NOT NULL
+    embedding TEXT NOT NULL,
+    metadata TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS attempts (
@@ -200,6 +217,86 @@ def connection():
         raw.close()
 
 
+def load_attempt_for_turn(conn: DatabaseConnection, assignment_id: str, student_id: str) -> dict | None:
+    """Read and, on PostgreSQL, lock the attempt in the caller's transaction."""
+    lock = " FOR UPDATE" if conn.postgres else ""
+    return row_dict(conn.execute(
+        "SELECT * FROM attempts WHERE assignment_id=? AND student_id=?" + lock,
+        (assignment_id, student_id),
+    ).fetchone())
+
+
+def save_lesson_turn(
+    conn: DatabaseConnection, attempt_id: str, *, attempt_values: tuple,
+    student_message: str, reply: str, sources_json: str, evidence: dict | None,
+) -> None:
+    """Persist an already-decided turn; never open or commit a transaction here."""
+    conn.execute(
+        "UPDATE attempts SET phase=?,learning_state=?,current_objective=?,quiz_answers=?,quiz_score=?,learning_path=?,study_completed_at=? WHERE id=?",
+        (*attempt_values, attempt_id),
+    )
+    created = now()
+    conn.execute(
+        "INSERT INTO messages(id,attempt_id,role,content,created_at) VALUES (?,?,?,?,?)",
+        (str(uuid4()), attempt_id, "student", student_message, created),
+    )
+    conn.execute(
+        "INSERT INTO messages(id,attempt_id,role,content,sources,created_at) VALUES (?,?,?,?,?,?)",
+        (str(uuid4()), attempt_id, "assistant", reply, sources_json, now()),
+    )
+    if evidence:
+        conn.execute(
+            "INSERT INTO evidence(id,attempt_id,objective_id,response,score,demonstrated,rationale,created_at) VALUES (?,?,?,?,?,?,?,?)",
+            (str(uuid4()), attempt_id, evidence["objective_id"], evidence["response"],
+             evidence["score"], int(evidence["demonstrated"]), evidence["rationale"], created),
+        )
+
+
+def reset_attempt_for_restart(
+    conn: DatabaseConnection, attempt_id: str, *, learning_state: str,
+    welcome_message: str, started_at: str,
+) -> None:
+    """Clear one attempt's saved work and persist its fresh V2 welcome state."""
+    conn.execute("DELETE FROM evidence WHERE attempt_id=?", (attempt_id,))
+    conn.execute("DELETE FROM messages WHERE attempt_id=?", (attempt_id,))
+    conn.execute(
+        """UPDATE attempts SET status='in_progress',current_objective=0,
+           required_task_status='not_started',required_task_submission=NULL,
+           phase='welcome',study_completed_at=NULL,quiz_answers='[]',quiz_score=NULL,
+           learning_path=NULL,learning_state=?,started_at=?,completed_at=NULL
+           WHERE id=?""",
+        (learning_state, started_at, attempt_id),
+    )
+    conn.execute(
+        "INSERT INTO messages(id,attempt_id,role,content,created_at) VALUES (?,?,?,?,?)",
+        (str(uuid4()), attempt_id, "assistant", welcome_message, started_at),
+    )
+
+
+def list_attempt_messages(conn: DatabaseConnection, attempt_id: str) -> list:
+    """Read messages in the existing chronological/ID order."""
+    return conn.execute(
+        "SELECT id,role,content,sources,created_at FROM messages WHERE attempt_id=? ORDER BY created_at,id",
+        (attempt_id,),
+    ).fetchall()
+
+
+def load_attempt_progress_data(conn: DatabaseConnection, attempt_id: str) -> list:
+    """Read latest evidence per objective; progress decisions remain in main.py."""
+    return conn.execute(
+        """SELECT e.* FROM evidence e
+           JOIN (SELECT objective_id,max(created_at) AS latest FROM evidence WHERE attempt_id=? GROUP BY objective_id) x
+           ON x.objective_id=e.objective_id AND x.latest=e.created_at
+           WHERE e.attempt_id=?""",
+        (attempt_id, attempt_id),
+    ).fetchall()
+
+
+def load_attempt_learning_state(conn: DatabaseConnection, attempt_id: str):
+    """Read saved state separately so callers retain their existing read transactions."""
+    return conn.execute("SELECT learning_state FROM attempts WHERE id=?", (attempt_id,)).fetchone()
+
+
 def initialize() -> None:
     ensure_directories()
     with connection() as conn:
@@ -225,6 +322,15 @@ def initialize() -> None:
         for name, statement in migrations.items():
             if name not in columns:
                 conn.execute(statement)
+        if conn.postgres:
+            chunk_columns = {row["column_name"] for row in conn.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name='chunks'",
+                (DATABASE_SCHEMA,),
+            ).fetchall()}
+        else:
+            chunk_columns = {row["name"] for row in conn.execute("PRAGMA table_info(chunks)").fetchall()}
+        if "metadata" not in chunk_columns:
+            conn.execute("ALTER TABLE chunks ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'")
         conn.executemany(
             "INSERT INTO users(id,email,display_name,role) VALUES (?,?,?,?) ON CONFLICT DO NOTHING",
             [

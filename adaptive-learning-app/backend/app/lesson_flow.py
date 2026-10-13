@@ -1,4 +1,7 @@
-"""A persistent, topic-independent lesson conversation.
+"""CURRENT V2: adaptive learning decisions and the lesson state machine.
+
+Main entry: process_lesson_turn() dispatches to handle_quiz(),
+handle_practice(), or handle_choice() according to the stage and action.
 
 The configured key controls MCQ scoring. Student text only supplies evidence,
 confidence, and preferences; it never changes a question or its answer key.
@@ -7,15 +10,18 @@ from __future__ import annotations
 
 import copy
 import re
+import httpx
 
-from .openai_client import assess_configured_response, explain_configured
+from .openai_client import assess_configured_response, explain_configured, tutor_reply
 
 WELCOME_QUESTION = "What feels most unfamiliar about this topic, or are you completely new to it?"
+FAMILIARITY_CHOICES = ["I'm completely new", "I know some of this", "I'm comfortable with this topic"]
 STUDY_INSTRUCTION = "Explore these resources at your own pace. You can ask me for explanations or examples while studying. When you’re ready for a short understanding check, reply ‘I am done.’"
 QUIZ_INSTRUCTION = "I’ll ask five questions, one at a time. Choose an answer and give your confidence: low, medium, or high. For questions 4 and 5, also explain your choice in one sentence. You can say ‘I don’t know’ or ask for a hint."
 REFLECTION_QUESTION = "What can you explain or do now that you couldn’t before?"
 CHOICE_QUESTION = "Would you like another example, a harder challenge, a recap, or to pause here?"
 CHOICES = ["A simpler explanation", "A worked example", "Another practice question", "An application challenge", "A recap"]
+MAX_PRACTICE_REVISIONS = 3
 CHOICE_DESCRIPTIONS = {
     "A simpler explanation": "Break down the idea, then answer a guided question in your own words.",
     "A worked example": "Study a explained example, then reason through a different case.",
@@ -63,9 +69,48 @@ def objective_for(plan, objective_id):
     return next(o for o in plan["objectives"] if o["id"] == objective_id)
 
 
+def refresh_concept_progress(plan, state):
+    """Derive coverage from distinct independent activities, including saved attempts."""
+    checks = {}
+    for record in state["practice_history"]:
+        if not record.get("demonstrated") or record.get("assisted"):
+            continue
+        objective_id = record["objective_id"]
+        concept = record.get("concept")
+        if not concept:
+            # Older records identify their authored case through its stable activity ID.
+            try:
+                _, level, index = record["activity_id"].rsplit(":", 2)
+                concept = asset_for(plan, objective_id)[level][int(index)]["concept"]
+            except (KeyError, ValueError, IndexError, StopIteration):
+                continue
+        checks.setdefault(objective_id, {}).setdefault(concept, set()).add(record["activity_id"])
+    state["concept_checks"] = {oid: {concept: len(ids) for concept, ids in concepts.items()} for oid, concepts in checks.items()}
+    state["demonstrated_concepts"] = list(dict.fromkeys(
+        concept for concepts in state["concept_checks"].values() for concept, count in concepts.items() if count >= 2))
+    state["demonstrated"] = []
+    for objective in plan["objectives"]:
+        concepts = {q["concept"] for q in plan["diagnostic_quiz"] if q["objective_id"] == objective["id"]}
+        if concepts and all(state["concept_checks"].get(objective["id"], {}).get(concept, 0) >= 2 for concept in concepts):
+            state["demonstrated"].append(objective["id"])
+
+
 def study_message(plan):
     readings = "\n\n".join(f"{r['title']} ({r['provider']})\n{r['description']}\nFocus: {r['focus']}" for r in plan["study_resources"])
     return f"{STUDY_INSTRUCTION}\n\n{readings}"
+
+
+def study_focus(plan, state, content):
+    """Match only configured concepts; unfamiliar topics never manufacture lesson content."""
+    text = normalize(content)
+    question = next((q for q in plan["diagnostic_quiz"] if normalize(q["concept"]) in text), None)
+    if question:
+        state.update(study_focus=question["concept"], target_objective=question["objective_id"], awaiting_study_focus=False)
+        asset = asset_for(plan, question["objective_id"])
+        return (f"Let's focus on {question['concept']}.\n\n{asset['explanation']}\n\n"
+                f"Example: {asset['worked_example']}\n\nThe approved readings are available below. You can ask for more help or start the quiz when ready.")
+    state["awaiting_study_focus"] = True
+    return "Choose a lesson concept below, or describe what feels unclear. I can help with topics covered by this lesson's approved material."
 
 
 def question_message(plan, index):
@@ -171,6 +216,8 @@ def evaluate_diagnostic(plan, state):
             need = "simpler_support"
         elif not correct:
             need = "targeted_practice"
+        elif reasoning.get("status") in {"grader_unavailable", "grader_error"}:
+            need = "independent_check"
         elif index >= 3 and reasoning["category"] != "sound_reasoning":
             need = "reasoning_probe"
         elif entry.get("assistance_used"):
@@ -204,6 +251,8 @@ def evaluate_diagnostic(plan, state):
     state["target_concept"] = chosen["concept"]
     strengths = list(dict.fromkeys(d["concept"] for d in diagnosis if d["correct"]))
     feedback = f"Quiz score: {score}/5.\n\n"
+    if any(d["reasoning"].get("status") in {"grader_unavailable", "grader_error"} for d in diagnosis):
+        feedback += "Some explanations could not be graded because the grader is unavailable. They have not been marked incorrect; the quiz score still uses your answer selections.\n\n"
     feedback += "Your selections showed understanding of: " + ", ".join(strengths) + ".\n\n" if strengths else "The quiz does not yet give clear evidence of the concepts you understand.\n\n"
     if not chosen["correct"]:
         feedback += f"Your answers suggest we should spend more time on {chosen['concept']}. Let's work through it together.\n\n"
@@ -266,6 +315,20 @@ def is_help(content):
     return ("?" in text and not any(word in text for word in ("because", "therefore", "since"))) or any(phrase in text for phrase in ("explain", "help me", "hint", "another example", "analogy", "overwhelmed")) and not any(phrase in text for phrase in ("because", "therefore", "since"))
 
 
+def _practice_reply(plan, activity, response, assessment, next_prompt):
+    """Word the assessment-driven action without changing lesson decisions."""
+    objective = objective_for(plan, activity["objective_id"])
+    tutor_objective = {**objective, "rubric": activity.get("rubric") or objective["rubric"], "activity": activity["prompt"], "assisted": activity["assisted"]}
+    context = [{"filename": "Instructor-approved lesson", "content": plan["approved_material"]}]
+    if assessment["category"] == "identifiable_misconception":
+        context.append({"filename": "Configured counterexample", "content": asset_for(plan, objective["id"])["counterexample"]})
+    try:
+        return tutor_reply(tutor_objective, response, assessment, context, next_prompt)
+    except (httpx.HTTPError, ValueError, KeyError, TypeError, IndexError, AttributeError):
+        # A wording failure must not discard an already validated assessment/turn.
+        return assessment["feedback"] + "\n\n" + next_prompt
+
+
 def handle_practice(plan, state, turn):
     state["choices"] = []
     activity = state.get("activity")
@@ -283,47 +346,67 @@ def handle_practice(plan, state, turn):
         return support_message(plan, state, turn.content) + "\n\n" + activity["prompt"], None
     objective = objective_for(plan, activity["objective_id"])
     assessment = assess_configured_response(turn.content, activity.get("rubric") or objective["rubric"], objective, plan["approved_material"], activity["prompt"])
+    if assessment.get("status") in {"grader_unavailable", "grader_error"}:
+        state["practice_history"].append({"objective_id": objective["id"], "activity_id": activity["id"],
+            "response": turn.content, "assisted": activity["assisted"], "demonstrated": False,
+            "score": None, "category": assessment["category"], "assessment_status": assessment["status"],
+            "rationale": assessment["feedback"], "revision": activity["revisions"]})
+        state.update(stage="learning_choice", choices=list(CHOICES), activity=None)
+        return assessment["feedback"], None
     # Repeating revealed quiz text or a previous successful answer is not fresh evidence.
     response = normalize(turn.content)
     copied = any(response == normalize(q["explanation"]) or response == normalize(q["options"][q["correct_index"]]) for q in plan["diagnostic_quiz"])
     copied = copied or any(response == normalize(h["response"]) and h["demonstrated"] for h in state["practice_history"])
     independent = assessment["category"] == "sound_reasoning" and not activity["assisted"] and not copied
-    record = {"objective_id": objective["id"], "activity_id": activity["id"], "response": turn.content,
+    record = {"objective_id": objective["id"], "concept": activity.get("concept"), "activity_id": activity["id"], "response": turn.content,
               "assisted": activity["assisted"], "demonstrated": independent, "score": assessment["score"],
-              "category": assessment["category"], "rationale": assessment["feedback"], "revision": activity["revisions"]}
+              "category": assessment["category"], "assessment_status": assessment.get("status", "assessed"),
+              "assessment_source": assessment.get("source"), "rationale": assessment["feedback"], "revision": activity["revisions"]}
     state["practice_history"].append(record)
     state["used_activities"] = list(dict.fromkeys([*state["used_activities"], activity["id"]]))
     if independent:
-        state["depth_checks"] = state.get("depth_checks", 0) + 1
+        refresh_concept_progress(plan, state)
+        state["depth_checks"] = state["concept_checks"].get(objective["id"], {}).get(activity.get("concept"), 0)
         if state["depth_checks"] < 2:
-            return assessment["feedback"] + "\n\nLet's go one step deeper with a different case. Explain why your answer fits, using the details of the example.\n\n" + deeper_probe(plan, state, objective["id"]), record
-        state["demonstrated"] = list(dict.fromkeys([*state["demonstrated"], objective["id"]]))
-        state["demonstrated_concepts"] = list(dict.fromkeys([*state.get("demonstrated_concepts", []), activity.get("concept")]))
-        state["current_paths"][objective["id"]] = "accelerated"
+            next_prompt = deeper_probe(plan, state, objective["id"])
+            return _practice_reply(plan, activity, turn.content, assessment, next_prompt), record
+        state["current_paths"][objective["id"]] = "accelerated" if objective["id"] in state["demonstrated"] else "standard"
         state.update(stage="reflection", choices=[], activity=None)
-        return assessment["feedback"] + "\n\n" + REFLECTION_QUESTION, record
+        return _practice_reply(plan, activity, turn.content, assessment, REFLECTION_QUESTION), record
     if assessment["category"] == "sound_reasoning":
         state["current_paths"][objective["id"]] = "standard"
-        return "That response addresses the rubric with support. Let's check it using a fresh independent example. Explain both your answer and why it fits this case.\n\n" + deeper_probe(plan, state, objective["id"]), record
+        next_prompt = deeper_probe(plan, state, objective["id"])
+        return "That response addresses the rubric with support.\n\n" + _practice_reply(plan, activity, turn.content, assessment, next_prompt), record
     activity["revisions"] += 1
     state["current_paths"][objective["id"]] = "foundational" if assessment["category"] == "identifiable_misconception" else "standard"
+    if activity["revisions"] >= MAX_PRACTICE_REVISIONS:
+        record["substantial_support"] = True
+        activity["assisted"] = True
+        state["depth_checks"] = 0
+        asset = asset_for(plan, objective["id"])
+        scaffold = f"Let's review before trying a different case.\n\n{asset['explanation']}\n\nWorked example: {asset['worked_example']}"
+        return scaffold + "\n\nNow try a fresh independent case.\n\n" + deeper_probe(plan, state, objective["id"]), record
     if copied:
         return "Try applying the idea to this new case rather than repeating a revealed quiz answer.\n\n" + activity["prompt"], record
-    counterexample = asset_for(plan, objective["id"])["counterexample"] if assessment["category"] == "identifiable_misconception" else ""
-    return (assessment["feedback"] + (f"\n\nConsider this counterexample: {counterexample}" if counterexample else "") + "\n\nRevise your explanation for this example: " + activity["prompt"]), record
+    # The application keeps the category and transition authoritative; the tutor words
+    # one targeted revision/evidence request using the current activity and rubric.
+    return _practice_reply(plan, activity, turn.content, assessment, activity["prompt"]), record
 
 
 def handle_choice(plan, state, content):
     choice = normalize(content)
     if not any(word in choice for word in ("recap", "challenge", "harder", "example", "simpler", "clarification", "smaller", "practice", "continue", "next")):
         return "Choose a simpler explanation, a worked example, another practice question, an application challenge, or a recap."
+    refresh_concept_progress(plan, state)
     state.update(selected_format=content, choices=[], depth_checks=0)
     state["activity"] = None
     current = state.get("target_objective")
-    next_gap = next((gap for gap in state.get("concept_gaps", []) if gap["concept"] not in state.get("demonstrated_concepts", [])), None)
+    def concept_complete(item):
+        return state["concept_checks"].get(item["objective_id"], {}).get(item["concept"], 0) >= 2
+    next_gap = next((gap for gap in state.get("concept_gaps", []) if not concept_complete(gap)), None)
     if not next_gap:
-        next_gap = next((q for q in plan["diagnostic_quiz"] if q["concept"] not in state.get("demonstrated_concepts", [])), None)
-    if state.get("target_concept") in state.get("demonstrated_concepts", []) and next_gap:
+        next_gap = next((q for q in plan["diagnostic_quiz"] if not concept_complete(q)), None)
+    if state["concept_checks"].get(current, {}).get(state.get("target_concept"), 0) >= 2 and next_gap:
         state.update(target_objective=next_gap["objective_id"], target_concept=next_gap["concept"])
         current = next_gap["objective_id"]
     objective_id = current if current and current not in state["demonstrated"] else next((o["id"] for o in plan["objectives"] if o["id"] not in state["demonstrated"]), current or plan["objectives"][0]["id"])
@@ -334,6 +417,24 @@ def handle_choice(plan, state, content):
     concept = focus["concept"]
     explanation = focus["explanation"]
     earlier = next((d for d in state.get("diagnostic", []) if d["question_id"] == focus["id"]), {})
+    # Diagnostic support precedes the preferred format and is delivered once per question.
+    delivered = state.setdefault("diagnostic_followups_delivered", [])
+    need = earlier.get("need")
+    if focus["id"] not in delivered and need in {"counterexample_revision", "reasoning_probe", "confidence_building"}:
+        delivered.append(focus["id"])
+        state["selected_followup"] = need
+        if need == "counterexample_revision":
+            return (f"Let's check the idea behind your earlier choice on {concept}.\n\n"
+                    f"Counterexample: {asset_for(plan, objective_id)['counterexample']}\n\n"
+                    "Compare this with your earlier reasoning, then explain your decision in a fresh case.\n\n"
+                    + next_activity(plan, state, objective_id, "foundational", supported=True))
+        if need == "reasoning_probe":
+            return (f"You chose the correct answer on {concept}. Before moving on, let's check why it works. "
+                    "In this fresh case, explain the relationship that supports your decision.\n\n"
+                    + next_activity(plan, state, objective_id, "standard"))
+        return (f"You chose the correct answer on {concept}, even though you reported low confidence. "
+                "Try a fresh case independently; the feedback will show which parts of your reasoning are supported.\n\n"
+                + next_activity(plan, state, objective_id, "standard"))
     contrast = f"Your earlier choice suggested: {earlier['misconception']}. Compare that with the idea below.\n\n" if earlier.get("need") == "counterexample_revision" and earlier.get("misconception") else ""
     if "recap" in choice:
         return f"Recap — {concept}\n{explanation}\nRemember: {focus['hint']}\n\nNow put the idea into your own words while answering this case.\n\n" + next_activity(plan, state, objective_id, "standard", supported=True)
@@ -348,9 +449,10 @@ def handle_choice(plan, state, content):
     return CHOICE_QUESTION
 
 
-def transition(state: dict, turn) -> tuple[dict, str, dict | None]:
+def process_lesson_turn(state: dict, turn) -> tuple[dict, str, dict | None]:
     state = copy.deepcopy(state)
     plan = state["lesson_snapshot"]
+    refresh_concept_progress(plan, state)
     state["participation"]["responses"] += 1
     state["participation"]["unknown_responses"] += int(unknown(turn.content))
     state["participation"]["help_requests"] += int(turn.action == "hint" or is_help(turn.content))
@@ -371,6 +473,18 @@ def transition(state: dict, turn) -> tuple[dict, str, dict | None]:
         return state, handle_choice(plan, state, turn.content), None
     if state["stage"] == "welcome":
         state["self_report"] = turn.content.strip() or None
+        if text in {normalize(FAMILIARITY_CHOICES[2]), "i know everything", "i know it all"}:
+            state.update(stage="study_resources", familiarity="comfortable", awaiting_study_focus=False)
+            return state, "You can start the quiz now, or choose a quick recap first. The approved readings are available for optional revision.", None
+        if text == normalize(FAMILIARITY_CHOICES[1]):
+            state.update(stage="study_resources", familiarity="some", awaiting_study_focus=True)
+            return state, "Which part feels unclear? Choose a concept below or tell me in your own words. The approved readings are available too.", None
+        if text in {normalize(FAMILIARITY_CHOICES[0]), "i am completely new to this topic.".rstrip(".")}:
+            state.update(stage="study_resources", familiarity="new", awaiting_study_focus=False)
+            return state, f"Let's start with the basics.\n\n{plan['topic_introduction']}\n\nExample: {plan['introductory_example']}\n\nStart with the first approved reading below. Ask me to explain more, or start the quiz whenever you feel ready.", None
+        if any(phrase in text for phrase in ("don't understand", "do not understand", "don't know", "do not know", "unfamiliar")):
+            state.update(stage="study_resources", familiarity="some")
+            return state, study_focus(plan, state, turn.content), None
         # Self-report adjusts emphasis, never ability or placement.
         emphasis = support_message(plan, state, turn.content) if is_help(turn.content) or any(word in text for word in ("new", "unfamiliar", "overwhelm")) else "We can focus on any part that feels unfamiliar as you study."
         state["stage"] = "study_resources"
@@ -380,6 +494,10 @@ def transition(state: dict, turn) -> tuple[dict, str, dict | None]:
             state["stage"] = "diagnostic_quiz"
             state["readiness_statement"] = turn.content
             return state, QUIZ_INSTRUCTION + "\n\n" + question_message(plan, 0), None
+        if text == "quick recap":
+            return state, f"Quick recap\n\n{plan['topic_introduction']}\n\nExample: {plan['introductory_example']}\n\nStart the quiz when ready, or explore the readings below.", None
+        if state.get("awaiting_study_focus") or any(normalize(q["concept"]) in text for q in plan["diagnostic_quiz"]):
+            return state, study_focus(plan, state, turn.content), None
         return state, support_message(plan, state, turn.content) + "\n\nReturn to the resources at your own pace. Reply ‘I am done’ when you want to try the quiz.", None
     if state["stage"] == "diagnostic_quiz":
         return state, handle_quiz(plan, state, turn), None
@@ -401,7 +519,9 @@ def transition(state: dict, turn) -> tuple[dict, str, dict | None]:
 
 def public_state(state: dict) -> dict:
     """Never expose the snapshot, future questions, keys, hints, or practice rubrics."""
+    state = copy.deepcopy(state)
     plan = state["lesson_snapshot"]
+    refresh_concept_progress(plan, state)
     result = {key: copy.deepcopy(state.get(key)) for key in (
         "version", "stage", "quiz_index", "quiz_score", "diagnostic_complete", "self_report",
         "demonstrated", "practice_history", "reflections", "choices", "selected_followup",
@@ -409,6 +529,15 @@ def public_state(state: dict) -> dict:
     result["choices"] = list(CHOICES) if state["stage"] == "learning_choice" else []
     result["choice_descriptions"] = CHOICE_DESCRIPTIONS if result["choices"] else {}
     result["depth_checks"] = state.get("depth_checks", 0)
+    result["familiarity"] = state.get("familiarity")
+    result["study_focus"] = state.get("study_focus")
+    result["target_concept"] = state.get("target_concept")
+    result["concept_checks"] = state.get("concept_checks", {})
+    result["study_concepts"] = list(dict.fromkeys(q["concept"] for q in plan["diagnostic_quiz"])) if state.get("awaiting_study_focus") else []
+    resources = plan.get("study_resources", [])
+    focus_words = set(normalize(state.get("study_focus") or "").split()) - {"the", "and", "of", "a", "to", "in"}
+    matches = [len(focus_words & set(normalize(r.get("focus", "") + " " + r.get("description", "") + " " + r["title"]).split())) for r in resources]
+    result["recommended_resource_url"] = resources[0]["url"] if resources and state.get("familiarity") == "new" else resources[matches.index(max(matches))]["url"] if matches and max(matches) else None
     if state["stage"] == "diagnostic_quiz" or state.get("resume_stage") == "diagnostic_quiz":
         question = plan["diagnostic_quiz"][state["quiz_index"]]
         result["current_question"] = {key: question[key] for key in ("id", "question", "options", "difficulty", "concept")}

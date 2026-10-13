@@ -7,23 +7,24 @@ function Status({ value }) {
   return <span className={`status ${value || "not-started"}`}>{(value || "not started").replaceAll("_", " ")}</span>;
 }
 
-export function App({ loadUsers = () => fetch("/api/demo/users?role=student").then(res => res.json()), initialAssignmentId = null }) {
+export function App({ loadUsers = () => fetch("/api/demo/users?role=student").then(res => res.json()), initialAssignmentId = null, labMode = false, assignmentAccess = null }) {
   const [users, setUsers] = useState([]); const [user, setUser] = useState(null); const [assignments, setAssignments] = useState(null); const [selected, setSelected] = useState(null); const [error, setError] = useState("");
   const load = async () => { try { setError(""); const people = await loadUsers(); setUsers(people); const active = people.find((item) => item.id === currentUser()) || people[0]; if (active) { setCurrentUser(active.id); setUser(active); const items = await api("/student/assignments"); setAssignments(items); if (initialAssignmentId && !assignments) setSelected(initialAssignmentId); } } catch (e) { setError(e.message); } };
   useEffect(() => { load(); }, []);
   const changeUser = async (id) => { setCurrentUser(id); setSelected(null); await load(); };
-  return <div className="shell"><header><button className="brand" onClick={() => { setSelected(null); load(); }}><span className="brand-mark">A</span><span>Adaptive Learning<small>Student workspace</small></span></button><label className="user-switch">Viewing as<select value={user?.id || ""} onChange={(e) => changeUser(e.target.value)}>{users.map((person) => <option value={person.id} key={person.id}>{person.display_name}</option>)}</select></label></header>
-    <main>{error && <div className="notice error">{error}</div>}{selected ? (assignments?.find(item => item.id === selected)?.learning_plan.flow_version === 2 ? <LessonWorkspace key={`${user?.id}-${selected}`} assignmentId={selected} onBack={() => { setSelected(null); load(); }} /> : <Workspace key={`${user?.id}-${selected}`} user={user} assignmentId={selected} onBack={() => { setSelected(null); load(); }} />) : <AssignmentList assignments={assignments} user={user} onOpen={setSelected} />}</main>
+  return <div className="shell"><header><button className="brand" onClick={() => { setSelected(null); load(); }}><span className="brand-mark">A</span><span>Adaptive Learning<small>Student workspace</small></span></button>{labMode ? <span className="user-switch">{user?.display_name}</span> : <label className="user-switch">Viewing as<select value={user?.id || ""} onChange={(e) => changeUser(e.target.value)}>{users.map((person) => <option value={person.id} key={person.id}>{person.display_name}</option>)}</select></label>}</header>
+    <main>{!selected && assignmentAccess}{error && <div className="notice error">{error}</div>}{selected ? (assignments?.find(item => item.id === selected)?.learning_plan.flow_version === 2 ? <LessonWorkspace key={`${user?.id}-${selected}`} assignmentId={selected} onBack={() => { setSelected(null); load(); }} /> : <Workspace key={`${user?.id}-${selected}`} user={user} assignmentId={selected} onBack={() => { setSelected(null); load(); }} />) : <AssignmentList assignments={assignments} user={user} onOpen={setSelected} onRefresh={load} />}</main>
   </div>;
 }
 
-function AssignmentList({ assignments, user, onOpen }) {
+function AssignmentList({ assignments, user, onOpen, onRefresh }) {
   return <><section className="welcome"><div><p className="eyebrow">Student workspace</p><h1>Welcome back, {user?.display_name?.split(" ")[0] || "student"}.</h1><p>Continue an assignment or begin something new. Your tutor adjusts to the evidence you show.</p></div><div className="orb"><span>{assignments?.filter((item) => item.attempt_status === "completed").length || 0}</span><small>completed</small></div></section>
-    <section className="section-head"><div><p className="eyebrow">Learning queue</p><h2>Your assignments</h2></div><span>{assignments?.length || 0} assigned</span></section>
+    <section className="section-head"><div><p className="eyebrow">Learning queue</p><h2>Your assignments</h2></div><span>{assignments?.length || 0} assigned</span><button onClick={onRefresh}>Refresh assignments</button></section>
     {!assignments ? <p>Loading assignments…</p> : !assignments.length ? <div className="empty">No published assignments are waiting for you.</div> : <div className="assignment-list">{assignments.map((item, index) => <button key={item.id} className="assignment" onClick={() => onOpen(item.id)}><div className="index">{String(index + 1).padStart(2, "0")}</div><div className="assignment-copy"><div><Status value={item.attempt_status} /><span>{item.learning_plan.objectives.length} objectives</span></div><h3>{item.title}</h3><p>{item.instructions}</p></div><div className="arrow">→</div></button>)}</div>}
   </>;
 }
 
+// LEGACY workspace: current V2 lessons use LessonWorkspace.
 function Workspace({ assignmentId, user, onBack }) {
   const [assignment, setAssignment] = useState(null); const [attempt, setAttempt] = useState(null); const [error, setError] = useState(""); const [sending, setSending] = useState(false); const endRef = useRef(null);
   const load = async () => { try { setError(""); const [detail, current] = await Promise.all([api(`/student/assignments/${assignmentId}`), api(`/student/assignments/${assignmentId}/attempt`)]); setAssignment(detail); setAttempt(current); } catch (e) { setError(e.message); } };

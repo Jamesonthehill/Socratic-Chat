@@ -29,6 +29,146 @@ def client(tmp_path, monkeypatch):
         yield test_client
 
 
+def test_document_preview_reads_material_without_creating_assignment(client):
+    before = client.get("/api/instructor/assignments", headers=headers("instructor-demo")).json()
+    response = client.post("/api/instructor/documents/preview", headers=headers("instructor-demo"), files={"file": ("course.md", b"# Course material\nReason through an example.", "text/markdown")})
+    assert response.status_code == 200, response.text
+    assert response.json() == {"filename": "course.md", "text": "# Course material\nReason through an example.", "truncated": False}
+    assert client.get("/api/instructor/assignments", headers=headers("instructor-demo")).json() == before
+    assert client.post("/api/instructor/documents/preview", headers=headers(), files={"file": ("course.txt", b"Material")}).status_code == 403
+
+
+def test_document_preview_limits_and_unreadable_files(client):
+    def upload(name, content):
+        return client.post("/api/instructor/documents/preview", headers=headers("instructor-demo"), files={"file": (name, content)})
+    assert upload("course.docx", b"content").status_code == 422
+    assert upload("course.txt", b"   ").status_code == 422
+    assert upload("course.pdf", b"invalid PDF").status_code == 422
+    assert upload("course.txt", b"x" * (10 * 1024 * 1024 + 1)).status_code == 413
+    response = upload("course.txt", b"x" * 30001)
+    assert response.status_code == 200
+    assert response.json()["truncated"] is True
+    assert len(response.json()["text"]) == 30000
+
+
+def test_word_document_preview_extracts_paragraphs_and_tables(client):
+    from io import BytesIO
+    from docx import Document
+    document = Document()
+    document.add_paragraph("Students reason through an example.")
+    table = document.add_table(rows=1, cols=2)
+    table.cell(0, 0).text = "Concept"
+    table.cell(0, 1).text = "Evidence"
+    content = BytesIO()
+    document.save(content)
+    response = client.post("/api/instructor/documents/preview", headers=headers("instructor-demo"), files={"file": ("course.docx", content.getvalue())})
+    assert response.status_code == 200, response.text
+    assert "Students reason through an example." in response.json()["text"]
+    assert "Concept | Evidence" in response.json()["text"]
+
+
+def test_demo_document_indexing_does_not_contact_ai_even_with_a_key(client, monkeypatch):
+    from app import openai_client
+    monkeypatch.setattr(openai_client, "OPENAI_API_KEY", "unused-test-key")
+    def unexpected(*args, **kwargs):
+        raise AssertionError("Demo indexing must not contact the AI provider")
+    monkeypatch.setattr(httpx, "Client", unexpected)
+    aid = create(client, publish=False)
+    response = client.post(f"/api/instructor/assignments/{aid}/documents", headers=headers("instructor-demo"), files={"file": ("course.txt", b"Students learn from examples and explain their reasoning.")})
+    assert response.status_code == 201, response.text
+    assert response.json()["chunk_count"] == 1
+
+
+def test_document_review_uses_material_and_prepares_unpublished_lesson(client, monkeypatch):
+    from app import main
+    expected = lesson()
+    seen = {}
+    def infer(material, filename):
+        seen.update(material=material, filename=filename)
+        return {"topic": expected["topic"], "objective_descriptions": [o["description"] for o in expected["objectives"]]}
+    monkeypatch.setattr(main, "infer_document_context", infer)
+    monkeypatch.setattr(main, "discover_resources", lambda topic: expected["study_resources"])
+    monkeypatch.setattr(main, "verify_resources", lambda candidates, topic: candidates)
+    monkeypatch.setattr(main, "read_resource_excerpts", lambda resources: [])
+    monkeypatch.setattr(main, "generate_learning_plan", lambda *args, **kwargs: {**expected, "content_approved": False})
+    aid = create(client, publish=False)
+    response = client.post(f"/api/instructor/assignments/{aid}/prepare-review", headers=headers("instructor-demo"))
+    assert response.status_code == 200, response.text
+    assert seen["material"] == expected["approved_material"]
+    assert response.json()["status"] == "draft"
+    assert response.json()["learning_plan"]["content_approved"] is False
+    assert client.post("/api/instructor/document-draft", headers=headers(), json={"material": expected["approved_material"]}).status_code == 403
+
+
+@pytest.mark.parametrize("provider_body", [
+    {"error": {"message": "Request too large for organization org_private: Limit 8000, Requested 11001", "code": "rate_limit_exceeded"}},
+    {"error": None},
+    {"error": {"message": None}},
+])
+def test_document_review_explains_provider_size_limit(client, monkeypatch, provider_body):
+    from app import main
+    def fail(*args):
+        response = httpx.Response(413, json=provider_body, request=httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions"))
+        response.raise_for_status()
+    monkeypatch.setattr(main, "infer_document_context", fail)
+    response = client.post("/api/instructor/document-draft", headers=headers("instructor-demo"), json={"filename": "course.txt", "material": "A course document with enough material for review."})
+    assert response.status_code == 502
+    detail = response.json()["detail"]
+    assert "too large" in detail
+    assert "Retrying the same document" in detail
+    assert "org_private" not in detail
+    if provider_body.get("error") and provider_body["error"].get("message"):
+        assert "Token allowance: 8000; requested: 11001" in detail
+
+
+def test_failed_document_review_preserves_draft(client, monkeypatch):
+    from app import main
+    aid = create(client, publish=False)
+    before = client.get(f"/api/instructor/assignments/{aid}", headers=headers("instructor-demo")).json()
+    monkeypatch.setattr(main, "infer_document_context", lambda *args: {"topic": "Course topic", "objective_descriptions": ["Explain an example."]})
+    monkeypatch.setattr(main, "discover_resources", lambda topic: [])
+    monkeypatch.setattr(main, "verify_resources", lambda *args: [])
+    response = client.post(f"/api/instructor/assignments/{aid}/prepare-review", headers=headers("instructor-demo"))
+    assert response.status_code == 502
+    assert "Credible readings" in response.json()["detail"]
+    assert client.get(f"/api/instructor/assignments/{aid}", headers=headers("instructor-demo")).json() == before
+
+
+def test_generated_practice_repairs_map_to_original_quiz_concepts(client, monkeypatch):
+    from app import openai_client
+    plan = lesson()
+    banks = {}
+    for asset in plan["learning_assets"]:
+        activities = {}
+        for question in plan["diagnostic_quiz"]:
+            if question["objective_id"] == asset["objective_id"]:
+                entry = {"quiz_question_id": question["id"]}
+                for level in ("foundational", "standard", "accelerated"):
+                    entry[level] = {**asset[level][0], "concept": "An incorrect label from the model", "scenario": "Consider a fresh course example with a different concrete situation."}
+                activities[question["id"] + "-case-1"] = entry
+        banks[asset["objective_id"]] = activities
+    repair = {"question_repairs": {q["id"]: {"distractor_misconceptions": q["distractor_misconceptions"], "reasoning_rubric": q["reasoning_rubric"]} for q in plan["diagnostic_quiz"]}, "practice_banks": banks}
+    monkeypatch.setattr(openai_client, "_chat_settings", lambda: ("https://api.openai.com/v1", "test-model", {}))
+    def repair_response(*args, **kwargs):
+        prompt = kwargs['json']['messages'][0]['content']
+        assert "refer to concrete details from that question's scenario" in prompt
+        assert 'ONE actionable next step or comparison in plain language' in prompt
+        assert 'leave the final decision and explanation to them' in prompt
+        assert 'pasted unchanged into an unrelated question' in prompt
+        assert 'generate reasoning' in prompt
+        assert 'not merely entity names' in prompt
+        assert 'Do not state the conclusion' in prompt
+        assert 'not exact wording or a single keyword' in prompt
+        return httpx.Response(200, request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions"), json={"choices": [{"message": {"content": json.dumps(repair)}}]})
+    monkeypatch.setattr(httpx.Client, "post", repair_response)
+    result = openai_client.repair_learning_plan(plan, ["Map practice to diagnostic concepts."])
+    assert result["content_approved"] is False
+    for asset in result["learning_assets"]:
+        expected = {q["concept"] for q in plan["diagnostic_quiz"] if q["objective_id"] == asset["objective_id"]}
+        for level in ("foundational", "standard", "accelerated"):
+            assert {activity["concept"] for activity in asset[level]} == expected
+
+
 def create(client, plan=None, publish=True, students=None):
     plan = plan or lesson()
     response = client.post("/api/instructor/assignments", headers=headers("instructor-demo"), json={"title": plan["title"], "instructions": "Study and apply the approved material.", "learning_plan": plan, "student_ids": students or ["student-alex", "student-jordan"]})
@@ -172,6 +312,52 @@ def test_missing_metadata_once_hints_pause_ambiguity_and_idempotent_retry(client
     assert client.post(url, headers=headers(), json={**body, "turn_id": "stale"}).status_code == 409
 
 
+def test_lesson_turn_save_rolls_back_and_same_turn_can_be_retried(client, monkeypatch):
+    from app import db
+    plan = lesson()
+    aid = create(client, plan)
+    start_quiz(client, aid)
+    quiz(client, aid, plan)
+    turn(client, aid, "Another practice question", action="choice")
+    with db.connection() as conn:
+        before = dict(conn.execute("SELECT * FROM attempts WHERE assignment_id=? AND student_id=?", (aid, "student-alex")).fetchone())
+        message_count = conn.execute("SELECT count(*) AS n FROM messages WHERE attempt_id=?", (before["id"],)).fetchone()["n"]
+    original_execute = db.DatabaseConnection.execute
+    def fail_evidence_insert(self, statement, parameters=()):
+        if statement.startswith("INSERT INTO evidence"):
+            raise RuntimeError("Simulated persistence failure")
+        return original_execute(self, statement, parameters)
+    body = {"turn_id": "retry-after-rollback", "content": "A ticket is functional behavior and the delivery deadline is a non-functional quality constraint."}
+    url = f"/api/student/assignments/{aid}/learning-turn"
+    with monkeypatch.context() as patch:
+        patch.setattr(db.DatabaseConnection, "execute", fail_evidence_insert)
+        with pytest.raises(RuntimeError, match="Simulated persistence failure"):
+            client.post(url, headers=headers(), json=body)
+    with db.connection() as conn:
+        assert dict(conn.execute("SELECT * FROM attempts WHERE id=?", (before["id"],)).fetchone()) == before
+        assert conn.execute("SELECT count(*) AS n FROM messages WHERE attempt_id=?", (before["id"],)).fetchone()["n"] == message_count
+        assert conn.execute("SELECT count(*) AS n FROM evidence WHERE attempt_id=?", (before["id"],)).fetchone()["n"] == 0
+    retried = client.post(url, headers=headers(), json=body)
+    assert retried.status_code == 200, retried.text
+    assert client.post(url, headers=headers(), json=body).json() == retried.json()
+    with db.connection() as conn:
+        assert conn.execute("SELECT count(*) AS n FROM messages WHERE attempt_id=?", (before["id"],)).fetchone()["n"] == message_count + 2
+        assert conn.execute("SELECT count(*) AS n FROM evidence WHERE attempt_id=?", (before["id"],)).fetchone()["n"] == 1
+
+
+@pytest.mark.parametrize("postgres", [False, True])
+def test_turn_lookup_uses_the_callers_connection_and_preserves_locking(postgres):
+    from app.db import load_attempt_for_turn
+    from types import SimpleNamespace
+    calls = []
+    def execute(statement, parameters):
+        calls.append((statement, parameters))
+        return SimpleNamespace(fetchone=lambda: {"id": "attempt"})
+    conn = SimpleNamespace(postgres=postgres, execute=execute)
+    assert load_attempt_for_turn(conn, "assignment", "student") == {"id": "attempt"}
+    assert calls == [("SELECT * FROM attempts WHERE assignment_id=? AND student_id=?" + (" FOR UPDATE" if postgres else ""), ("assignment", "student"))]
+
+
 def test_hints_require_fresh_independent_check_and_preserve_original_results(client):
     plan = lesson()
     aid = create(client, plan)
@@ -240,12 +426,69 @@ def test_provider_failure_uses_configured_rubric_and_disagreement_is_evidence(cl
     plan = lesson()
     objective = plan["objectives"][0]
     monkeypatch.setattr(openai_client, "runtime_ai_mode", lambda: "openai")
+    monkeypatch.setattr(openai_client, "ALLOW_DEMO_FALLBACK", True)
     def unauthorized(*args, **kwargs):
         return httpx.Response(401, request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions"), json={"error": "invalid key"})
     monkeypatch.setattr(httpx.Client, "post", unauthorized)
     assessed = openai_client.assess_configured_response("I disagree that all requirements are functional: a functional action is behavior, whereas a non-functional deadline is a quality constraint.", objective["rubric"], objective, plan["approved_material"], "Classify an action and deadline")
     assert assessed["category"] == "sound_reasoning"
+    assert assessed["source"] == "demo_rubric"
+    assert assessed["fallback_reason"] == "grader_unavailable"
     assert openai_client.assess_configured_response("Lots of eloquent words without evidence", objective["rubric"], objective, plan["approved_material"], "Classify")["category"] == "insufficient_evidence"
+
+
+def test_grader_outage_is_not_persisted_as_scored_student_failure(client, monkeypatch):
+    from app import lesson_flow, openai_client, db
+    plan = lesson()
+    aid = create(client, plan)
+    start_quiz(client, aid)
+    quiz(client, aid, plan)
+    turn(client, aid, "Another practice question", action="choice")
+    monkeypatch.setattr(lesson_flow, "assess_configured_response", lambda *args: openai_client._assessment_issue("grader_unavailable"))
+    result = turn(client, aid, "A ticket is functional behavior and the deadline is a non-functional quality constraint.")
+    assert result["phase"] == "learning_choice"
+    assert result["learning_state"]["practice_history"][-1]["category"] == "grader_unavailable"
+    assert result["learning_state"]["practice_history"][-1]["score"] is None
+    assert result["learning_state"]["demonstrated"] == []
+    with db.connection() as conn:
+        assert conn.execute("SELECT count(*) AS n FROM evidence").fetchone()["n"] == 0
+
+
+def test_diagnostic_outage_preserves_correct_mcq_results(client, monkeypatch):
+    from app import lesson_flow, openai_client
+    plan = lesson()
+    aid = create(client, plan)
+    start_quiz(client, aid)
+    monkeypatch.setattr(lesson_flow, "assess_configured_response", lambda *args: openai_client._assessment_issue("grader_error"))
+    result = quiz(client, aid, plan)
+    assert result["quiz_score"] == 5
+    assert all(d["correct"] for d in result["learning_state"]["diagnostic"])
+    assert result["learning_state"]["diagnostic"][3]["need"] == "independent_check"
+    assert result["learning_state"]["diagnostic"][3]["reasoning"]["status"] == "grader_error"
+    assert "could not be graded" in result["messages"][-1]["content"]
+
+
+def test_corrected_memory_lesson_new_sessions_leave_old_snapshots_intact(client):
+    from app import db
+    corrected = lesson("operating-system-processes")
+    old = copy.deepcopy(corrected)
+    old["content_approved"] = True
+    activity = next(a for a in old["learning_assets"][0]["foundational"] if a["concept"] == "Process Memory Layout")
+    activity["rubric"] = [{"description": "Identifies network buffer as not part of process memory layout.",
+                          "evidence_groups": [["code, data, heap are process memory", "network buffer is hardware/system resource"]]}]
+    old_aid = create(client, old)
+    assert client.post(f"/api/student/assignments/{old_aid}/start", headers=headers()).status_code == 200
+    with db.connection() as conn:
+        before = json.loads(conn.execute("SELECT learning_state FROM attempts WHERE assignment_id=?", (old_aid,)).fetchone()["learning_state"])["lesson_snapshot"]
+    corrected["content_approved"] = True  # Instructor approval for this isolated test assignment.
+    new_aid = create(client, corrected)
+    assert client.post(f"/api/student/assignments/{new_aid}/start", headers=headers()).status_code == 200
+    assert client.post(f"/api/student/assignments/{old_aid}/start", headers=headers()).status_code == 200
+    with db.connection() as conn:
+        snapshots = {row["assignment_id"]: json.loads(row["learning_state"])["lesson_snapshot"] for row in conn.execute("SELECT assignment_id,learning_state FROM attempts")}
+    assert snapshots[old_aid] == before
+    assert snapshots[new_aid]["learning_assets"] == corrected["learning_assets"]
+    assert snapshots[old_aid]["learning_assets"] != snapshots[new_aid]["learning_assets"]
 
 
 def test_targeted_followup_uses_failed_concept_and_handles_revisions(client):
@@ -283,23 +526,70 @@ def test_original_keys_are_frozen_in_attempt_snapshot(client):
     assert result['learning_state']['diagnostic'][0]['correct_index'] == plan['diagnostic_quiz'][0]['correct_index']
 
 
-def test_generation_preserves_professor_inputs_and_requires_review(client, monkeypatch):
+@pytest.mark.parametrize('provider', ['openai', 'groq'])
+def test_generation_preserves_professor_inputs_and_requires_review(client, monkeypatch, provider):
     from app import openai_client
     plan = lesson()
-    monkeypatch.setattr(openai_client, 'runtime_ai_mode', lambda: 'openai')
+    monkeypatch.setattr(openai_client, 'runtime_ai_mode', lambda: provider)
+    monkeypatch.setattr(openai_client, 'GROQ_MODEL', 'openai/gpt-oss-120b')
     def generated(*args, **kwargs):
         assert 'professor-approved' in kwargs['json']['messages'][0]['content']
-        return httpx.Response(200, request=httpx.Request('POST', 'https://api.openai.com/v1/chat/completions'), json={'choices': [{'message': {'content': json.dumps(plan)}}]})
+        assert 'JSON' in kwargs['json']['messages'][0]['content']
+        prompt = kwargs['json']['messages'][0]['content']
+        assert "refer to concrete details from that question's scenario" in prompt
+        assert 'ONE actionable next step or comparison in plain language' in prompt
+        assert 'leave the final decision and explanation to them' in prompt
+        assert 'pasted unchanged into an unrelated question' in prompt
+        assert 'generate reasoning' in prompt
+        assert 'not merely entity names' in prompt
+        assert 'Do not state the conclusion' in prompt
+        assert 'not exact wording or a single keyword' in prompt
+        content = kwargs['json']['messages'][1]['content']
+        request = json.loads(content)
+        assert content == json.dumps(request, ensure_ascii=False, separators=(',', ':'))
+        assert request['approved_material'] == plan['approved_material']
+        assert ('output_schema' in request) == (provider == 'openai')
+        assert len(request['supplemental_reading_excerpts'][0]['excerpt']) == (1000 if provider == 'groq' else 6000)
+        output_format = kwargs['json']['response_format']
+        assert output_format['type'] == 'json_schema'
+        assert output_format['json_schema']['strict'] is True
+        schema = output_format['json_schema']['schema']
+        assert set(schema['required']) == set(schema['properties'])
+        assert 'approved_material' not in schema['properties']
+        paraphrased = copy.deepcopy(plan)
+        paraphrased['objectives'][0]['description'] = 'A paraphrase produced by the provider.'
+        paraphrased['diagnostic_quiz'][3]['reasoning_rubric'] = [criterion['description'] for criterion in plan['diagnostic_quiz'][3]['reasoning_rubric']]
+        return httpx.Response(200, request=httpx.Request('POST', 'https://api.openai.com/v1/chat/completions'), json={'choices': [{'message': {'content': json.dumps(paraphrased)}}]})
     monkeypatch.setattr(httpx.Client, 'post', generated)
     inputs = dict(approved_material=plan['approved_material'], objective_descriptions=[o['description'] for o in plan['objectives']], study_resources=plan['study_resources'], intended_difficulty='Introduction', prerequisite_knowledge='None')
-    result = openai_client.generate_learning_plan(plan['topic'], 'Undergraduate', **inputs)
+    result = openai_client.generate_learning_plan(plan['topic'], 'Undergraduate', study_sources=[{'excerpt': 'x' * 6000}], **inputs)
     assert not result['content_approved']
     assert result['approved_material'] == plan['approved_material']
     assert result['study_resources'] == plan['study_resources']
     assert result['flow_version'] == 2
+    assert [o['description'] for o in result['objectives']] == inputs['objective_descriptions']
     monkeypatch.setattr(openai_client, 'runtime_ai_mode', lambda: 'demo')
     with pytest.raises(ValueError, match='unavailable'):
         openai_client.generate_learning_plan(plan['topic'], 'Undergraduate', **inputs)
+
+
+@pytest.mark.parametrize('cooldown, calls', [('2', 2), ('3600', 1), ('invalid', 1)])
+def test_groq_authoring_rate_limit_retry_is_bounded(client, monkeypatch, cooldown, calls):
+    from app import openai_client
+    monkeypatch.setattr(openai_client, 'runtime_ai_mode', lambda: 'groq')
+    sleeps = []
+    monkeypatch.setattr(openai_client.time, 'sleep', sleeps.append)
+    requests = []
+    class Provider:
+        def post(self, url, **kwargs):
+            requests.append(kwargs)
+            return httpx.Response(429, headers={'retry-after': cooldown})
+    payload = {'messages': [{'role': 'user', 'content': 'Material unchanged'}]}
+    result = openai_client._post_authoring_request(Provider(), 'https://api.groq.com/openai/v1/chat/completions', headers={}, json=payload)
+    assert result.status_code == 429
+    assert len(requests) == calls
+    assert all(request['json'] is payload for request in requests)
+    assert len(sleeps) == calls - 1
 
 
 def test_copying_revealed_quiz_answer_and_misconception_do_not_demonstrate(client):

@@ -5,6 +5,10 @@ from typing import Literal
 from pydantic import BaseModel, Field, StrictInt, model_validator
 
 
+class ResourceURLInput(BaseModel):
+    url: str = Field(min_length=1, max_length=2000)
+
+
 class RubricCriterion(BaseModel):
     description: str = Field(min_length=1, max_length=1000)
     # Each group contains equivalent expressions; all groups must be present.
@@ -116,6 +120,11 @@ class GeneratePlanInput(BaseModel):
     study_resources: list[StudyResource] = Field(min_length=1, max_length=5)
     intended_difficulty: str = Field(min_length=1, max_length=200)
     prerequisite_knowledge: str = Field(min_length=1, max_length=2000)
+
+
+class DocumentDraftInput(BaseModel):
+    material: str = Field(min_length=30, max_length=30000)
+    filename: str = Field(default="Course document", max_length=300)
 
 
 class MessageInput(BaseModel):

@@ -495,6 +495,7 @@ class SocraticConfig(StrictModel):
 
 
 class ReflectionConfig(StrictModel):
+    document_ids: list[str] = Field(default_factory=list, max_length=100)
     module_type: Literal["topic_based", "milestone_based"] = "topic_based"
     required_topics: list[str] = Field(default_factory=list, max_length=100)
     sub_topics: list[str] = Field(default_factory=list, max_length=100)
@@ -520,6 +521,7 @@ class ReflectionConfig(StrictModel):
 
 
 class TutorConfig(StrictModel):
+    document_ids: list[str] = Field(default_factory=list, max_length=100)
     topic: Topic | None = None
     learning_plan: LearningPlan | None = None
     provider: Literal["openai", "groq"] = "openai"

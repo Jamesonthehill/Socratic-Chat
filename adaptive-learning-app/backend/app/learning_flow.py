@@ -1,3 +1,4 @@
+# LEGACY diagnostic selection and placement; V2 decisions live in lesson_flow.py.
 """Deterministic placement rules for the self-directed learning flow."""
 
 from __future__ import annotations

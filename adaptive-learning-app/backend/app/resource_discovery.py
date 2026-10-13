@@ -30,6 +30,11 @@ TRUSTED_DOMAINS = {
 }
 
 CURATED = {
+    "operating system processes": [
+        {"title": "Operating Systems: Processes", "url": "https://www.cs.uic.edu/~jbell/CourseNotes/OperatingSystems/3_Processes.html", "provider": "University of Illinois Chicago"},
+        {"title": "OSTEP: The Abstraction — The Process", "url": "https://pages.cs.wisc.edu/~remzi/OSTEP/cpu-intro.pdf", "provider": "University of Wisconsin–Madison"},
+        {"title": "Operating System Processes", "url": "https://cs.pomona.edu/classes/cs105/archive/2022fa/lectures/08-Processes/Processes.pdf", "provider": "Pomona College"},
+    ],
     "requirements": [
         {"title": "How to Write a Good Requirement", "url": "https://www.nasa.gov/reference/appendix-c-how-to-write-a-good-requirement/", "provider": "NASA"},
         {"title": "Software Requirements", "url": "https://www.sei.cmu.edu/library/software-requirements/", "provider": "Carnegie Mellon Software Engineering Institute"},
@@ -147,11 +152,13 @@ def _normalize_result(title: str, href: str) -> dict | None:
 
 def discover_resources(topic: str, limit: int = 3) -> list[dict]:
     normalized = _normalize_topic(topic)
+    def terms(text):
+        return {word[:-2] if word.endswith("sses") else word[:-1] if word.endswith("s") and not word.endswith("ss") else word for word in text.split()}
     for key, resources in CURATED.items():
-        if key in normalized or normalized in key:
+        if key in normalized or normalized in key or terms(key).issubset(terms(normalized)):
             return resources[:limit]
 
-    query = f'"{normalized}" tutorial guide (site:edu OR site:nasa.gov OR site:learn.microsoft.com OR site:developers.google.com OR site:ibm.com OR site:openstax.org)'
+    query = f'{normalized} tutorial guide (site:edu OR site:nasa.gov OR site:learn.microsoft.com OR site:developers.google.com OR site:ibm.com OR site:openstax.org)'
     found = []
     try:
         with httpx.Client(timeout=8, follow_redirects=True) as client:
@@ -199,6 +206,30 @@ class _ReadingParser(HTMLParser):
     def handle_data(self, text):
         if self.depth and not self.ignored and text.strip():
             self.parts.append(text.strip())
+
+
+def verify_resources(candidates: list[dict], topic: str, limit: int = 3) -> list[dict]:
+    """Keep only reachable readings on trusted educational hosts."""
+    found = []
+    seen = set()
+    with httpx.Client(timeout=8, follow_redirects=False) as client:
+        for candidate in candidates[:6]:
+            item = _normalize_result(str(candidate.get("title", "")), str(candidate.get("url", "")))
+            if not item or item["url"] in seen:
+                continue
+            seen.add(item["url"])
+            try:
+                with client.stream("GET", item["url"]) as response:
+                    response.raise_for_status()
+                    if not any(kind in response.headers.get("content-type", "") for kind in ("text/html", "application/pdf")):
+                        continue
+                item.update(description=f"An educational reading about {topic} from {item['provider']}.", focus=f"Study the explanations and examples relevant to {topic} in your course document.")
+                found.append(item)
+                if len(found) >= limit:
+                    break
+            except httpx.HTTPError:
+                continue
+    return found
 
 
 def read_resource_excerpts(resources: list[dict]) -> list[dict]:

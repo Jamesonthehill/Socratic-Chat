@@ -5,6 +5,7 @@ RUN npm ci
 COPY platform_frontend/ ./
 COPY reflections-app/frontend/src/ /build/reflections-app/frontend/src/
 COPY adaptive-learning-app/student-app/src/ /build/adaptive-learning-app/student-app/src/
+COPY adaptive-learning-app/shared/ /build/adaptive-learning-app/shared/
 RUN npm run build
 
 FROM python:3.12-slim

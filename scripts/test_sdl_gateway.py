@@ -38,3 +38,36 @@ def test_professor_cannot_launch_student_identity(gateway):
  account['authority_level']=1
  assert client.get('/api/platform/self-directed/assignments').status_code==403
  assert calls==[]
+
+
+@pytest.mark.parametrize('suffix,method', [('', 'GET'), ('/attempt', 'GET'), ('/start', 'POST'), ('/restart', 'POST')])
+def test_student_lesson_lifecycle_uses_signed_identity(gateway, suffix, method):
+ client,calls,account=gateway
+ response=client.request(method,'/api/platform/self-directed/assignments/lesson'+suffix,headers={'X-Demo-User':'other-student'})
+ assert response.status_code==200,response.text
+ assert calls[-1][:3]==('resolved-signed-student',method,'/api/student/assignments/lesson'+suffix)
+
+
+def test_professor_cannot_restart_student_lesson(gateway):
+ client,calls,account=gateway
+ account['authority_level']=1
+ assert client.post('/api/platform/self-directed/assignments/lesson/restart').status_code==403
+ assert calls==[]
+
+
+def test_student_dashboard_preserves_legacy_assignments_alongside_sdl(gateway, monkeypatch):
+ from contextlib import contextmanager
+ client, calls, account = gateway
+ rows = [{'id': 'legacy-assignment', 'tool': 'student-agent'}, {'id': 'socratic-assignment', 'tool': 'socratic'}]
+ class Database:
+  def execute(self, *args): return self
+  def fetchall(self): return rows
+ @contextmanager
+ def connection(): yield Database()
+ monkeypatch.setattr(routes.store, 'connection', connection)
+ monkeypatch.setattr(routes, 'public_assignment', lambda row, professor: row)
+ monkeypatch.setattr(routes.engines, 'self_directed_call', lambda *args, **kwargs: [{'id': 'sdl-lesson', 'tool': 'self-directed-learning'}])
+ monkeypatch.setattr(routes, 'self_directed_assignment_summary', lambda item: item)
+ response = client.get('/api/platform/assignments')
+ assert response.status_code == 200
+ assert [item['id'] for item in response.json()] == ['legacy-assignment', 'socratic-assignment', 'sdl-lesson']

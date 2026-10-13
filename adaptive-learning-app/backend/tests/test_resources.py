@@ -1,6 +1,6 @@
 import httpx
 
-from app.resource_discovery import discover_resources, read_resource_excerpts
+from app.resource_discovery import discover_resources, read_resource_excerpts, verify_resources
 
 
 def test_failed_discovery_does_not_return_unrelated_links(monkeypatch):
@@ -27,3 +27,25 @@ def test_untrusted_source_is_not_fetched(monkeypatch):
         raise AssertionError("Untrusted URLs must not be fetched")
     monkeypatch.setattr(httpx.Client, "stream", unexpected)
     assert read_resource_excerpts([{"title": "Unknown", "url": "https://untrusted.example/", "provider": "Unknown"}]) == []
+
+
+def test_verified_readings_reject_dead_untrusted_and_redirecting_urls(monkeypatch):
+    requested = []
+    def respond(request):
+        requested.append(str(request.url))
+        if request.url.path == "/missing":
+            return httpx.Response(404)
+        if request.url.path == "/redirect":
+            return httpx.Response(302, headers={"location": "https://untrusted.example/"})
+        return httpx.Response(200, headers={"content-type": "application/pdf"}, content=b"reading")
+    real_client = httpx.Client
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: real_client(transport=httpx.MockTransport(respond), **kwargs))
+    candidates = [{"title": "Reading", "url": url} for url in ["https://untrusted.example/", "https://courses.example.edu/missing", "https://courses.example.edu/redirect", "https://courses.example.edu/reading.pdf"]]
+    result = verify_resources(candidates, "Course topic")
+    assert [item["url"] for item in result] == ["https://courses.example.edu/reading.pdf"]
+    assert not any("untrusted.example" in url for url in requested)
+    assert result[0]["description"] and result[0]["focus"]
+
+
+def test_curated_reading_lookup_accepts_topic_word_order_and_plurals():
+    assert discover_resources("Processes in Operating Systems") == discover_resources("Operating System Processes")

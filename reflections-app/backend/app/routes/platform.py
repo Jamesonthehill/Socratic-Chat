@@ -23,12 +23,14 @@ class StartInput(BaseModel):
     student_id: UUID
     module_id: UUID
     course_id: UUID
+    source_context: str = ""
 
 
 class MessageInput(BaseModel):
     session_id: UUID
     request_id: UUID
     message: str
+    source_context: str = ""
 
 
 class EndInput(BaseModel):
@@ -83,14 +85,14 @@ def start(body: StartInput, db: Session = Depends(get_db)):
         if not course:
             raise HTTPException(404, "Platform course not found")
         state = runner.invoke_start(
-            sid, student_id, str(body.module_id), str(body.course_id), db
+            sid, student_id, str(body.module_id), str(body.course_id), db, body.source_context
         )
     return {"greeting": state["greeting"], "total_questions": state["total_questions"]}
 
 
 @router.post("/message")
 def message(body: MessageInput):
-    state = runner.platform_message(str(body.session_id), body.message, str(body.request_id))
+    state = runner.platform_message(str(body.session_id), body.message, str(body.request_id), body.source_context)
     return {"reply": state["current_reply"], "question_index": state["question_idx"],
             "total_questions": state["total_questions"], "is_bonus_phase": state["is_bonus_phase"]}
 

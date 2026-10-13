@@ -20,6 +20,7 @@ from app.answer_evaluation import (
 from app.classifier import MessageClassification, classify_message
 from app.pipeline_logging import begin_trace, debug_preview, end_trace, log_event, log_exception
 from app.schemas import ChatMessage, Source
+from platform_app import knowledge
 from platform_app.adaptive import is_phase1_oop_plan
 from platform_app.schemas import ReflectionConfig, TutorConfig, Topic
 
@@ -131,13 +132,25 @@ def publish_snapshot(assignment):
     if assignment["tool"] == "reflections":
         cfg = ReflectionConfig.model_validate(config)
         cfg.validate_publish()
+        chunks = knowledge.course_snapshot(assignment["course_id"], config.get("document_ids"))
+        module_config = {k: v for k, v in config.items() if k != "document_ids"}
         module = call("reflections", "PUT", f"/internal/platform/modules/{assignment['id']}",
-                      json={"name": assignment["title"], "course_id": str(assignment["course_id"]), "config": config})
-        return {"config": config, "module_id": module["id"]}
+                      json={"name": assignment["title"], "course_id": str(assignment["course_id"]), "config": module_config})
+        return {"config": config, "module_id": module["id"], "chunks": chunks}
     cfg = TutorConfig.model_validate(config)
     if cfg.learning_plan is not None:
         if cfg.learning_plan.schema_version == 1 and not is_phase1_oop_plan(cfg.learning_plan):
             raise ValueError("Phase 1 supports only the seeded Object-Oriented Programming plan.")
+        selected = config.get("document_ids") or []
+        if selected:
+            shared = knowledge.course_snapshot(assignment["course_id"], selected)
+            existing = {r.document_id for r in cfg.learning_plan.approved_resources if r.document_id}
+            titles = {c["document_id"]: c["title"] for c in shared}
+            from platform_app.schemas import ApprovedResource
+            cfg.learning_plan.approved_resources.extend(
+                ApprovedResource(id="shared-" + doc_id, title=title, document_id=doc_id)
+                for doc_id, title in titles.items() if doc_id not in existing)
+            config = {**config, "learning_plan": cfg.learning_plan.model_dump(mode="json")}
         chosen = {item.document_id for item in cfg.learning_plan.approved_resources if item.document_id}
         chunks = []
         if chosen:
@@ -145,13 +158,13 @@ def publish_snapshot(assignment):
             allowed = {str(f["document_id"]) for f in files if f.get("document_id")}
             if not chosen.issubset(allowed):
                 raise HTTPException(422, "Every adaptive-plan document must belong to this course.")
-            chunks = [c for c in rag.load_index() if c.get("course_id") == str(assignment["course_id"]) and c["document_id"] in chosen]
+            chunks = knowledge.course_snapshot(assignment["course_id"], chosen)
             if chosen - {c["document_id"] for c in chunks}:
                 raise HTTPException(422, "Some adaptive-plan resources have no indexed content.")
         return {"config": config, "chunks": chunks}
     if cfg.topic is None:
         raise HTTPException(422, "Select a tutor topic or adaptive learning plan before publishing.")
-    return {"config": config}
+    return {"config": config, "chunks": knowledge.course_snapshot(assignment["course_id"], config.get("document_ids"))}
 
 
 def start(assignment, attempt):
@@ -164,7 +177,8 @@ def start(assignment, attempt):
             return {"messages": [{"role": "assistant", "content": config["milestone_prompt"]}]}
         result = call("reflections", "POST", "/internal/platform/start", json={
             "session_id": str(attempt["id"]), "module_id": snapshot["module_id"],
-            "student_id": str(attempt["student_id"]), "course_id": str(assignment["course_id"])})
+            "student_id": str(attempt["student_id"]), "course_id": str(assignment["course_id"]),
+            "source_context": knowledge.context_text(knowledge.retrieve(assignment["title"], snapshot.get("chunks") or []))})
         return {"messages": [{"role": "assistant", "content": result["greeting"]}], "total_questions": result["total_questions"], "question_index": 0}
     return call("student-agent", "POST", "/api/session/start", json={
         "session_id": str(attempt["id"]), "topic_id": config["topic"]["id"],
@@ -453,8 +467,10 @@ def message(assignment, attempt, content, request_id):
             result = call(tool, "POST", "/api/rec-sys/milestone", json={
                 "module_id": assignment["snapshot"]["module_id"], "student_name": str(attempt["student_id"]), "reflection": content})
             return {"reply": "Your reflection has been submitted.", "result": result, "completed": True}
-        return call(tool, "POST", "/internal/platform/message", json={"session_id": str(attempt["id"]), "message": content, "request_id": request_id})
-    return call(tool, "POST", "/internal/platform/action", json={"session_id": str(attempt["id"]), "action": "message", "value": content, "request_id": request_id})
+        return call(tool, "POST", "/internal/platform/message", json={"session_id": str(attempt["id"]), "message": content, "request_id": request_id,
+            "source_context": knowledge.context_text(knowledge.retrieve(content, assignment["snapshot"].get("chunks") or []))})
+    return call(tool, "POST", "/internal/platform/action", json={"session_id": str(attempt["id"]), "action": "message", "value": content, "request_id": request_id,
+        "source_context": knowledge.context_text(knowledge.retrieve(content, assignment["snapshot"].get("chunks") or []))})
 
 
 def complete(assignment, attempt):
@@ -529,25 +545,9 @@ def adaptive_rag_context(assignment, objective, decision, student_message):
     query = (
         f"{objective.description} {criteria} {decision.action.value} {student_message}"
     )
-    tokens = rag.tokenize(query)
-
-    def lexical_score(item_tokens):
-        query_terms = set(tokens)
-        if not query_terms:
-            return 0.0
-        return len(query_terms.intersection(item_tokens)) / len(query_terms)
-
-    scored = [
-        (
-            lexical_score(item.get("tokens", rag.tokenize(item["text"]))),
-            item,
-        )
-        for item in eligible
-    ]
     context = []
-    for score, item in sorted(scored, key=lambda pair: pair[0], reverse=True)[:3]:
-        if score <= 0:
-            continue
+    for item in knowledge.retrieve(query, eligible, 3):
+        score = item["score"]
         resource = permitted_by_document[str(item["document_id"])][0]
         context.append(
             {

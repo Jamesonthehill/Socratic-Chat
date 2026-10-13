@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef } from "react";
 
 const levels = ["foundational", "understanding", "application", "analysis", "challenge"];
 const levelNames = ["Basic recall", "Foundational understanding", "Simple application", "Concept distinction / misconception", "Reasoning / transfer"];
@@ -17,8 +17,22 @@ function RubricEditor({ rubric, update, label = "Assessment criteria" }) {
 export default function LessonConfigEditor({ plan, update }) {
   const objectives = plan.objectives || [];
   const quiz = plan.diagnostic_quiz?.length === 5 ? plan.diagnostic_quiz : levels.map((_, index) => emptyQuestion(index, objectives[index < 2 ? 0 : Math.min(1, objectives.length - 1)]?.id));
+  const linkedConcepts = useRef(Object.fromEntries(quiz.map(question => [question.id, question.concept])));
   const assets = objectives.map(objective => plan.learning_assets?.find(item => item.objective_id === objective.id) || { objective_id: objective.id, explanation: "", worked_example: "", analogy: "", counterexample: "", foundational: [emptyPractice(), emptyPractice()], standard: [emptyPractice(), emptyPractice()], accelerated: [emptyPractice(), emptyPractice()], misconceptions: [] });
-  const updateQuiz = (index, patch) => update({ diagnostic_quiz: quiz.map((item, i) => i === index ? { ...item, ...patch } : item) });
+  const updateQuiz = (index, patch) => {
+    const previous = quiz[index];
+    const linkedConcept = linkedConcepts.current[previous.id] || previous.concept;
+    const change = { diagnostic_quiz: quiz.map((item, i) => i === index ? { ...item, ...patch } : item) };
+    if ("concept" in patch && patch.concept.trim() && linkedConcept && patch.concept !== linkedConcept) {
+      change.diagnostic_quiz = change.diagnostic_quiz.map(item => item.objective_id === previous.objective_id && item.concept === linkedConcept ? { ...item, concept: patch.concept } : item);
+      change.learning_assets = assets.map(asset => asset.objective_id === previous.objective_id ? {
+        ...asset, ...Object.fromEntries(["foundational", "standard", "accelerated"].map(level => [level,
+          asset[level].map(activity => activity.concept === linkedConcept ? { ...activity, concept: patch.concept } : activity)])),
+      } : asset);
+      for (const question of change.diagnostic_quiz) linkedConcepts.current[question.id] = question.concept || linkedConcepts.current[question.id];
+    }
+    update(change);
+  };
   const updateAsset = (index, patch) => update({ learning_assets: assets.map((item, i) => i === index ? { ...item, ...patch } : item) });
   return <>
     <section className="panel"><p className="step">Lesson material</p><div className="field-grid"><label>Topic<input value={plan.topic || ""} onChange={event => update({ topic: event.target.value })} /></label><label>Intended difficulty<input value={plan.intended_difficulty || ""} onChange={event => update({ intended_difficulty: event.target.value })} /></label></div><label>Prerequisite knowledge (write “none” if appropriate)<textarea value={plan.prerequisite_knowledge || ""} onChange={event => update({ prerequisite_knowledge: event.target.value })} /></label><label>Brief introductory explanation<textarea value={plan.topic_introduction || ""} onChange={event => update({ topic_introduction: event.target.value })} /></label><label>Introductory example from your material<textarea value={plan.introductory_example || ""} onChange={event => update({ introductory_example: event.target.value })} /></label><label>Approved teaching material<textarea className="teaching-material" value={plan.approved_material || ""} onChange={event => update({ approved_material: event.target.value })} placeholder="Paste the material that students can learn and that all assessments should use." /></label><ResourceEditor resources={plan.study_resources || []} update={study_resources => update({ study_resources })} /></section>

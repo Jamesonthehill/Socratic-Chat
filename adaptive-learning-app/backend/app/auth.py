@@ -5,7 +5,12 @@ from fastapi import Header, HTTPException
 from .db import connection, row_dict
 
 
-def current_user(x_demo_user: str | None = Header(default=None)) -> dict:
+def current_user(x_demo_user: str | None = Header(default=None), authorization: str | None = Header(default=None)) -> dict:
+    if authorization:
+        from .lab import resolve
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(401, "Invalid lab session.")
+        return resolve(authorization[7:])
     if not x_demo_user:
         raise HTTPException(401, "Choose a demo user first.")
     with connection() as conn:

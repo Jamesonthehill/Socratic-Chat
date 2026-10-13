@@ -30,7 +30,6 @@ services:
       - socratic-index:/workspace/Socratic-Chat/backend/storage
       - socratic-documents:/workspace/Socratic-Chat/backend/data/raw_docs
     depends_on:
-      database: {condition: service_healthy}
       reflections: {condition: service_started}
       tutor: {condition: service_started}
       self-directed-learning: {condition: service_started}
@@ -67,12 +66,11 @@ services:
     build: ./adaptive-learning-app/backend
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@database:5432/cluball
-      DATABASE_SCHEMA: self_directed_learning
+      DATABASE_URL: ${DOCKER_DATABASE_URL:?Set DOCKER_DATABASE_URL in .env}
+      DATABASE_SCHEMA: ${SELF_DIRECTED_LEARNING_DB_SCHEMA:-self_directed_learning}
+      ADAPTIVE_DATABASE_PATH: ""
       ADAPTIVE_UPLOAD_DIR: /data/uploads
       ADAPTIVE_PLATFORM_ONLY: "true"
-    depends_on:
-      database: {condition: service_healthy}
     volumes:
       - self-directed-uploads:/data/uploads
 

@@ -238,13 +238,13 @@ npm run build
 cd ..
 
 cp .env.example .env
-# Create the two databases and configure their URLs/secrets/provider keys in .env.
+# Configure the shared DATABASE_URL, secrets, and provider keys in .env.
 REFLECTIONS_PYTHON="$PWD/reflections-app/.venv/bin/python" \
 TUTOR_PYTHON="$PWD/student-agent-bot/.venv/bin/python" \
   .venv/bin/python scripts/run_local.py
 ```
 
-Open http://127.0.0.1:8000. The runner starts the gateway on 8000, Reflections on 8002, and Tutor on 8003, all bound to loopback. Stopping it stops all three. Install dependencies first and use absolute paths for the optional interpreter overrides.
+Open http://127.0.0.1:8000. The runner starts the gateway on 8000, Reflections on 8002, Tutor on 8003, and SDL on 8100, all bound to loopback. Stopping it stops all four. Install dependencies first and use absolute paths for the optional interpreter overrides. PostgreSQL-backed services use the same `DATABASE_URL`; `REFLECTIONS_DATABASE_URL` is no longer required or used.
 
 ### Docker Compose
 
@@ -286,7 +286,7 @@ The shared backend reuses Socratic's authentication and course APIs. PostgreSQL 
 - `socratic_chat`: Socratic conversations, messages, progress, assessments, files, and document chunks. Every table ends in `_socratic_chat`; user and course foreign keys point into `platform`.
 - `reflections_app`: reflection modules, configurations, conversations, analytics, and LangGraph checkpoints. Every table ends in `_reflections_app`; new platform sessions reference `platform.users_platform` and `platform.courses_platform` directly. The legacy student table remains only to preserve historical standalone Reflections sessions.
 
-Tutor uses a persistent SQLite file configured with `TUTOR_SESSION_DB`. Platform, Socratic Chat, and Reflections use the single PostgreSQL connection in `DATABASE_URL`; their schemas isolate service-owned data. Configure `PLATFORM_DB_SCHEMA`, `SOCRATIC_DB_SCHEMA`, and `REFLECTIONS_DB_SCHEMA` when using non-default schema names. The bundled PostgreSQL container is available only through the optional `isolated-db` Compose profile; the default Docker stack uses the host database configured by `DOCKER_DATABASE_URL`.
+Tutor uses a persistent SQLite file configured with `TUTOR_SESSION_DB`. Platform, Socratic Chat, Reflections, and SDL use the single PostgreSQL connection in `DATABASE_URL`; their schemas isolate service-owned data. Configure `PLATFORM_DB_SCHEMA`, `SOCRATIC_DB_SCHEMA`, `REFLECTIONS_DB_SCHEMA`, and `SELF_DIRECTED_LEARNING_DB_SCHEMA` when using non-default schema names. The bundled PostgreSQL container is available only through the optional `isolated-db` Compose profile; the default Docker stack uses the host database configured by `DOCKER_DATABASE_URL`.
 
 The browser calls `/api/platform/...`; the gateway chooses the appropriate engine and derives student/session identity from the signed account session. Internal service calls require `X-Platform-Service`, using the common `PLATFORM_SERVICE_TOKEN`. Internal endpoints are unavailable without a token, even in standalone mode. Public platform APIs reject the old `X-User-Id` shortcut.
 

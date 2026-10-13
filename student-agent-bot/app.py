@@ -358,6 +358,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 class PlatformAction(BaseModel):
+    source_context: str = ""
     session_id: str
     request_id: str
     action: str
@@ -449,7 +450,10 @@ def adaptive_render(body: AdaptiveRender):
 def platform_action(body: PlatformAction):
     def operation(session):
         if body.action == "message":
-            tutor_reply(session, body.value)
+            if body.source_context:
+                tutor_reply(session, body.value, source_context=body.source_context)
+            else:
+                tutor_reply(session, body.value)
         elif body.action == "navigate":
             navigate_session(session, body.value)
         elif body.action == "scenario":

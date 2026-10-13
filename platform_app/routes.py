@@ -240,11 +240,8 @@ def assignments(account=Depends(user)):
                 JOIN course_memberships_platform m ON m.course_id=a.course_id AND m.user_id=r.student_id AND m.status='approved'
                 LEFT JOIN assignment_attempts_platform t ON t.assignment_id=a.id AND t.student_id=r.student_id
                 WHERE a.status='published' AND m.course_role='student' ORDER BY a.due_at NULLS LAST, a.created_at DESC""", (account["user_id"],)).fetchall()
-        result = [
-            public_assignment(row, is_prof)
-            for row in rows
-            if is_prof or row["tool"] != "student-agent"
-        ]
+        # Keep published legacy assignments accessible alongside SDL lessons.
+        result = [public_assignment(row, is_prof) for row in rows]
     if not is_prof:
         try:
             student_id = self_directed_identity(account)
@@ -330,6 +327,14 @@ def send_self_directed_message(
         "POST",
         f"/api/student/assignments/{assignment_id}/messages",
         json=body.model_dump(),
+    )
+
+
+@router.post("/self-directed/assignments/{assignment_id}/restart")
+def restart_self_directed_assignment(assignment_id: str, account=Depends(student)):
+    student_id = self_directed_identity(account)
+    return engines.self_directed_call(
+        student_id, "POST", f"/api/student/assignments/{assignment_id}/restart"
     )
 
 

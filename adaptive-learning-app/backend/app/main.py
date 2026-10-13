@@ -5,6 +5,9 @@ import hashlib
 import os
 import re
 import secrets
+import shutil
+import httpx
+from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -14,17 +17,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .auth import current_user, require_instructor, require_student
-from .config import AI_MODE, INSTRUCTOR_ORIGIN, STUDENT_ORIGIN
-from .db import connection, initialize, now, row_dict
+from .config import AI_MODE, INSTRUCTOR_ORIGIN, STUDENT_ORIGIN, UPLOAD_DIR
+from .db import (
+    connection, initialize, now, row_dict, load_attempt_for_turn, save_lesson_turn,
+    list_attempt_messages, load_attempt_progress_data, load_attempt_learning_state,
+    reset_attempt_for_restart,
+)
 from .lesson_content import configuration_issues
 from . import lesson_flow
 from .learning_flow import place_student, select_diagnostic_questions
-from .openai_client import assess_response, generate_learning_plan, runtime_ai_mode, tutor_reply
-from .rag import add_document, retrieve
-from .resource_discovery import discover_resources, read_resource_excerpts
+from .openai_client import assess_response, generate_learning_plan, infer_document_context, repair_learning_plan, runtime_ai_mode, tutor_reply
+from .rag import add_document, add_url_document, retrieve, preview_document, preview_url_document
+from .resource_discovery import discover_resources, read_resource_excerpts, verify_resources
 from .schemas import (
     AssignmentInput,
+    ResourceURLInput,
     GeneratePlanInput,
+    DocumentDraftInput,
     LearningPlan,
     LearningTurn,
     MessageInput,
@@ -53,6 +62,33 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class LabCode(BaseModel):
+    code: str
+
+
+@app.post("/api/lab/redeem")
+def redeem_lab_code(body: LabCode, user=Depends(current_user)):
+    from .lab import redeem
+    return redeem(body.code, user)
+
+
+class LabJoin(BaseModel):
+    name: str
+
+
+@app.post("/api/lab/sessions", status_code=201)
+def join_lab(body: LabJoin):
+    from .lab import create_session
+    return create_session(body.name)
+
+
+@app.get("/api/lab/session")
+def lab_session(user=Depends(current_user)):
+    if not user.get("lab_participant"):
+        raise HTTPException(401, "A lab session is required.")
+    return {"id": user["id"], "display_name": user["display_name"], "role": "student"}
 
 
 @app.middleware("http")
@@ -89,6 +125,16 @@ def _instructor_assignment(assignment_id: str, user: dict) -> dict:
 
 def _student_assignment(assignment_id: str, user: dict) -> dict:
     require_student(user)
+    if user.get("lab_participant"):
+        from .lab import instructor_id
+        with connection() as conn:
+            item = conn.execute("SELECT a.* FROM assignments a JOIN lab_enrollments e ON e.assignment_id=a.id WHERE a.id=? AND a.status='published' AND a.instructor_id=? AND e.student_id=?",
+                                (assignment_id, instructor_id(), user["id"])).fetchone()
+            if item is None:
+                raise HTTPException(404, "Assignment not found.")
+            conn.execute("INSERT INTO recipients(assignment_id,student_id) VALUES (?,?) ON CONFLICT DO NOTHING",
+                         (assignment_id, user["id"]))
+        return dict(item)
     with connection() as conn:
         item = row_dict(
             conn.execute(
@@ -160,25 +206,21 @@ def _source_metadata(sources: list[dict]) -> list[dict]:
 
 def _objective_progress(attempt_id: str, plan: dict) -> list[dict]:
     with connection() as conn:
-        evidence = conn.execute(
-            """SELECT e.* FROM evidence e
-               JOIN (SELECT objective_id,max(created_at) AS latest FROM evidence WHERE attempt_id=? GROUP BY objective_id) x
-               ON x.objective_id=e.objective_id AND x.latest=e.created_at
-               WHERE e.attempt_id=?""",
-            (attempt_id, attempt_id),
-        ).fetchall()
+        evidence = load_attempt_progress_data(conn, attempt_id)
     latest = {row["objective_id"]: dict(row) for row in evidence}
     demonstrated_ids = set()
     if plan.get("flow_version") == 2:
         with connection() as conn:
-            saved = conn.execute("SELECT learning_state FROM attempts WHERE id=?", (attempt_id,)).fetchone()
+            saved = load_attempt_learning_state(conn, attempt_id)
         if saved:
-            demonstrated_ids = set(json.loads(saved["learning_state"]).get("demonstrated", []))
+            coverage_state = json.loads(saved["learning_state"])
+            lesson_flow.refresh_concept_progress(coverage_state.get("lesson_snapshot") or plan, coverage_state)
+            demonstrated_ids = set(coverage_state["demonstrated"])
     return [
         {
             "objective_id": objective["id"],
             "title": objective["title"],
-            "status": "demonstrated" if objective["id"] in demonstrated_ids or latest.get(objective["id"], {}).get("demonstrated") else ("in_progress" if objective["id"] in latest else "not_started"),
+            "status": "demonstrated" if objective["id"] in demonstrated_ids or (plan.get("flow_version") != 2 and latest.get(objective["id"], {}).get("demonstrated")) else ("in_progress" if objective["id"] in latest else "not_started"),
             "score": latest.get(objective["id"], {}).get("score"),
             "rationale": latest.get(objective["id"], {}).get("rationale"),
         }
@@ -186,17 +228,14 @@ def _objective_progress(attempt_id: str, plan: dict) -> list[dict]:
     ]
 
 
-def _attempt_public(attempt: dict, plan: dict) -> dict:
+def _build_attempt_response(attempt: dict, plan: dict) -> dict:
     saved_state = json.loads(attempt.get("learning_state") or "{}")
     if saved_state.get("version") == 2:
         plan = saved_state["lesson_snapshot"]
     with connection() as conn:
         messages = [
             {**dict(row), "sources": json.loads(row["sources"])}
-            for row in conn.execute(
-                "SELECT id,role,content,sources,created_at FROM messages WHERE attempt_id=? ORDER BY created_at,id",
-                (attempt["id"],),
-            ).fetchall()
+            for row in list_attempt_messages(conn, attempt["id"])
         ]
     current = attempt["current_objective"]
     result = {
@@ -231,6 +270,7 @@ def _attempt_public(attempt: dict, plan: dict) -> dict:
     return result
 
 
+# LEGACY lesson helpers; shared response/persistence helpers above serve both versions.
 def _learning_asset(plan: dict, objective_id: str) -> dict | None:
     return next(
         (item for item in plan.get("learning_assets", []) if item["objective_id"] == objective_id),
@@ -276,11 +316,81 @@ def _path_prompt(
     return objective["diagnostic_prompt"], state
 
 
-def _student_summary(student: dict, attempt: dict, evidence: list[dict], quiz_results: list[dict]) -> dict:
+def _concept_analytics(plan: dict, state: dict) -> list[dict]:
+    """Summarize observed concept evidence, never inferred ability or personality."""
+    import copy
+    state = copy.deepcopy(state)
+    lesson_flow.refresh_concept_progress(plan, state)
+    results = []
+    seen = set()
+    for question in plan.get("diagnostic_quiz", []):
+        oid, concept = question["objective_id"], question["concept"]
+        if (oid, concept) in seen:
+            continue
+        seen.add((oid, concept))
+        diagnostic = [item for item in state.get("diagnostic", []) if item.get("objective_id") == oid and item.get("concept") == concept] if state.get("diagnostic_complete") else []
+        history = []
+        for record in state.get("practice_history", []):
+            recorded_concept = record.get("concept")
+            if not recorded_concept:
+                try:
+                    _, level, index = record["activity_id"].rsplit(":", 2)
+                    recorded_concept = lesson_flow.asset_for(plan, record["objective_id"])[level][int(index)]["concept"]
+                except (KeyError, ValueError, IndexError, StopIteration):
+                    continue
+            if record.get("objective_id") == oid and recorded_concept == concept:
+                history.append(record)
+        assessed = [record for record in history if record.get("assessment_status") not in {"grader_unavailable", "grader_error"} and record.get("category") not in {"grader_unavailable", "grader_error"}]
+        latest = assessed[-1] if assessed else None
+        checks = state["concept_checks"].get(oid, {}).get(concept, 0)
+        wrong = any(not entry.get("correct") for entry in diagnostic)
+        diagnostic_gap = next((entry.get("reasoning", {}) for entry in diagnostic if entry.get("reasoning", {}).get("category") in {"partial_understanding", "identifiable_misconception"}), None)
+        if latest and latest.get("category") != "sound_reasoning":
+            status = "needs_support"
+            next_action = latest.get("rationale") or "Ask for the missing reasoning in a fresh case."
+        elif checks >= 2:
+            status, next_action = "demonstrated", "Offer a transfer challenge or revisit another concept."
+        elif latest or checks:
+            status, next_action = "developing", "Use another distinct independent case to check this concept."
+        elif wrong or diagnostic_gap:
+            status = "needs_support"
+            next_action = diagnostic_gap.get("feedback") if diagnostic_gap else "Use the approved counterexample, then check a fresh case." if any(entry.get("need") == "counterexample_revision" for entry in diagnostic) else "Explain this concept with a worked example, then check a fresh case."
+        elif diagnostic:
+            status, next_action = "developing", "Check the reasoning in fresh independent cases; a correct selection alone is not mastery."
+        else:
+            status, next_action = "not_assessed", "Collect a diagnostic answer or independent practice response."
+        last_issue = history[-1] if history and history[-1].get("assessment_status") in {"grader_unavailable", "grader_error"} else None
+        results.append({"objective_id": oid, "objective_title": lesson_flow.objective_for(plan, oid)["title"],
+            "concept": concept, "status": status, "independent_checks": min(checks, 2),
+            "practice_responses": len(history), "assisted_responses": sum(bool(record.get("assisted")) for record in history),
+            "diagnostic_correct": sum(bool(entry.get("correct")) for entry in diagnostic), "diagnostic_total": len(diagnostic),
+            "confident_errors": sum(not entry.get("correct") and entry.get("confidence") == "high" for entry in diagnostic),
+            "earlier_misconceptions": list(dict.fromkeys(entry["misconception"] for entry in diagnostic if entry.get("misconception"))),
+            "latest_category": latest.get("category") if latest else None,
+            "latest_response": latest.get("response") if latest else None,
+            "latest_feedback": latest.get("rationale") if latest else diagnostic_gap.get("feedback") if diagnostic_gap else None,
+            "assessment_source": latest.get("assessment_source") if latest else None,
+            "grader_issue": last_issue.get("rationale") if last_issue else None, "next_action": next_action})
+    return results
+
+
+def _student_summary(student: dict, attempt: dict, evidence: list[dict], quiz_results: list[dict], concepts=None) -> dict:
+    if concepts is not None:
+        demonstrated = [item for item in concepts if item["status"] == "demonstrated"]
+        gaps = [item for item in concepts if item["status"] == "needs_support"]
+        developing = [item for item in concepts if item["status"] == "developing"]
+        reflections = attempt.get("learning_state", {}).get("reflections", [])
+        return {
+            "overview": f"{student['display_name']} has demonstrated {len(demonstrated)} of {len(concepts)} concepts through independent practice. {len(gaps)} need support and {len(developing)} are developing. Diagnostic: {attempt.get('quiz_score') if attempt.get('quiz_score') is not None else 'not completed'}. {len(reflections)} reflections recorded.",
+            "strengths": [item["concept"] + " — two distinct independent checks." for item in demonstrated] or ["Independent understanding has not yet been demonstrated."],
+            "weaknesses": [item["concept"] + " — " + (item["latest_feedback"] or "The diagnostic identified a gap; fresh practice is needed.") for item in gaps] or ["No current assessed gaps; unassessed concepts still need evidence."],
+            "improvements": [item["concept"] + " — " + item["next_action"] for item in [*gaps, *developing, *[c for c in concepts if c["status"] == "not_assessed"]]][:4] or ["Offer a transfer challenge to extend demonstrated understanding."],
+        }
     demonstrated = {}
+    completed_ids = {item["objective_id"] for item in attempt["objective_progress"] if item["status"] == "demonstrated"}
     needs_support = []
     for entry in evidence:
-        if entry["demonstrated"]:
+        if entry["demonstrated"] and entry["objective_id"] in completed_ids:
             demonstrated[entry["objective_id"]] = entry
         elif entry["rationale"] not in needs_support:
             needs_support.append(entry["rationale"])
@@ -327,6 +437,10 @@ def _student_summary(student: dict, attempt: dict, evidence: list[dict], quiz_re
         "weaknesses": weaknesses or ["No specific learning gaps are currently recorded."],
         "improvements": improvements or ["Continue applying each concept to a new example and justify the reasoning."],
     }
+
+
+from .common_rag_api import router as common_rag_router
+app.include_router(common_rag_router)
 
 
 @app.get("/api/health")
@@ -378,7 +492,14 @@ def instructor_assignments(user=Depends(current_user)):
                FROM assignments a WHERE a.instructor_id=? ORDER BY a.created_at DESC""",
             (user["id"],),
         ).fetchall()
-    return [_assignment_public(dict(row), True) for row in rows]
+    from .lab import assignment_code
+    items = []
+    for row in rows:
+        item = _assignment_public(dict(row), True)
+        if row["status"] == "published":
+            item["access_code"] = assignment_code(row["id"])
+        items.append(item)
+    return items
 
 
 @app.post("/api/instructor/generate-plan")
@@ -397,6 +518,86 @@ def generate_plan(body: GeneratePlanInput, user=Depends(current_user)):
         raise
     except Exception as exc:
         raise HTTPException(502, f"The learning plan could not be generated: {exc}") from exc
+
+
+@app.post("/api/instructor/documents/preview")
+async def instructor_document_preview(file: UploadFile = File(...), user=Depends(current_user)):
+    require_instructor(user)
+    return await preview_document(file)
+
+
+@app.post("/api/instructor/documents/url-preview")
+async def instructor_url_preview(body: ResourceURLInput, user=Depends(current_user)):
+    require_instructor(user)
+    return await preview_url_document(body.url.strip())
+
+
+def _document_plan(material: str, filename: str) -> dict:
+    stage = "document setup"
+    try:
+        context = infer_document_context(material, filename)
+        resources = verify_resources(context.get("resource_candidates", []) + discover_resources(context["topic"]), context["topic"])
+        if not resources:
+            raise ValueError("Credible readings could not be verified. Please retry preparing this document.")
+        stage = "lesson generation"
+        plan = generate_learning_plan(context["topic"], context.get("course_level", "Undergraduate"),
+            read_resource_excerpts(resources), approved_material=material,
+            objective_descriptions=context["objective_descriptions"], study_resources=resources,
+            intended_difficulty=context.get("intended_difficulty", "Undergraduate"),
+            prerequisite_knowledge=context.get("prerequisite_knowledge", "None"))
+        issues = configuration_issues({**plan, "content_approved": True})
+        if issues:
+            stage = "lesson validation repair"
+            plan = repair_learning_plan(plan, issues)
+            issues = configuration_issues({**plan, "content_approved": True})
+        if issues:
+            raise ValueError("The generated lesson needs another attempt: " + " ".join(issues))
+        return plan
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 413:
+            detail = f"The {stage} request is too large for the configured AI provider. Retrying the same document will not reduce its size. Use a shorter document or a provider/model with a higher token allowance."
+            try:
+                provider_error = exc.response.json().get("error", {})
+                message = provider_error.get("message", "")
+                limit = re.search(r"\bLimit\s+(\d+)", message)
+                requested = re.search(r"\bRequested\s+(\d+)", message)
+                if limit and requested:
+                    detail += f" Token allowance: {limit.group(1)}; requested: {requested.group(1)}."
+            except (ValueError, AttributeError, TypeError):
+                pass
+        elif exc.response.status_code == 429:
+            detail = f"The AI provider rate limit was reached during {stage}. Your document is still selected. Wait for the provider cooldown before trying again; the API key does not need changing."
+        elif exc.response.status_code == 400:
+            detail = exc.response.json().get("error", {}).get("message", "The AI provider rejected the draft request.")
+        else:
+            detail = f"The AI provider returned {exc.response.status_code}. Check the configured provider and retry."
+        raise HTTPException(502, f"Could not prepare the document for review: {detail}") from exc
+    except Exception as exc:
+        raise HTTPException(502, f"Could not prepare the document for review: {exc}") from exc
+
+
+@app.post("/api/instructor/document-draft")
+def document_draft(body: DocumentDraftInput, user=Depends(current_user)):
+    require_instructor(user)
+    return _document_plan(body.material, body.filename)
+
+
+@app.post("/api/instructor/assignments/{assignment_id}/prepare-review")
+def prepare_document_review(assignment_id: str, user=Depends(current_user)):
+    item = _instructor_assignment(assignment_id, user)
+    if item["status"] != "draft":
+        raise HTTPException(409, "Only a draft can be prepared for review.")
+    material = _plan(item).get("approved_material", "")
+    if len(material.strip()) < 30:
+        raise HTTPException(422, "Upload a readable course document first.")
+    documents = _documents(assignment_id)
+    plan = _document_plan(material, documents[0]["filename"] if documents else item["title"])
+    with connection() as conn:
+        conn.execute("UPDATE assignments SET title=?,learning_plan=? WHERE id=?", (plan["title"], json.dumps(plan), assignment_id))
+        count = conn.execute("SELECT count(*) AS total FROM recipients WHERE assignment_id=?", (assignment_id,)).fetchone()["total"]
+        if not count:
+            conn.executemany("INSERT INTO recipients(assignment_id,student_id) VALUES (?,?)", [(assignment_id, row["id"]) for row in conn.execute("SELECT id FROM users WHERE role='student'").fetchall()])
+    return instructor_assignment_detail(assignment_id, user)
 
 
 @app.post("/api/instructor/assignments", status_code=201)
@@ -434,7 +635,11 @@ def instructor_assignment_detail(assignment_id: str, user=Depends(current_user))
                 (assignment_id,),
             ).fetchall()
         ]
-    return {**_assignment_public(item, True), "students": recipients, "documents": _documents(assignment_id)}
+    result = {**_assignment_public(item, True), "students": recipients, "documents": _documents(assignment_id)}
+    if item["status"] == "published":
+        from .lab import assignment_code
+        result["access_code"] = assignment_code(assignment_id)
+    return result
 
 
 @app.post("/api/instructor/assignments/{assignment_id}/refresh-resources")
@@ -476,12 +681,51 @@ def update_assignment(assignment_id: str, body: AssignmentInput, user=Depends(cu
     return instructor_assignment_detail(assignment_id, user)
 
 
+@app.post("/api/instructor/assignments/{assignment_id}/editable-copy", status_code=201)
+def editable_assignment_copy(assignment_id: str, user=Depends(current_user)):
+    item = _instructor_assignment(assignment_id, user)
+    new_id = str(uuid4())
+    plan = _plan(item)
+    plan["content_approved"] = False
+    copied_paths = []
+    try:
+        with connection() as conn:
+            conn.execute("INSERT INTO assignments(id,instructor_id,title,instructions,status,learning_plan,created_at) VALUES (?,?,?,?,?,?,?)",
+                         (new_id, user["id"], item["title"], item["instructions"], "draft", json.dumps(plan), now()))
+            recipients = conn.execute("SELECT student_id FROM recipients WHERE assignment_id=?", (assignment_id,)).fetchall()
+            conn.executemany("INSERT INTO recipients(assignment_id,student_id) VALUES (?,?)", [(new_id, row["student_id"]) for row in recipients])
+            documents = conn.execute("SELECT * FROM documents WHERE assignment_id=?", (assignment_id,)).fetchall()
+            for document in documents:
+                document_id = str(uuid4())
+                path = UPLOAD_DIR / (document_id + Path(document["path"]).suffix)
+                copied_paths.append(path)
+                shutil.copy2(document["path"], path)
+                conn.execute("INSERT INTO documents(id,assignment_id,filename,content_type,path,created_at) VALUES (?,?,?,?,?,?)",
+                             (document_id, new_id, document["filename"], document["content_type"], str(path), now()))
+                chunks = conn.execute("SELECT * FROM chunks WHERE document_id=?", (document["id"],)).fetchall()
+                conn.executemany("INSERT INTO chunks(id,document_id,position,content,embedding,metadata) VALUES (?,?,?,?,?,?)",
+                    [(str(uuid4()), document_id, chunk["position"], chunk["content"], chunk["embedding"], chunk["metadata"]) for chunk in chunks])
+    except Exception as exc:
+        for path in copied_paths:
+            path.unlink(missing_ok=True)
+        raise HTTPException(500, "The editable copy could not be created. Please try again.") from exc
+    return instructor_assignment_detail(new_id, user)
+
+
 @app.post("/api/instructor/assignments/{assignment_id}/documents", status_code=201)
 async def upload_document(assignment_id: str, file: UploadFile = File(...), user=Depends(current_user)):
     item = _instructor_assignment(assignment_id, user)
     if item["status"] != "draft":
         raise HTTPException(409, "Upload documents before publishing the assignment.")
     return await add_document(assignment_id, file)
+
+
+@app.post("/api/instructor/assignments/{assignment_id}/documents/url", status_code=201)
+async def upload_url_document(assignment_id: str, body: ResourceURLInput, user=Depends(current_user)):
+    item = _instructor_assignment(assignment_id, user)
+    if item["status"] != "draft":
+        raise HTTPException(409, "Upload documents before publishing the assignment.")
+    return await add_url_document(assignment_id, body.url.strip())
 
 
 @app.delete("/api/instructor/assignments/{assignment_id}/documents/{document_id}", status_code=204)
@@ -524,7 +768,7 @@ def assignment_progress(assignment_id: str, user=Depends(current_user)):
         rows = conn.execute(
             """SELECT u.id AS student_id,u.display_name,u.email,t.id AS attempt_id,t.status,
                       t.current_objective,t.required_task_status,t.phase,t.study_completed_at,
-                      t.quiz_score,t.learning_path,t.started_at,t.completed_at
+                      t.quiz_score,t.learning_path,t.started_at,t.completed_at,t.learning_state
                FROM recipients r JOIN users u ON u.id=r.student_id
                LEFT JOIN attempts t ON t.assignment_id=r.assignment_id AND t.student_id=r.student_id
                WHERE r.assignment_id=? ORDER BY u.display_name""",
@@ -533,6 +777,10 @@ def assignment_progress(assignment_id: str, user=Depends(current_user)):
     result = []
     for row in rows:
         public = dict(row)
+        saved_state = json.loads(public.pop("learning_state", None) or "{}")
+        if plan.get("flow_version") == 2:
+            analytics_plan = saved_state.get("lesson_snapshot") or plan
+            public["concept_analytics"] = _concept_analytics(analytics_plan, saved_state or lesson_flow.initial_state(analytics_plan))
         public["objective_progress"] = _objective_progress(row["attempt_id"], plan) if row["attempt_id"] else []
         result.append(public)
     return result
@@ -590,11 +838,13 @@ def instructor_student_evidence(
                 question = plan["diagnostic_quiz"][index]
                 quiz_results.append({**entry, "id": question["id"], "difficulty": question["difficulty"],
                     "selected_index": entry["option_index"], "selected_answer": question["options"][entry["option_index"]] if entry["option_index"] is not None else "I don't know",
-                    "correct_answer": question["options"][question["correct_index"]], "explanation": question["explanation"]})
-        public_attempt = _attempt_public(attempt, plan)
+                    "correct_answer": question["options"][question["correct_index"]], "student_explanation": entry.get("explanation"), "explanation": question["explanation"]})
+        public_attempt = _build_attempt_response(attempt, plan)
         public_attempt.pop("quiz_results", None)
+        concepts = _concept_analytics(plan, saved_state)
         return {"student": student, "attempt": public_attempt, "evidence": evidence, "quiz_results": quiz_results,
-                "summary": _student_summary(student, public_attempt, evidence, quiz_results), "required_task": plan["required_task"]}
+                "concept_analytics": concepts,
+                "summary": _student_summary(student, public_attempt, evidence, quiz_results, concepts), "required_task": plan["required_task"]}
     answers = json.loads(attempt.get("quiz_answers") or "[]")
     question_bank = plan.get("diagnostic_quiz", [])
     diagnostic_questions = (
@@ -614,7 +864,7 @@ def instructor_student_evidence(
         }
         for index, question in enumerate(diagnostic_questions)
     ]
-    public_attempt = _attempt_public(attempt, plan)
+    public_attempt = _build_attempt_response(attempt, plan)
     public_attempt.pop("quiz_results", None)
     return {
         "student": student,
@@ -629,6 +879,17 @@ def instructor_student_evidence(
 @app.get("/api/student/assignments")
 def student_assignments(user=Depends(current_user)):
     require_student(user)
+    if user.get("lab_participant"):
+        from .lab import instructor_id
+        with connection() as conn:
+            rows = conn.execute(
+                """SELECT a.*,t.status AS attempt_status,t.current_objective,t.required_task_status,
+                          t.phase,t.quiz_score,t.learning_path
+                   FROM assignments a JOIN lab_enrollments e ON e.assignment_id=a.id AND e.student_id=?
+                   LEFT JOIN attempts t ON t.assignment_id=a.id AND t.student_id=e.student_id
+                   WHERE a.status='published' AND a.instructor_id=? ORDER BY a.published_at DESC""",
+                (user["id"], instructor_id())).fetchall()
+        return [_assignment_public(dict(row)) for row in rows]
     with connection() as conn:
         rows = conn.execute(
             """SELECT a.*,t.status AS attempt_status,t.current_objective,t.required_task_status,
@@ -654,7 +915,7 @@ def get_attempt(assignment_id: str, user=Depends(current_user)):
     item = _student_assignment(assignment_id, user)
     with connection() as conn:
         attempt = row_dict(conn.execute("SELECT * FROM attempts WHERE assignment_id=? AND student_id=?", (assignment_id, user["id"])).fetchone())
-    return _attempt_public(attempt, _plan(item)) if attempt else None
+    return _build_attempt_response(attempt, _plan(item)) if attempt else None
 
 
 @app.post("/api/student/assignments/{assignment_id}/start")
@@ -677,6 +938,7 @@ def start_attempt(assignment_id: str, user=Depends(current_user)):
                 attempt = row_dict(conn.execute("SELECT * FROM attempts WHERE assignment_id=? AND student_id=?", (assignment_id, user["id"])).fetchone())
             else:
                 state = json.loads(attempt.get("learning_state") or "{}")
+                # Older-V2 compatibility: preserve the existing chooser upgrade.
                 if state.get("version") == 2 and state.get("diagnostic_complete") and not state.get("choice_flow_version"):
                     state["choice_flow_version"] = 1
                     awaiting_choice = state.get("stage") == "adaptive_learning" and not state.get("selected_format")
@@ -686,7 +948,7 @@ def start_attempt(assignment_id: str, user=Depends(current_user)):
                         conn.execute("INSERT INTO messages(id,attempt_id,role,content,created_at) VALUES (?,?,?,?,?)", (str(uuid4()), attempt["id"], "assistant", f"Let's focus on {concept}. How would you like to work on it? Choose an approach below; then we'll go deeper one question at a time.", now()))
                     conn.execute("UPDATE attempts SET phase=?,learning_state=? WHERE id=?", (state["stage"], json.dumps(state), attempt["id"]))
                     attempt = row_dict(conn.execute("SELECT * FROM attempts WHERE id=?", (attempt["id"],)).fetchone())
-        return _attempt_public(attempt, plan)
+        return _build_attempt_response(attempt, plan)
     with connection() as conn:
         attempt = row_dict(conn.execute("SELECT * FROM attempts WHERE assignment_id=? AND student_id=?", (assignment_id, user["id"])).fetchone())
         if attempt is None:
@@ -710,20 +972,48 @@ def start_attempt(assignment_id: str, user=Depends(current_user)):
                     (str(uuid4()), attempt_id, "assistant", first_prompt, now()),
                 )
             attempt = row_dict(conn.execute("SELECT * FROM attempts WHERE id=?", (attempt_id,)).fetchone())
-    return _attempt_public(attempt, plan)
+    return _build_attempt_response(attempt, plan)
+
+
+@app.post("/api/student/assignments/{assignment_id}/restart")
+def restart_attempt(assignment_id: str, user=Depends(current_user)):
+    """Restart this student's V2 attempt for testing, after explicit UI confirmation."""
+    item = _student_assignment(assignment_id, user)
+    plan = _plan(item)
+    if plan.get("flow_version") != 2:
+        raise HTTPException(409, "Restart is available for current V2 lessons only.")
+    if configuration_issues(plan):
+        raise HTTPException(409, "Your instructor needs to finish configuring this lesson before you can restart it.")
+    with connection() as conn:
+        if not conn.postgres:
+            conn.execute("BEGIN IMMEDIATE")
+        attempt = load_attempt_for_turn(conn, assignment_id, user["id"])
+        if attempt is None:
+            raise HTTPException(409, "Open the lesson before restarting it.")
+        restarted_at = now()
+        state = lesson_flow.initial_state(plan)
+        reset_attempt_for_restart(
+            conn, attempt["id"], learning_state=json.dumps(state),
+            welcome_message=lesson_flow.welcome(plan, user["display_name"]),
+            started_at=restarted_at,
+        )
+        attempt = row_dict(conn.execute("SELECT * FROM attempts WHERE id=?", (attempt["id"],)).fetchone())
+    return _build_attempt_response(attempt, plan)
 
 
 @app.post("/api/student/assignments/{assignment_id}/learning-turn")
 def learning_turn(assignment_id: str, body: LearningTurn, user=Depends(current_user)):
+    # CURRENT V2 — 1. FastAPI validates LearningTurn and identifies the student.
+    # 2. Check assignment access.
     item = _student_assignment(assignment_id, user)
     if not body.content.strip() and body.action in {"message", "choice"}:
         raise HTTPException(422, "Write a response before sending.")
     fingerprint = hashlib.sha256(json.dumps(body.model_dump(), sort_keys=True).encode()).hexdigest()
+    # 3. Load the attempt under the existing transaction and lock.
     with connection() as conn:
         if not conn.postgres:
             conn.execute("BEGIN IMMEDIATE")
-        lock = " FOR UPDATE" if conn.postgres else ""
-        attempt = row_dict(conn.execute("SELECT * FROM attempts WHERE assignment_id=? AND student_id=?" + lock, (assignment_id, user["id"])).fetchone())
+        attempt = load_attempt_for_turn(conn, assignment_id, user["id"])
         if not attempt:
             raise HTTPException(409, "Open the lesson before sending a response.")
         if attempt["status"] == "completed":
@@ -731,19 +1021,23 @@ def learning_turn(assignment_id: str, body: LearningTurn, user=Depends(current_u
         state = json.loads(attempt["learning_state"])
         if state.get("version") != 2:
             raise HTTPException(409, "This earlier session uses the previous learning flow. Open a newly configured lesson.")
+        # 4. Check duplicate turn IDs before running the lesson again.
         events = state.get("events", {})
         if body.turn_id in events:
             if events[body.turn_id] != fingerprint:
                 raise HTTPException(409, "This response identifier was already used for a different message.")
         else:
+            # 5. Retrieve context only when the existing help check requests it.
             sources = []
             if state["stage"] in {"welcome", "study_resources", "adaptive_learning"} and lesson_flow.is_help(body.content):
                 sources = retrieve(assignment_id, body.content)
                 state["study_context"] = sources
+            # 6. Let lesson_flow.py make all current lesson decisions.
             try:
-                updated, reply, evidence = lesson_flow.transition(state, body)
+                updated, reply, evidence = lesson_flow.process_lesson_turn(state, body)
             except ValueError as exc:
                 raise HTTPException(409, str(exc)) from exc
+            # 7. Save the decided result and transport metadata atomically.
             updated.pop("study_context", None)
             updated["events"] = {**events, body.turn_id: fingerprint}
             snapshot = updated["lesson_snapshot"]
@@ -752,17 +1046,22 @@ def learning_turn(assignment_id: str, body: LearningTurn, user=Depends(current_u
             selected_path = updated.get("current_paths", {}).get(target)
             quiz_answers = json.dumps([entry["option_index"] for entry in updated["diagnostic"]]) if updated.get("diagnostic_complete") else attempt["quiz_answers"]
             study_time = now() if state["stage"] == "study_resources" and updated["stage"] == "diagnostic_quiz" else attempt.get("study_completed_at")
-            conn.execute("UPDATE attempts SET phase=?,learning_state=?,current_objective=?,quiz_answers=?,quiz_score=?,learning_path=?,study_completed_at=? WHERE id=?", (updated["stage"], json.dumps(updated), current_index, quiz_answers, updated.get("quiz_score"), selected_path, study_time, attempt["id"]))
+            attempt_values = (
+                updated["stage"], json.dumps(updated), current_index, quiz_answers,
+                updated.get("quiz_score"), selected_path, study_time,
+            )
             student_message = body.content.strip() or (f"Option {chr(65 + body.option_index)}; confidence: {body.confidence or 'not reported'}; explanation: {body.explanation or 'not reported'}" if body.option_index is not None else body.action)
-            created = now()
-            conn.execute("INSERT INTO messages(id,attempt_id,role,content,created_at) VALUES (?,?,?,?,?)", (str(uuid4()), attempt["id"], "student", student_message, created))
-            conn.execute("INSERT INTO messages(id,attempt_id,role,content,sources,created_at) VALUES (?,?,?,?,?,?)", (str(uuid4()), attempt["id"], "assistant", reply, json.dumps(_source_metadata(sources)), now()))
-            if evidence:
-                conn.execute("INSERT INTO evidence(id,attempt_id,objective_id,response,score,demonstrated,rationale,created_at) VALUES (?,?,?,?,?,?,?,?)", (str(uuid4()), attempt["id"], evidence["objective_id"], evidence["response"], evidence["score"], int(evidence["demonstrated"]), evidence["rationale"], created))
+            save_lesson_turn(
+                conn, attempt["id"], attempt_values=attempt_values,
+                student_message=student_message, reply=reply,
+                sources_json=json.dumps(_source_metadata(sources)), evidence=evidence,
+            )
         attempt = row_dict(conn.execute("SELECT * FROM attempts WHERE id=?", (attempt["id"],)).fetchone())
-    return _attempt_public(attempt, _plan(item))
+    # 8. Build the public response after the transaction commits.
+    return _build_attempt_response(attempt, _plan(item))
 
 
+# LEGACY endpoints below: V2 lessons use learning_turn() instead.
 @app.post("/api/student/assignments/{assignment_id}/study-complete")
 def complete_study_phase(
     assignment_id: str,
@@ -803,7 +1102,7 @@ def complete_study_phase(
                 conn.execute("INSERT INTO messages(id,attempt_id,role,content,created_at) VALUES (?,?,?,?,?)",
                              (str(uuid4()), attempt["id"], "assistant", prompt, now()))
         attempt = row_dict(conn.execute("SELECT * FROM attempts WHERE id=?", (attempt["id"],)).fetchone())
-    return _attempt_public(attempt, plan)
+    return _build_attempt_response(attempt, plan)
 
 
 @app.post("/api/student/assignments/{assignment_id}/quiz")
@@ -856,7 +1155,7 @@ def submit_quiz(
             (str(uuid4()), attempt["id"], "assistant", intro, now()),
         )
         attempt = row_dict(conn.execute("SELECT * FROM attempts WHERE id=?", (attempt["id"],)).fetchone())
-    return _attempt_public(attempt, plan)
+    return _build_attempt_response(attempt, plan)
 
 
 @app.post("/api/student/assignments/{assignment_id}/messages")
@@ -1008,7 +1307,7 @@ def send_message(assignment_id: str, body: MessageInput, user=Depends(current_us
                     (json.dumps(state), attempt["id"]),
                 )
         attempt = row_dict(conn.execute("SELECT * FROM attempts WHERE id=?", (attempt["id"],)).fetchone())
-    return _attempt_public(attempt, plan)
+    return _build_attempt_response(attempt, plan)
 
 
 @app.post("/api/student/assignments/{assignment_id}/submit-task")
@@ -1039,4 +1338,4 @@ def submit_task(assignment_id: str, body: TaskSubmission, user=Depends(current_u
             (str(uuid4()), attempt["id"], "assistant", f"Thank you, {user['display_name']}! Your final write-up has been saved. Today's session is complete.", now()),
         )
         attempt = row_dict(conn.execute("SELECT * FROM attempts WHERE id=?", (attempt["id"],)).fetchone())
-    return _attempt_public(attempt, plan)
+    return _build_attempt_response(attempt, plan)

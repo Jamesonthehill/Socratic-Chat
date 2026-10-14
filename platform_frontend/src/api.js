@@ -41,7 +41,7 @@ export async function api(path, options = {}) {
 }
 export const TOOLS = {
   socratic: {
-    name: "Socratic Reasoning",
+    name: "Socratic Chat",
     short: "SC",
     mode: "Guide",
     step: "01",
@@ -58,7 +58,7 @@ export const TOOLS = {
       "Create structured moments for students to connect ideas and reflect.",
     color: "#8b5cc7",
   },
-  "student-agent": {
+  "self-directed-learning": {
     name: "Self-Directed Learning",
     short: "SDL",
     description: "Study resources, complete a diagnostic, and follow your adaptive learning path.",
@@ -67,12 +67,9 @@ export const TOOLS = {
     step: "03",
   },
 };
-export const toolInfo = (id) =>
-  TOOLS[id === "self-directed-learning" ? "student-agent" : id];
-export const toolSlug = (id) =>
-  id === "student-agent" ? "self-directed-learning" : id;
-export const toolIdFromSlug = (slug) =>
-  slug === "self-directed-learning" ? "student-agent" : slug;
+export const toolInfo = (id) => TOOLS[id];
+export const toolSlug = (id) => id;
+export const toolIdFromSlug = (slug) => slug;
 export const date = (value) =>
   value
     ? new Date(value).toLocaleString([], {

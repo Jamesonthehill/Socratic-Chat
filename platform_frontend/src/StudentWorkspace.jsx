@@ -4,17 +4,6 @@ import Markdown from "react-markdown";
 import { api, date, TOOLS } from "./api";
 import { Badge, Notice } from "./ui";
 
-const ADAPTIVE_NEXT_STEPS = {
-  ASSESS: "Answer the question on your own.",
-  EXPLAIN: "Review an explanation, then try again.",
-  HINT: "Use a hint to keep moving.",
-  PRACTICE: "Practice this idea with another attempt.",
-  REMEDIATE: "Revisit the part that needs attention.",
-  ADVANCE: "Continue to the next learning objective.",
-  CHALLENGE: "Try an extension challenge.",
-  FOCUS_REQUIRED: "Complete the required assignment task.",
-};
-
 function nextQuestion(messages) {
   const answer = [...(messages || [])]
     .reverse()
@@ -564,10 +553,6 @@ export default function StudentWorkspace() {
   ];
   const milestone =
     assignment.student_config?.module_type === "milestone_based";
-  const learningPlan = assignment.student_config?.learning_plan;
-  const progressByObjective = Object.fromEntries(
-    (state.objective_progress || []).map((item) => [item.objective_id, item]),
-  );
   return (
     <>
       <Link className="back" to="/student">
@@ -615,53 +600,7 @@ export default function StudentWorkspace() {
                 : "Reflect on the prompts, then finish the session to receive your evaluation."}
             </p>
           )}
-          {assignment.tool === "student-agent" && (
-            <>
-              <h3>{assignment.student_config.topic_name}</h3>
-              {learningPlan && (
-                <div className="learning-plan-summary">
-                  <h3>Current focus</h3>
-                  {state.phase_label && (
-                    <p><strong>Learning stage:</strong> {state.phase_label}</p>
-                  )}
-                  <p><strong>Current objective:</strong>{" "}
-                    {learningPlan.objectives.find((item) => item.id === state.current_objective_id)?.description || "Diagnostic starting"}
-                  </p>
-                  {state.latest_decision?.action && (
-                    <p><strong>Next step:</strong>{" "}
-                      {ADAPTIVE_NEXT_STEPS[state.latest_decision.action] || "Continue with the tutor prompt."}
-                    </p>
-                  )}
-                  <h3>Objectives</h3>
-                  <ul>
-                    {learningPlan.objectives.map((objective) => (
-                      <li key={objective.id}>
-                        {objective.description}{" — "}
-                        <strong>{(progressByObjective[objective.id]?.status || "not_observed").replaceAll("_", " ")}</strong>
-                      </li>
-                    ))}
-                  </ul>
-                  <h3>Required task</h3>
-                  <p>{learningPlan.required_task.title}</p>
-                  <Badge value={state.required_task_status || "not_started"} />
-                </div>
-              )}
-              <ul className="resources">
-                {assignment.student_config.resources.map((r, i) => (
-                  <li key={i}>
-                    {r.url ? (
-                      <a href={r.url} target="_blank" rel="noreferrer">{r.title}</a>
-                    ) : r.title}
-                  </li>
-                ))}
-              </ul>
-              <p className="help">
-                {learningPlan
-                  ? "Begin with the diagnostic, follow your learning path, then complete the final demonstration and required task."
-                  : "Work through reading, discussion, and practice. Complete the assignment at wrap-up."}
-              </p>
-            </>
-          )}
+
           {attempt && !completed && assignment.tool !== "reflections" && (
             <>
               <p className="saved-note">
@@ -799,47 +738,7 @@ export default function StudentWorkspace() {
                     ))}
                   </div>
               )}
-              {!completed && assignment.tool === "student-agent" && !state.adaptive && (
-                <div className="tutor-controls">
-                  {state.nav?.map((n) => (
-                    <button
-                      key={n.id}
-                      disabled={busy || !n.unlocked || n.current}
-                      className="secondary compact"
-                      onClick={() =>
-                        perform("actions", {
-                          action: "navigate",
-                          value: n.id,
-                          request_id: crypto.randomUUID(),
-                        })
-                      }
-                    >
-                      {n.label}
-                    </button>
-                  ))}
-                  {state.awaiting_scenario && (
-                    <div>
-                      <p>Choose a practice scenario:</p>
-                      {state.practice_options?.map((s) => (
-                        <button
-                          className="secondary compact"
-                          key={s}
-                          disabled={busy}
-                          onClick={() =>
-                            perform("actions", {
-                              action: "scenario",
-                              value: s,
-                              request_id: crypto.randomUUID(),
-                            })
-                          }
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+
               {completed ? (
                 <Result result={attempt.result || {}} />
               ) : (

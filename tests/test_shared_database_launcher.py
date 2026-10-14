@@ -33,7 +33,7 @@ def test_services_share_database_and_sdl_ignores_inherited_sqlite(monkeypatch, t
     monkeypatch.setattr(runner.subprocess, "Popen", launch)
     monkeypatch.setattr(runner.signal, "signal", lambda *args: None)
     runner.main()
-    assert len(launched) == 4
-    for index in (0, 1, 3):
+    assert len(launched) == 3
+    for index in (0, 1, 2):
         assert launched[index]["env"]["DATABASE_URL"] == "postgresql://shared.invalid/main"
-    assert "ADAPTIVE_DATABASE_PATH" not in launched[3]["env"]
+    assert "ADAPTIVE_DATABASE_PATH" not in launched[2]["env"]

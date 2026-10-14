@@ -3,7 +3,7 @@
 The platform's `/platform/self-directed.html` page imports the same `App`,
 `LessonWorkspace`, and CSS used by the local student app. Lessons and learning
 logic remain in the adaptive backend; the platform supplies signed login and
-forwards student actions, including restart. Instructor authoring remains local.
+forwards student actions, including restart. Instructor authoring remains in the independent SDL app.
 
 ## Use lessons created by the local instructor
 
@@ -40,8 +40,6 @@ platform and assignment access is checked by the adaptive backend.
   student app used by the standalone SDL feature. Browser requests go through
   `/api/platform/self-directed/...`; the gateway resolves the signed-in account
   and forwards actions to the configured SDL backend.
-- Existing Student Agent assignments retain their original assignment routes
-  and backend so historical progress remains accessible.
 
 ## Verification
 

@@ -31,7 +31,6 @@ class ReflectionState(TypedDict):
     system_prompt: str
 
     # Current-turn I/O (set fresh each /message invocation)
-    source_context: str
     user_message: str
     current_reply: str
     adequate: bool

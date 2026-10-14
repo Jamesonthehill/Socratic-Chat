@@ -32,7 +32,7 @@ class EmbedInput(BaseModel):
 def checked_embeddings(body: EmbedInput):
     if body.model != OPENAI_EMBEDDING_MODEL:
         raise HTTPException(409, "Configure ClubALL and SDL to use the same embedding model before indexing.")
-    vectors = embed_texts(body.texts)
+    vectors = embed_texts(body.texts, dimensions=body.dimensions)
     if len(vectors) != len(body.texts) or any(len(v) != body.dimensions for v in vectors):
         raise HTTPException(503, "SDL embeddings do not match the course index. Configure the embedding provider and dimensions; offline vectors cannot replace the course index.")
     return vectors

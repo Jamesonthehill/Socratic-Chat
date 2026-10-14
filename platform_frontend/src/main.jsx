@@ -13,7 +13,7 @@ import { api, session, logout, TOOLS, date, label, SESSION_KEY, toolInfo, toolSl
 import AssignmentEditor from "./AssignmentEditor";
 import CanvasImport from "./CanvasImport";
 import StudentWorkspace from "./StudentWorkspace";
-import SelfDirectedWorkspace from "./SelfDirectedWorkspace";
+import SelfDirectedInstructorHome from "./SelfDirectedInstructorHome";
 import "./styles.css";
 
 import { Notice, Badge } from "./ui";
@@ -239,16 +239,6 @@ export function App() {
             }
           />
           <Route
-            path="/student/self-directed-learning/:id"
-            element={
-              !isProfessor ? (
-                <SelfDirectedWorkspace />
-              ) : (
-                <Navigate to={home} replace />
-              )
-            }
-          />
-          <Route
             path="*"
             element={
               <div className="empty">
@@ -426,14 +416,20 @@ function StudentDashboard() {
       <Notice error={assignments.error || courseData.error || actionError} />
       <div className="tool-grid">
         {Object.entries(TOOLS).map(([id, tool]) => (
-          <AssignmentLink key={id} separateTab={id === "student-agent"}
-            to={id === "student-agent" ? "/platform/self-directed.html" : `/student?tool=${id}`}
+          <AssignmentLink key={id} separateTab={id === "self-directed-learning"}
+            to={id === "self-directed-learning" ? "/platform/self-directed.html" : `/student?tool=${id}`}
             className="tool-card" style={{ "--tool-color": tool.color }}>
             <div className="tool-mark">{tool.short}</div><h2>{tool.name}</h2><p>{tool.description}</p>
-            <span>{id === "student-agent" ? "Open student workspace ↗" : "View assignments ↗"}</span>
+            <span>{id === "self-directed-learning" ? "Open student workspace ↗" : "View assignments ↗"}</span>
           </AssignmentLink>
         ))}
       </div>
+      {assignments.items?.some((item) => item.tool === "self-directed-learning") && (!selectedTool || selectedTool === "self-directed-learning") && (
+        <section className="section" aria-label="Self-Directed Learning assignments">
+          <div className="section-heading"><h2>Self-Directed Learning assignments</h2></div>
+          <AssignmentList items={assignments.items.filter((item) => item.tool === "self-directed-learning")} professor={false} />
+        </section>
+      )}
       <section className="section student-courses">
         <div className="section-heading">
           <h2>Your courses</h2>
@@ -446,7 +442,7 @@ function StudentDashboard() {
                 const expanded =
                   approved && expandedCourse === course.course_id;
                 const courseAssignments = assignments.items.filter(
-                  (item) => item.course_id === course.course_id && (!selectedTool || item.tool === selectedTool),
+                  (item) => item.tool !== "self-directed-learning" && item.course_id === course.course_id && (!selectedTool || item.tool === selectedTool),
                 );
                 return (
                   <article
@@ -628,7 +624,7 @@ function Dashboard({ professor = false }) {
           </div>
         </section>
       )}
-      {!professor && <div className="tool-grid">{Object.entries(TOOLS).map(([id, tool]) => <AssignmentLink key={id} separateTab={id === "student-agent"} to={id === "student-agent" ? "/platform/self-directed.html" : `/student?tool=${id}`} className="tool-card" style={{ "--tool-color": tool.color }}><div className="tool-mark">{tool.short}</div><h2>{tool.name}</h2><p>{tool.description}</p><span>{id === "student-agent" ? "Open student workspace ↗" : "View assignments ↗"}</span></AssignmentLink>)}</div>}
+      {!professor && <div className="tool-grid">{Object.entries(TOOLS).map(([id, tool]) => <AssignmentLink key={id} separateTab={id === "self-directed-learning"} to={id === "self-directed-learning" ? "/platform/self-directed.html" : `/student?tool=${id}`} className="tool-card" style={{ "--tool-color": tool.color }}><div className="tool-mark">{tool.short}</div><h2>{tool.name}</h2><p>{tool.description}</p><span>{id === "self-directed-learning" ? "Open student workspace ↗" : "View assignments ↗"}</span></AssignmentLink>)}</div>}
       <section className="section">
         <div className="section-heading">
           <h2>{professor ? "All assignments" : "Assigned to you"}</h2>
@@ -692,6 +688,7 @@ function ToolDashboard() {
       .catch((e) => setCourseError(e.message));
   }, []);
   if (!TOOLS[tool]) return <Navigate to="/professor" replace />;
+  if (tool === "self-directed-learning") return <SelfDirectedInstructorHome />;
   return (
     <>
       <Link className="back" to="/professor">

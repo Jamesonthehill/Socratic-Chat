@@ -20,15 +20,15 @@ from app.answer_evaluation import (
 from app.classifier import MessageClassification, classify_message
 from app.pipeline_logging import begin_trace, debug_preview, end_trace, log_event, log_exception
 from app.schemas import ChatMessage, Source
-from platform_app import knowledge
-from platform_app.adaptive import is_phase1_oop_plan
-from platform_app.schemas import ReflectionConfig, TutorConfig, Topic
+from platform_app.schemas import ReflectionConfig
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def call(tool, method, path, **kwargs):
-    env, default = ("REFLECTIONS_URL", "http://127.0.0.1:8002") if tool == "reflections" else ("TUTOR_URL", "http://127.0.0.1:8003")
+    if tool != "reflections":
+        raise HTTPException(404, "Unknown learning service.")
+    env, default = "REFLECTIONS_URL", "http://127.0.0.1:8002"
     token = os.environ.get("PLATFORM_SERVICE_TOKEN", "")
     if not token:
         raise HTTPException(503, "Configure PLATFORM_SERVICE_TOKEN before using the learning services.")
@@ -52,60 +52,6 @@ def call(tool, method, path, **kwargs):
         raise HTTPException(503, f"The {tool} engine is unavailable. Please retry shortly.") from exc
 
 
-def self_directed_call(student_id: str, method: str, path: str, **kwargs):
-    """Call the standalone SDL service while the platform retains authentication."""
-    base = os.getenv("SELF_DIRECTED_LEARNING_URL", "http://127.0.0.1:8100").rstrip("/")
-    headers = {"X-Demo-User": student_id}
-    token = os.environ.get("PLATFORM_SERVICE_TOKEN", "")
-    if token:
-        headers["X-Platform-Service"] = token
-    try:
-        with httpx.Client(timeout=180, headers=headers) as client:
-            response = client.request(method, base + path, **kwargs)
-        if response.is_error:
-            detail = response.json().get("detail", "") if response.status_code < 500 else ""
-            raise HTTPException(
-                response.status_code if response.status_code < 500 else 502,
-                detail or "Self-Directed Learning could not complete this action. Please retry.",
-            )
-        return response.json()
-    except HTTPException:
-        raise
-    except (httpx.HTTPError, ValueError) as exc:
-        raise HTTPException(503, "Self-Directed Learning is unavailable. Please retry shortly.") from exc
-
-
-def resolve_self_directed_student(account: dict) -> str:
-    base = os.getenv("SELF_DIRECTED_LEARNING_URL", "http://127.0.0.1:8100").rstrip("/")
-    token = os.environ.get("PLATFORM_SERVICE_TOKEN", "")
-    if not token:
-        raise HTTPException(503, "The platform service connection is not configured.")
-    try:
-        with httpx.Client(timeout=30, headers={"X-Platform-Service": token}) as client:
-            response = client.post(
-                base + "/internal/platform/students/resolve",
-                json={
-                    "platform_user_id": str(account["user_id"]),
-                    "email": account["email"],
-                    "display_name": account.get("display_name") or account["username"],
-                },
-            )
-        if response.is_error:
-            detail = response.json().get("detail", "") if response.status_code < 500 else ""
-            raise HTTPException(
-                response.status_code if response.status_code < 500 else 502,
-                detail or "The student profile could not be connected to Self-Directed Learning.",
-            )
-        return str(response.json()["id"])
-    except HTTPException:
-        raise
-    except (httpx.HTTPError, KeyError, ValueError) as exc:
-        raise HTTPException(503, "Self-Directed Learning is unavailable. Please retry shortly.") from exc
-
-
-def topic_templates():
-    topics = [json.loads(p.read_text()) for p in sorted((ROOT / "student-agent-bot/data/topics/builtin").glob("*.json"))]
-    return [Topic.model_validate({k: v for k, v in topic.items() if k in Topic.model_fields}).model_dump(mode="json") for topic in topics]
 
 
 def publish_snapshot(assignment):
@@ -132,39 +78,10 @@ def publish_snapshot(assignment):
     if assignment["tool"] == "reflections":
         cfg = ReflectionConfig.model_validate(config)
         cfg.validate_publish()
-        chunks = knowledge.course_snapshot(assignment["course_id"], config.get("document_ids"))
-        module_config = {k: v for k, v in config.items() if k != "document_ids"}
         module = call("reflections", "PUT", f"/internal/platform/modules/{assignment['id']}",
-                      json={"name": assignment["title"], "course_id": str(assignment["course_id"]), "config": module_config})
-        return {"config": config, "module_id": module["id"], "chunks": chunks}
-    cfg = TutorConfig.model_validate(config)
-    if cfg.learning_plan is not None:
-        if cfg.learning_plan.schema_version == 1 and not is_phase1_oop_plan(cfg.learning_plan):
-            raise ValueError("Phase 1 supports only the seeded Object-Oriented Programming plan.")
-        selected = config.get("document_ids") or []
-        if selected:
-            shared = knowledge.course_snapshot(assignment["course_id"], selected)
-            existing = {r.document_id for r in cfg.learning_plan.approved_resources if r.document_id}
-            titles = {c["document_id"]: c["title"] for c in shared}
-            from platform_app.schemas import ApprovedResource
-            cfg.learning_plan.approved_resources.extend(
-                ApprovedResource(id="shared-" + doc_id, title=title, document_id=doc_id)
-                for doc_id, title in titles.items() if doc_id not in existing)
-            config = {**config, "learning_plan": cfg.learning_plan.model_dump(mode="json")}
-        chosen = {item.document_id for item in cfg.learning_plan.approved_resources if item.document_id}
-        chunks = []
-        if chosen:
-            files = db.list_rag_files(course_id=str(assignment["course_id"]))
-            allowed = {str(f["document_id"]) for f in files if f.get("document_id")}
-            if not chosen.issubset(allowed):
-                raise HTTPException(422, "Every adaptive-plan document must belong to this course.")
-            chunks = knowledge.course_snapshot(assignment["course_id"], chosen)
-            if chosen - {c["document_id"] for c in chunks}:
-                raise HTTPException(422, "Some adaptive-plan resources have no indexed content.")
-        return {"config": config, "chunks": chunks}
-    if cfg.topic is None:
-        raise HTTPException(422, "Select a tutor topic or adaptive learning plan before publishing.")
-    return {"config": config, "chunks": knowledge.course_snapshot(assignment["course_id"], config.get("document_ids"))}
+                      json={"name": assignment["title"], "course_id": str(assignment["course_id"]), "config": config})
+        return {"config": config, "module_id": module["id"]}
+    raise HTTPException(404, "Unknown assignment tool.")
 
 
 def start(assignment, attempt):
@@ -177,12 +94,9 @@ def start(assignment, attempt):
             return {"messages": [{"role": "assistant", "content": config["milestone_prompt"]}]}
         result = call("reflections", "POST", "/internal/platform/start", json={
             "session_id": str(attempt["id"]), "module_id": snapshot["module_id"],
-            "student_id": str(attempt["student_id"]), "course_id": str(assignment["course_id"]),
-            "source_context": knowledge.context_text(knowledge.retrieve(assignment["title"], snapshot.get("chunks") or []))})
+            "student_id": str(attempt["student_id"]), "course_id": str(assignment["course_id"])})
         return {"messages": [{"role": "assistant", "content": result["greeting"]}], "total_questions": result["total_questions"], "question_index": 0}
-    return call("student-agent", "POST", "/api/session/start", json={
-        "session_id": str(attempt["id"]), "topic_id": config["topic"]["id"],
-        "topic_snapshot": config["topic"], "provider": config["provider"], "personality": config["personality"]})
+    raise HTTPException(404, "Unknown assignment tool.")
 
 
 def _snapshot_titles(chunks):
@@ -467,15 +381,12 @@ def message(assignment, attempt, content, request_id):
             result = call(tool, "POST", "/api/rec-sys/milestone", json={
                 "module_id": assignment["snapshot"]["module_id"], "student_name": str(attempt["student_id"]), "reflection": content})
             return {"reply": "Your reflection has been submitted.", "result": result, "completed": True}
-        return call(tool, "POST", "/internal/platform/message", json={"session_id": str(attempt["id"]), "message": content, "request_id": request_id,
-            "source_context": knowledge.context_text(knowledge.retrieve(content, assignment["snapshot"].get("chunks") or []))})
-    return call(tool, "POST", "/internal/platform/action", json={"session_id": str(attempt["id"]), "action": "message", "value": content, "request_id": request_id,
-        "source_context": knowledge.context_text(knowledge.retrieve(content, assignment["snapshot"].get("chunks") or []))})
+        return call(tool, "POST", "/internal/platform/message", json={"session_id": str(attempt["id"]), "message": content, "request_id": request_id})
+    raise HTTPException(404, "Unknown assignment tool.")
 
 
 def complete(assignment, attempt):
     tool = assignment["tool"]
-    cfg = assignment["snapshot"]["config"]
     count = sum(m["role"] == "user" for m in attempt["messages"])
     if tool == "socratic":
         minimum = assignment["snapshot"]["config"]["minimum_messages"]
@@ -488,76 +399,55 @@ def complete(assignment, attempt):
         if not count:
             raise HTTPException(422, "Respond to the reflection before ending the session.")
         return call(tool, "POST", "/internal/platform/end", json={"session_id": str(attempt["id"])})
-    if cfg.get("learning_plan"):
-        if attempt.get("required_task_status") != "completed":
-            raise HTTPException(422, "Submit the required task before completing this assignment.")
-        return {
-            "required_task_status": "completed",
-            "objective_progress": attempt["engine_state"].get("objective_progress", []),
-        }
-    if attempt["engine_state"].get("phase") != "complete" and not attempt["engine_state"].get("ended"):
-        raise HTTPException(422, "Reach the tutor's wrap-up before completing this assignment.")
-    return call(tool, "POST", "/api/session/end", json={"session_id": str(attempt["id"])})
+    raise HTTPException(404, "Unknown assignment tool.")
 
 
-def adaptive_rag_context(assignment, objective, decision, student_message):
-    """Retrieve objective-permitted context from one immutable snapshot."""
-    snapshot = assignment.get("snapshot") or {}
-    published_plan = (snapshot.get("config") or {}).get("learning_plan")
-    chunks = snapshot.get("chunks", [])
-    if not isinstance(published_plan, dict) or not chunks:
-        return []
+def self_directed_call(student_id: str, method: str, path: str, **kwargs):
+    """Call the standalone SDL service while the platform retains authentication."""
+    base = os.getenv("SELF_DIRECTED_LEARNING_URL", "http://127.0.0.1:8100").rstrip("/")
+    headers = {"X-Demo-User": student_id}
+    token = os.environ.get("PLATFORM_SERVICE_TOKEN", "")
+    if token:
+        headers["X-Platform-Service"] = token
+    try:
+        with httpx.Client(timeout=180, headers=headers) as client:
+            response = client.request(method, base + path, **kwargs)
+        if response.is_error:
+            detail = response.json().get("detail", "") if response.status_code < 500 else ""
+            raise HTTPException(
+                response.status_code if response.status_code < 500 else 502,
+                detail or "Self-Directed Learning could not complete this action. Please retry.",
+            )
+        return response.json()
+    except HTTPException:
+        raise
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(503, "Self-Directed Learning is unavailable. Please retry shortly.") from exc
 
-    resources = published_plan.get("approved_resources") or []
-    permitted_by_document = {}
-    for resource in resources:
-        document_id = resource.get("document_id")
-        objective_ids = resource.get("objective_ids") or []
-        if document_id and (not objective_ids or objective.id in objective_ids):
-            permitted_by_document.setdefault(str(document_id), []).append(resource)
-    if not permitted_by_document:
-        return []
 
-    excluded_topics = (
-        (published_plan.get("scope") or {}).get("excluded_topics") or []
-    )
-
-    def excluded(item):
-        item_tokens = set(rag.tokenize(f"{item.get('title', '')} {item.get('text', '')}"))
-        return any(
-            topic_tokens and topic_tokens.issubset(item_tokens)
-            for topic in excluded_topics
-            if (topic_tokens := set(rag.tokenize(topic)))
-        )
-
-    course_id = str(assignment.get("course_id"))
-    eligible = [
-        item
-        for item in chunks
-        if str(item.get("course_id")) == course_id
-        and str(item.get("document_id")) in permitted_by_document
-        and not excluded(item)
-    ]
-    if not eligible:
-        return []
-
-    criteria = " ".join(objective.success_criteria)
-    query = (
-        f"{objective.description} {criteria} {decision.action.value} {student_message}"
-    )
-    context = []
-    for item in knowledge.retrieve(query, eligible, 3):
-        score = item["score"]
-        resource = permitted_by_document[str(item["document_id"])][0]
-        context.append(
-            {
-                "resource_id": resource["id"],
-                "document_id": item["document_id"],
-                "chunk_id": item["chunk_id"],
-                "course_id": item["course_id"],
-                "title": item["title"],
-                "text": item["text"],
-                "score": score,
-            }
-        )
-    return context
+def resolve_self_directed_student(account: dict) -> str:
+    base = os.getenv("SELF_DIRECTED_LEARNING_URL", "http://127.0.0.1:8100").rstrip("/")
+    token = os.environ.get("PLATFORM_SERVICE_TOKEN", "")
+    if not token:
+        raise HTTPException(503, "The platform service connection is not configured.")
+    try:
+        with httpx.Client(timeout=30, headers={"X-Platform-Service": token}) as client:
+            response = client.post(
+                base + "/internal/platform/students/resolve",
+                json={
+                    "platform_user_id": str(account["user_id"]),
+                    "email": account["email"],
+                    "display_name": account.get("display_name") or account["username"],
+                },
+            )
+        if response.is_error:
+            detail = response.json().get("detail", "") if response.status_code < 500 else ""
+            raise HTTPException(
+                response.status_code if response.status_code < 500 else 502,
+                detail or "The student profile could not be connected to Self-Directed Learning.",
+            )
+        return str(response.json()["id"])
+    except HTTPException:
+        raise
+    except (httpx.HTTPError, KeyError, ValueError) as exc:
+        raise HTTPException(503, "Self-Directed Learning is unavailable. Please retry shortly.") from exc

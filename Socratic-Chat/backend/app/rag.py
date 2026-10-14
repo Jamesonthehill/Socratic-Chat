@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
-import os
 import re
 from pathlib import Path
 from time import monotonic
@@ -42,7 +41,7 @@ STOP_WORDS = {
     "tell", "that", "the", "their", "them", "then", "there", "these", "they", "this", "to",
     "was", "we", "what", "when", "where", "which", "who", "why", "with", "you", "your",
 }
-RAG_DOCUMENT_SUFFIXES = {".txt", ".md", ".pdf", ".tex", ".html", ".htm", ".pptx", ".ppt", ".docx"}
+RAG_DOCUMENT_SUFFIXES = {".txt", ".md", ".pdf", ".tex", ".html", ".htm"}
 
 
 def tokenize(text: str) -> list[str]:
@@ -136,9 +135,6 @@ def document_id(
 
 
 def create_embeddings(texts: list[str]) -> list[list[float]]:
-    if os.getenv("COMMON_RAG_ENGINE") == "sdl":
-        from platform_app.knowledge import embeddings
-        return embeddings(texts)
     if not texts:
         return []
     config = settings.embedding_client_config()
@@ -292,9 +288,6 @@ def ingest_file(
     course_id: str | None = None,
     file_id: str | None = None,
 ) -> tuple[str, int]:
-    if os.getenv("COMMON_RAG_ENGINE") == "sdl":
-        from platform_app.knowledge import ingest
-        return ingest(path, file_id, conversation_id, course_id)
     if path.suffix.lower() == ".pdf":
         return ingest_pdf_file(path, conversation_id, course_id, file_id)
     text = read_document(path)
@@ -519,11 +512,7 @@ def retrieve_snapshot(
     """Run hybrid retrieval against an assignment's immutable chunk snapshot."""
     if not chunks:
         return []
-    if os.getenv("COMMON_RAG_ENGINE") == "sdl":
-        from platform_app.knowledge import retrieve
-        return [Source(document_id=c["document_id"], chunk_id=c["chunk_id"],
-                       title=c["title"], text=c["text"], score=c["score"], dense_similarity=c["score"])
-                for c in retrieve(query, chunks, top_k)]
+    log_event(5, "retrieval_started", retrieval_type="assignment_snapshot", top_k=top_k)
     query_embedding = create_embeddings([query])[0]
     query_tokens = set(tokenize(query))
     requested_assignments = requested_assignment_numbers(query)

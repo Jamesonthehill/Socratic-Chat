@@ -55,10 +55,10 @@ def test_professor_cannot_restart_student_lesson(gateway):
  assert calls==[]
 
 
-def test_student_dashboard_preserves_legacy_assignments_alongside_sdl(gateway, monkeypatch):
+def test_student_dashboard_excludes_discontinued_assignments_and_includes_sdl(gateway, monkeypatch):
  from contextlib import contextmanager
  client, calls, account = gateway
- rows = [{'id': 'legacy-assignment', 'tool': 'student-agent'}, {'id': 'socratic-assignment', 'tool': 'socratic'}]
+ rows = [{'id': 'removed-assignment', 'tool': 'discontinued-learning'}, {'id': 'socratic-assignment', 'tool': 'socratic'}]
  class Database:
   def execute(self, *args): return self
   def fetchall(self): return rows
@@ -70,4 +70,4 @@ def test_student_dashboard_preserves_legacy_assignments_alongside_sdl(gateway, m
  monkeypatch.setattr(routes, 'self_directed_assignment_summary', lambda item: item)
  response = client.get('/api/platform/assignments')
  assert response.status_code == 200
- assert [item['id'] for item in response.json()] == ['legacy-assignment', 'socratic-assignment', 'sdl-lesson']
+ assert [item['id'] for item in response.json()] == ['socratic-assignment', 'sdl-lesson']

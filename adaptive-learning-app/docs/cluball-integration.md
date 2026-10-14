@@ -1,6 +1,6 @@
 # ClubALL integration contract
 
-The standalone application deliberately separates Student Agent behavior from platform ownership. Reintegration should replace adapters, not the adaptive workflow.
+The standalone application deliberately separates Self-Directed Learning behavior from platform ownership. Reintegration should replace adapters, not the adaptive workflow.
 
 ## Identity adapter
 
@@ -14,11 +14,11 @@ Never expose the demo header in a deployed ClubALL environment.
 
 ## Assignment adapter
 
-The Student Agent contract requires an assignment with a stable id, title, instructions, recipients, immutable published learning plan, and document collection. ClubALL can continue to own assignment publication and pass a frozen snapshot to Student Agent.
+The Self-Directed Learning contract requires an assignment with a stable id, title, instructions, recipients, immutable published learning plan, and document collection. ClubALL can continue to own assignment publication and pass a frozen snapshot to Self-Directed Learning.
 
 ## Learning-session adapter
 
-Student Agent requires one attempt per student and assignment, ordered messages, objective evidence, required-task state, and completion state. The standalone SQLite tables model this contract; ClubALL may implement it with its PostgreSQL store.
+Self-Directed Learning requires one attempt per student and assignment, ordered messages, objective evidence, required-task state, and completion state. The standalone SQLite tables model this contract; ClubALL may implement it with its PostgreSQL store.
 
 ## Knowledge adapter
 

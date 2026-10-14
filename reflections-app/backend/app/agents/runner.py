@@ -59,14 +59,13 @@ def _thread_config(session_id: str, db=None) -> dict:
     return cfg
 
 
-def invoke_start(session_id: str, student_id: str, module_id: str, course_id: str | None, db, source_context: str = "") -> dict:
+def invoke_start(session_id: str, student_id: str, module_id: str, course_id: str | None, db) -> dict:
     return _init_graph.invoke(
         {
             "session_id": session_id,
             "student_id": student_id,
             "module_id": module_id,
             "course_id": course_id,
-            "source_context": source_context,
         },
         config=_thread_config(session_id, db),
     )
@@ -96,7 +95,7 @@ def platform_resume_start(session_id: str, db) -> dict:
     return _init_graph.invoke(None, config=cfg) if checkpoint.next else checkpoint.values
 
 
-def platform_message(session_id: str, message: str, request_id: str, source_context: str = "") -> dict:
+def platform_message(session_id: str, message: str, request_id: str) -> dict:
     from fastapi import HTTPException
     cfg = _thread_config(session_id)
     checkpoint = _message_graph.get_state(cfg)
@@ -106,7 +105,7 @@ def platform_message(session_id: str, message: str, request_id: str, source_cont
         return _message_graph.invoke(None, config=cfg) if checkpoint.next else checkpoint.values
     if checkpoint.values.get("phase") == "ended":
         raise HTTPException(409, "Session has ended")
-    return _message_graph.invoke({"user_message": message, "platform_request_id": request_id, "source_context": source_context}, config=cfg)
+    return _message_graph.invoke({"user_message": message, "platform_request_id": request_id}, config=cfg)
 
 
 def platform_end(session_id: str, db) -> dict:

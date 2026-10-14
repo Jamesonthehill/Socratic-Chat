@@ -88,19 +88,23 @@ def _demo_embedding(text: str, dimensions: int = 96) -> list[float]:
 
 # Convert course chunks and student queries into vectors used to retrieve relevant passages.
 # Embeddings use OpenAI even when the chat provider is Groq; missing credentials use local vectors.
-def embed_texts(texts: list[str]) -> list[list[float]]:
+def embed_texts(texts: list[str], *, dimensions: int | None = None) -> list[list[float]]:
     if runtime_ai_mode() not in {"openai", "groq"} or not OPENAI_API_KEY:
         return [_demo_embedding(text) for text in texts]
     try:
         with httpx.Client(timeout=45) as client:
-            response = client.post(
-                f"{OPENAI_BASE}/embeddings",
-                headers=_headers(),
-                json={"model": OPENAI_EMBEDDING_MODEL, "input": texts},
-            )
-            response.raise_for_status()
-            items = sorted(response.json()["data"], key=lambda item: item["index"])
-            return [item["embedding"] for item in items]
+            vectors = []
+            for start in range(0, len(texts), 64):
+                payload = {"model": OPENAI_EMBEDDING_MODEL, "input": texts[start:start + 64]}
+                if dimensions is not None:
+                    payload["dimensions"] = dimensions
+                response = client.post(
+                    f"{OPENAI_BASE}/embeddings", headers=_headers(), json=payload,
+                )
+                response.raise_for_status()
+                items = sorted(response.json()["data"], key=lambda item: item["index"])
+                vectors.extend(item["embedding"] for item in items)
+            return vectors
     except httpx.HTTPError as exc:
         if not _activate_fallback(exc):
             raise

@@ -22,7 +22,6 @@ def main():
     configs = [
         (ROOT, sys.executable, 'platform_app.main:app', '8000', os.environ.copy()),
         (ROOT / 'reflections-app/backend', os.getenv('REFLECTIONS_PYTHON', sys.executable), 'app.main:app', '8002', os.environ.copy()),
-        (ROOT / 'student-agent-bot', os.getenv('TUTOR_PYTHON', sys.executable), 'app:app', '8003', os.environ.copy()),
         (ROOT / 'adaptive-learning-app/backend', sys.executable, 'app.main:app', '8100', {key: value for key, value in os.environ.items() if key != 'ADAPTIVE_DATABASE_PATH'}),
     ]
     processes = []

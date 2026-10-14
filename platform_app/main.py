@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 sys.path.insert(0, str(ROOT / "Socratic-Chat/backend"))
 
-os.environ["COMMON_RAG_ENGINE"] = "sdl"
 
 from app import settings  # noqa: E402
 from app.main import app  # noqa: E402

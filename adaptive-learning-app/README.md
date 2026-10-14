@@ -1,6 +1,6 @@
-# Adaptive Learning — standalone Student Agent
+# Adaptive Learning — standalone Self-Directed Learning
 
-This directory runs the Student Agent work independently from ClubALL, Socratic Chat, and Reflections. It contains two separate interfaces backed by one standalone API:
+This directory runs the Self-Directed Learning work independently from ClubALL, Socratic Chat, and Reflections. It contains two separate interfaces backed by one standalone API:
 
 - Instructor studio: `http://127.0.0.1:5173`
 - Student workspace: `http://127.0.0.1:5174`
@@ -94,7 +94,7 @@ See [the exact student flow](docs/student-learning-flow.md) for stage behavior a
 
 Create a **new assignment** with this file as the `learning_plan` using the existing instructor assignment API, review/approve the content, then publish it for new sessions. Do not overwrite an existing published assignment or its attempts. Existing sessions intentionally retain their immutable lesson snapshots and previous results; loading or resuming them does not apply this data correction retroactively. No database migration is needed.
 
-The standalone app owns its learning plans, tutoring flow, evidence, progress, and local RAG. Its current `X-Demo-User` identity and SQLite persistence are standalone adapters. A later ClubALL adapter can replace identity, course enrollment, assignments, and persistence while keeping the Student Agent workflow and both role-specific interfaces intact.
+The standalone app owns its learning plans, tutoring flow, evidence, progress, and local RAG. Its current `X-Demo-User` identity and SQLite persistence are standalone adapters. A later ClubALL adapter can replace identity, course enrollment, assignments, and persistence while keeping the Self-Directed Learning workflow and both role-specific interfaces intact.
 
 ## PowerPoint and URL resources (Stage 3)
 

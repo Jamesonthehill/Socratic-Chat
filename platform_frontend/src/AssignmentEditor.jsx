@@ -1,16 +1,16 @@
 import { useEffect, useState } from "react";
 import {
   Link,
+  Navigate,
   useNavigate,
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { api, TOOLS, date, label, toolIdFromSlug, toolSlug } from "./api";
+import { api, TOOLS, date, label } from "./api";
 import { Notice, Badge } from "./ui";
 import {
   SocraticConfig,
   ReflectionConfig,
-  TutorConfig,
   defaults,
 } from "./ToolConfig";
 
@@ -23,17 +23,16 @@ function localDate(value) {
 }
 
 export default function AssignmentEditor() {
-  const { tool: toolSlugParam, id } = useParams(),
+  const { tool, id } = useParams(),
     [query] = useSearchParams(),
     navigate = useNavigate();
-  const tool = toolIdFromSlug(toolSlugParam);
   const [item, setItem] = useState(null),
-    [students, setStudents] = useState([]),
-    [analytics, setAnalytics] = useState(null);
+    [students, setStudents] = useState([]);
   const [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false);
   useEffect(() => {
+    if (tool === "self-directed-learning") return;
     let active = true;
     setItem(null);
     setError("");
@@ -58,10 +57,6 @@ export default function AssignmentEditor() {
             "This assignment belongs to a different tool. Return to the dashboard.",
           );
         if (active) setItem(data);
-        if (data.status !== "draft" && data.config?.learning_plan) {
-          const summary = await api(`/platform/assignments/${data.id}/learning-analytics`);
-          if (active) setAnalytics(summary);
-        }
         if (data.course_id) {
           const enrolled = await api(
             `/instructor/enrolled-students?course_id=${data.course_id}`,
@@ -119,16 +114,17 @@ export default function AssignmentEditor() {
     } finally {
       // Preserve the saved draft on publish failure, without racing the detail fetch.
       if (id === "new")
-        navigate(`/professor/tools/${toolSlug(tool)}/assignments/${saved.id}`, {
+        navigate(`/professor/tools/${tool}/assignments/${saved.id}`, {
           replace: true,
         });
     }
   }
+  if (tool === "self-directed-learning") return <Navigate to="/professor/tools/self-directed-learning" replace />;
   if (!TOOLS[tool]) return <Notice error="Unknown tool." />;
   if (!item)
     return (
       <>
-        <Link to={`/professor/tools/${toolSlug(tool)}`}>Back to dashboard</Link>
+        <Link to={`/professor/tools/${tool}`}>Back to dashboard</Link>
         <Notice error={error} />
         {!error && <p>Loading assignment…</p>}
       </>
@@ -137,11 +133,10 @@ export default function AssignmentEditor() {
   const Config = {
     socratic: SocraticConfig,
     reflections: ReflectionConfig,
-    "student-agent": TutorConfig,
   }[tool];
   return (
     <>
-      <Link className="back" to={`/professor/tools/${toolSlug(tool)}`}>
+      <Link className="back" to={`/professor/tools/${tool}`}>
         ← {TOOLS[tool].name} dashboard
       </Link>
       <div className="page-heading">
@@ -363,30 +358,6 @@ export default function AssignmentEditor() {
               </tbody>
             </table>
           </div>
-        </section>
-      )}
-      {analytics && (
-        <section className="section">
-          <h2>Class learning signals</h2>
-          {item.config.learning_plan.objectives.map((objective) => {
-            const rows = analytics.objectives.filter((row) => row.objective_id === objective.id);
-            return (
-              <article key={objective.id} className="panel">
-                <h3>{objective.description}</h3>
-                <p>{rows.length ? rows.map((row) => `${label(row.status)}: ${row.students}`).join(" · ") : "No evidence yet"}</p>
-              </article>
-            );
-          })}
-          {analytics.misconceptions.length > 0 && (
-            <div>
-              <h3>Common misconceptions</h3>
-              <ul>{analytics.misconceptions.map((item) => (
-                <li key={`${item.objective_id}-${item.misconception_code}`}>
-                  {item.misconception_code}: {item.occurrences}
-                </li>
-              ))}</ul>
-            </div>
-          )}
         </section>
       )}
     </>

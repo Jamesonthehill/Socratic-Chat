@@ -69,7 +69,6 @@ function mockApi(role = "instructor", override = {}) {
     ],
     [`/api/courses/${course}/documents`]: { files: [] },
     "/api/platform/topic-templates": [],
-    "/api/platform/adaptive-plans": [],
     "/api/platform/assignments/assignment-1": assignment,
     "/api/platform/assignments/assignment-1/attempt": null,
     "/api/platform/assignments/assignment-1/start": attempt,
@@ -122,7 +121,7 @@ test("professor selects each explicit tool dashboard", async () => {
   ).toBeInTheDocument();
   const reflection = screen.getByRole("link", { name: /Reflect Reflections/ });
   expect(
-    screen.getByRole("link", { name: /Guide Socratic Reasoning/ }),
+    screen.getByRole("link", { name: /Guide Socratic Chat/ }),
   ).toHaveAttribute("href", "/professor/tools/socratic");
   expect(
     screen.getByRole("link", { name: /Practice Self-Directed Learning/ }),
@@ -153,9 +152,9 @@ test("student sees mixed assignments and opens the assigned tool without selecti
       },
       {
         ...assignment,
-        id: "tutor-1",
-        tool: "student-agent",
-        title: "Practice a use case",
+        id: "sdl-1",
+        tool: "self-directed-learning",
+        title: "Learn requirements",
         progress: "completed",
       },
     ],
@@ -180,7 +179,7 @@ test("student sees mixed assignments and opens the assigned tool without selecti
   );
   expect(screen.getByRole("link", { name: "View result" })).toHaveAttribute(
     "href",
-    "/student/assignments/tutor-1",
+    "/platform/self-directed.html?assignment=sdl-1",
   );
   await user.click(screen.getByRole("link", { name: "Open assignment" }));
   await user.click(
@@ -191,151 +190,6 @@ test("student sees mixed assignments and opens the assigned tool without selecti
   ).not.toHaveLength(0);
   expect(screen.queryByLabelText("Student ID")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("Reflection type")).not.toBeInTheDocument();
-});
-
-test("student starts a standalone self-directed assignment inside the platform", async () => {
-  const selfDirected = {
-    id: "sdl-1",
-    title: "Large Language Models",
-    instructions: "Prepare, complete the diagnostic, and follow your path.",
-    documents: [],
-    learning_plan: {
-      objectives: [{ id: "LLM-1", title: "Explain LLMs" }],
-      study_resources: [{ title: "LLM introduction", provider: "Google", url: "https://example.test/llm" }],
-      diagnostic_quiz: Array.from({ length: 5 }, (_, index) => ({
-        id: `Q-${index + 1}`,
-        question: `Question ${index + 1}`,
-        options: ["A", "B", "C", "D"],
-      })),
-      required_task: { title: "LLM analysis", description: "Analyze one use.", submission_prompt: "Submit your analysis." },
-    },
-  };
-  const started = {
-    id: "attempt-sdl-1",
-    status: "in_progress",
-    phase: "study_resources",
-    learning_path: null,
-    quiz_score: null,
-    required_task_status: "not_started",
-    objective_progress: [{ objective_id: "LLM-1", title: "Explain LLMs", status: "not_started" }],
-    messages: [],
-  };
-  mockApi("student", {
-    "/api/platform/self-directed/assignments/sdl-1": selfDirected,
-    "/api/platform/self-directed/assignments/sdl-1/attempt": null,
-    "POST /api/platform/self-directed/assignments/sdl-1/start": started,
-  });
-  open("/student/self-directed-learning/sdl-1");
-  const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Start learning" }));
-  expect(await screen.findByRole("heading", { name: "Study these resources first" })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: /LLM introduction/ })).toHaveAttribute("href", "https://example.test/llm");
-});
-
-test("student sees adaptive objectives and required task status", async () => {
-  const learningPlan = {
-    title: "Object-Oriented Programming",
-    objectives: [
-      { id: "OBJ-1", description: "Explain classes and objects." },
-      { id: "OBJ-2", description: "Create a class with methods." },
-    ],
-    required_task: { title: "Implement a BankAccount class" },
-  };
-  const adaptiveAssignment = {
-    ...assignment,
-    tool: "student-agent",
-    student_config: {
-      topic_name: learningPlan.title,
-      learning_plan: learningPlan,
-      resources: [],
-    },
-  };
-  const adaptiveAttempt = {
-    ...attempt,
-    required_task_status: "in_progress",
-    engine_state: {
-      adaptive: true,
-      current_objective_id: "OBJ-2",
-      required_task_status: "in_progress",
-      objective_progress: [
-        { objective_id: "OBJ-1", status: "demonstrated" },
-        { objective_id: "OBJ-2", status: "developing" },
-      ],
-    },
-  };
-  mockApi("student", {
-    "/api/platform/assignments/assignment-1": adaptiveAssignment,
-    "/api/platform/assignments/assignment-1/attempt": adaptiveAttempt,
-  });
-  open("/student/assignments/assignment-1");
-
-  expect(await screen.findByText("Implement a BankAccount class")).toBeInTheDocument();
-  expect(screen.getByText(/Current objective:/)).toBeInTheDocument();
-  expect(screen.getAllByText("Create a class with methods.").length).toBeGreaterThan(0);
-  expect(screen.getByText("demonstrated")).toBeInTheDocument();
-  expect(screen.getByText("developing")).toBeInTheDocument();
-  expect(screen.getAllByText(/in progress/i).length).toBeGreaterThan(0);
-});
-
-test("student sees the current software engineering focus and authored diagnostic", async () => {
-  const learningPlan = {
-    title: "Requirements Engineering",
-    objectives: [
-      {
-        id: "SE-REQ-TYPES",
-        description: "Distinguish functional and non-functional requirements and justify the classification.",
-      },
-      {
-        id: "SE-REQ-QUALITY",
-        description: "Identify ambiguity or incompleteness in a requirement and improve it.",
-      },
-    ],
-    required_task: { title: "Review and revise a small requirements set" },
-  };
-  const adaptiveAssignment = {
-    ...assignment,
-    tool: "student-agent",
-    title: "Requirements engineering practice",
-    student_config: {
-      topic_name: learningPlan.title,
-      learning_plan: learningPlan,
-      resources: [],
-    },
-  };
-  const adaptiveAttempt = {
-    ...attempt,
-    messages: [
-      {
-        role: "assistant",
-        content: "Classify each requirement as functional or non-functional and justify each choice.",
-      },
-    ],
-    engine_state: {
-      adaptive: true,
-      assessment_phase: "initial_diagnostic",
-      phase_label: "Initial diagnostic",
-      current_objective_id: "SE-REQ-TYPES",
-      current_assessment_id: "SE-DIAG-TYPES",
-      latest_decision: { action: "ASSESS" },
-      required_task_status: "not_started",
-      objective_progress: [
-        { objective_id: "SE-REQ-TYPES", status: "not_observed" },
-        { objective_id: "SE-REQ-QUALITY", status: "not_observed" },
-      ],
-    },
-  };
-  mockApi("student", {
-    "/api/platform/assignments/assignment-1": adaptiveAssignment,
-    "/api/platform/assignments/assignment-1/attempt": adaptiveAttempt,
-  });
-
-  open("/student/assignments/assignment-1");
-
-  expect(await screen.findByText("Current focus")).toBeInTheDocument();
-  expect(screen.getAllByText(learningPlan.objectives[0].description).length).toBeGreaterThan(0);
-  expect(screen.getAllByText("Initial diagnostic").length).toBeGreaterThan(0);
-  expect(screen.getByText("Answer the question on your own.")).toBeInTheDocument();
-  expect(screen.getByText(adaptiveAttempt.messages[0].content)).toBeInTheDocument();
 });
 
 test("student requests course access from the integrated dashboard", async () => {
@@ -417,15 +271,13 @@ test("professor imports a visible UNC Charlotte Canvas assignment as a Socratic 
     "88",
   );
   await user.click(
-    screen.getByRole("button", { name: "Import as Socratic Reasoning draft" }),
+    screen.getByRole("button", { name: "Import as Socratic Chat draft" }),
   );
 
-  expect(
-    await screen.findByDisplayValue("Canvas architecture reflection"),
-  ).toBeInTheDocument();
-  expect(screen.getByLabelText("Assigned chatbot")).toHaveValue(
-    "Socratic Reasoning",
-  );
+  await waitFor(() => {
+    expect(screen.getByLabelText("Title")).toHaveValue("Canvas architecture reflection");
+    expect(screen.getByLabelText("Assigned chatbot")).toHaveValue("Socratic Chat");
+  });
   const importCall = fetch.mock.calls.find(
     ([url]) => url === "/api/platform/integrations/canvas/import",
   );
@@ -725,18 +577,4 @@ test("Reflections launches its student interface in a new tab without starting i
   expect(link).toHaveAttribute("target", "_blank");
   expect(link).toHaveAttribute("rel", "noopener noreferrer");
   expect(fetch.mock.calls.some(([url]) => url.endsWith("/start"))).toBe(false);
-});
-
-test("student tool selector and SDL assignments open the existing student interface in a new tab", async () => {
-  mockApi("student", { "/api/platform/assignments": [{...assignment, id:"sdl-live", tool:"self-directed-learning", title:"SDL Lesson"}] });
-  open("/student");
-  const workspace = await screen.findByRole("link", {name:/Self-Directed Learning/});
-  expect(workspace).toHaveAttribute("href", "/platform/self-directed.html");
-  expect(workspace).toHaveAttribute("target", "_blank");
-  expect(screen.getByRole("heading", {name:"Reflections"})).toBeInTheDocument();
-  expect(screen.getByRole("heading", {name:"Socratic Reasoning"})).toBeInTheDocument();
-  await userEvent.setup().click(await screen.findByRole("button", {name:"Assignments"}));
-  const lesson = await screen.findByRole("link", {name:"SDL Lesson"});
-  expect(lesson).toHaveAttribute("href", "/platform/self-directed.html?assignment=sdl-live");
-  expect(lesson).toHaveAttribute("target", "_blank");
 });

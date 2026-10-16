@@ -124,8 +124,8 @@ test("professor selects each explicit tool dashboard", async () => {
     screen.getByRole("link", { name: /Guide Socratic Chat/ }),
   ).toHaveAttribute("href", "/professor/tools/socratic");
   expect(
-    screen.getByRole("link", { name: /Practice Student Agent Bot/ }),
-  ).toHaveAttribute("href", "/professor/tools/student-agent");
+    screen.getByRole("link", { name: /Practice Self-Directed Learning/ }),
+  ).toHaveAttribute("href", "/professor/tools/self-directed-learning");
   await user.click(reflection);
   expect(
     await screen.findByRole("heading", { level: 1, name: "Reflections" }),
@@ -152,9 +152,9 @@ test("student sees mixed assignments and opens the assigned tool without selecti
       },
       {
         ...assignment,
-        id: "tutor-1",
-        tool: "student-agent",
-        title: "Practice a use case",
+        id: "sdl-1",
+        tool: "self-directed-learning",
+        title: "Learn requirements",
         progress: "completed",
       },
     ],
@@ -179,7 +179,7 @@ test("student sees mixed assignments and opens the assigned tool without selecti
   );
   expect(screen.getByRole("link", { name: "View result" })).toHaveAttribute(
     "href",
-    "/student/assignments/tutor-1",
+    "/platform/self-directed.html?assignment=sdl-1",
   );
   await user.click(screen.getByRole("link", { name: "Open assignment" }));
   await user.click(
@@ -274,12 +274,10 @@ test("professor imports a visible UNC Charlotte Canvas assignment as a Socratic 
     screen.getByRole("button", { name: "Import as Socratic Chat draft" }),
   );
 
-  expect(
-    await screen.findByDisplayValue("Canvas architecture reflection"),
-  ).toBeInTheDocument();
-  expect(screen.getByLabelText("Assigned chatbot")).toHaveValue(
-    "Socratic Chat",
-  );
+  await waitFor(() => {
+    expect(screen.getByLabelText("Title")).toHaveValue("Canvas architecture reflection");
+    expect(screen.getByLabelText("Assigned chatbot")).toHaveValue("Socratic Chat");
+  });
   const importCall = fetch.mock.calls.find(
     ([url]) => url === "/api/platform/integrations/canvas/import",
   );

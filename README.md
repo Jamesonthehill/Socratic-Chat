@@ -1,6 +1,6 @@
 # ClubALL learning platform
 
-One professor entry screen for **Socratic Chat**, **Reflections**, and **Student Agent Bot**, and one student assignment list that launches the assigned tool with its saved configuration.
+One professor entry screen for **Socratic Chat**, **Reflections**, and **Self-Directed Learning**, and one student assignment list that launches the assigned tool with its saved configuration.
 
 ## Run with Docker
 
@@ -13,11 +13,11 @@ docker compose up --build
 
 Open **http://localhost:8000**. Login and account setup use the existing Socratic authentication flow, then redirect to `/platform/`.
 
-The root Compose file starts the public platform, two private learning services, and PostgreSQL with separate `cluball` and `cluball_reflections` databases. Only the platform exposes a host port. PostgreSQL, uploaded documents, the RAG index, tutor sessions, and downloaded embedding models use persistent volumes. Keep those volumes when restarting.
+The root Compose file starts the public platform, Reflections, and SDL, using the configured PostgreSQL database. The bundled database is optional under the `isolated-db` profile. Only the platform exposes a host port. PostgreSQL, uploaded documents, the RAG index, SDL uploads, and downloaded embedding models use persistent volumes. Keep those volumes when restarting.
 
-`POSTGRES_PASSWORD` in `.env` configures the local Compose database. Its two application database URLs are set by Compose; `.env` database URLs are used for non-Docker development. Use a URL-safe password or encode special characters in connection URLs.
+`DOCKER_DATABASE_URL` configures the database used by Docker services. `DATABASE_URL` is used for local development. Use a URL-safe password or encode special characters in connection URLs.
 
-The first Reflections milestone request may download its existing `stsb-roberta-large` embedding model. Topic-based reflection and tutor conversations require a configured model provider. Socratic retains its existing extractive answer fallback when no OpenAI key is configured. Tutor topic generation additionally requires Firecrawl.
+The first Reflections milestone request may download its existing `stsb-roberta-large` embedding model. Topic-based reflection and SDL conversations require a configured model provider. Socratic retains its existing extractive answer fallback when no OpenAI key is configured. SDL authoring uses the configured AI provider.
 
 ## Socratic questioning pipeline
 
@@ -61,7 +61,7 @@ course access and expand an approved course card to open its assignments.
 4. Configure the selected tool:
    - **Socratic Chat:** upload/select TXT, Markdown, HTML, LaTeX, Word (`.doc`/`.docx`), or PDF course documents, set an opening prompt, and choose a minimum message count.
    - **Reflections:** configure topics/sub-topics, depth, probing style, application requirements, and notes; or choose a milestone prompt with historical CSV data.
-   - **Student Agent Bot:** select a built-in topic, import topic JSON, create a custom topic, or generate a draft. Edit reading resources, practice stages/scenarios, questions, worked example, and provider.
+   - **Self-Directed Learning:** select a built-in topic, import topic JSON, create a custom topic, or generate a draft. Edit reading resources, practice stages/scenarios, questions, worked example, and provider.
 5. Save a draft or publish it. Published work appears in the recipients' student dashboards.
 
 ### Import from UNC Charlotte Canvas
@@ -168,7 +168,7 @@ Assignment deep linking, roster synchronization (NRPS), and grade return (AGS)
 are intentionally deferred until the course-navigation launch is approved and
 tested by the institution.
 
-Published settings are immutable. Socratic snapshots the selected indexed document content; Reflections creates a private assignment module; Tutor stores a complete topic snapshot. Editing or deleting source materials does not alter published work. **Duplicate as draft** creates a new editable assignment; **Archive** removes student access while retaining results for the professor.
+Published settings are immutable. Socratic snapshots the selected indexed document content; Reflections creates a private assignment module; SDL owns its published lessons in its separate schema. Editing or deleting source materials does not alter published work. **Duplicate as draft** creates a new editable assignment; **Archive** removes student access while retaining results for the professor.
 
 The progress view lists each recipient's status and available results. A
 whole-course assignment can be published before any students enroll. Its
@@ -179,6 +179,10 @@ linked Canvas course. Revoking enrollment immediately removes assignment
 access. Due dates are informational; late work remains allowed.
 
 ## Student workflow
+
+Self-Directed Learning opens the existing SDL student interface in a separate tab at `/platform/self-directed.html`, bundled with the main frontend. It uses the platform login and signed gateway APIs; it does not require a separate student frontend host or port 5174 in production. SDL assignment links open the assigned lesson directly. Reflections and Socratic retain their existing screens and routes.
+
+Deploy the updated platform image and the SDL backend image together. Set `SELF_DIRECTED_LEARNING_URL` on the platform to the running SDL service, share `PLATFORM_SERVICE_TOKEN` between them, and set `ADAPTIVE_PLATFORM_ONLY=true` on SDL. The SDL service needs its database configuration and any live model-provider keys. Students must have SDL lessons assigned to their resolved platform profiles; local demo students and lesson attempts are not transferred by a Git push.
 
 The student Dashboard combines course access and assignments across all three
 tools. Select **Assignments** on an approved course card to enlarge it and show
@@ -195,7 +199,7 @@ configuration.
   Shift+Enter to add a new line.
 - Topic-based Reflections: finish the session to save an evaluation.
 - Milestone Reflections: submitting the reflection completes the assignment and shows related experiences.
-- Tutor: progress through the learning phases and complete at wrap-up, or let the tutor close the completed lesson.
+- SDL: study resources, complete a diagnostic, practice, and reflect in the SDL workspace.
 
 There is one persistent attempt per student per assignment. Reopening resumes that attempt; completed work opens read-only with its transcript/results. To assign a second attempt, publish a duplicate assignment.
 
@@ -262,8 +266,6 @@ python3.12 -m venv .venv
 
 python3.12 -m venv reflections-app/.venv
 reflections-app/.venv/bin/python -m pip install -r reflections-app/backend/requirements.txt
-python3.12 -m venv student-agent-bot/.venv
-student-agent-bot/.venv/bin/python -m pip install -r student-agent-bot/requirements.txt
 
 cd platform_frontend
 npm ci
@@ -271,17 +273,16 @@ npm run build
 cd ..
 
 cp .env.example .env
-# Create the two databases and configure their URLs/secrets/provider keys in .env.
+# Configure the shared DATABASE_URL, secrets, and provider keys in .env.
 REFLECTIONS_PYTHON="$PWD/reflections-app/.venv/bin/python" \
-TUTOR_PYTHON="$PWD/student-agent-bot/.venv/bin/python" \
   .venv/bin/python scripts/run_local.py
 ```
 
-Open http://127.0.0.1:8000. The runner starts the gateway on 8000, Reflections on 8002, and Tutor on 8003, all bound to loopback. Stopping it stops all three. Install dependencies first and use absolute paths for the optional interpreter overrides.
+Open http://127.0.0.1:8000. The runner starts the gateway on 8000, Reflections on 8002, and SDL on 8100, all bound to loopback. Stopping it stops all three. Install dependencies first and use absolute paths for the optional interpreter overrides. PostgreSQL-backed services use the same `DATABASE_URL`; `REFLECTIONS_DATABASE_URL` is no longer required or used.
 
 ### Docker Compose
 
-The Compose deployment starts the platform gateway, Reflections, and Tutor while using the host PostgreSQL/pgvector database configured for DBeaver:
+The Compose deployment starts the platform gateway, Reflections, and SDL while using the host PostgreSQL/pgvector database configured for DBeaver:
 
 ```bash
 docker compose -f compose.yaml up --build
@@ -307,7 +308,6 @@ platform_app/             Shared assignment API, authorization, engine adapters
 platform_frontend/       Shared React UI and separate tool configuration screens
 Socratic-Chat/            Existing identity, courses, documents, RAG engine
 reflections-app/          Existing reflection graphs, analytics and recommendations
-student-agent-bot/        Existing phased tutor, plus durable JSON session storage
 scripts/                 Local runner, role bootstrap, database initialization
 platform_tests/          Assignment integration tests
 compose.yaml             One public origin and private learning services
@@ -319,11 +319,11 @@ The shared backend reuses Socratic's authentication and course APIs. PostgreSQL 
 - `socratic_chat`: Socratic conversations, messages, progress, assessments, files, and document chunks. Every table ends in `_socratic_chat`; user and course foreign keys point into `platform`.
 - `reflections_app`: reflection modules, configurations, conversations, analytics, and LangGraph checkpoints. Every table ends in `_reflections_app`; new platform sessions reference `platform.users_platform` and `platform.courses_platform` directly. The legacy student table remains only to preserve historical standalone Reflections sessions.
 
-Tutor uses a persistent SQLite file configured with `TUTOR_SESSION_DB`. Platform, Socratic Chat, and Reflections use the single PostgreSQL connection in `DATABASE_URL`; their schemas isolate service-owned data. Configure `PLATFORM_DB_SCHEMA`, `SOCRATIC_DB_SCHEMA`, and `REFLECTIONS_DB_SCHEMA` when using non-default schema names. The bundled PostgreSQL container is available only through the optional `isolated-db` Compose profile; the default Docker stack uses the host database configured by `DOCKER_DATABASE_URL`.
+Platform, Socratic Chat, Reflections, and SDL use the single PostgreSQL connection in `DATABASE_URL`; their schemas isolate service-owned data. Configure `PLATFORM_DB_SCHEMA`, `SOCRATIC_DB_SCHEMA`, `REFLECTIONS_DB_SCHEMA`, and `SELF_DIRECTED_LEARNING_DB_SCHEMA` when using non-default schema names. The bundled PostgreSQL container is available only through the optional `isolated-db` Compose profile; the default Docker stack uses the host database configured by `DOCKER_DATABASE_URL`.
 
 The browser calls `/api/platform/...`; the gateway chooses the appropriate engine and derives student/session identity from the signed account session. Internal service calls require `X-Platform-Service`, using the common `PLATFORM_SERVICE_TOKEN`. Internal endpoints are unavailable without a token, even in standalone mode. Public platform APIs reject the old `X-User-Id` shortcut.
 
-Platform migrations run once on gateway startup under a database migration lock. Existing Socratic accounts/courses can be reused by setting `DATABASE_URL` to their database. Existing reflection modules and tutor topic files remain available in their original applications; they are not automatically converted into assignments or matched to student identities. Import a topic or configure a new assignment for the shared platform. This avoids guessing recipients or publishing historical content.
+Platform migrations run once on gateway startup under a database migration lock. Existing Socratic accounts/courses can be reused by setting `DATABASE_URL` to their database. Existing reflection modules remain available in their original applications; they are not automatically converted into assignments or matched to student identities. Configure a new assignment for the shared platform. This avoids guessing recipients or publishing historical content.
 
 ## Verification
 
@@ -337,7 +337,6 @@ TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres \
 # Install pytest and httpx in the corresponding virtual environments first.
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres \
   reflections-app/.venv/bin/python -m pytest reflections-app/backend/tests -q
-student-agent-bot/.venv/bin/python -m pytest student-agent-bot/tests -q
 PYTHONPATH=Socratic-Chat/backend .venv/bin/python -m pytest Socratic-Chat/backend/tests -q
 
 cd platform_frontend
@@ -350,3 +349,9 @@ Tests cover assignment ownership and visibility, publication rollback, frozen co
 ### Reflections provider configuration
 
 If Reflections reports a missing or invalid AI provider key, update `GROQ_API_KEY` or `OPENAI_API_KEY` (matching `LLM_PROVIDER` and any role overrides) in the **root `.env`**. Root Docker Compose does not load `reflections-app/backend/.env`; configure the corresponding `GROQ_MODEL` or `OPENAI_MODEL` in the root file too. Apply environment changes with `docker compose up -d --force-recreate reflections` rather than `docker compose restart`, then retry the assignment. Existing checkpointed sessions are retained.
+
+## SDL RAG integration handoff
+
+The SDL backend provides parsing, embeddings, and retrieval through a service-authenticated API. Socratic and Reflections keep their current chat and ingestion implementations in this PR. Their owners can follow [the RAG handoff](adaptive-learning-app/docs/rag-handoff.md) to connect their own applications in separate changes.
+
+The deployment migration removes the discontinued platform learning engine and its stored work. SDL lessons and student evidence remain in the separate SDL schema.

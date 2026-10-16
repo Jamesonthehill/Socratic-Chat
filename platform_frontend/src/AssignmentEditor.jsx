@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Link,
+  Navigate,
   useNavigate,
   useParams,
   useSearchParams,
@@ -10,7 +11,6 @@ import { Notice, Badge } from "./ui";
 import {
   SocraticConfig,
   ReflectionConfig,
-  TutorConfig,
   defaults,
 } from "./ToolConfig";
 
@@ -32,6 +32,7 @@ export default function AssignmentEditor() {
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false);
   useEffect(() => {
+    if (tool === "self-directed-learning") return;
     let active = true;
     setItem(null);
     setError("");
@@ -118,6 +119,7 @@ export default function AssignmentEditor() {
         });
     }
   }
+  if (tool === "self-directed-learning") return <Navigate to="/professor/tools/self-directed-learning" replace />;
   if (!TOOLS[tool]) return <Notice error="Unknown tool." />;
   if (!item)
     return (
@@ -131,7 +133,6 @@ export default function AssignmentEditor() {
   const Config = {
     socratic: SocraticConfig,
     reflections: ReflectionConfig,
-    "student-agent": TutorConfig,
   }[tool];
   return (
     <>

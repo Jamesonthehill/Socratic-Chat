@@ -1,1 +1,0 @@
-"""Standalone adaptive learning service."""

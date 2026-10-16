@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 sys.path.insert(0, str(ROOT / "Socratic-Chat/backend"))
 
-
 from app import settings  # noqa: E402
 from app.main import app  # noqa: E402
 from platform_app import store  # noqa: E402
@@ -84,7 +83,7 @@ if (DIST / "assets").exists():
 @app.get("/platform", include_in_schema=False)
 @app.get("/platform/{path:path}", include_in_schema=False)
 def frontend(path: str = ""):
-    page = DIST / (path if path in {"reflections.html", "self-directed.html"} else "index.html")
+    page = DIST / ("reflections.html" if path == "reflections.html" else "index.html")
     if not page.exists():
         return Response("Build the platform frontend: cd platform_frontend && npm install && npm run build", status_code=503)
     return FileResponse(page, headers={"Cache-Control": "no-cache"})

@@ -1,13 +1,11 @@
 .env
 .venv/
 **/.env
-**/.env.local
 **/.venv/
 **/node_modules/
 **/dist/
 **/__pycache__/
 .pytest_cache/
-**/.test-temp*/
 *.pyc
 *.sqlite3
 *.sqlite3-*

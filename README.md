@@ -64,33 +64,6 @@ course access and expand an approved course card to open its assignments.
    - **Student Agent Bot:** select a built-in topic, import topic JSON, create a custom topic, or generate a draft. Edit reading resources, practice stages/scenarios, questions, worked example, and provider.
 5. Save a draft or publish it. Published work appears in the recipients' student dashboards.
 
-### Import from UNC Charlotte Canvas
-
-The Socratic Chat professor dashboard can create a draft from an assignment visible
-to your UNC Charlotte Canvas account:
-
-1. In Canvas at [instructure.charlotte.edu](https://instructure.charlotte.edu),
-   open **Account → Settings → Approved Integrations** and create a current access
-   token. If **Add New Access Token** is unavailable, request API access through
-   UNC Charlotte Canvas support; the university controls whether personal tokens
-   are enabled.
-2. Open **Socratic Chat** in the professor dashboard and select the destination
-   ClubALL course. If it does not exist yet, select the Canvas class and create
-   its corresponding ClubALL course from the import panel.
-3. Under **Import from UNC Charlotte Canvas**, choose the chatbot students will
-   use, paste the token, select an active Canvas course, and select one of the
-   assignments visible to that account.
-4. Import the assignment as a draft, review the copied title, instructions, due
-   date, and assigned chatbot, configure the selected learning experience, choose
-   recipients, and publish.
-
-The connector is read-only and is restricted to
-`https://instructure.charlotte.edu/api/v1`. The access token is held in browser
-memory only for the current page and sent to the ClubALL backend only for the
-requested Canvas operation. It is not written to PostgreSQL, browser storage,
-application logs, assignment configuration, or source files. Importing copies a
-point-in-time assignment draft; later Canvas edits are not synchronized.
-
 ### Add ClubALL from Canvas Course Settings (LTI 1.1)
 
 LTI 1.1 opens the full ClubALL platform using a signed Canvas identity and course

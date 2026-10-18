@@ -4,7 +4,12 @@ import { Notice } from "./ui";
 
 export const defaults = {
   socratic: { document_ids: [], prompt: "", minimum_messages: 1 },
-  debate: { scenario: "", opening_prompt: "", minimum_messages: 3 },
+  debate: {
+    document_ids: [],
+    scenario: "",
+    opening_prompt: "",
+    minimum_messages: 3,
+  },
   reflections: {
     module_type: "topic_based",
     required_topics: [],

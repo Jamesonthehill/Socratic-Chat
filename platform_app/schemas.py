@@ -44,6 +44,7 @@ class SocraticConfig(StrictModel):
 
 
 class DebateConfig(StrictModel):
+    document_ids: list[str] = Field(default_factory=list, max_length=100)
     scenario: str = Field(min_length=10, max_length=10000)
     opening_prompt: str = Field(default="", max_length=2000)
     minimum_messages: int = Field(default=3, ge=1, le=100)

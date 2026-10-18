@@ -742,6 +742,41 @@ export default function StudentWorkspace() {
                       <div className="prose">
                         <Markdown>{m.content}</Markdown>
                       </div>
+                      {assignment.tool === "debate" &&
+                        m.role === "assistant" &&
+                        i === latestAssistantIndex &&
+                        state.sources?.length > 0 && (
+                          <div className="message-evidence">
+                            <strong>Course evidence</strong>
+                            <div>
+                              {state.sources.map((source, index) => (
+                                <button
+                                  type="button"
+                                  className="evidence-chip"
+                                  key={source.chunk_id || index}
+                                  aria-pressed={
+                                    selectedEvidence?.chunk_id ===
+                                    source.chunk_id
+                                  }
+                                  aria-controls="evidence-document-drawer"
+                                  aria-expanded={
+                                    selectedEvidence?.chunk_id ===
+                                    source.chunk_id
+                                  }
+                                  onClick={() =>
+                                    setSelectedEvidence((current) =>
+                                      current?.chunk_id === source.chunk_id
+                                        ? null
+                                        : source,
+                                    )
+                                  }
+                                >
+                                  {source.title}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                     </article>
                   ),
                 )}

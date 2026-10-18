@@ -59,7 +59,20 @@ def topic_templates():
 def publish_snapshot(assignment):
     config = assignment["config"]
     if assignment["tool"] == "debate":
-        return {"config": config}
+        files = db.list_rag_files(course_id=str(assignment["course_id"]))
+        allowed = {str(f["document_id"]) for f in files if f.get("document_id")}
+        selected = set(config["document_ids"])
+        if not selected.issubset(allowed):
+            raise HTTPException(422, "Select documents belonging to this course.")
+        chosen = selected or allowed
+        chunks = (
+            db.snapshot_document_chunks(str(assignment["course_id"]), sorted(chosen))
+            if chosen
+            else []
+        )
+        if chosen - {c["document_id"] for c in chunks}:
+            raise HTTPException(422, "Some course materials have no indexed content. Re-upload them before publishing.")
+        return {"config": config, "chunks": chunks}
     if assignment["tool"] == "socratic":
         files = db.list_rag_files(course_id=str(assignment["course_id"]))
         allowed = {str(f["document_id"]) for f in files if f.get("document_id")}
@@ -392,10 +405,19 @@ def message(assignment, attempt, content, request_id):
     if tool == "socratic":
         return asyncio.run(_socratic_message(assignment, attempt, content))
     if tool == "debate":
+        chunks = assignment["snapshot"].get("chunks") or []
+        sources = rag.retrieve_snapshot(
+            f"{cfg['scenario']}\n\nStudent argument: {content}", chunks, top_k=4
+        ) if chunks else []
         reply = asyncio.run(
-            debate.generate_reply(cfg["scenario"], attempt["messages"], content)
+            debate.generate_reply(
+                cfg["scenario"], attempt["messages"], content, sources=sources
+            )
         )
-        return {"reply": reply}
+        return {
+            "reply": reply,
+            "sources": [source.model_dump() for source in sources],
+        }
     if tool == "reflections":
         if cfg["module_type"] == "milestone_based":
             result = call(tool, "POST", "/api/rec-sys/milestone", json={

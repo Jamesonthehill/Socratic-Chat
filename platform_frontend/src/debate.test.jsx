@@ -19,4 +19,10 @@ test("instructor configures a Debate scenario and completion threshold", async (
   expect(
     screen.getByLabelText("Messages required before completion"),
   ).toHaveValue(3);
+  expect(screen.getByText("Optional course materials")).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "No course documents uploaded. Debate will use the scenario only.",
+    ),
+  ).toBeInTheDocument();
 });

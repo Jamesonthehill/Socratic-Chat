@@ -342,7 +342,7 @@ small,
 }
 .tool-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
   margin: 0;
 }
@@ -1678,6 +1678,9 @@ html[data-theme="dark"] .result-stats strong {
   .tool-card {
     min-height: 280px;
     padding: 20px;
+  }
+  .tool-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .learning-path {
     padding: 26px;

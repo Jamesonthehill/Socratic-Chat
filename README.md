@@ -18,10 +18,12 @@ Compose starts the public platform, private Reflections and SDL services, and us
 ## Personal Render and domain deployment
 
 The root `render.yaml` creates the public platform plus separate Reflections and
-Self Directed Learning services. In Render, create a Blueprint from this
-repository and enter the prompted database, model-provider, Google, and LTI
-secrets. All three services must use the same `DATABASE_URL` and
-`PLATFORM_SERVICE_TOKEN`.
+Self Directed Learning services, a shared free PostgreSQL database, and a
+generated internal service token. In Render, create a Blueprint from this
+repository and enter the prompted model-provider, Google, and LTI secrets.
+Render injects the same managed `DATABASE_URL` and `PLATFORM_SERVICE_TOKEN` into
+all three services. Render's free PostgreSQL databases expire after 30 days, so
+upgrade or migrate the database before then if the deployment must retain data.
 
 After `https://cluball-platform-personal.onrender.com/health` responds
 successfully, manually run the **Connect personal domain to ClubALL** GitHub

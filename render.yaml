@@ -1,20 +1,20 @@
 envVarGroups:
   - name: cluball-personal-shared
     envVars:
-      - key: DATABASE_URL
-        sync: false
       - key: PLATFORM_SERVICE_TOKEN
-        sync: false
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: GROQ_API_KEY
-        sync: false
+        generateValue: true
       - key: LLM_PROVIDER
         value: groq
       - key: GROQ_API_BASE_URL
         value: https://api.groq.com/openai/v1
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
+
+databases:
+  - name: cluball-personal-db
+    plan: free
+    databaseName: cluball
+    user: cluball
 
 services:
   - type: web
@@ -29,6 +29,14 @@ services:
     autoDeployTrigger: commit
     envVars:
       - fromGroup: cluball-personal-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cluball-personal-db
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
       - key: AUTH_SESSION_SECRET
         generateValue: true
       - key: PLATFORM_DB_SCHEMA
@@ -85,10 +93,20 @@ services:
     autoDeployTrigger: commit
     envVars:
       - fromGroup: cluball-personal-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cluball-personal-db
+          property: connectionString
+      - key: GROQ_API_KEY
+        sync: false
       - key: PLATFORM_DB_SCHEMA
         value: platform
       - key: REFLECTIONS_DB_SCHEMA
         value: reflections_app
+      - key: DB_STARTUP_MAX_RETRIES
+        value: "180"
+      - key: DB_STARTUP_RETRY_DELAY_SECONDS
+        value: "2"
 
   - type: web
     name: cluball-sdl-personal
@@ -103,6 +121,12 @@ services:
     autoDeployTrigger: commit
     envVars:
       - fromGroup: cluball-personal-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cluball-personal-db
+          property: connectionString
+      - key: GROQ_API_KEY
+        sync: false
       - key: SELF_DIRECTED_LEARNING_DB_SCHEMA
         value: self_directed_learning
       - key: ADAPTIVE_PLATFORM_ONLY

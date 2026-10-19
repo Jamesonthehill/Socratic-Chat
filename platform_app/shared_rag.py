@@ -1,11 +1,13 @@
 """Course-scoped ingestion and retrieval through the SDL document pipeline."""
 import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 import httpx
 from fastapi import HTTPException
 from app import db, settings
-from app.rag import EmbeddingError, create_embeddings
+from app.rag import EmbeddingError, chunk_text, create_embeddings, read_pdf_pages
 
 
 def pipeline(method, path, **kwargs):
@@ -32,8 +34,32 @@ def embedding_options():
     return {"model": settings.embedding_model_name(), "dimensions": settings.EMBEDDING_DIMENSIONS}
 
 
+def _parse_pdf(filename, content):
+    with TemporaryDirectory() as directory:
+        path = Path(directory) / ("document" + Path(filename).suffix.lower())
+        path.write_bytes(content)
+        chunks = []
+        for page_number, page_text in read_pdf_pages(path):
+            chunks.extend(
+                {
+                    "text": f"Page {page_number}: {text}",
+                    "position": len(chunks),
+                    "page_number": page_number,
+                    "metadata": {"page_numbers": [page_number]},
+                }
+                for text in chunk_text(page_text)
+            )
+    if not chunks:
+        raise HTTPException(422, "This PDF has no extractable text. Upload a text-based PDF or use OCR for scanned pages.")
+    return chunks
+
+
 def ingest(course_id, account, filename, content_type, content):
-    chunks = pipeline("POST", "/internal/platform/rag/parse", files={"file": (filename, content, content_type)})["chunks"]
+    chunks = (
+        _parse_pdf(filename, content)
+        if Path(filename).suffix.lower() == ".pdf"
+        else pipeline("POST", "/internal/platform/rag/parse", files={"file": (filename, content, content_type)})["chunks"]
+    )
     try:
         vectors = create_embeddings([c["text"] for c in chunks])
     except EmbeddingError as exc:

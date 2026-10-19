@@ -236,6 +236,12 @@ test("failed publish retains a saved draft and shows an actionable error", async
         { file_id: "f1", document_id: "doc1", filename: "Requirements.txt" },
       ],
     },
+    [`/api/courses/${course}/documents`]: {
+      files: [
+        { file_id: "f1", document_id: "doc1", filename: "Requirements.txt" },
+      ],
+    },
+    [`/api/courses/${course}/learning-objectives`]: { objectives: [] },
     "/api/platform/assignments/assignment-1/publish": {
       error: "Upload course materials first.",
     },
@@ -243,7 +249,7 @@ test("failed publish retains a saved draft and shows an actionable error", async
   open("/professor/activities/new");
   const user = userEvent.setup();
   await user.type(
-    await screen.findByLabelText("Activity title"),
+    await screen.findByLabelText("Assignment title"),
     "Discuss requirements",
   );
   await user.click(

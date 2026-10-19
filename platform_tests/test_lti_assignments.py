@@ -27,6 +27,7 @@ def test_instructor_creates_draft_reopens_without_overwriting_and_student_opens_
         'user_id': str(uuid4()), 'context_id': str(uuid4()), 'resource_link_id': 'assignment-link',
         'resource_link_title': 'Code review',
         'custom_canvas_assignment_id': '616423',
+        'custom_canvas_assignment_title': 'Canvas code review',
         'custom_canvas_assignment_description': '<p>Explain the review.</p><script>ignore this</script>',
         'custom_canvas_assignment_due_at': '2026-11-01T12:00:00Z',
     }
@@ -40,14 +41,21 @@ def test_instructor_creates_draft_reopens_without_overwriting_and_student_opens_
         item = assignment(conn, aid)
         assert item['status'] == 'draft'
         assert item['tool'] is None
+        assert item['title'] == 'Canvas code review'
         assert item['instructions'] == 'Explain the review.'
         assert item['due_at'] == datetime(2026, 11, 1, 12, tzinfo=timezone.utc)
         assert item['config'] == {}
         conn.execute('UPDATE assignments_platform SET title=%s WHERE id=%s', ('Instructor edited title', aid))
-    repeated = exchange(client, assignment_launch(client, {**params, 'resource_link_title': 'Updated Canvas title'}))
+    repeated = exchange(client, assignment_launch(client, {
+        **params,
+        'custom_canvas_assignment_title': 'Updated Canvas title',
+        'custom_canvas_assignment_due_at': '2026-12-02T15:30:00Z',
+    }))
     assert repeated['assignment_id'] == aid
     with store.connection() as conn:
-        assert assignment(conn, aid)['title'] == 'Instructor edited title'
+        updated = assignment(conn, aid)
+        assert updated['title'] == 'Updated Canvas title'
+        assert updated['due_at'] == datetime(2026, 12, 2, 15, 30, tzinfo=timezone.utc)
         assert conn.execute('SELECT count(*) AS n FROM assignments_platform WHERE course_id=%s', (teacher['course_id'],)).fetchone()['n'] == 1
     student_params = {**params, 'user_id': str(uuid4()), 'roles': 'Learner'}
     pending = assignment_launch(client, student_params)

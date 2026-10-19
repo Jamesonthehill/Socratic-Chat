@@ -365,10 +365,10 @@ export default function CreateActivity({
       <div className="page-heading">
         <div>
           <p className="context">Professor studio</p>
-          <h1>{draft.id ? "Edit activity" : "Create new activity"}</h1>
+          <h1>Assignment Configuration</h1>
           <p>
-            Add the details and materials, choose an activity, then review and
-            publish.
+            Confirm the Canvas assignment details, add materials, choose an
+            activity, then review and publish.
           </p>
         </div>
       </div>
@@ -381,7 +381,7 @@ export default function CreateActivity({
           <h2>Activity details</h2>
           <div className="activity-title-date-row">
             <label>
-              Activity title
+              Assignment title
               <input
                 maxLength={200}
                 value={draft.title}
@@ -399,6 +399,11 @@ export default function CreateActivity({
               />
             </label>
           </div>
+          <p className="help">
+            Canvas assignment launches apply the assignment title and due date
+            automatically. You can enter them here for assignments created
+            directly in ClubALL.
+          </p>
           <label>
             Description
             <textarea

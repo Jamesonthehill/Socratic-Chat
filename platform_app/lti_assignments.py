@@ -18,6 +18,21 @@ def _value(value) -> str:
     return value.strip() if isinstance(value, str) and not value.strip().startswith('$') else ''
 
 
+def _canvas_title(custom, resource) -> str:
+    return _value(custom.get('canvas_assignment_title')) or _value(resource.get('title'))
+
+
+def _canvas_due_at(custom):
+    due = _value(custom.get('canvas_assignment_due_at'))
+    if not due:
+        return None
+    try:
+        parsed = datetime.fromisoformat(due.replace('Z', '+00:00'))
+        return parsed if parsed.tzinfo is not None else None
+    except ValueError:
+        return None
+
+
 def provision(conn, claims, *, issuer, deployment_id, context_id, course_id, user_id, role):
     if not settings.LTI_AUTO_CREATE_ASSIGNMENTS:
         return None
@@ -50,6 +65,15 @@ def provision(conn, claims, *, issuer, deployment_id, context_id, course_id, use
             raise HTTPException(409, 'This Canvas link is already bound to a different assignment.')
         if linked['status'] == 'archived':
             raise HTTPException(409, 'Your instructor has archived this assignment.')
+        if role == 'instructor' and linked['status'] == 'draft':
+            canvas_title = _canvas_title(custom, resource)
+            canvas_due_at = _canvas_due_at(custom)
+            conn.execute(
+                '''UPDATE assignments_platform
+                   SET title=COALESCE(%s,title), due_at=COALESCE(%s,due_at), updated_at=now()
+                   WHERE id=%s''',
+                (canvas_title[:200] or None, canvas_due_at, linked['id']),
+            )
         if role == 'student':
             if linked['status'] != 'published':
                 raise HTTPException(409, 'Your instructor must finish configuring and publish this assignment before you can start.')
@@ -62,18 +86,10 @@ def provision(conn, claims, *, issuer, deployment_id, context_id, course_id, use
 
     if role != 'instructor':
         raise HTTPException(409, 'An instructor must open this Canvas assignment in CourseLab and publish it before students can start.')
-    title = _value(custom.get('canvas_assignment_title')) or _value(resource.get('title')) or 'Canvas assignment'
+    title = _canvas_title(custom, resource) or 'Canvas assignment'
     raw_description = _value(custom.get('canvas_assignment_description')) or _value(resource.get('description'))
     instructions = description_text(raw_description)
-    due_at = None
-    due = _value(custom.get('canvas_assignment_due_at'))
-    if due:
-        try:
-            parsed = datetime.fromisoformat(due.replace('Z', '+00:00'))
-            if parsed.tzinfo is not None:
-                due_at = parsed
-        except ValueError:
-            pass  # Optional metadata must not block an otherwise valid launch.
+    due_at = _canvas_due_at(custom)
     assignment_id = str(uuid4())
     config = {}
     conn.execute(

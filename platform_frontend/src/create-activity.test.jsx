@@ -69,8 +69,11 @@ async function open() {
       expect.stringContaining("/platform/context"),
     ),
   );
+  expect(
+    screen.getByRole("heading", { name: "Assignment Configuration" }),
+  ).toBeInTheDocument();
   await user.type(
-    await screen.findByLabelText("Activity title"),
+    await screen.findByLabelText("Assignment title"),
     "Compare design choices",
   );
   return user;
@@ -271,7 +274,7 @@ test("clicking blank space clears selection while preserving entered chat settin
   expect(
     screen.queryByRole("heading", { name: "Debate settings" }),
   ).not.toBeInTheDocument();
-  expect(screen.getByLabelText("Activity title")).toHaveValue(
+  expect(screen.getByLabelText("Assignment title")).toHaveValue(
     "Compare design choices",
   );
   await user.click(screen.getByRole("button", { name: /Debate/ }));

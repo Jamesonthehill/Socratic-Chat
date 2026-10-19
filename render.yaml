@@ -50,7 +50,7 @@ services:
       - key: SELF_DIRECTED_LEARNING_URL
         value: https://cluball-sdl-personal.onrender.com
       - key: AUTH_MODE
-        value: school_google
+        value: open
       - key: ALLOW_PASSWORD_LOGIN
         value: "true"
       - key: ALLOWED_GOOGLE_DOMAINS

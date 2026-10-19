@@ -60,6 +60,7 @@ export default function CreateActivity({
   const [search, setSearch] = useState("");
   const [stage, setStage] = useState(1);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [pendingKeyword, setPendingKeyword] = useState(false);
   const [error, setError] = useState("");
@@ -269,31 +270,36 @@ export default function CreateActivity({
     const uploads = [...event.target.files];
     event.target.value = "";
     if (!uploads.length) return;
-    await run(async () => {
-      const body = new FormData();
-      uploads.forEach((f) => body.append("files", f));
-      const result = await api(
-        `/platform/courses/${draft.course_id}/documents/upload`,
-        { method: "POST", body },
-      );
-      const data = await api(`/platform/courses/${draft.course_id}/documents`);
-      const names = new Set(uploads.map((f) => f.name));
-      setFiles(data.files);
-      setSelected((current) => [
-        ...new Set([
-          ...current,
-          ...data.files
-            .filter((f) => names.has(f.filename) && f.document_id)
-            .map((f) => f.document_id),
-        ]),
-      ]);
-      setStage(1);
-      setNotice(
-        result.skipped_files?.length
-          ? `Some files were skipped: ${result.skipped_files.join(", ")}`
-          : "Documents uploaded and ready to select.",
-      );
-    });
+    setUploading(true);
+    try {
+      await run(async () => {
+        const body = new FormData();
+        uploads.forEach((f) => body.append("files", f));
+        const result = await api(
+          `/platform/courses/${draft.course_id}/documents/upload`,
+          { method: "POST", body },
+        );
+        const data = await api(`/platform/courses/${draft.course_id}/documents`);
+        const names = new Set(uploads.map((f) => f.name));
+        setFiles(data.files);
+        setSelected((current) => [
+          ...new Set([
+            ...current,
+            ...data.files
+              .filter((f) => names.has(f.filename) && f.document_id)
+              .map((f) => f.document_id),
+          ]),
+        ]);
+        setStage(1);
+        setNotice(
+          result.skipped_files?.length
+            ? `Some files were skipped: ${result.skipped_files.join(", ")}`
+            : "Documents uploaded and ready to select.",
+        );
+      });
+    } finally {
+      setUploading(false);
+    }
   };
   const deleteDocument = (file) => {
     if (
@@ -447,10 +453,10 @@ export default function CreateActivity({
             <h3>Existing documents</h3>
             <button
               type="button"
-              disabled={!draft.course_id || busy}
+              disabled={!draft.course_id || busy || uploading}
               onClick={() => fileInput.current.click()}
             >
-              Upload new documents
+              {uploading ? "Processing documents…" : "Upload new documents"}
             </button>
             <input
               ref={fileInput}

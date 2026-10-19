@@ -15,7 +15,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from app import auth, db, settings
-from platform_app import store
+from platform_app import store, lti_assignments
 
 
 DEPLOYMENT_CLAIM = "https://purl.imsglobal.org/spec/lti/claim/deployment_id"
@@ -126,6 +126,7 @@ def lti_status():
         "tool_configuration_ready": _tool_configuration_ready(),
         "launch_configured": _enabled(),
         "lti11_launch_configured": lti11_enabled(),
+        "assignment_auto_creation_enabled": settings.LTI_AUTO_CREATE_ASSIGNMENTS,
     }
 
 
@@ -157,6 +158,10 @@ def canvas_configuration():
                     "custom_fields": {
                         "canvas_course_id": "$Canvas.course.id",
                         "canvas_user_id": "$Canvas.user.id",
+                        "canvas_assignment_id": "$Canvas.assignment.id",
+                        "canvas_assignment_title": "$Canvas.assignment.title",
+                        "canvas_assignment_description": "$Canvas.assignment.description",
+                        "canvas_assignment_due_at": "$Canvas.assignment.dueAt.iso8601",
                     },
                     "placements": [
                         {
@@ -490,6 +495,10 @@ def _provision_launch(
             """,
             (str(uuid4()), course_id, user_id, role, user_id),
         )
+        assignment_id = lti_assignments.provision(
+            conn, claims, issuer=issuer, deployment_id=deployment_id,
+            context_id=context_id, course_id=course_id, user_id=user_id, role=role,
+        )
         if role == "student":
             conn.execute(
                 """
@@ -509,10 +518,10 @@ def _provision_launch(
         conn.execute(
             """
             INSERT INTO lti_login_codes_platform
-                (code_hash, user_id, course_id, expires_at)
-            VALUES (%s, %s, %s, NOW() + INTERVAL '5 minutes')
+                (code_hash, user_id, course_id, assignment_id, launch_role, expires_at)
+            VALUES (%s, %s, %s, %s, %s, NOW() + INTERVAL '5 minutes')
             """,
-            (hashlib.sha256(code.encode()).hexdigest(), user_id, course_id),
+            (hashlib.sha256(code.encode()).hexdigest(), user_id, course_id, assignment_id, role),
         )
     return code, course_id
 
@@ -545,7 +554,7 @@ def lti_exchange(payload: LTIExchangeRequest):
             WHERE code_hash = %s
               AND used_at IS NULL
               AND expires_at > NOW()
-            RETURNING user_id::text, course_id::text
+            RETURNING user_id::text, course_id::text, assignment_id::text, launch_role
             """,
             (code_hash,),
         ).fetchone()
@@ -558,9 +567,28 @@ def lti_exchange(payload: LTIExchangeRequest):
     if not account:
         raise HTTPException(status_code=401, detail="Canvas account was not found.")
     access_token, expires_in_seconds = auth.issue_session(str(row["user_id"]))
+    role = row["launch_role"] or ("instructor" if int(account["authority_level"]) <= 1 else "student")
+    assignment_id = row["assignment_id"]
+    if assignment_id:
+        with store.connection() as conn:
+            assignment = conn.execute(
+                'SELECT tool FROM assignments_platform WHERE id=%s AND course_id=%s',
+                (assignment_id, row["course_id"]),
+            ).fetchone()
+        if not assignment:
+            raise HTTPException(409, "The linked assignment is no longer available in this course.")
+        redirect_path = (
+            f'/platform/professor/assignments/{assignment_id}'
+            if role == 'instructor' else f'/platform/student/assignments/{assignment_id}'
+        )
+    else:
+        home = 'professor' if role == 'instructor' else 'student'
+        redirect_path = f'/platform/{home}?{urlencode({"course": str(row["course_id"])})}'
     return {
         "user": account,
         "access_token": access_token,
         "expires_in_seconds": expires_in_seconds,
         "course_id": str(row["course_id"]),
+        "assignment_id": assignment_id,
+        "redirect_path": redirect_path,
     }

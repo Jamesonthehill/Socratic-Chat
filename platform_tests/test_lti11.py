@@ -20,6 +20,7 @@ def configured_lti11(monkeypatch):
         "LTI_PUBLIC_BASE_URL": "https://cluball.example",
         "LTI11_CONSUMER_KEY": "cluball-test-consumer",
         "LTI11_SHARED_SECRET": "test secret & unicode é",
+        "LTI_AUTO_CREATE_ASSIGNMENTS": True,
         "LTI_CLIENT_ID": "", "LTI_DEPLOYMENT_ID": "", "LTI_TOOL_PRIVATE_KEY_B64": "",
     }
     for name, value in values.items():
@@ -64,7 +65,9 @@ def test_canvas_xml_and_independent_status(client, configured_lti11):
     assert result.status_code == 200
     xml = ElementTree.fromstring(result.text)
     launch_url = xml.find("{http://www.imsglobal.org/xsd/imsbasiclti_v1p0}launch_url").text
-    assert launch_url == "https://cluball.example/api/lti/1.1/launch"
+    assert launch_url == "https://cluball.example/api/lti/1.1/assignment-launch"
+    assert 'name="url">https://cluball.example/api/lti/1.1/launch' in result.text
+    assert '$Canvas.assignment.id' in result.text
     assert 'name="windowTarget">_blank' in result.text
     assert settings.LTI11_SHARED_SECRET not in result.text
     status = client.get("/api/lti/status").json()

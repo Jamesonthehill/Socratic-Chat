@@ -1,3 +1,4 @@
+import SocraticLearningSummary from "./SocraticLearningSummary";
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Markdown from "react-markdown";
@@ -11,8 +12,9 @@ function nextQuestion(messages) {
   if (!answer) return "";
   const sentences = answer.split(/(?<=[.!?])\s+/).filter(Boolean);
   return (
-    [...sentences].reverse().find((sentence) => sentence.trim().endsWith("?")) ||
-    answer
+    [...sentences]
+      .reverse()
+      .find((sentence) => sentence.trim().endsWith("?")) || answer
   ).trim();
 }
 
@@ -26,18 +28,24 @@ function EmphasizedText({ text, keywords = [] }) {
     term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
   );
   const matcher = new RegExp(`(${escaped.join("|")})`, "gi");
-  return text.split(matcher).map((part, index) =>
-    terms.some((term) => term.toLowerCase() === part.toLowerCase()) ? (
-      <strong key={index}>{part}</strong>
-    ) : (
-      part
-    ),
-  );
+  return text
+    .split(matcher)
+    .map((part, index) =>
+      terms.some((term) => term.toLowerCase() === part.toLowerCase()) ? (
+        <strong key={index}>{part}</strong>
+      ) : (
+        part
+      ),
+    );
 }
 
 function inferQuestionType(content) {
   const text = String(content || "").toLowerCase();
-  if (/\b(?:reflect|understanding changed|would you revise|first response)\b/.test(text))
+  if (
+    /\b(?:reflect|understanding changed|would you revise|first response)\b/.test(
+      text,
+    )
+  )
     return "Reflection";
   if (/\b(?:synthesi|combine|bring together|overall explanation)\b/.test(text))
     return "Synthesis";
@@ -45,13 +53,25 @@ function inferQuestionType(content) {
     return "Application";
   if (/\b(?:compare|comparison|difference|distinction)\b/.test(text))
     return "Comparison";
-  if (/\b(?:evidence|support|source|detail|according|how do you know)\b/.test(text))
+  if (
+    /\b(?:evidence|support|source|detail|according|how do you know)\b/.test(
+      text,
+    )
+  )
     return "Evidence";
   if (/\b(?:assum|belie|thought|taking for granted)\b/.test(text))
     return "Assumption";
-  if (/\b(?:impact|implication|consequence|what happens|lead to|affect)\b/.test(text))
+  if (
+    /\b(?:impact|implication|consequence|what happens|lead to|affect)\b/.test(
+      text,
+    )
+  )
     return "Implication";
-  if (/\b(?:alternative|another|different perspective|other viewpoint|instead)\b/.test(text))
+  if (
+    /\b(?:alternative|another|different perspective|other viewpoint|instead)\b/.test(
+      text,
+    )
+  )
     return "Alternative viewpoint";
   return "Clarification";
 }
@@ -104,12 +124,7 @@ function SocraticThinkingMessage({ elapsedSeconds }) {
     >
       <span className="thinking-mark" aria-hidden="true">
         <svg viewBox="0 0 44 44" focusable="false">
-          <circle
-            className="thinking-orbit-track"
-            cx="22"
-            cy="22"
-            r="16"
-          />
+          <circle className="thinking-orbit-track" cx="22" cy="22" r="16" />
           <g className="thinking-orbit-particles">
             <circle
               className="thinking-particle thinking-particle-primary"
@@ -138,6 +153,81 @@ function SocraticThinkingMessage({ elapsedSeconds }) {
         </span>
       </span>
     </article>
+  );
+}
+
+function ConceptCheck({
+  check,
+  selectedOption,
+  reason,
+  busy,
+  hintVisible,
+  onShowHint,
+  onSelect,
+  onReasonChange,
+  onSubmit,
+}) {
+  return (
+    <form className="concept-check" onSubmit={onSubmit}>
+      <div className="concept-check-heading">
+        <p className="context">Quick concept check</p>
+        <button
+          type="button"
+          className="secondary compact"
+          aria-expanded={hintVisible}
+          onClick={onShowHint}
+        >
+          {hintVisible ? "Hide hint" : "Show hint"}
+        </button>
+      </div>
+      {hintVisible && (
+        <p className="concept-check-hint" role="note">
+          <strong>Hint:</strong> {check.hint}
+        </p>
+      )}
+      <fieldset disabled={busy}>
+        <legend>{check.question}</legend>
+        <div className="concept-check-options">
+          {check.options.map((option, index) => (
+            <label
+              className={`concept-check-option${
+                selectedOption === index ? " is-selected" : ""
+              }`}
+              key={option.id}
+            >
+              <input
+                type="radio"
+                name="concept-check-option"
+                value={index}
+                checked={selectedOption === index}
+                onChange={() => onSelect(index)}
+              />
+              <span>{option.text}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      {selectedOption !== null && (
+        <div className="concept-check-reason">
+          <label htmlFor="concept-check-reason">
+            Why did you choose this option?
+          </label>
+          <p className="help">
+            Explain your thinking before the tutor gives feedback.
+          </p>
+          <textarea
+            id="concept-check-reason"
+            value={reason}
+            rows={4}
+            maxLength={20000}
+            disabled={busy}
+            onChange={(event) => onReasonChange(event.target.value)}
+            placeholder="I chose this because…"
+          />
+          <button disabled={busy || !reason.trim()}>Submit my reasoning</button>
+        </div>
+      )}
+    </form>
   );
 }
 
@@ -223,6 +313,7 @@ function EvidenceDrawer({
 
 function SocraticMessage({
   message,
+  studentName,
   latest,
   thinkingStep,
   keywords,
@@ -246,10 +337,14 @@ function SocraticMessage({
       <header className="message-card-header">
         <div className="message-card-identity">
           <span className="message-avatar" aria-hidden="true">
-            {message.role === "user" ? "Y" : "S"}
+            {message.role === "user"
+              ? studentName.charAt(0).toUpperCase()
+              : "S"}
           </span>
-          <strong>{message.role === "user" ? "You" : "Socratic tutor"}</strong>
-          {latest && score != null && (
+          <strong>
+            {message.role === "user" ? studentName : "Socratic tutor"}
+          </strong>
+          {message.role === "assistant" && score != null && (
             <span className="score-badge">Score {Math.round(score)}/100</span>
           )}
         </div>
@@ -377,11 +472,13 @@ function Result({ result }) {
   );
 }
 
-export default function StudentWorkspace() {
+export default function StudentWorkspace({ user }) {
+  const studentName = user?.display_name?.trim() || user?.username || "Student";
   const { id } = useParams();
   const [assignment, setAssignment] = useState(null),
     [attempt, setAttempt] = useState(null),
-    [message, setMessage] = useState("");
+    [message, setMessage] = useState(""),
+    [studentReflection, setStudentReflection] = useState("");
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [loaded, setLoaded] = useState(false),
@@ -391,8 +488,12 @@ export default function StudentWorkspace() {
     [selectedEvidence, setSelectedEvidence] = useState(null),
     [evidenceWidth, setEvidenceWidth] = useState(420),
     [chatExpanded, setChatExpanded] = useState(false);
+  const [selectedConceptOption, setSelectedConceptOption] = useState(null),
+    [conceptCheckReason, setConceptCheckReason] = useState(""),
+    [conceptCheckHintVisible, setConceptCheckHintVisible] = useState(false);
   const endRef = useRef(null),
     pending = useRef(null),
+    reflectionPending = useRef(null),
     inputRef = useRef(null),
     evidenceResize = useRef(null);
   useEffect(() => {
@@ -432,6 +533,13 @@ export default function StudentWorkspace() {
   useEffect(() => {
     setSelectedEvidence(null);
   }, [attempt?.engine_state?.sources]);
+  const conceptCheckId =
+    attempt?.engine_state?.socratic?.concept_check?.id || null;
+  useEffect(() => {
+    setSelectedConceptOption(null);
+    setConceptCheckReason("");
+    setConceptCheckHintVisible(false);
+  }, [conceptCheckId]);
   useEffect(() => {
     document.body.classList.toggle(
       "evidence-workspace-open",
@@ -442,11 +550,19 @@ export default function StudentWorkspace() {
   useEffect(() => {
     if (assignment?.tool !== "reflections") return;
     let active = true;
-    const refresh = () => api(`/platform/assignments/${id}/attempt`)
-      .then((value) => { if (active) setAttempt(value); })
-      .catch((e) => { if (active) setError(e.message); });
+    const refresh = () =>
+      api(`/platform/assignments/${id}/attempt`)
+        .then((value) => {
+          if (active) setAttempt(value);
+        })
+        .catch((e) => {
+          if (active) setError(e.message);
+        });
     window.addEventListener("focus", refresh);
-    return () => { active = false; window.removeEventListener("focus", refresh); };
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refresh);
+    };
   }, [id, assignment?.tool]);
   async function perform(path, body) {
     setBusy(true);
@@ -467,10 +583,30 @@ export default function StudentWorkspace() {
   }
   async function send(e) {
     e.preventDefault();
-    if (!message.trim() || busy) return;
-    const text = message.trim();
-    if (!pending.current || pending.current.message !== text)
-      pending.current = { message: text, request_id: crypto.randomUUID() };
+    await sendMessage(message.trim());
+  }
+  async function sendMessage(
+    text,
+    clarificationIndex = null,
+    conceptCheckOption = null,
+  ) {
+    if (!text || busy) return;
+    if (
+      !pending.current ||
+      pending.current.message !== text ||
+      (pending.current.clarification_index ?? null) !== clarificationIndex ||
+      (pending.current.concept_check_option ?? null) !== conceptCheckOption
+    )
+      pending.current = {
+        message: text,
+        request_id: crypto.randomUUID(),
+        ...(clarificationIndex !== null
+          ? { clarification_index: clarificationIndex }
+          : {}),
+        ...(conceptCheckOption !== null
+          ? { concept_check_option: conceptCheckOption }
+          : {}),
+      };
     const startedAt = Date.now();
     setGenerationStartedAt(startedAt);
     setGenerationSeconds(0);
@@ -481,6 +617,32 @@ export default function StudentWorkspace() {
     if (sent) {
       setMessage("");
       pending.current = null;
+    }
+  }
+  async function submitConceptCheck(event) {
+    event.preventDefault();
+    const reason = conceptCheckReason.trim();
+    if (selectedConceptOption === null || !reason || busy) return;
+    await sendMessage(reason, null, selectedConceptOption);
+  }
+  async function finishLearningSummary(event) {
+    event.preventDefault();
+    const summary = studentReflection.trim();
+    if (!summary || busy) return;
+    if (
+      !reflectionPending.current ||
+      reflectionPending.current.summary !== summary
+    )
+      reflectionPending.current = { summary, request_id: crypto.randomUUID() };
+    const startedAt = Date.now();
+    setGenerationStartedAt(startedAt);
+    setGenerationSeconds(0);
+    const sent = await perform("reflection", reflectionPending.current);
+    setLastGenerationSeconds(sent ? (Date.now() - startedAt) / 1000 : null);
+    setGenerationStartedAt(null);
+    if (sent) {
+      setStudentReflection("");
+      reflectionPending.current = null;
     }
   }
   function clampEvidenceWidth(width) {
@@ -531,6 +693,7 @@ export default function StudentWorkspace() {
     completed = attempt?.status === "completed",
     state = attempt?.engine_state || {};
   const socratic = state.socratic || {};
+  const conceptCheck = socratic.concept_check || null;
   const thinkingStep =
     assignment.tool === "socratic"
       ? socratic.next_thinking_step || nextQuestion(attempt?.messages)
@@ -562,6 +725,9 @@ export default function StudentWorkspace() {
         <div>
           <p className="context">{tool.name}</p>
           <h1>{assignment.title}</h1>
+          <p className="student-session-identity" aria-label="Student name">
+            Student: <strong>{studentName}</strong>
+          </p>
           <p>
             {assignment.due_at
               ? `Due ${date(assignment.due_at)}`
@@ -572,7 +738,7 @@ export default function StudentWorkspace() {
       </div>
       <Notice error={error} />
       <div
-        className={`workspace-grid${selectedEvidence ? " evidence-open" : ""}${chatExpanded ? " chat-expanded" : ""}`}
+        className={`workspace-grid${selectedEvidence ? " evidence-open" : ""}${chatExpanded ? " chat-expanded" : ""}${conceptCheck ? " concept-check-active" : ""}`}
         style={
           selectedEvidence
             ? { "--evidence-drawer-width": `${evidenceWidth}px` }
@@ -589,10 +755,32 @@ export default function StudentWorkspace() {
           </div>
           {assignment.tool === "debate" && <><h3>Debate scenario</h3><p>{assignment.student_config?.scenario}</p><p className="help">Send at least {assignment.student_config?.minimum_messages} message(s), then mark the activity complete.</p></>}
           {assignment.tool === "socratic" && (
-            <p className="help">
-              Send at least {assignment.student_config.minimum_messages}{" "}
-              message(s), then mark the assignment complete.
-            </p>
+            <>
+              {assignment.student_config?.keyword_glossary?.length > 0 && (
+                <section
+                  className="student-keyword-glossary"
+                  aria-labelledby="student-keyword-glossary-title"
+                >
+                  <h3 id="student-keyword-glossary-title">Key concepts</h3>
+                  <p className="help">
+                    Review these instructor-approved terms before you begin.
+                  </p>
+                  <dl>
+                    {assignment.student_config.keyword_glossary.map((entry) => (
+                      <div key={entry.keyword}>
+                        <dt>{entry.keyword}</dt>
+                        <dd>{entry.definition}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              )}
+              <p className="help">
+                Work through the tutor's questions, then summarize what you
+                learned in your own words. Review the final feedback before
+                submitting.
+              </p>
+            </>
           )}
           {assignment.tool === "debate" && (
             <>
@@ -641,12 +829,18 @@ export default function StudentWorkspace() {
               {!milestone && (
                 <button
                   className="secondary"
-                  disabled={busy}
+                  disabled={
+                    busy ||
+                    (assignment.tool === "socratic" &&
+                      socratic.phase !== "ready_to_submit")
+                  }
                   onClick={() => perform("complete")}
                 >
-                  {assignment.tool === "reflections"
-                    ? "Finish reflection & evaluate"
-                    : "Mark assignment complete"}
+                  {assignment.tool === "socratic"
+                    ? "Submit assignment"
+                    : assignment.tool === "reflections"
+                      ? "Finish reflection & evaluate"
+                      : "Mark assignment complete"}
                 </button>
               )}
             </>
@@ -666,45 +860,72 @@ export default function StudentWorkspace() {
                     : tool.description)}
               </p>
             </div>
-            {assignment.tool === "socratic" && !selectedEvidence && (
-              <button
-                    type="button"
-                    className="secondary compact chat-expand-control"
-                    aria-pressed={chatExpanded}
-                    aria-label={chatExpanded ? "Show assignment" : "Expand chat"}
-                    title={chatExpanded ? "Show assignment" : "Expand chat"}
-                    onClick={() => setChatExpanded((expanded) => !expanded)}
-              >
-                    {chatExpanded ? (
-                      <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M9 3v6H3M15 3v6h6M9 21v-6H3M15 21v-6h6" />
-                      </svg>
-                    ) : (
-                      <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M9 3H3v6M15 3h6v6M9 21H3v-6M15 21h6v-6" />
-                      </svg>
-                    )}
-              </button>
-            )}
+            {assignment.tool === "socratic" &&
+              !selectedEvidence &&
+              !conceptCheck && (
+                <button
+                  type="button"
+                  className="secondary compact chat-expand-control"
+                  aria-pressed={chatExpanded}
+                  aria-label={chatExpanded ? "Show assignment" : "Expand chat"}
+                  title={chatExpanded ? "Show assignment" : "Expand chat"}
+                  onClick={() => setChatExpanded((expanded) => !expanded)}
+                >
+                  {chatExpanded ? (
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M9 3v6H3M15 3v6h6M9 21v-6H3M15 21v-6h6" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M9 3H3v6M15 3h6v6M9 21H3v-6M15 21h6v-6" />
+                    </svg>
+                  )}
+                </button>
+              )}
           </div>
           {assignment.tool === "reflections" ? (
             <div className="start-state">
-              <h2>{completed ? "Your reflection is complete." : "Ready when you are."}</h2>
-              <p>Open Reflections in a new tab. Your professor’s settings and saved progress are loaded automatically.</p>
-              <a className="button" href={`/platform/reflections.html?assignment=${encodeURIComponent(id)}`} target="_blank" rel="noopener noreferrer" onClick={async (event) => {
-                event.preventDefault();
-                const tab = window.open("about:blank", "_blank");
-                if (!tab) { setError("Allow pop-ups to open Reflections, then retry."); return; }
-                tab.opener = null;
-                try {
-                  const { code } = await api(`/platform/assignments/${encodeURIComponent(id)}/reflection-launch`, { method: "POST" });
-                  tab.location.replace(`/platform/reflections.html?assignment=${encodeURIComponent(id)}#code=${encodeURIComponent(code)}`);
-                } catch (error) {
-                  tab.close();
-                  setError(error.message);
-                }
-              }}>
-                {completed ? "View reflection results" : attempt ? "Resume assignment" : "Start assignment"}
+              <h2>
+                {completed
+                  ? "Your reflection is complete."
+                  : "Ready when you are."}
+              </h2>
+              <p>
+                Open Reflections in a new tab. Your professor’s settings and
+                saved progress are loaded automatically.
+              </p>
+              <a
+                className="button"
+                href={`/platform/reflections.html?assignment=${encodeURIComponent(id)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={async (event) => {
+                  event.preventDefault();
+                  const tab = window.open("about:blank", "_blank");
+                  if (!tab) {
+                    setError("Allow pop-ups to open Reflections, then retry.");
+                    return;
+                  }
+                  tab.opener = null;
+                  try {
+                    const { code } = await api(
+                      `/platform/assignments/${encodeURIComponent(id)}/reflection-launch`,
+                      { method: "POST" },
+                    );
+                    tab.location.replace(
+                      `/platform/reflections.html?assignment=${encodeURIComponent(id)}#code=${encodeURIComponent(code)}`,
+                    );
+                  } catch (error) {
+                    tab.close();
+                    setError(error.message);
+                  }
+                }}
+              >
+                {completed
+                  ? "View reflection results"
+                  : attempt
+                    ? "Resume assignment"
+                    : "Start assignment"}
               </a>
             </div>
           ) : !attempt ? (
@@ -725,12 +946,18 @@ export default function StudentWorkspace() {
                   assignment.tool === "socratic" ? (
                     <SocraticMessage
                       key={i}
+                      studentName={studentName}
                       message={m}
                       latest={i === latestAssistantIndex}
                       thinkingStep={thinkingStep}
                       keywords={keywords}
                       sources={state.sources}
-                      score={socratic.last_score}
+                      score={
+                        m.total_score ??
+                        (i === latestAssistantIndex
+                          ? socratic.last_score
+                          : null)
+                      }
                       responseSeconds={lastGenerationSeconds}
                       selectedEvidence={selectedEvidence}
                       setSelectedEvidence={setSelectedEvidence}
@@ -738,7 +965,7 @@ export default function StudentWorkspace() {
                   ) : (
                     <article className={`message ${m.role}`} key={i}>
                       <span className="message-author">
-                        {m.role === "user" ? "You" : tool.name}
+                        {m.role === "user" ? studentName : tool.name}
                       </span>
                       <div className="prose">
                         <Markdown>{m.content}</Markdown>
@@ -784,7 +1011,9 @@ export default function StudentWorkspace() {
                 {busy &&
                   (assignment.tool === "socratic" ? (
                     <SocraticThinkingMessage
-                      elapsedSeconds={generationStartedAt ? generationSeconds : 0}
+                      elapsedSeconds={
+                        generationStartedAt ? generationSeconds : 0
+                      }
                     />
                   ) : (
                     <p className="working" role="status">
@@ -795,7 +1024,12 @@ export default function StudentWorkspace() {
               </div>
               {assignment.tool === "socratic" &&
                 thinkingStep.endsWith("?") &&
-                !completed && (
+                !completed &&
+                !["awaiting_reflection", "ready_to_submit"].includes(
+                  socratic.phase,
+                ) &&
+                !conceptCheck &&
+                !socratic.clarification_options?.length && (
                   <div
                     className={`suggested-responses${busy ? " is-busy" : ""}`}
                     aria-label="Suggested responses"
@@ -815,7 +1049,7 @@ export default function StudentWorkspace() {
                       </button>
                     ))}
                   </div>
-              )}
+                )}
               {!completed && assignment.tool === "student-agent" && (
                 <div className="tutor-controls">
                   {state.nav?.map((n) => (
@@ -857,9 +1091,81 @@ export default function StudentWorkspace() {
                   )}
                 </div>
               )}
+              {assignment.tool === "socratic" &&
+                socratic.clarification_options?.length > 0 &&
+                !conceptCheck &&
+                !completed && (
+                  <div
+                    className="suggested-responses"
+                    aria-label="Clarify what you mean"
+                  >
+                    {socratic.clarification_options.map((option, index) => (
+                      <button
+                        key={index}
+                        className="suggestion-chip"
+                        disabled={busy}
+                        onClick={() => sendMessage(option.label, index)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              {assignment.tool === "socratic" && conceptCheck && !completed && (
+                <ConceptCheck
+                  check={conceptCheck}
+                  selectedOption={selectedConceptOption}
+                  reason={conceptCheckReason}
+                  busy={busy}
+                  hintVisible={conceptCheckHintVisible}
+                  onShowHint={() =>
+                    setConceptCheckHintVisible((visible) => !visible)
+                  }
+                  onSelect={setSelectedConceptOption}
+                  onReasonChange={setConceptCheckReason}
+                  onSubmit={submitConceptCheck}
+                />
+              )}
+              {assignment.tool === "socratic" && (
+                <SocraticLearningSummary
+                  summary={socratic.completion_summary}
+                />
+              )}
               {completed ? (
                 <Result result={attempt.result || {}} />
-              ) : (
+              ) : assignment.tool === "socratic" &&
+                socratic.phase === "awaiting_reflection" ? (
+                <form
+                  className="composer learning-reflection-form"
+                  onSubmit={finishLearningSummary}
+                >
+                  <label htmlFor="student-learning-summary">
+                    Summarize what you learned in your own words
+                  </label>
+                  <p className="help">
+                    Explain the original question using the example from your
+                    conversation.
+                  </p>
+                  <textarea
+                    id="student-learning-summary"
+                    value={studentReflection}
+                    maxLength={4000}
+                    rows={5}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setStudentReflection(event.target.value)
+                    }
+                  />
+                  <button disabled={busy || !studentReflection.trim()}>
+                    Get final feedback
+                  </button>
+                </form>
+              ) : assignment.tool === "socratic" &&
+                socratic.phase === "ready_to_submit" ? (
+                <p className="notice">
+                  Review your learning summary, then select Submit assignment.
+                </p>
+              ) : conceptCheck ? null : (
                 <form className="composer" onSubmit={send}>
                   <label className="sr-only" htmlFor="reply">
                     Your {milestone ? "reflection" : "message"}

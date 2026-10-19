@@ -6,7 +6,15 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, StrictInt, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    SecretStr,
+    StrictInt,
+    model_validator,
+)
 
 
 class StrictModel(BaseModel):
@@ -38,9 +46,31 @@ class Topic(StrictModel):
 
 
 class SocraticConfig(StrictModel):
+    keywords: list[str] = Field(default_factory=list, max_length=8)
+    optional_keywords: list[str] = Field(default_factory=list, max_length=48)
+    learning_objective_id: UUID | None = None
     document_ids: list[str] = Field(default_factory=list, max_length=100)
     prompt: str = Field(default="", max_length=10000)
     minimum_messages: int = Field(default=1, ge=1, le=100)
+
+
+    @model_validator(mode="after")
+    def validate_keywords(self):
+        from app.objective_extraction import _clean_keywords
+        if any(not item.strip() or len(item) > 120 for item in self.keywords):
+            raise ValueError("Keywords must contain 1 to 120 characters each.")
+        self.keywords = _clean_keywords(self.keywords)
+        seen = set()
+        optional = []
+        for item in self.optional_keywords:
+            word = " ".join(item.split())
+            if not word or len(word) > 120:
+                raise ValueError("Optional keywords must contain 1 to 120 characters each.")
+            if word.casefold() not in seen:
+                seen.add(word.casefold())
+                optional.append(word)
+        self.optional_keywords = optional
+        return self
 
 
 class DebateConfig(StrictModel):
@@ -108,7 +138,14 @@ CONFIG_MODELS = {
 
 class AssignmentInput(StrictModel):
     course_id: UUID
-    tool: Literal["socratic", "reflections", "student-agent", "self-directed-learning", "debate", "aiducate"]
+    tool: Literal[
+        "socratic",
+        "reflections",
+        "student-agent",
+        "self-directed-learning",
+        "debate",
+        "aiducate",
+    ] | None
     title: str = Field(min_length=1, max_length=200)
     instructions: str = Field(default="", max_length=10000)
     due_at: datetime | None = None
@@ -118,7 +155,11 @@ class AssignmentInput(StrictModel):
 
     @model_validator(mode="after")
     def validate_config(self):
-        self.config = CONFIG_MODELS[self.tool].model_validate(self.config).model_dump(mode="json")
+        if self.tool is None:
+            if self.config:
+                raise ValueError("Choose a chatbot before adding its settings.")
+        else:
+            self.config = CONFIG_MODELS[self.tool].model_validate(self.config).model_dump(mode="json")
         if self.due_at and self.due_at.tzinfo is None:
             raise ValueError("Due date must include a time zone.")
         if self.audience == "selected" and not self.recipient_ids:
@@ -128,6 +169,13 @@ class AssignmentInput(StrictModel):
 
 class MessageInput(StrictModel):
     message: str = Field(min_length=1, max_length=20000)
+    request_id: UUID
+    clarification_index: int | None = Field(default=None, ge=0, le=2)
+    concept_check_option: int | None = Field(default=None, ge=0, le=2)
+
+
+class SocraticReflectionInput(StrictModel):
+    summary: str = Field(min_length=1, max_length=4000)
     request_id: UUID
 
 
@@ -154,6 +202,14 @@ class SelfDirectedQuizInput(StrictModel):
     answers: list[int] = Field(min_length=5, max_length=5)
 
 
+class CanvasCredentials(StrictModel):
+    access_token: SecretStr = Field(min_length=10, max_length=4096)
+
+
+class CanvasCourseRequest(CanvasCredentials):
+    course_id: int = Field(gt=0)
+
+
 class CanvasImportRequest(CanvasCourseRequest):
     assignment_id: int = Field(gt=0)
     platform_course_id: UUID
@@ -178,3 +234,28 @@ class SelfDirectedLearningTurn(StrictModel):
     confidence: Literal["low", "medium", "high"] | None = None
     explanation: str | None = Field(default=None, max_length=3000)
     turn_id: str = Field(min_length=1, max_length=100)
+
+
+class LearningObjectiveUpdate(StrictModel):
+    keywords: list[str] | None = Field(default=None, min_length=1, max_length=8)
+    objective: str | None = Field(default=None, min_length=1, max_length=500)
+    prerequisites: list[str] | None = Field(default=None, max_length=5)
+    success_criteria: list[str] | None = Field(default=None, max_length=5)
+    common_misconceptions: list[str] | None = Field(default=None, max_length=4)
+    diagnostic_question: str | None = Field(default=None, min_length=1, max_length=300)
+    status: Literal["draft", "approved", "rejected"] | None = None
+
+    @model_validator(mode="after")
+    def validate_lists(self):
+        for name in ("prerequisites", "success_criteria", "common_misconceptions"):
+            values = getattr(self, name)
+            if values is not None:
+                if any(not isinstance(item, str) or not item.strip() or len(item) > 240 for item in values):
+                    raise ValueError("Planning details must contain non-empty items of at most 240 characters.")
+                setattr(self, name, list(dict.fromkeys(item.strip() for item in values)))
+        if self.keywords is not None:
+            from app.objective_extraction import _clean_keywords
+            if any(not item.strip() or len(item) > 120 for item in self.keywords):
+                raise ValueError("Keywords must contain 1 to 120 characters each.")
+            self.keywords = _clean_keywords(self.keywords)
+        return self

@@ -58,6 +58,34 @@ Course context is supplied by the Canvas launch (`?course=<platform-course-UUID>
 5. Save a draft, review the activity, or publish. SDL review generates its lesson and exposes quiz questions, answers, examples and practice rubrics.
 6. Reopen a draft to continue editing; open a published activity to see **At a glance** and assignment details. **Detailed Insights** opens the Analytics placeholder.
 
+### Import from Canvas
+
+The Socratic Chat professor dashboard can create a draft from an assignment visible
+to your Canvas account. Set `CANVAS_API_ORIGIN` to the same Canvas origin used by
+`LTI_CANVAS_ISSUER`.
+
+1. In your Canvas instance, open **Account → Settings → Approved Integrations**
+   and create a current access
+   token. If **Add New Access Token** is unavailable, request API access through
+   your Canvas administrator; the institution controls whether personal tokens
+   are enabled.
+2. Open **Socratic Chat** in the professor dashboard and select the destination
+   ClubALL course. If it does not exist yet, select the Canvas class and create
+   its corresponding ClubALL course from the import panel.
+3. Under **Import from Canvas**, choose the chatbot students will
+   use, paste the token, select an active Canvas course, and select one of the
+   assignments visible to that account.
+4. Import the assignment as a draft, review the copied title, instructions, due
+   date, and assigned chatbot, configure the selected learning experience, choose
+   recipients, and publish.
+
+The connector is read-only and is restricted to
+`${CANVAS_API_ORIGIN}/api/v1`. The access token is held in browser
+memory only for the current page and sent to the ClubALL backend only for the
+requested Canvas operation. It is not written to PostgreSQL, browser storage,
+application logs, assignment configuration, or source files. Importing copies a
+point-in-time assignment draft; later Canvas edits are not synchronized.
+
 ### Add ClubALL from Canvas Course Settings (LTI 1.1)
 
 LTI 1.1 opens the full ClubALL platform using a signed Canvas identity and course
@@ -72,6 +100,14 @@ linked private course. Students then enter the shared ClubALL assignment
 workflow. LTI 1.1 requires no Canvas Developer Key or personal API token.
 
 ### Add ClubALL as a Canvas External App (LTI 1.3)
+
+Canvas assignment launches can automatically create a linked Socratic draft with
+`LTI_AUTO_CREATE_ASSIGNMENTS=true` (default). The instructor opens the External
+Tool assignment first, configures its materials, and publishes it; students then
+open the same linked CourseLab activity from Canvas. Course-navigation launches
+only open the course. See [assignment launch setup](docs/canvas-lti11.md#automatically-link-a-canvas-assignment)
+for the LTI 1.1 assignment URL, existing-installation custom fields, and LTI 1.3
+claim handling. This does not automatically copy attachments/rubrics or return grades.
 
 The personal-token importer above and the LTI integration serve different
 purposes. The importer copies existing Canvas assignments into ClubALL. LTI lets
@@ -307,3 +343,69 @@ Tests cover assignment ownership and visibility, publication rollback, frozen co
 ### Reflections provider configuration
 
 If Reflections reports a missing or invalid AI provider key, update `GROQ_API_KEY` or `OPENAI_API_KEY` (matching `LLM_PROVIDER` and any role overrides) in the **root `.env`**. Root Docker Compose does not load `reflections-app/backend/.env`; configure the corresponding `GROQ_MODEL` or `OPENAI_MODEL` in the root file too. Apply environment changes with `docker compose up -d --force-recreate reflections` rather than `docker compose restart`, then retry the assignment. Existing checkpointed sessions are retained.
+
+### Local Qwen embeddings with Groq conversation
+
+Keep `LLM_PROVIDER=groq` for classification, evaluation, and tutor replies. Set
+`EMBEDDING_PROVIDER=ollama`, `EMBEDDING_MODEL=qwen3-embedding:0.6b`, and
+`EMBEDDING_DIMENSIONS=1024` for both document ingestion and retrieval queries.
+Run `ollama pull qwen3-embedding:0.6b` once and keep Ollama running. A native
+server uses `OLLAMA_API_BASE_URL=http://127.0.0.1:11434/v1`; Docker uses
+`http://host.docker.internal:11434/v1`. The OpenAI Python client is only the
+compatible HTTP client for this local endpoint; no OpenAI API key is required.
+
+An empty chunk table is resized to the configured vector dimensions on startup.
+A nonempty table with different dimensions is left intact and startup stops with
+a reindexing error. Never mix embeddings from different models. Hybrid database
+search filters by embedding model. Published snapshots retain their evidence;
+older incompatible vectors use keyword matching rather than cross-model cosine
+similarity. `scripts/reindex_course_documents.py --course-id COURSE_UUID` repairs
+stored course files without adding duplicate uploads or publishing assignments.
+
+
+### Socratic assignment teaching pipeline
+
+The assignment adapter in `platform_app/engines.py` uses the teaching modules from
+`local-socratic-chat/Socratic-Chat`: message-role classification, grounded answer
+evaluation, scenario-aware question generation, terminology resolution, and a final
+student reflection. Provider configuration is preserved (Groq chat and local Qwen
+embeddings in the current local setup).
+
+Each attempt retains its original learning question and a stable assessment concept;
+retrieval targets can vary without changing that assessment concept. Retrieval searches
+only the documents frozen into the published assignment. Substantive answers are scored
+against those passages; support requests and clarification choices are not learning
+evidence. Evaluation feedback and misconceptions are included in the next tutor prompt.
+Exact model requests continue to be captured by the existing pipeline logger.
+
+A score of at least 80 without a critical misconception pauses teaching and asks the
+student to write their own summary. The tutor then gives final feedback, corrects any
+identified misconception, resolves the opening scenario, and answers the original
+question. Only then is **Submit assignment** enabled. Message count alone cannot
+complete a Socratic assignment. Assessments are stored in
+`assignment_assessments_platform`, linked to the platform attempt, student, and course.
+The standalone account/conversation storage is not copied; platform assignments, Canvas access, and published document snapshots remain the boundaries for this adapter.
+
+
+### Course documents and keyword approval
+
+Open **Chatbot configuration → Socratic Chat** to upload and index course documents.
+Choose **Suggest keywords** to combine document-grounded suggestions in the left **Optional** box.
+Instructors may also add their own optional keywords. Nothing in Optional guides the chatbot.
+Move selected keywords to the right **Approved** box; use − to return them to Optional.
+The assignment supports up to eight active keywords. Separate objective cards remain hidden;
+stored objective records and legacy published snapshots are retained.
+
+Choose **Confirm keywords** to save the draft and prepare its course-owned indexed passages
+on the server. Confirmation requires an assignment title and at least one approved keyword.
+The private preparation cache binds the exact approved list and source document revisions to a
+RAG snapshot. The page reports how many indexed passages are ready. New assignments using
+assignment-level keywords cannot publish until confirmation succeeds. Publishing uses the cached
+snapshot and confirms student access separately; confirmation alone never exposes the draft.
+
+Approved-list or source-material changes invalidate preparation and require another confirmation.
+Optional-list and ordinary title/instruction changes do not expand the teaching scope. Preparation
+metadata persists across page refreshes; cached passages and vectors are never returned to students.
+The student's first question starts tutoring. The full published approved list constrains semantic
+scope checking, retrieval, evaluation, generation and final feedback. No fixed opening scenario is
+required. Previously published assignments retain their frozen materials and settings.

@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { App } from "./main";
 import { SESSION_KEY } from "./api";
-import {resetCourseContext} from "./courseContext";
+import { resetCourseContext } from "./courseContext";
 beforeEach(resetCourseContext);
 
 const course = "8b71218d-71f3-436e-a4a6-1b279c4fda79";
@@ -47,7 +47,11 @@ function mockApi(role = "instructor", override = {}) {
         onboarding_complete: true,
       },
     },
-    "/api/platform/context": {course_id:course,course_code:"SE101",title:"Software Engineering"},
+    "/api/platform/context": {
+      course_id: course,
+      course_code: "SE101",
+      title: "Software Engineering",
+    },
     "/api/platform/assignments": [assignment],
     "/api/courses": {
       courses: [
@@ -71,6 +75,7 @@ function mockApi(role = "instructor", override = {}) {
       },
     ],
     [`/api/courses/${course}/documents`]: { files: [] },
+    [`/api/courses/${course}/learning-objectives`]: { objectives: [] },
     "/api/platform/topic-templates": [],
     "/api/platform/assignments/assignment-1": assignment,
     "/api/platform/assignments/assignment-1/attempt": null,
@@ -78,8 +83,9 @@ function mockApi(role = "instructor", override = {}) {
     ...override,
   };
   const fetch = vi.fn(async (url, options = {}) => {
-    if(url.startsWith("/api/platform/context")) url="/api/platform/context";
-    if(url.startsWith("/api/platform/assignments?")) url="/api/platform/assignments";
+    if (url.startsWith("/api/platform/context")) url = "/api/platform/context";
+    if (url.startsWith("/api/platform/assignments?"))
+      url = "/api/platform/assignments";
     const entry =
       responses[`${options.method || "GET"} ${url}`] ?? responses[url];
     if (entry === undefined) throw new Error("Unexpected API call: " + url);
@@ -116,17 +122,33 @@ test("user selects and persists the platform color theme", async () => {
 });
 
 test("professor opens activity creation from assignments rather than the teaching toolkit", async () => {
-  mockApi(); open("/professor"); const user = userEvent.setup();
-  expect(await screen.findByRole("heading", {level:1,name:"All assignments"})).toBeInTheDocument();
+  mockApi();
+  open("/professor");
+  const user = userEvent.setup();
+  expect(
+    await screen.findByRole("heading", { level: 1, name: "All assignments" }),
+  ).toBeInTheDocument();
   expect(screen.queryByText("Your teaching toolkit")).not.toBeInTheDocument();
-  await user.click(screen.getByRole("link",{name:"Analytics",exact:true}));
-  expect(screen.getByRole("link",{name:"Analytics",exact:true})).toHaveAttribute("aria-current","page");
+  await user.click(
+    screen.getByRole("link", { name: "Analytics", exact: true }),
+  );
+  expect(
+    screen.getByRole("link", { name: "Analytics", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
   expect(screen.getByText("Analytics will come here.")).toBeInTheDocument();
-  await user.click(screen.getByRole("link",{name:"Professor dashboard",exact:true}));
-  await user.click(screen.getByRole("link", {name:/Create New Activity/}));
-  expect(await screen.findByRole("heading", {name:"Activity details"})).toBeInTheDocument();
-  expect(screen.getByRole("heading", {name:"Course materials"})).toBeInTheDocument();
-  expect(screen.getByRole("heading", {name:"Select activity"})).toBeInTheDocument();
+  await user.click(
+    screen.getByRole("link", { name: "Professor dashboard", exact: true }),
+  );
+  await user.click(screen.getByRole("link", { name: /Create New Activity/ }));
+  expect(
+    await screen.findByRole("heading", { name: "Activity details" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "Course materials" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "Select activity" }),
+  ).toBeInTheDocument();
   expect(screen.queryByText("Student Agent Bot")).not.toBeInTheDocument();
 });
 
@@ -159,13 +181,18 @@ test("student sees mixed assignments and opens the assigned tool without selecti
   expect(
     screen.queryByRole("link", { name: "Courses & access" }),
   ).not.toBeInTheDocument();
-  const ongoing=await screen.findByRole("region",{name:/^In progress/});
-  expect(await within(ongoing).findByRole("link", { name: "Resume" })).toHaveAttribute(
-    "href",
-    "/student/assignments/reflection-1",
+  const ongoing = await screen.findByRole("region", { name: /^In progress/ });
+  expect(
+    await within(ongoing).findByRole("link", { name: "Resume" }),
+  ).toHaveAttribute("href", "/student/assignments/reflection-1");
+  expect(
+    screen.queryByRole("link", { name: "View result" }),
+  ).not.toBeInTheDocument();
+  await user.click(
+    within(screen.getByRole("region", { name: /^New/ })).getByRole("link", {
+      name: "Open assignment",
+    }),
   );
-  expect(screen.queryByRole("link", { name: "View result" })).not.toBeInTheDocument();
-  await user.click(within(screen.getByRole("region",{name:/^New/})).getByRole("link", { name: "Open assignment" }));
   await user.click(
     await screen.findByRole("button", { name: "Start assignment" }),
   );
@@ -176,31 +203,69 @@ test("student sees mixed assignments and opens the assigned tool without selecti
   expect(screen.queryByLabelText("Reflection type")).not.toBeInTheDocument();
 });
 
-test("Canvas student landing shows assignments without course selection or enrollment controls",async()=>{
- mockApi("student");open("/student");
- expect(await screen.findByRole("heading",{level:1,name:"Your assignments"})).toBeInTheDocument();
- expect((await screen.findAllByRole("link",{name:"Open assignment"}))[0]).toBeInTheDocument();
- expect(screen.queryByRole("combobox",{name:"Filter by course"})).not.toBeInTheDocument();
- expect(screen.queryByRole("button",{name:"Request access"})).not.toBeInTheDocument();
+test("Canvas student landing shows assignments without course selection or enrollment controls", async () => {
+  mockApi("student");
+  open("/student");
+  expect(
+    await screen.findByRole("heading", { level: 1, name: "Your assignments" }),
+  ).toBeInTheDocument();
+  expect(
+    (await screen.findAllByRole("link", { name: "Open assignment" }))[0],
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("combobox", { name: "Filter by course" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Request access" }),
+  ).not.toBeInTheDocument();
 });
 
 test("failed publish retains a saved draft and shows an actionable error", async () => {
- const saved={...assignment,status:"draft",audience:"course",recipient_ids:[],config:{document_ids:["doc1"],prompt:"",minimum_messages:1}};
- const fetch=mockApi("instructor",{
-  "POST /api/platform/assignments":saved,
-  "/api/platform/assignments/assignment-1":saved,
-  [`/api/platform/courses/${course}/documents`]:{files:[{file_id:"f1",document_id:"doc1",filename:"Requirements.txt"}]},
-  "/api/platform/assignments/assignment-1/publish":{error:"Upload course materials first."}
- });
- open("/professor/activities/new");const user=userEvent.setup();
- await user.type(await screen.findByLabelText("Activity title"),"Discuss requirements");
- await user.click(await screen.findByRole("checkbox",{name:/Requirements.txt/}));
- await user.click(screen.getByRole("button",{name:/Socratic Chat/}));
- await user.click(screen.getByRole("button",{name:"Review activity",exact:true}));
- await user.click(screen.getByRole("button",{name:"Publish activity",exact:true}));
- expect(await screen.findByRole("alert")).toHaveTextContent("Upload course materials first.");
- expect(screen.getByRole("button",{name:"Save draft"})).toBeEnabled();
- expect(fetch.mock.calls.filter(([url,opt])=>url==="/api/platform/assignments" && opt.method==="POST")).toHaveLength(1);
+  const saved = {
+    ...assignment,
+    status: "draft",
+    audience: "course",
+    recipient_ids: [],
+    config: { document_ids: ["doc1"], prompt: "", minimum_messages: 1 },
+  };
+  const fetch = mockApi("instructor", {
+    "POST /api/platform/assignments": saved,
+    "/api/platform/assignments/assignment-1": saved,
+    [`/api/platform/courses/${course}/documents`]: {
+      files: [
+        { file_id: "f1", document_id: "doc1", filename: "Requirements.txt" },
+      ],
+    },
+    "/api/platform/assignments/assignment-1/publish": {
+      error: "Upload course materials first.",
+    },
+  });
+  open("/professor/activities/new");
+  const user = userEvent.setup();
+  await user.type(
+    await screen.findByLabelText("Activity title"),
+    "Discuss requirements",
+  );
+  await user.click(
+    await screen.findByRole("checkbox", { name: /Requirements.txt/ }),
+  );
+  await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
+  await user.click(
+    screen.getByRole("button", { name: "Review activity", exact: true }),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Publish activity", exact: true }),
+  );
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Upload course materials first.",
+  );
+  expect(screen.getByRole("button", { name: "Save draft" })).toBeEnabled();
+  expect(
+    fetch.mock.calls.filter(
+      ([url, opt]) =>
+        url === "/api/platform/assignments" && opt.method === "POST",
+    ),
+  ).toHaveLength(1);
 });
 
 test("retrying a failed student message reuses its idempotency key", async () => {
@@ -260,7 +325,9 @@ test("Socratic response shows a generation timer, thinking step, and clickable e
   expect(await screen.findByRole("status")).toHaveAccessibleName(
     "Socratic tutor is thinking through your response",
   );
-  expect(screen.getByText("Thinking through your response")).toBeInTheDocument();
+  expect(
+    screen.getByText("Thinking through your response"),
+  ).toBeInTheDocument();
   expect(screen.getByText(/\d+\.\ds elapsed/)).toBeInTheDocument();
   await act(async () => {
     resolveMessage({
@@ -295,17 +362,15 @@ test("Socratic response shows a generation timer, thinking step, and clickable e
     });
   });
 
-  expect(await screen.findByText("Your next thinking step")).toBeInTheDocument();
+  expect(
+    await screen.findByText("Your next thinking step"),
+  ).toBeInTheDocument();
   expect(
     screen.getByText("version control", { selector: "strong" }),
   ).toBeInTheDocument();
-  expect(
-    screen.getByText(/Generated in \d+\.\ds/),
-  ).toBeInTheDocument();
+  expect(screen.getByText(/Generated in \d+\.\ds/)).toBeInTheDocument();
   expect(screen.getByText("Score 76/100")).toBeInTheDocument();
-  expect(
-    screen.getByText("Why am I being asked this?"),
-  ).toBeInTheDocument();
+  expect(screen.getByText("Why am I being asked this?")).toBeInTheDocument();
   await user.click(
     screen.getByRole("button", {
       name: "Version Control Notes · page 2",
@@ -374,13 +439,17 @@ test("Enter sends a student message and Shift Enter inserts a new line", async (
 
   await user.type(input, "First line{Shift>}{Enter}{/Shift}Second line");
   expect(input).toHaveValue("First line\nSecond line");
-  expect(fetch.mock.calls.filter(([url]) => url.endsWith("/messages"))).toHaveLength(0);
+  expect(
+    fetch.mock.calls.filter(([url]) => url.endsWith("/messages")),
+  ).toHaveLength(0);
 
   await user.type(input, "{Enter}");
   expect(
     await screen.findAllByText("What evidence supports that?"),
   ).not.toHaveLength(0);
-  const requests = fetch.mock.calls.filter(([url]) => url.endsWith("/messages"));
+  const requests = fetch.mock.calls.filter(([url]) =>
+    url.endsWith("/messages"),
+  );
   expect(requests).toHaveLength(1);
   expect(JSON.parse(requests[0][1].body).message).toBe(
     "First line\nSecond line",
@@ -402,16 +471,29 @@ test("Reflections launches its student interface in a new tab without starting i
   const tab = { opener: {}, location: { replace: vi.fn() }, close: vi.fn() };
   vi.spyOn(window, "open").mockReturnValue(tab);
   const fetch = mockApi("student", {
-    "/api/platform/assignments/assignment-1": { ...assignment, tool: "reflections", student_config: { module_type: "topic_based" } },
-    "/api/platform/assignments/assignment-1/reflection-launch": { code: "launch-code" },
+    "/api/platform/assignments/assignment-1": {
+      ...assignment,
+      tool: "reflections",
+      student_config: { module_type: "topic_based" },
+    },
+    "/api/platform/assignments/assignment-1/reflection-launch": {
+      code: "launch-code",
+    },
   });
   open("/student/assignments/assignment-1");
   const link = await screen.findByRole("link", { name: "Start assignment" });
-  expect(link).toHaveAttribute("href", "/platform/reflections.html?assignment=assignment-1");
+  expect(link).toHaveAttribute(
+    "href",
+    "/platform/reflections.html?assignment=assignment-1",
+  );
   expect(link).toHaveAttribute("target", "_blank");
   expect(link).toHaveAttribute("rel", "noopener noreferrer");
   await userEvent.setup().click(link);
-  await waitFor(() => expect(tab.location.replace).toHaveBeenCalledWith("/platform/reflections.html?assignment=assignment-1#code=launch-code"));
+  await waitFor(() =>
+    expect(tab.location.replace).toHaveBeenCalledWith(
+      "/platform/reflections.html?assignment=assignment-1#code=launch-code",
+    ),
+  );
   expect(tab.opener).toBeNull();
   expect(fetch.mock.calls.some(([url]) => url.endsWith("/start"))).toBe(false);
 });

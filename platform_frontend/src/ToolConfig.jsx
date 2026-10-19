@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { Notice } from "./ui";
+import CourseLearningMaterials from "./CourseLearningMaterials";
 
 export const defaults = {
-  socratic: { document_ids: [], prompt: "", minimum_messages: 1 },
+  socratic: {
+    keywords: [],
+    optional_keywords: [],
+    document_ids: [],
+    prompt: "",
+    minimum_messages: 1,
+  },
   debate: {
     document_ids: [],
     scenario: "",
@@ -38,110 +45,33 @@ function Lines({ label, value = [], onChange, rows = 4 }) {
   );
 }
 
-export function SocraticConfig({ value, onChange, courseId, frozen, hideMaterials = false }) {
-  const [files, setFiles] = useState([]),
-    [error, setError] = useState(""),
-    [uploading, setUploading] = useState(false);
-  const change = (k, v) => onChange({ ...value, [k]: v });
-  function load() {
-    return api(`/courses/${courseId}/documents`).then((data) =>
-      setFiles(data.files),
+export function SocraticConfig({
+  value,
+  onChange,
+  courseId,
+  frozen,
+  onPendingKeywordChange,
+  keywordPreparation,
+  onConfirmKeywords,
+  onInvalidateKeywordPreparation,
+}) {
+  if (!courseId)
+    return (
+      <p>Choose a course to manage its documents and learning objectives.</p>
     );
-  }
-  useEffect(() => {
-    if (courseId && !hideMaterials) load().catch((e) => setError(e.message));
-  }, [courseId, hideMaterials]);
   return (
-    <>
-      <Notice error={error} />
-      <div className={hideMaterials ? "" : "form-columns"}>
-        <div>
-          <label>
-            Opening question or prompt
-            <textarea
-              rows={4}
-              value={value.prompt}
-              onChange={(e) => change("prompt", e.target.value)}
-              placeholder="What assumptions does this design make?"
-            />
-          </label>
-          <label>
-            Messages required before completion
-            <input
-              type="number"
-              min={1}
-              max={100}
-              value={value.minimum_messages}
-              onChange={(e) =>
-                change("minimum_messages", Number(e.target.value))
-              }
-            />
-          </label>
-          <p className="help">
-            Students mark the assignment complete after the minimum number of
-            messages.
-          </p>
-        </div>
-        {!hideMaterials && <div>
-          <h3>Course materials</h3>
-          <p className="help">
-            Choose specific documents, or leave all unchecked to include all
-            current course materials. Their indexed content is frozen at
-            publication.
-          </p>
-          {files.map((f) => (
-            <label className="check" key={f.file_id}>
-              <input
-                type="checkbox"
-                disabled={!f.document_id}
-                checked={value.document_ids.includes(f.document_id)}
-                onChange={(e) =>
-                  change(
-                    "document_ids",
-                    e.target.checked
-                      ? [...value.document_ids, f.document_id]
-                      : value.document_ids.filter((id) => id !== f.document_id),
-                  )
-                }
-              />
-              <span>{f.filename}</span>
-            </label>
-          ))}
-          {!files.length && <p>No course documents uploaded yet.</p>}
-          {!frozen && (
-            <label className="file-input">
-              {uploading ? "Uploading…" : "Upload course materials"}
-              <input
-                type="file"
-                accept=".txt,.md,.pdf,.tex,.latex,.html,.htm,.doc,.docx"
-                multiple
-                disabled={uploading || !courseId}
-                onChange={async (e) => {
-                  const selected = [...e.target.files];
-                  e.target.value = "";
-                  if (!selected.length) return;
-                  setUploading(true);
-                  setError("");
-                  try {
-                    const body = new FormData();
-                    selected.forEach((f) => body.append("files", f));
-                    await api(`/courses/${courseId}/documents/upload`, {
-                      method: "POST",
-                      body,
-                    });
-                    await load();
-                  } catch (err) {
-                    setError(err.message);
-                  } finally {
-                    setUploading(false);
-                  }
-                }}
-              />
-            </label>
-          )}
-        </div>}
-      </div>
-    </>
+    <CourseLearningMaterials
+      key={courseId}
+      courseId={courseId}
+      assignmentConfig={value}
+      onAssignmentChange={onChange}
+      onPendingKeywordChange={onPendingKeywordChange}
+      keywordPreparation={keywordPreparation}
+      onConfirmKeywords={onConfirmKeywords}
+      onInvalidateKeywordPreparation={onInvalidateKeywordPreparation}
+      frozen={frozen}
+      embedded
+    />
   );
 }
 

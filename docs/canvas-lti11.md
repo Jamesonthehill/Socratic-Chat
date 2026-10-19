@@ -89,8 +89,53 @@ The test database must have pgvector available and permit temporary schemas.
 ## Boundaries and troubleshooting
 
 This supports course-navigation launch and ClubALL's existing assignment flows.
-LTI 1.1 grade passback, roster synchronization, and assignment content selection
+LTI 1.1 grade passback, roster synchronization, and Content-Item resource selection
 are not included. Canvas assignment import via personal token remains separate.
+
+## Automatically link a Canvas assignment
+
+`LTI_AUTO_CREATE_ASSIGNMENTS=true` (the default) enables assignment provisioning.
+After changing it, restart the gateway. `/api/lti/status` reports
+`assignment_auto_creation_enabled` independently of launch authentication readiness.
+
+Use **External Tool** as the Canvas assignment's submission type. The current
+configuration XML sets its default launch URL to
+`https://YOUR_CLUBALL_HOST/api/lti/1.1/assignment-launch`. Course navigation keeps
+using `/api/lti/1.1/launch`, which opens the course without creating an activity.
+Do not use the assignment URL for a course-navigation link.
+
+On the first instructor launch, CourseLab creates an **unassigned draft**, saves a
+mapping scoped by the trusted registration, course context, and `resource_link_id`,
+and opens the assignment editor. Repeated instructor launches open that same
+activity without overwriting instructor edits. Add the course materials, configure
+the opening prompt, and publish using the existing review/publish flow.
+
+Students cannot create assignments or open drafts. After publication, a student
+launch opens the corresponding activity and the existing attempt can be resumed.
+Archived activities and selected-recipient restrictions remain enforced.
+
+For tools installed with older XML, either use the assignment-specific launch URL
+above in the Canvas assignment or add these **Custom Fields** in the tool's Canvas
+configuration (do not replace the consumer key or shared secret):
+
+```text
+canvas_assignment_id=$Canvas.assignment.id
+canvas_assignment_title=$Canvas.assignment.title
+canvas_assignment_description=$Canvas.assignment.description
+canvas_assignment_due_at=$Canvas.assignment.dueAt.iso8601
+```
+
+Verified assignment metadata is copied into the new draft when supplied. Missing
+or unexpanded optional values are ignored. The default title comes from the LTI
+resource title; this is not a full API import of attachments, linked pages, or
+rubrics, and subsequent Canvas edits do not overwrite the draft. Grade return and
+Content-Item/Deep Linking selection are separate features.
+
+LTI 1.3 resource launches use the same assignment mapping when the signed custom
+claim includes `canvas_assignment_id` (included in the generated configuration),
+or the signed AGS endpoint claim includes a `lineitem`. Navigation links alone do
+not create activities. Setting `LTI_AUTO_CREATE_ASSIGNMENTS=false` restores the
+course-only launch flow for both protocols.
 
 Course links are scoped to the consumer registration and protocol. Existing
 manually created courses or LTI 1.3 courses are not silently relinked. Changing
@@ -109,3 +154,13 @@ rotating only the shared secret preserves the links.
 
 References: [Canvas LTI 1.1 installation](https://canvas.instructure.com/doc/api/file.tools_intro.html)
 and [Canvas XML configuration](https://canvas.instructure.com/doc/api/file.tools_xml.html).
+
+### Choose the assignment chatbot
+
+A first instructor assignment launch creates an unassigned draft and opens its
+assignment details. Choose Socratic Chat, Reflections, Student Agent Bot, or Debate
+inside **Assigned chatbot**. Complete that mode's settings and publish. A draft
+cannot be published without a chatbot. Chatbots may be changed while the assignment
+is a draft; published assignments retain their chatbot and frozen configuration.
+Existing assignments keep their current chatbot. Recipient controls are hidden in
+the editor; existing assignment audience restrictions are preserved.

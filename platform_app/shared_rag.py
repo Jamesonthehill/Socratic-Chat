@@ -18,7 +18,10 @@ def pipeline(method, path, **kwargs):
         if response.is_error:
             if response.status_code in {401, 403}:
                 raise HTTPException(503, "The shared document service credentials are not configured correctly.")
-            detail = response.json().get("detail") if response.status_code < 500 or response.status_code == 503 else None
+            try:
+                detail = response.json().get("detail")
+            except (AttributeError, ValueError):
+                detail = None
             raise HTTPException(response.status_code if response.status_code < 500 else 502, detail or "The shared document service could not complete this action.")
         return response.json()
     except (httpx.HTTPError, ValueError) as exc:

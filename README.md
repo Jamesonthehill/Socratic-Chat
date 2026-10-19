@@ -1,6 +1,6 @@
 # ClubALL learning platform
 
-One professor entry screen for **Socratic Chat**, **Reflections**, **Student Agent Bot**, and **Debate**, and one student assignment list that launches the assigned tool with its saved configuration.
+A course-scoped instructor assignment studio and student workspace using the existing CourseLab design. Activity choices are **Socratic Chat**, **Reflections**, **Self Directed Learning**, **Debate**, and **AIducate** (draft only). See [UI rework and service setup](docs/platform-ui-rework.md) for the current flow, dependencies, and verification limits.
 
 ## Run with Docker
 
@@ -13,11 +13,9 @@ docker compose up --build
 
 Open **http://localhost:8000**. Login and account setup use the existing Socratic authentication flow, then redirect to `/platform/`.
 
-The root Compose file starts the public platform, two private learning services, and PostgreSQL with separate `cluball` and `cluball_reflections` databases. Only the platform exposes a host port. PostgreSQL, uploaded documents, the RAG index, tutor sessions, and downloaded embedding models use persistent volumes. Keep those volumes when restarting.
+Compose starts the public platform, private Reflections and SDL services, and uses `DOCKER_DATABASE_URL` for PostgreSQL/pgvector. Only the platform exposes a host port. The legacy Tutor is optional with the `legacy-tutor` profile. The `isolated-db` profile supplies an optional local PostgreSQL service; it is not enabled by default.
 
-`POSTGRES_PASSWORD` in `.env` configures the local Compose database. Its two application database URLs are set by Compose; `.env` database URLs are used for non-Docker development. Use a URL-safe password or encode special characters in connection URLs.
-
-The first Reflections milestone request may download its existing `stsb-roberta-large` embedding model. Topic-based reflection and tutor conversations require a configured model provider. Socratic retains its existing extractive answer fallback when no OpenAI key is configured. Tutor topic generation additionally requires Firecrawl.
+Set a valid provider key for embeddings, lesson generation and live replies. Reflections may download its existing embedding model on the first milestone request. See the [setup guide](docs/platform-ui-rework.md) before applying the shared RAG migration to an existing deployment.
 
 ## Socratic questioning pipeline
 
@@ -49,48 +47,16 @@ docker compose exec platform python scripts/set_role.py professor@example.edu in
 
 For a local Python installation, use `.venv/bin/python scripts/set_role.py professor@example.edu instructor` instead.
 
-Instructors use **Courses & access** to create courses, approve students, and
-manage course materials. Students use the unified **Dashboard** to request
-course access and expand an approved course card to open its assignments.
+Course context is supplied by the Canvas launch (`?course=<platform-course-UUID>`). For local testing only, set `PLATFORM_LOCAL_COURSE_CODE` to an existing course code; approved membership is still required. There is no course picker or course-management landing in this interface.
 
 ## Professor workflow
 
-1. Select one of the three tools from the professor dashboard.
-2. Select a course and choose **New assignment**.
-3. Enter a title, student instructions, optional due date, and recipients.
-4. Configure the selected tool:
-   - **Socratic Chat:** upload/select TXT, Markdown, HTML, LaTeX, Word (`.doc`/`.docx`), or PDF course documents, set an opening prompt, and choose a minimum message count.
-   - **Reflections:** configure topics/sub-topics, depth, probing style, application requirements, and notes; or choose a milestone prompt with historical CSV data.
-   - **Student Agent Bot:** select a built-in topic, import topic JSON, create a custom topic, or generate a draft. Edit reading resources, practice stages/scenarios, questions, worked example, and provider.
-   - **Debate:** provide a scenario, optional opening prompt, minimum response count, and optional course documents. The AI uses retrieved course evidence when materials are attached, challenges student reasoning, and offers focused guidance when students are stuck.
-5. Save a draft or publish it. Published work appears in the recipients' student dashboards.
-
-### Import from UNC Charlotte Canvas
-
-The Socratic Chat professor dashboard can create a draft from an assignment visible
-to your UNC Charlotte Canvas account:
-
-1. In Canvas at [instructure.charlotte.edu](https://instructure.charlotte.edu),
-   open **Account → Settings → Approved Integrations** and create a current access
-   token. If **Add New Access Token** is unavailable, request API access through
-   UNC Charlotte Canvas support; the university controls whether personal tokens
-   are enabled.
-2. Open **Socratic Chat** in the professor dashboard and select the destination
-   ClubALL course. If it does not exist yet, select the Canvas class and create
-   its corresponding ClubALL course from the import panel.
-3. Under **Import from UNC Charlotte Canvas**, choose the chatbot students will
-   use, paste the token, select an active Canvas course, and select one of the
-   assignments visible to that account.
-4. Import the assignment as a draft, review the copied title, instructions, due
-   date, and assigned chatbot, configure the selected learning experience, choose
-   recipients, and publish.
-
-The connector is read-only and is restricted to
-`https://instructure.charlotte.edu/api/v1`. The access token is held in browser
-memory only for the current page and sent to the ClubALL backend only for the
-requested Canvas operation. It is not written to PostgreSQL, browser storage,
-application logs, assignment configuration, or source files. Importing copies a
-point-in-time assignment draft; later Canvas edits are not synchronized.
+1. Open **All assignments** and select **Create New Activity**.
+2. Enter the activity title, due date and description.
+3. Select indexed course documents, upload new documents, or use both.
+4. Choose one of the five activity types and configure its settings below.
+5. Save a draft, review the activity, or publish. SDL review generates its lesson and exposes quiz questions, answers, examples and practice rubrics.
+6. Reopen a draft to continue editing; open a published activity to see **At a glance** and assignment details. **Detailed Insights** opens the Analytics placeholder.
 
 ### Add ClubALL from Canvas Course Settings (LTI 1.1)
 
@@ -181,24 +147,13 @@ access. Due dates are informational; late work remains allowed.
 
 ## Student workflow
 
-The student Dashboard combines course access and assignments across all three
-tools. Select **Assignments** on an approved course card to enlarge it and show
-that course's work, then open an assignment to start or resume its session.
-Students do not choose their identity, module, topic, model, or tool
-configuration.
+The student dashboard stacks **New**, **In progress**, **Completed**, and **All assignments** sections. Icon-only controls switch between cards and the compact list, remembering the browser's preference. Students open the instructor-assigned chat without choosing its configuration.
 
-- Socratic: complete after the configured minimum number of student messages.
-  While the assistant is generating, the conversation shows elapsed time. The
-  latest tutor card includes the previous-answer score, a highlighted next
-  thinking step, an expandable question rationale, suggested responses, and
-  clickable evidence passages from the assignment's frozen course documents;
-  active concepts are emphasized in bold. Press Enter to send a response or
-  Shift+Enter to add a new line.
-- Topic-based Reflections: finish the session to save an evaluation.
-- Milestone Reflections: submitting the reflection completes the assignment and shows related experiences.
-- Tutor: progress through the learning phases and complete at wrap-up, or let the tutor close the completed lesson.
-
-There is one persistent attempt per student per assignment. Reopening resumes that attempt; completed work opens read-only with its transcript/results. To assign a second attempt, publish a duplicate assignment.
+- Socratic uses the selected, frozen course chunks and its existing questioning pipeline.
+- Debate uses the configured scenario and live AI provider; completion requires the configured message count.
+- SDL opens inside the platform and resumes the existing adaptive lesson, including study, diagnostic questions, practice and reflection. Its workflow remains owned by the SDL service; it does not use the common Debate attempt table.
+- Reflections retains its existing student UI and private backend adapter.
+- AIducate supports draft storage only.
 
 For Reflections, **Start assignment** (or **Resume assignment** / **View reflection results**) opens the original Reflections student interface in a new tab. The tab uses the signed-in platform account and published assignment settings automatically, including the topic chat, timer, evaluation, or milestone reflection and similar experiences. Returning to the assignment tab refreshes its progress. Build the platform frontend to bundle both interfaces; no separate Reflections frontend server is needed. The private Reflections backend and its configured model provider must still be running.
 
@@ -282,7 +237,7 @@ Open http://127.0.0.1:8000. The runner starts the gateway on 8000, Reflections o
 
 ### Docker Compose
 
-The Compose deployment starts the platform gateway, Reflections, and Tutor while using the host PostgreSQL/pgvector database configured for DBeaver:
+The Compose deployment starts the platform gateway, Reflections, and SDL using the PostgreSQL/pgvector database configured in `DOCKER_DATABASE_URL`:
 
 ```bash
 docker compose -f compose.yaml up --build
@@ -308,7 +263,8 @@ platform_app/             Shared assignment API, authorization, engine adapters
 platform_frontend/       Shared React UI and separate tool configuration screens
 Socratic-Chat/            Existing identity, courses, documents, RAG engine
 reflections-app/          Existing reflection graphs, analytics and recommendations
-student-agent-bot/        Existing phased tutor, plus durable JSON session storage
+adaptive-learning-app/   SDL engine, shared ingestion pipeline and embedded lesson UI
+student-agent-bot/        Historical tutor (optional legacy-tutor Compose profile)
 scripts/                 Local runner, role bootstrap, database initialization
 platform_tests/          Assignment integration tests
 compose.yaml             One public origin and private learning services
@@ -320,7 +276,7 @@ The shared backend reuses Socratic's authentication and course APIs. PostgreSQL 
 - `socratic_chat`: Socratic conversations, messages, progress, assessments, files, and document chunks. Every table ends in `_socratic_chat`; user and course foreign keys point into `platform`.
 - `reflections_app`: reflection modules, configurations, conversations, analytics, and LangGraph checkpoints. Every table ends in `_reflections_app`; new platform sessions reference `platform.users_platform` and `platform.courses_platform` directly. The legacy student table remains only to preserve historical standalone Reflections sessions.
 
-Tutor uses a persistent SQLite file configured with `TUTOR_SESSION_DB`. Platform, Socratic Chat, and Reflections use the single PostgreSQL connection in `DATABASE_URL`; their schemas isolate service-owned data. Configure `PLATFORM_DB_SCHEMA`, `SOCRATIC_DB_SCHEMA`, and `REFLECTIONS_DB_SCHEMA` when using non-default schema names. The bundled PostgreSQL container is available only through the optional `isolated-db` Compose profile; the default Docker stack uses the host database configured by `DOCKER_DATABASE_URL`.
+Tutor uses a persistent SQLite file configured with `TUTOR_SESSION_DB`. Platform, Socratic Chat, Reflections, and SDL use the single PostgreSQL connection in `DATABASE_URL`; their schemas isolate service-owned data. Configure `PLATFORM_DB_SCHEMA`, `SOCRATIC_DB_SCHEMA`, `SHARED_RAG_DB_SCHEMA`, `SELF_DIRECTED_LEARNING_DB_SCHEMA`, and `REFLECTIONS_DB_SCHEMA` when using non-default schema names. The bundled PostgreSQL container is available only through the optional `isolated-db` Compose profile; the default Docker stack uses the host database configured by `DOCKER_DATABASE_URL`.
 
 The browser calls `/api/platform/...`; the gateway chooses the appropriate engine and derives student/session identity from the signed account session. Internal service calls require `X-Platform-Service`, using the common `PLATFORM_SERVICE_TOKEN`. Internal endpoints are unavailable without a token, even in standalone mode. Public platform APIs reject the old `X-User-Id` shortcut.
 

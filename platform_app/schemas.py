@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, StrictInt, model_validator
 
 
 class StrictModel(BaseModel):
@@ -50,7 +50,15 @@ class DebateConfig(StrictModel):
     minimum_messages: int = Field(default=3, ge=1, le=100)
 
 
+class SelfDirectedConfig(StrictModel):
+    custom_questions: list[str] = Field(default_factory=list, max_length=50)
+    document_ids: list[str] = Field(default_factory=list, max_length=100)
+    prompt: str = Field(default="", max_length=10000)
+    learning_plan: dict = Field(default_factory=dict)
+
+
 class ReflectionConfig(StrictModel):
+    document_ids: list[str] = Field(default_factory=list, max_length=100)
     module_type: Literal["topic_based", "milestone_based"] = "topic_based"
     required_topics: list[str] = Field(default_factory=list, max_length=100)
     sub_topics: list[str] = Field(default_factory=list, max_length=100)
@@ -81,17 +89,26 @@ class TutorConfig(StrictModel):
     personality: str = "confused"
 
 
+class ActivityDraftConfig(StrictModel):
+    document_ids: list[str] = Field(default_factory=list, max_length=100)
+    prompt: str = Field(default="", max_length=10000)
+    scenario: str = Field(default="", max_length=10000)
+    minimum_messages: int = Field(default=3, ge=1, le=100)
+
+
 CONFIG_MODELS = {
+    "self-directed-learning": SelfDirectedConfig,
+    "debate": DebateConfig,
+    "aiducate": ActivityDraftConfig,
     "socratic": SocraticConfig,
     "reflections": ReflectionConfig,
     "student-agent": TutorConfig,
-    "debate": DebateConfig,
 }
 
 
 class AssignmentInput(StrictModel):
     course_id: UUID
-    tool: Literal["socratic", "reflections", "student-agent", "debate"]
+    tool: Literal["socratic", "reflections", "student-agent", "self-directed-learning", "debate", "aiducate"]
     title: str = Field(min_length=1, max_length=200)
     instructions: str = Field(default="", max_length=10000)
     due_at: datetime | None = None
@@ -128,16 +145,36 @@ class GenerateTopicInput(StrictModel):
 class GenerateSubtopicsInput(StrictModel):
     main_topics: list[str] = Field(min_length=1, max_length=50)
 
+class SelfDirectedStudyInput(StrictModel):
+    message: str = Field(default="I've finished studying", min_length=1, max_length=300)
 
-class CanvasCredentials(StrictModel):
-    access_token: SecretStr = Field(min_length=10, max_length=4096)
 
 
-class CanvasCourseRequest(CanvasCredentials):
-    course_id: int = Field(gt=0)
+class SelfDirectedQuizInput(StrictModel):
+    answers: list[int] = Field(min_length=5, max_length=5)
 
 
 class CanvasImportRequest(CanvasCourseRequest):
     assignment_id: int = Field(gt=0)
     platform_course_id: UUID
     tool: Literal["socratic", "reflections", "student-agent", "debate"] = "socratic"
+
+
+class SelfDirectedMessageInput(StrictModel):
+    content: str = Field(min_length=1, max_length=8000)
+
+
+
+class SelfDirectedTaskInput(StrictModel):
+    content: str = Field(min_length=1, max_length=20000)
+
+
+
+class SelfDirectedLearningTurn(StrictModel):
+    action: Literal["message", "answer", "hint", "continue", "choice", "pause", "resume"] = "message"
+    content: str = Field(default="", max_length=8000)
+    question_id: str | None = Field(default=None, max_length=80)
+    option_index: StrictInt | None = Field(default=None, ge=0, le=3)
+    confidence: Literal["low", "medium", "high"] | None = None
+    explanation: str | None = Field(default=None, max_length=3000)
+    turn_id: str = Field(min_length=1, max_length=100)

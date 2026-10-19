@@ -38,7 +38,7 @@ function Lines({ label, value = [], onChange, rows = 4 }) {
   );
 }
 
-export function SocraticConfig({ value, onChange, courseId, frozen }) {
+export function SocraticConfig({ value, onChange, courseId, frozen, hideMaterials = false }) {
   const [files, setFiles] = useState([]),
     [error, setError] = useState(""),
     [uploading, setUploading] = useState(false);
@@ -49,12 +49,12 @@ export function SocraticConfig({ value, onChange, courseId, frozen }) {
     );
   }
   useEffect(() => {
-    if (courseId) load().catch((e) => setError(e.message));
-  }, [courseId]);
+    if (courseId && !hideMaterials) load().catch((e) => setError(e.message));
+  }, [courseId, hideMaterials]);
   return (
     <>
       <Notice error={error} />
-      <div className="form-columns">
+      <div className={hideMaterials ? "" : "form-columns"}>
         <div>
           <label>
             Opening question or prompt
@@ -82,7 +82,7 @@ export function SocraticConfig({ value, onChange, courseId, frozen }) {
             messages.
           </p>
         </div>
-        <div>
+        {!hideMaterials && <div>
           <h3>Course materials</h3>
           <p className="help">
             Choose specific documents, or leave all unchecked to include all
@@ -139,7 +139,7 @@ export function SocraticConfig({ value, onChange, courseId, frozen }) {
               />
             </label>
           )}
-        </div>
+        </div>}
       </div>
     </>
   );

@@ -27,7 +27,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def call(tool, method, path, **kwargs):
-    env, default = ("REFLECTIONS_URL", "http://127.0.0.1:8002") if tool == "reflections" else ("TUTOR_URL", "http://127.0.0.1:8003")
+    if tool != "reflections":
+        raise HTTPException(404, "Unknown learning service.")
+    env, default = "REFLECTIONS_URL", "http://127.0.0.1:8002"
     token = os.environ.get("PLATFORM_SERVICE_TOKEN", "")
     if not token:
         raise HTTPException(503, "Configure PLATFORM_SERVICE_TOKEN before using the learning services.")
@@ -51,13 +53,14 @@ def call(tool, method, path, **kwargs):
         raise HTTPException(503, f"The {tool} engine is unavailable. Please retry shortly.") from exc
 
 
-def topic_templates():
-    topics = [json.loads(p.read_text()) for p in sorted((ROOT / "student-agent-bot/data/topics/builtin").glob("*.json"))]
-    return [Topic.model_validate({k: v for k, v in topic.items() if k in Topic.model_fields}).model_dump(mode="json") for topic in topics]
 
 
 def publish_snapshot(assignment):
     config = assignment["config"]
+    if assignment["tool"] == "aiducate":
+        raise HTTPException(503, "AIducate has no connected backend yet. Save a draft for now.")
+    if assignment["tool"] == "self-directed-learning":
+        return {"config": config}
     if assignment["tool"] == "debate":
         files = db.list_rag_files(course_id=str(assignment["course_id"]))
         allowed = {str(f["document_id"]) for f in files if f.get("document_id")}
@@ -95,18 +98,20 @@ def publish_snapshot(assignment):
     if assignment["tool"] == "reflections":
         cfg = ReflectionConfig.model_validate(config)
         cfg.validate_publish()
+        # Shared document selection is platform metadata. The existing Reflections
+        # engine owns its own configuration schema and is unchanged by this adapter.
+        reflection_config = {k: v for k, v in config.items() if k != "document_ids"}
         module = call("reflections", "PUT", f"/internal/platform/modules/{assignment['id']}",
-                      json={"name": assignment["title"], "course_id": str(assignment["course_id"]), "config": config})
+                      json={"name": assignment["title"], "course_id": str(assignment["course_id"]), "config": reflection_config})
         return {"config": config, "module_id": module["id"]}
-    cfg = TutorConfig.model_validate(config)
-    if cfg.topic is None:
-        raise HTTPException(422, "Select or create a tutor topic before publishing.")
-    return {"config": config}
+    raise HTTPException(404, "Unknown assignment tool.")
 
 
 def start(assignment, attempt):
     snapshot = assignment["snapshot"]
     config = snapshot["config"]
+    if assignment["tool"] == "debate":
+        return {"messages": [{"role": "assistant", "content": config["opening_prompt"] or "Take a position on the scenario and explain your strongest reason."}]}
     if assignment["tool"] == "socratic":
         return {"messages": [{"role": "assistant", "content": config["prompt"] or "What would you like to explore in the assigned materials?"}]}
     if assignment["tool"] == "debate":
@@ -122,9 +127,7 @@ def start(assignment, attempt):
             "session_id": str(attempt["id"]), "module_id": snapshot["module_id"],
             "student_id": str(attempt["student_id"]), "course_id": str(assignment["course_id"])})
         return {"messages": [{"role": "assistant", "content": result["greeting"]}], "total_questions": result["total_questions"], "question_index": 0}
-    return call("student-agent", "POST", "/api/session/start", json={
-        "session_id": str(attempt["id"]), "topic_id": config["topic"]["id"],
-        "topic_snapshot": config["topic"], "provider": config["provider"], "personality": config["personality"]})
+    raise HTTPException(404, "Unknown assignment tool.")
 
 
 def _snapshot_titles(chunks):
@@ -402,6 +405,8 @@ async def _socratic_message(assignment, attempt, content):
 def message(assignment, attempt, content, request_id):
     tool = assignment["tool"]
     cfg = assignment["snapshot"]["config"]
+    if tool == "debate":
+        return {"reply": asyncio.run(debate.generate_reply(cfg["scenario"], attempt["messages"], content))}
     if tool == "socratic":
         return asyncio.run(_socratic_message(assignment, attempt, content))
     if tool == "debate":
@@ -424,13 +429,13 @@ def message(assignment, attempt, content, request_id):
                 "module_id": assignment["snapshot"]["module_id"], "student_name": str(attempt["student_id"]), "reflection": content})
             return {"reply": "Your reflection has been submitted.", "result": result, "completed": True}
         return call(tool, "POST", "/internal/platform/message", json={"session_id": str(attempt["id"]), "message": content, "request_id": request_id})
-    return call(tool, "POST", "/internal/platform/action", json={"session_id": str(attempt["id"]), "action": "message", "value": content, "request_id": request_id})
+    raise HTTPException(404, "Unknown assignment tool.")
 
 
 def complete(assignment, attempt):
     tool = assignment["tool"]
     count = sum(m["role"] == "user" for m in attempt["messages"])
-    if tool == "socratic":
+    if tool in {"socratic", "debate"}:
         minimum = assignment["snapshot"]["config"]["minimum_messages"]
         if count < minimum:
             raise HTTPException(422, f"Send at least {minimum} message(s) before completing this assignment.")
@@ -449,6 +454,68 @@ def complete(assignment, attempt):
         if not count:
             raise HTTPException(422, "Respond to the reflection before ending the session.")
         return call(tool, "POST", "/internal/platform/end", json={"session_id": str(attempt["id"])})
-    if attempt["engine_state"].get("phase") != "complete" and not attempt["engine_state"].get("ended"):
-        raise HTTPException(422, "Reach the tutor's wrap-up before completing this assignment.")
-    return call(tool, "POST", "/api/session/end", json={"session_id": str(attempt["id"])})
+    raise HTTPException(404, "Unknown assignment tool.")
+
+
+def self_directed_call(student_id: str, method: str, path: str, **kwargs):
+    """Call the standalone SDL service while the platform retains authentication."""
+    base = os.getenv("SELF_DIRECTED_LEARNING_URL", "http://127.0.0.1:8100").rstrip("/")
+    headers = {"X-Demo-User": student_id}
+    token = os.environ.get("PLATFORM_SERVICE_TOKEN", "")
+    if token:
+        headers["X-Platform-Service"] = token
+    try:
+        with httpx.Client(timeout=180, headers=headers) as client:
+            response = client.request(method, base + path, **kwargs)
+        if response.is_error:
+            detail = response.json().get("detail", "") if response.status_code < 500 else ""
+            raise HTTPException(
+                response.status_code if response.status_code < 500 else 502,
+                detail or "Self-Directed Learning could not complete this action. Please retry.",
+            )
+        return response.json()
+    except HTTPException:
+        raise
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(503, "Self-Directed Learning is unavailable. Please retry shortly.") from exc
+
+
+_student_identity_cache = {}
+
+
+def resolve_self_directed_student(account: dict) -> str:
+    base = os.getenv("SELF_DIRECTED_LEARNING_URL", "http://127.0.0.1:8100").rstrip("/")
+    token = os.environ.get("PLATFORM_SERVICE_TOKEN", "")
+    if not token:
+        raise HTTPException(503, "The platform service connection is not configured.")
+    # Cache only the cross-service identity mapping. Enrollment and assignment
+    # permissions are still checked by the route on every request.
+    identity_key = (base, token, str(account["user_id"]), account["email"], account.get("display_name"), account["username"])
+    cached_identity = _student_identity_cache.get(identity_key)
+    if cached_identity and cached_identity[1] > monotonic():
+        return cached_identity[0]
+    try:
+        with httpx.Client(timeout=30, headers={"X-Platform-Service": token}) as client:
+            response = client.post(
+                base + "/internal/platform/students/resolve",
+                json={
+                    "platform_user_id": str(account["user_id"]),
+                    "email": account["email"],
+                    "display_name": account.get("display_name") or account["username"],
+                },
+            )
+        if response.is_error:
+            detail = response.json().get("detail", "") if response.status_code < 500 else ""
+            raise HTTPException(
+                response.status_code if response.status_code < 500 else 502,
+                detail or "The student profile could not be connected to Self-Directed Learning.",
+            )
+        student_id = str(response.json()["id"])
+        if len(_student_identity_cache) >= 500:
+            _student_identity_cache.clear()
+        _student_identity_cache[identity_key] = (student_id, monotonic() + 300)
+        return student_id
+    except HTTPException:
+        raise
+    except (httpx.HTTPError, KeyError, ValueError) as exc:
+        raise HTTPException(503, "Self-Directed Learning is unavailable. Please retry shortly.") from exc

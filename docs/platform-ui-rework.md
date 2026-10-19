@@ -4,6 +4,8 @@ This is the existing main interface, reworked around assignment creation and stu
 
 ## Run
 
+For an existing Render deployment, follow [Add SDL and shared documents](render-sdl.md). The standalone `render.sdl.yaml` adds just the missing backend; the full `render.yaml` defines all three services.
+
 Copy `.env.example` to a private `.env`. Configure independent `AUTH_SESSION_SECRET` and `PLATFORM_SERVICE_TOKEN` values, `DATABASE_URL`, and `DOCKER_DATABASE_URL` (the database URL reachable from containers). Set the AI provider keys used by your chats and embeddings. No credentials or test accounts are included in this change.
 
 ```sh

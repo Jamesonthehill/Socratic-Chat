@@ -22,6 +22,10 @@ services:
         generateValue: true
       - key: REFLECTIONS_URL
         sync: false
+      - key: SELF_DIRECTED_LEARNING_URL
+        sync: false
+      - key: SHARED_RAG_DB_SCHEMA
+        value: shared_rag
       - key: FRONTEND_URL
         sync: false
       - key: CORS_ALLOWED_ORIGINS
@@ -76,3 +80,33 @@ services:
         sync: false
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
+  # SDL also serves the shared document parsing/embedding/retrieval pipeline.
+  - type: web
+    name: cluball-sdl
+    runtime: docker
+    plan: free
+    dockerfilePath: ./adaptive-learning-app/backend/Dockerfile
+    dockerContext: ./adaptive-learning-app/backend
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: DATABASE_URL
+        fromService:
+          name: cluball-platform
+          type: web
+          envVarKey: DATABASE_URL
+      - key: PLATFORM_SERVICE_TOKEN
+        fromService:
+          name: cluball-platform
+          type: web
+          envVarKey: PLATFORM_SERVICE_TOKEN
+      - key: SELF_DIRECTED_LEARNING_DB_SCHEMA
+        value: self_directed_learning
+      - key: ADAPTIVE_PLATFORM_ONLY
+        value: "true"
+      - key: ADAPTIVE_DATA_DIR
+        value: /tmp/sdl-data
+      - key: LLM_PROVIDER
+        value: openai
+      - key: OPENAI_API_KEY
+        sync: false

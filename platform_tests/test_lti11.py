@@ -82,6 +82,7 @@ def test_full_instructor_student_and_course_flow(client, configured_lti11):
     assert teacher["user"]["authority_level"] == 1
     assert teacher["user"]["onboarding_complete"] is True
     assert teacher["access_token"]
+    assert teacher["redirect_path"] == "/platform/professor/activities/new"
     repeated = exchange(client, launch(client, {"context_id": course, "user_id": teacher_id}))
     assert repeated["user"]["user_id"] == teacher["user"]["user_id"]
     assert repeated["course_id"] == teacher["course_id"]
@@ -94,6 +95,7 @@ def test_full_instructor_student_and_course_flow(client, configured_lti11):
     student = exchange(client, launch(client, {"context_id": course, "roles": "Learner"}))
     assert student["course_id"] == teacher["course_id"]
     assert student["user"]["authority_level"] == 2
+    assert student["redirect_path"].startswith("/platform/student?course=")
     with store.connection() as conn:
         membership = conn.execute("""SELECT course_role, status FROM course_memberships_platform
             WHERE course_id=%s AND user_id=%s""", (teacher["course_id"], student["user"]["user_id"])).fetchone()

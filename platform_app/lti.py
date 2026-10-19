@@ -582,8 +582,11 @@ def lti_exchange(payload: LTIExchangeRequest):
             if role == 'instructor' else f'/platform/student/assignments/{assignment_id}'
         )
     else:
-        home = 'professor' if role == 'instructor' else 'student'
-        redirect_path = f'/platform/{home}?{urlencode({"course": str(row["course_id"])})}'
+        redirect_path = (
+            '/platform/professor/activities/new'
+            if role == 'instructor'
+            else f'/platform/student?{urlencode({"course": str(row["course_id"])})}'
+        )
     return {
         "user": account,
         "access_token": access_token,

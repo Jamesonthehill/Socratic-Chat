@@ -295,6 +295,33 @@ export default function CreateActivity({
       );
     });
   };
+  const deleteDocument = (file) => {
+    if (
+      !window.confirm(
+        `Delete ${file.filename} from this course? Published assignments keep their saved copy.`,
+      )
+    )
+      return;
+    run(async () => {
+      await api(
+        `/courses/${draft.course_id}/documents/${file.file_id}`,
+        { method: "DELETE" },
+      );
+      setFiles((current) =>
+        current.filter((item) => item.file_id !== file.file_id),
+      );
+      if (file.document_id)
+        setSelected((current) =>
+          current.filter((documentId) => documentId !== file.document_id),
+        );
+      setDraft((current) => ({
+        ...current,
+        keyword_preparation: null,
+      }));
+      setStage(1);
+      setNotice(`${file.filename} was deleted.`);
+    });
+  };
   if (initializing)
     return (
       <>
@@ -455,26 +482,36 @@ export default function CreateActivity({
                 )
                 .sort((a, b) => a.filename.localeCompare(b.filename))
                 .map((f) => (
-                  <label className="check" key={f.file_id}>
-                    <input
-                      type="checkbox"
-                      disabled={!f.document_id}
-                      checked={selected.includes(f.document_id)}
-                      onChange={(e) => {
-                        setSelected((s) =>
-                          e.target.checked
-                            ? [...s, f.document_id]
-                            : s.filter((v) => v !== f.document_id),
-                        );
-                        setStage(1);
-                      }}
-                    />
-                    <span>
-                      {f.filename}
-                      {!f.document_id && <small>Not indexed</small>}
-                    </span>
-                    <small>{Math.round((f.file_size || 0) / 1024)} KB</small>
-                  </label>
+                  <div className="activity-document-row" key={f.file_id}>
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        disabled={!f.document_id}
+                        checked={selected.includes(f.document_id)}
+                        onChange={(e) => {
+                          setSelected((s) =>
+                            e.target.checked
+                              ? [...s, f.document_id]
+                              : s.filter((v) => v !== f.document_id),
+                          );
+                          setStage(1);
+                        }}
+                      />
+                      <span>
+                        {f.filename}
+                        {!f.document_id && <small>Not indexed</small>}
+                      </span>
+                      <small>{Math.round((f.file_size || 0) / 1024)} KB</small>
+                    </label>
+                    <button
+                      type="button"
+                      className="quiet activity-document-delete"
+                      aria-label={`Delete ${f.filename}`}
+                      onClick={() => deleteDocument(f)}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 ))
             )}
             {!loadingFiles && !files.length && (

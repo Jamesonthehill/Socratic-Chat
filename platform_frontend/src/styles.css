@@ -27,10 +27,18 @@
   padding: 14px;
   margin-bottom: 24px;
 }
-.activity-document-list .check {
+.activity-document-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   border-bottom: 1px solid var(--line);
+}
+.activity-document-list .check {
+  flex: 1;
+  min-width: 0;
   padding: 10px 0;
   margin: 0;
+  border-bottom: 0;
 }
 .activity-document-list .check > span {
   flex: 1;
@@ -40,6 +48,9 @@
 .activity-document-list .check > small {
   white-space: nowrap;
   color: var(--muted);
+}
+.activity-document-delete {
+  flex: 0 0 auto;
 }
 .activity-selected-list {
   list-style: none;

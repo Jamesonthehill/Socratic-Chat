@@ -58,6 +58,14 @@ beforeEach(() => {
       return { keywords: ["design patterns"], message: "Generated." };
     if (path === "/courses/course-1/documents/f2/keyword-suggestions")
       return { keywords: ["new lesson topic"], message: "Generated." };
+    if (
+      path.startsWith("/courses/course-1/documents/") &&
+      options?.method === "DELETE"
+    ) {
+      const fileId = path.split("/").at(-1);
+      courseFiles = courseFiles.filter((file) => file.file_id !== fileId);
+      return { deleted: true };
+    }
     if (path === "/platform/assignments/a1/prepare-sdl")
       return { learning_plan: { title: "Prepared lesson", objectives: [] } };
     if (path === "/platform/assignments/a1/keywords/confirm")
@@ -182,6 +190,29 @@ test("clear all removes selected documents", async () => {
   expect(
     screen.getByRole("heading", { name: "Selected documents (0)" }),
   ).toBeInTheDocument();
+});
+
+test("instructors can delete uploaded documents from course materials", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const user = await open();
+  await user.click(
+    await screen.findByRole("checkbox", { name: /Requirements.pdf/ }),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Delete Requirements.pdf" }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("checkbox", { name: /Requirements.pdf/ }),
+    ).not.toBeInTheDocument(),
+  );
+  expect(
+    screen.getByRole("heading", { name: "Selected documents (0)" }),
+  ).toBeInTheDocument();
+  expect(api).toHaveBeenCalledWith(
+    "/courses/course-1/documents/f1",
+    { method: "DELETE" },
+  );
 });
 
 test("Socratic settings can approve and prepare keywords", async () => {

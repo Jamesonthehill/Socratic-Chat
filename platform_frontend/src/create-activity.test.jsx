@@ -1,6 +1,12 @@
 import React from "react";
 import { beforeEach, expect, test, vi } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+  fireEvent,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import CreateActivity from "./CreateActivity";
@@ -42,6 +48,8 @@ beforeEach(() => {
       };
     if (path === "/courses/course-1/learning-objectives")
       return { objectives: [] };
+    if (path === "/courses/course-1/documents/f1/keyword-suggestions")
+      return { keywords: ["design patterns"], message: "Generated." };
     if (path === "/platform/assignments/a1/prepare-sdl")
       return { learning_plan: { title: "Prepared lesson", objectives: [] } };
     if (path === "/platform/assignments/a1/keywords/confirm")
@@ -96,20 +104,20 @@ test("five choices replace Student Agent; settings follow Next and review invali
     screen.getByRole("heading", { name: "Socratic Chat settings" }),
   ).toBeInTheDocument();
   expect(
-    screen.getByLabelText("Opening question or prompt"),
-  ).toBeInTheDocument();
+    screen.queryByLabelText("Opening question or prompt"),
+  ).not.toBeInTheDocument();
   expect(
-    screen.getByLabelText("Messages required before completion"),
-  ).toHaveValue(1);
+    screen.queryByLabelText("Messages required before completion"),
+  ).not.toBeInTheDocument();
+  const optional = await screen.findByRole("region", {
+    name: "Optional keywords",
+  });
   expect(
-    await screen.findByRole("region", { name: "Optional keywords" }),
-  ).toBeInTheDocument();
+    screen.queryByRole("heading", { name: "Course documents" }),
+  ).not.toBeInTheDocument();
   expect(
-    screen.getByRole("heading", { name: "Course documents" }),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByRole("button", { name: "Suggest keywords" }),
-  ).toBeInTheDocument();
+    within(optional).getByRole("button", { name: "Keywords Generation" }),
+  ).toBeDisabled();
   await user.click(screen.getByRole("button", { name: "Review activity" }));
   expect(
     screen.getByRole("button", { name: "Publish activity" }),
@@ -196,6 +204,26 @@ test("Socratic settings can approve and prepare keywords", async () => {
       "Keywords confirmed. Course materials are prepared; publish when ready.",
     ),
   ).toBeInTheDocument();
+});
+
+test("Keywords Generation uses the assignment's selected documents", async () => {
+  const user = await open();
+  await user.click(
+    await screen.findByRole("checkbox", { name: /Requirements.pdf/ }),
+  );
+  await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
+  await user.click(
+    await screen.findByRole("button", { name: "Keywords Generation" }),
+  );
+  expect(
+    await screen.findByRole("button", {
+      name: "Approve keyword design patterns",
+    }),
+  ).toBeInTheDocument();
+  expect(api).toHaveBeenCalledWith(
+    "/courses/course-1/documents/f1/keyword-suggestions",
+    { method: "POST" },
+  );
 });
 
 test("SDL review prepares a lesson before showing publish", async () => {

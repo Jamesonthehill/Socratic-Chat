@@ -181,7 +181,7 @@ test("suggesting keywords adds no assignment scope until an instructor selects a
   const user = userEvent.setup();
   render(<Config onChange={onChange} />);
   await user.click(
-    await screen.findByRole("button", { name: "Suggest keywords" }),
+    await screen.findByRole("button", { name: "Keywords Generation" }),
   );
   expect(
     await screen.findByRole("button", { name: "Approve keyword correctness" }),
@@ -194,7 +194,7 @@ test("uses the fast keyword endpoint without objective-generation polling", asyn
   const user = userEvent.setup();
   render(<Config />);
   await user.click(
-    await screen.findByRole("button", { name: "Suggest keywords" }),
+    await screen.findByRole("button", { name: "Keywords Generation" }),
   );
   expect(
     await screen.findByRole("button", { name: "Approve keyword correctness" }),
@@ -250,7 +250,7 @@ test("failed suggestions preserve the assignment's saved keywords", async () => 
   const user = userEvent.setup();
   render(<Config initial={{ keywords: ["code review"] }} />);
   await user.click(
-    await screen.findByRole("button", { name: "Suggest keywords" }),
+    await screen.findByRole("button", { name: "Keywords Generation" }),
   );
   expect(await screen.findByText("Model unavailable")).toBeInTheDocument();
   expect(

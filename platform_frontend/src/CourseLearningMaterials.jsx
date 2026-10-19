@@ -13,6 +13,9 @@ function AssignmentKeywords({
   courseId,
   keywordPreparation,
   onConfirmKeywords,
+  onGenerateKeywords,
+  canGenerateKeywords,
+  generatingKeywords,
 }) {
   const [localKeywords, setLocalKeywords] = useState([]);
   const [localOptional, setLocalOptional] = useState([]);
@@ -133,7 +136,21 @@ function AssignmentKeywords({
           aria-label="Optional keywords"
         >
           <div className="keyword-bucket-heading">
-            <h4>Optional</h4>
+            <div className="keyword-optional-heading">
+              <h4>Optional</h4>
+              {!frozen && (
+                <button
+                  type="button"
+                  className="secondary keyword-generation"
+                  disabled={disabled || !canGenerateKeywords}
+                  onClick={onGenerateKeywords}
+                >
+                  {generatingKeywords
+                    ? "Generating keywords…"
+                    : "Keywords Generation"}
+                </button>
+              )}
+            </div>
             <span>{candidates.length}</span>
           </div>
           <p className="help">
@@ -156,7 +173,8 @@ function AssignmentKeywords({
             ))}
             {!candidates.length && (
               <p className="help">
-                Use Suggest keywords on a document, or add your own below.
+                Generate keywords from the selected documents, or add your own
+                below.
               </p>
             )}
           </div>
@@ -282,6 +300,7 @@ export default function CourseLearningMaterials({
   onInvalidateKeywordPreparation,
   frozen = false,
   embedded = false,
+  hideDocuments = false,
 }) {
   const [resources, setResources] = useState({ files: [], objectives: [] });
   const [suggestedKeywords, setSuggestedKeywords] = useState([]);
@@ -347,9 +366,36 @@ export default function CourseLearningMaterials({
     }
   }
   const Heading = embedded ? "h3" : "h2";
+  const selectedDocumentIds = new Set(
+    assignmentConfig?.document_ids || [],
+  );
+  const keywordFiles = resources.files.filter(
+    (file) =>
+      file.document_id &&
+      (selectedDocumentIds.size
+        ? selectedDocumentIds.has(file.document_id)
+        : !hideDocuments),
+  );
+  const generateKeywords = () =>
+    perform("Generating keywords", async () => {
+      const results = await Promise.all(
+        keywordFiles.map((file) =>
+          api(`${prefix}/documents/${file.file_id}/keyword-suggestions`, {
+            method: "POST",
+          }),
+        ),
+      );
+      const generated = results.flatMap((result) => result.keywords || []);
+      setSuggestedKeywords((current) => [
+        ...new Set([...current, ...generated]),
+      ]);
+      return {
+        message: `Generated keywords from ${keywordFiles.length} selected document${keywordFiles.length === 1 ? "" : "s"}.`,
+      };
+    });
   return (
     <div
-      className={`course-learning-manager${embedded ? " is-embedded" : ""}`}
+      className={`course-learning-manager${embedded ? " is-embedded" : ""}${hideDocuments ? " keywords-only" : ""}`}
       onKeyDown={(event) => {
         // Objective editing should never submit the surrounding assignment form.
         if (
@@ -360,10 +406,11 @@ export default function CourseLearningMaterials({
           event.preventDefault();
       }}
     >
-      <section
-        className={`${embedded ? "" : "panel "}course-documents-card`}
-        aria-label="Course documents"
-      >
+      {!hideDocuments && (
+        <section
+          className={`${embedded ? "" : "panel "}course-documents-card`}
+          aria-label="Course documents"
+        >
         <Heading>Course documents</Heading>
         <p>
           Upload course materials, then suggest keywords for the assignment.
@@ -421,28 +468,6 @@ export default function CourseLearningMaterials({
               <div className="course-document-actions">
                 <button
                   type="button"
-                  className="secondary"
-                  disabled={Boolean(busy) || !file.document_id}
-                  onClick={() =>
-                    perform(
-                      `Generating keyword suggestions from ${file.filename}`,
-                      async () => {
-                        const result = await api(
-                          `${prefix}/documents/${file.file_id}/keyword-suggestions`,
-                          { method: "POST" },
-                        );
-                        setSuggestedKeywords((current) => [
-                          ...new Set([...current, ...(result.keywords || [])]),
-                        ]);
-                        return result;
-                      },
-                    )
-                  }
-                >
-                  Suggest keywords
-                </button>
-                <button
-                  type="button"
                   className="quiet"
                   disabled={Boolean(busy)}
                   onClick={() => {
@@ -464,7 +489,8 @@ export default function CourseLearningMaterials({
             </div>
           ))}
         </div>
-      </section>
+        </section>
+      )}
       <AssignmentKeywords
         objectives={resources.objectives}
         suggestedKeywords={suggestedKeywords}
@@ -474,6 +500,9 @@ export default function CourseLearningMaterials({
         courseId={courseId}
         keywordPreparation={keywordPreparation}
         onConfirmKeywords={onConfirmKeywords}
+        onGenerateKeywords={generateKeywords}
+        canGenerateKeywords={keywordFiles.length > 0}
+        generatingKeywords={busy === "Generating keywords"}
         disabled={Boolean(busy)}
         frozen={frozen}
       />

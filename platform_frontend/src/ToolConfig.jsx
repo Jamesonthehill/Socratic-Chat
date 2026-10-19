@@ -55,15 +55,18 @@ export function SocraticConfig({
   onConfirmKeywords,
   onInvalidateKeywordPreparation,
   onMaterialsChange,
+  hideConversation = false,
+  hideDocuments = false,
   hideMaterials = false,
 }) {
   const change = (key, next) => onChange({ ...value, [key]: next });
   return (
     <>
-      <section
-        className="socratic-conversation-settings"
-        aria-label="Conversation settings"
-      >
+      {!hideConversation && (
+        <section
+          className="socratic-conversation-settings"
+          aria-label="Conversation settings"
+        >
         {!hideMaterials && <h3>Conversation settings</h3>}
         <label>
           Opening question or prompt
@@ -90,7 +93,8 @@ export function SocraticConfig({
           Students mark the assignment complete after the minimum number of
           messages.
         </p>
-      </section>
+        </section>
+      )}
       {!hideMaterials &&
         (courseId ? (
           <CourseLearningMaterials
@@ -105,6 +109,7 @@ export function SocraticConfig({
             onInvalidateKeywordPreparation={onInvalidateKeywordPreparation}
             frozen={frozen}
             embedded
+            hideDocuments={hideDocuments}
           />
         ) : (
           <p>Choose a course to manage its documents and learning objectives.</p>

@@ -575,6 +575,8 @@ export default function CreateActivity({
                 onChange={setConfig}
                 courseId={draft.course_id}
                 frozen={frozen}
+                hideConversation
+                hideDocuments
                 onPendingKeywordChange={setPendingKeyword}
                 keywordPreparation={draft.keyword_preparation}
                 onConfirmKeywords={confirmKeywords}

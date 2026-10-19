@@ -3076,6 +3076,11 @@ html[data-theme="dark"] .objective-status-rejected {
 .course-learning-manager.is-embedded > section {
   min-width: 0;
 }
+.course-learning-manager.keywords-only .assignment-keywords {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 0;
+}
 .course-learning-manager.is-embedded > section > h3 {
   font-size: 18px;
   margin-top: 0;
@@ -3255,6 +3260,16 @@ html[data-theme="dark"] .objective-status-rejected {
 .keyword-bucket-heading h4 {
   margin: 0;
   font-size: 16px;
+}
+.keyword-optional-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.keyword-optional-heading .keyword-generation {
+  min-height: 34px;
+  padding: 7px 10px;
 }
 .keyword-bucket-heading > span {
   font-size: 12px;

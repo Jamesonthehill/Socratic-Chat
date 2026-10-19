@@ -230,6 +230,13 @@ application. Enter the command without surrounding quotation marks. The
 `platform_app` module is available only when Render's **Root Directory** is
 blank (the repository root), not `Socratic-Chat/backend`.
 
+### Render Blueprint (recommended)
+
+Use the root `render.yaml` for the complete public platform plus token-protected Reflections
+and SDL free web services. See [the Blueprint deployment guide](docs/render-blueprint.md)
+for required secrets, free-tier limits, existing-service migration, and validation.
+The manual instructions below describe the older public Reflections setup.
+
 ### Reflections on Render
 
 The platform service alone cannot generate sub-topics or run Reflections

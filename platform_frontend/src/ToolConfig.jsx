@@ -54,7 +54,39 @@ export function SocraticConfig({
   keywordPreparation,
   onConfirmKeywords,
   onInvalidateKeywordPreparation,
+  hideMaterials = false,
 }) {
+  const change = (key, next) => onChange({ ...value, [key]: next });
+  if (hideMaterials)
+    return (
+      <>
+        <label>
+          Opening question or prompt
+          <textarea
+            rows={4}
+            value={value.prompt || ""}
+            onChange={(e) => change("prompt", e.target.value)}
+            placeholder="What assumptions does this design make?"
+          />
+        </label>
+        <label>
+          Messages required before completion
+          <input
+            type="number"
+            min={1}
+            max={100}
+            value={value.minimum_messages ?? 1}
+            onChange={(e) =>
+              change("minimum_messages", Number(e.target.value))
+            }
+          />
+        </label>
+        <p className="help">
+          Students mark the assignment complete after the minimum number of
+          messages.
+        </p>
+      </>
+    );
   if (!courseId)
     return (
       <p>Choose a course to manage its documents and learning objectives.</p>

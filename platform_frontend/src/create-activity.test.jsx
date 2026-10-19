@@ -85,8 +85,14 @@ test("five choices replace Student Agent; settings follow Next and review invali
     screen.getByRole("heading", { name: "Socratic Chat settings" }),
   ).toBeInTheDocument();
   expect(
-    screen.getByRole("heading", { name: "Socratic Chat settings" }),
+    screen.getByLabelText("Opening question or prompt"),
   ).toBeInTheDocument();
+  expect(
+    screen.getByLabelText("Messages required before completion"),
+  ).toHaveValue(1);
+  expect(
+    screen.queryByRole("region", { name: "Optional keywords" }),
+  ).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Review activity" }));
   expect(
     screen.getByRole("button", { name: "Publish activity" }),

@@ -15,6 +15,21 @@ Open **http://localhost:8000**. Login and account setup use the existing Socrati
 
 Compose starts the public platform, private Reflections and SDL services, and uses `DOCKER_DATABASE_URL` for PostgreSQL/pgvector. Only the platform exposes a host port. The legacy Tutor is optional with the `legacy-tutor` profile. The `isolated-db` profile supplies an optional local PostgreSQL service; it is not enabled by default.
 
+## Personal Render and domain deployment
+
+The root `render.yaml` creates the public platform plus separate Reflections and
+Self Directed Learning services. In Render, create a Blueprint from this
+repository and enter the prompted database, model-provider, Google, and LTI
+secrets. All three services must use the same `DATABASE_URL` and
+`PLATFORM_SERVICE_TOKEN`.
+
+After `https://cluball-platform-personal.onrender.com/health` responds
+successfully, manually run the **Connect personal domain to ClubALL** GitHub
+Actions workflow. It replaces the previous GitHub Pages artifact with a redirect
+from `https://jamesonthehill.com/Socratic-Chat/` to the deployed platform. The
+workflow is intentionally manual so an unavailable Render service cannot replace
+the working site.
+
 Set a valid provider key for embeddings, lesson generation and live replies. Reflections may download its existing embedding model on the first milestone request. See the [setup guide](docs/platform-ui-rework.md) before applying the shared RAG migration to an existing deployment.
 
 ## Socratic questioning pipeline

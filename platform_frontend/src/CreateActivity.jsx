@@ -446,6 +446,7 @@ export default function CreateActivity({
           <div className="activity-material-heading">
             <h3>Existing documents</h3>
             <button
+              type="button"
               disabled={!draft.course_id || busy}
               onClick={() => fileInput.current.click()}
             >

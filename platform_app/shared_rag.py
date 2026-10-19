@@ -5,6 +5,7 @@ from uuid import uuid4
 import httpx
 from fastapi import HTTPException
 from app import db, settings
+from app.rag import EmbeddingError, create_embeddings
 
 
 def pipeline(method, path, **kwargs):
@@ -30,7 +31,10 @@ def embedding_options():
 
 def ingest(course_id, account, filename, content_type, content):
     chunks = pipeline("POST", "/internal/platform/rag/parse", files={"file": (filename, content, content_type)})["chunks"]
-    vectors = pipeline("POST", "/internal/platform/rag/embeddings", json={"texts": [c["text"] for c in chunks], **embedding_options()})["embeddings"]
+    try:
+        vectors = create_embeddings([c["text"] for c in chunks])
+    except EmbeddingError as exc:
+        raise HTTPException(503, str(exc)) from exc
     document_id = str(uuid4())
     # Persist only after successful parsing and embedding. Clean up a failed index write.
     file_id = db.save_rag_file(filename, content_type, content, user_id=str(account["user_id"]), course_id=str(course_id), document_id=document_id)

@@ -61,6 +61,7 @@ export default function CreateActivity({
   const [stage, setStage] = useState(1);
   const [busy, setBusy] = useState(false);
   const [loadingFiles, setLoadingFiles] = useState(false);
+  const [pendingKeyword, setPendingKeyword] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const fileInput = useRef(null);
@@ -131,6 +132,7 @@ export default function CreateActivity({
     setStage(2);
   };
   const chooseTool = (key) => {
+    setPendingKeyword(false);
     chatConfigs.current[draft.tool] = draft.config;
     setDraft((d) => ({
       ...d,
@@ -243,6 +245,26 @@ export default function CreateActivity({
         }),
       );
     });
+  const confirmKeywords = () =>
+    run(async () => {
+      if (!draft.title.trim())
+        throw new Error("Enter an activity title before confirming keywords.");
+      if (pendingKeyword)
+        throw new Error("Press + to add the keyword before confirming.");
+      const saved = await save(false, true);
+      const prepared = await api(
+        `/platform/assignments/${saved.id}/keywords/confirm`,
+        { method: "POST" },
+      );
+      setDraft((current) => ({
+        ...current,
+        ...saved,
+        keyword_preparation: prepared,
+      }));
+      setNotice(
+        "Keywords confirmed. Course materials are prepared; publish when ready.",
+      );
+    });
   const upload = async (event) => {
     const uploads = [...event.target.files];
     event.target.value = "";
@@ -292,6 +314,8 @@ export default function CreateActivity({
         "The Canvas course context is missing. Reopen the tool from your course.",
       );
     if (!draft.tool) missing.push("Select an activity type.");
+    if (draft.tool === "socratic" && pendingKeyword)
+      missing.push("Press + to add the typed keyword before continuing.");
     if (
       ["socratic", "self-directed-learning"].includes(draft.tool) &&
       !selected.length
@@ -545,7 +569,29 @@ export default function CreateActivity({
                 value={{ ...draft.config, document_ids: selected }}
                 onChange={setConfig}
                 courseId={draft.course_id}
-                hideMaterials
+                frozen={frozen}
+                onPendingKeywordChange={setPendingKeyword}
+                keywordPreparation={draft.keyword_preparation}
+                onConfirmKeywords={confirmKeywords}
+                onInvalidateKeywordPreparation={() =>
+                  setDraft((current) => ({
+                    ...current,
+                    keyword_preparation: null,
+                  }))
+                }
+                onMaterialsChange={({ files: nextFiles }) => {
+                  setFiles(nextFiles);
+                  const available = new Set(
+                    nextFiles
+                      .filter((file) => file.document_id)
+                      .map((file) => file.document_id),
+                  );
+                  setSelected((current) =>
+                    current.filter((documentId) =>
+                      available.has(documentId),
+                    ),
+                  );
+                }}
               />
             ) : draft.tool === "reflections" ? (
               <ReflectionConfig value={draft.config} onChange={setConfig} />
@@ -614,7 +660,7 @@ export default function CreateActivity({
         <div className="editor-actions">
           <button
             className="secondary"
-            disabled={!ready}
+            disabled={!ready || pendingKeyword}
             onClick={() => run(() => save(false))}
           >
             Save draft
@@ -623,6 +669,7 @@ export default function CreateActivity({
             className="secondary"
             disabled={
               !ready ||
+              pendingKeyword ||
               (draft.tool === "self-directed-learning" && !selected.length)
             }
             onClick={review}

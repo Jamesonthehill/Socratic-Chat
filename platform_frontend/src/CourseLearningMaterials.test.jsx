@@ -92,7 +92,9 @@ test("shows optional and approved boxes with combined suggestions instead of obj
   expect(
     screen.getByRole("region", { name: "Approved keywords" }),
   ).toBeInTheDocument();
-  expect(screen.getAllByRole("textbox")).toHaveLength(1);
+  expect(
+    screen.getByRole("textbox", { name: "New keyword" }),
+  ).toBeInTheDocument();
   expect(screen.queryByText("Hidden first goal")).not.toBeInTheDocument();
   expect(screen.queryByText("Hidden second goal")).not.toBeInTheDocument();
   expect(

@@ -54,12 +54,17 @@ export function SocraticConfig({
   keywordPreparation,
   onConfirmKeywords,
   onInvalidateKeywordPreparation,
+  onMaterialsChange,
   hideMaterials = false,
 }) {
   const change = (key, next) => onChange({ ...value, [key]: next });
-  if (hideMaterials)
-    return (
-      <>
+  return (
+    <>
+      <section
+        className="socratic-conversation-settings"
+        aria-label="Conversation settings"
+      >
+        {!hideMaterials && <h3>Conversation settings</h3>}
         <label>
           Opening question or prompt
           <textarea
@@ -85,25 +90,26 @@ export function SocraticConfig({
           Students mark the assignment complete after the minimum number of
           messages.
         </p>
-      </>
-    );
-  if (!courseId)
-    return (
-      <p>Choose a course to manage its documents and learning objectives.</p>
-    );
-  return (
-    <CourseLearningMaterials
-      key={courseId}
-      courseId={courseId}
-      assignmentConfig={value}
-      onAssignmentChange={onChange}
-      onPendingKeywordChange={onPendingKeywordChange}
-      keywordPreparation={keywordPreparation}
-      onConfirmKeywords={onConfirmKeywords}
-      onInvalidateKeywordPreparation={onInvalidateKeywordPreparation}
-      frozen={frozen}
-      embedded
-    />
+      </section>
+      {!hideMaterials &&
+        (courseId ? (
+          <CourseLearningMaterials
+            key={courseId}
+            courseId={courseId}
+            onChange={onMaterialsChange}
+            assignmentConfig={value}
+            onAssignmentChange={onChange}
+            onPendingKeywordChange={onPendingKeywordChange}
+            keywordPreparation={keywordPreparation}
+            onConfirmKeywords={onConfirmKeywords}
+            onInvalidateKeywordPreparation={onInvalidateKeywordPreparation}
+            frozen={frozen}
+            embedded
+          />
+        ) : (
+          <p>Choose a course to manage its documents and learning objectives.</p>
+        ))}
+    </>
   );
 }
 

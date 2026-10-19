@@ -44,6 +44,14 @@ beforeEach(() => {
       return { objectives: [] };
     if (path === "/platform/assignments/a1/prepare-sdl")
       return { learning_plan: { title: "Prepared lesson", objectives: [] } };
+    if (path === "/platform/assignments/a1/keywords/confirm")
+      return {
+        ready: true,
+        course_id: "course-1",
+        keywords: ["design"],
+        document_ids: ["d1"],
+        passage_count: 3,
+      };
     if (path === "/platform/assignments")
       return { ...options.body, id: "a1", status: "draft" };
     throw Error(path);
@@ -91,8 +99,14 @@ test("five choices replace Student Agent; settings follow Next and review invali
     screen.getByLabelText("Messages required before completion"),
   ).toHaveValue(1);
   expect(
-    screen.queryByRole("region", { name: "Optional keywords" }),
-  ).not.toBeInTheDocument();
+    await screen.findByRole("region", { name: "Optional keywords" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "Course documents" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Suggest keywords" }),
+  ).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Review activity" }));
   expect(
     screen.getByRole("button", { name: "Publish activity" }),
@@ -148,6 +162,36 @@ test("clear all removes selected documents", async () => {
   await user.click(screen.getByRole("button", { name: "Clear all" }));
   expect(
     screen.getByRole("heading", { name: "Selected documents (0)" }),
+  ).toBeInTheDocument();
+});
+
+test("Socratic settings can approve and prepare keywords", async () => {
+  const user = await open();
+  await user.click(
+    await screen.findByRole("checkbox", { name: /Requirements.pdf/ }),
+  );
+  await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
+  await user.type(
+    await screen.findByRole("textbox", { name: "New keyword" }),
+    "design",
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Add optional keyword" }),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Approve keyword design" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Confirm keywords" }));
+  await waitFor(() =>
+    expect(api).toHaveBeenCalledWith(
+      "/platform/assignments/a1/keywords/confirm",
+      { method: "POST" },
+    ),
+  );
+  expect(
+    await screen.findByText(
+      "Keywords confirmed. Course materials are prepared; publish when ready.",
+    ),
   ).toBeInTheDocument();
 });
 

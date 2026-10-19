@@ -3065,6 +3065,14 @@ html[data-theme="dark"] .objective-status-rejected {
   margin: 0;
   gap: 24px;
 }
+.socratic-conversation-settings + .course-learning-manager.is-embedded {
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+  padding-top: 24px;
+}
+.socratic-conversation-settings > h3 {
+  margin-top: 0;
+}
 .course-learning-manager.is-embedded > section {
   min-width: 0;
 }

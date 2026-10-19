@@ -34,7 +34,7 @@ def test_instructor_creates_draft_reopens_without_overwriting_and_student_opens_
     teacher = exchange(client, assignment_launch(client, params))
     aid = teacher['assignment_id']
     assert aid
-    assert teacher['redirect_path'] == f'/platform/professor/assignments/{aid}'
+    assert teacher['redirect_path'] == f'/platform/professor/activities/{aid}'
     with store.connection() as conn:
         item = assignment(conn, aid)
         assert item['status'] == 'draft'
@@ -177,7 +177,7 @@ def test_lti13_assignment_custom_claim_creates_and_routes_a_draft(client, config
     response = client.post('/api/lti/launch', data={'state': state, 'id_token': 'verified-by-test'}, follow_redirects=False)
     result = exchange(client, response)
     assert result['assignment_id']
-    assert result['redirect_path'].endswith('/assignments/' + result['assignment_id'])
+    assert result['redirect_path'] == f"/platform/professor/activities/{result['assignment_id']}"
 
 
 def test_assignment_destination_is_bound_to_one_time_code_not_browser_query(client, configured_lti11):
@@ -203,7 +203,7 @@ def test_canvas_chatbot_selection_survives_relaunch_and_opens_correct_student_en
     assert client.post(path + '/publish', headers=headers).status_code == 200
     reopened = exchange(client, assignment_launch(client, params))
     assert reopened['assignment_id'] == aid
-    assert reopened['redirect_path'] == f'/platform/professor/assignments/{aid}'
+    assert reopened['redirect_path'] == f'/platform/professor/activities/{aid}'
     assert client.get(path, headers=headers).json()['tool'] == 'debate'
     learner = exchange(client, assignment_launch(client, {**params, 'user_id': str(uuid4()), 'roles': 'Learner'}))
     student_headers = {'Authorization': 'Bearer ' + learner['access_token']}

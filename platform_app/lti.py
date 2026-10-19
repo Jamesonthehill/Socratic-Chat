@@ -578,7 +578,7 @@ def lti_exchange(payload: LTIExchangeRequest):
         if not assignment:
             raise HTTPException(409, "The linked assignment is no longer available in this course.")
         redirect_path = (
-            f'/platform/professor/assignments/{assignment_id}'
+            f'/platform/professor/activities/{assignment_id}'
             if role == 'instructor' else f'/platform/student/assignments/{assignment_id}'
         )
     else:

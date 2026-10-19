@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS learning_objectives_platform (
     id UUID PRIMARY KEY,
     course_id UUID NOT NULL REFERENCES courses_platform(id) ON DELETE CASCADE,
-    file_id UUID NOT NULL REFERENCES rag_files_socratic_chat(id) ON DELETE CASCADE,
+    file_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     objective_text TEXT NOT NULL,
     prerequisites JSONB NOT NULL DEFAULT '[]'::jsonb,

@@ -1,4 +1,4 @@
-CREATE TABLE lti_identities_platform (
+CREATE TABLE IF NOT EXISTS lti_identities_platform (
     issuer TEXT NOT NULL,
     subject TEXT NOT NULL,
     user_id UUID NOT NULL REFERENCES users_platform(id) ON DELETE CASCADE,
@@ -8,7 +8,7 @@ CREATE TABLE lti_identities_platform (
     UNIQUE (issuer, user_id)
 );
 
-CREATE TABLE lti_course_links_platform (
+CREATE TABLE IF NOT EXISTS lti_course_links_platform (
     issuer TEXT NOT NULL,
     deployment_id TEXT NOT NULL,
     context_id TEXT NOT NULL,
@@ -19,7 +19,7 @@ CREATE TABLE lti_course_links_platform (
     UNIQUE (course_id)
 );
 
-CREATE TABLE lti_launch_states_platform (
+CREATE TABLE IF NOT EXISTS lti_launch_states_platform (
     state_hash TEXT PRIMARY KEY,
     nonce TEXT NOT NULL,
     issuer TEXT NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE lti_launch_states_platform (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE lti_login_codes_platform (
+CREATE TABLE IF NOT EXISTS lti_login_codes_platform (
     code_hash TEXT PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users_platform(id) ON DELETE CASCADE,
     course_id UUID NOT NULL REFERENCES courses_platform(id) ON DELETE CASCADE,
@@ -38,6 +38,6 @@ CREATE TABLE lti_login_codes_platform (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX lti_launch_states_expiry
+CREATE INDEX IF NOT EXISTS lti_launch_states_expiry
 ON lti_launch_states_platform(expires_at)
 WHERE used_at IS NULL;

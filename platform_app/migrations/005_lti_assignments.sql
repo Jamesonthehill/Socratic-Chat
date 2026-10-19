@@ -1,4 +1,4 @@
-CREATE TABLE lti_assignment_links_platform (
+CREATE TABLE IF NOT EXISTS lti_assignment_links_platform (
     issuer TEXT NOT NULL,
     deployment_id TEXT NOT NULL,
     context_id TEXT NOT NULL,
@@ -12,5 +12,5 @@ CREATE TABLE lti_assignment_links_platform (
 );
 
 ALTER TABLE lti_login_codes_platform
-    ADD COLUMN assignment_id UUID REFERENCES assignments_platform(id) ON DELETE CASCADE,
-    ADD COLUMN launch_role TEXT CHECK (launch_role IN ('instructor', 'student'));
+    ADD COLUMN IF NOT EXISTS assignment_id UUID REFERENCES assignments_platform(id) ON DELETE CASCADE,
+    ADD COLUMN IF NOT EXISTS launch_role TEXT CHECK (launch_role IN ('instructor', 'student'));

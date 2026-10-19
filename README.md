@@ -200,7 +200,7 @@ For an existing manual deployment:
    `PLATFORM_DB_SCHEMA=platform` and `REFLECTIONS_DB_SCHEMA=reflections_app`.
    Deploy the platform first so its shared database tables exist.
 3. Configure `LLM_PROVIDER=groq`, `GROQ_API_KEY`, and
-   `GROQ_MODEL=openai/gpt-oss-120b` on the Reflections service, or configure the
+   `GROQ_MODEL=openai/gpt-oss-20b` on the Reflections service, or configure the
    provider and matching key/model for your chosen provider.
 4. Set `REFLECTIONS_URL` on the platform to the Reflections service's actual
    public HTTPS URL from Render (without `/health`), then redeploy the platform.

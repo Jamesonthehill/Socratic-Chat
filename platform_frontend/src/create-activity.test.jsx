@@ -19,37 +19,45 @@ const course = {
   title: "Software Engineering",
   membership_role: "instructor",
 };
+let courseFiles;
 beforeEach(() => {
   resetCourseContext();
+  courseFiles = [
+    {
+      file_id: "f1",
+      document_id: "d1",
+      filename: "Requirements.pdf",
+      file_size: 2048,
+    },
+  ];
   api.mockReset();
   api.mockImplementation(async (path, options) => {
     if (path.startsWith("/platform/context")) return course;
     if (path === "/platform/courses/course-1/documents")
-      return {
-        files: [
-          {
-            file_id: "f1",
-            document_id: "d1",
-            filename: "Requirements.pdf",
-            file_size: 2048,
-          },
-        ],
-      };
+      return { files: courseFiles };
+    if (
+      path === "/platform/courses/course-1/documents/upload" &&
+      options?.method === "POST"
+    ) {
+      courseFiles = [
+        ...courseFiles,
+        {
+          file_id: "f2",
+          document_id: "d2",
+          filename: "New lesson.pdf",
+          file_size: 1024,
+        },
+      ];
+      return { message: "Uploaded." };
+    }
     if (path === "/courses/course-1/documents")
-      return {
-        files: [
-          {
-            file_id: "f1",
-            document_id: "d1",
-            filename: "Requirements.pdf",
-            file_size: 2048,
-          },
-        ],
-      };
+      return { files: courseFiles };
     if (path === "/courses/course-1/learning-objectives")
       return { objectives: [] };
     if (path === "/courses/course-1/documents/f1/keyword-suggestions")
       return { keywords: ["design patterns"], message: "Generated." };
+    if (path === "/courses/course-1/documents/f2/keyword-suggestions")
+      return { keywords: ["new lesson topic"], message: "Generated." };
     if (path === "/platform/assignments/a1/prepare-sdl")
       return { learning_plan: { title: "Prepared lesson", objectives: [] } };
     if (path === "/platform/assignments/a1/keywords/confirm")
@@ -222,6 +230,36 @@ test("Keywords Generation uses the assignment's selected documents", async () =>
   ).toBeInTheDocument();
   expect(api).toHaveBeenCalledWith(
     "/courses/course-1/documents/f1/keyword-suggestions",
+    { method: "POST" },
+  );
+});
+
+test("uploading an indexed document activates keyword generation immediately", async () => {
+  courseFiles = [];
+  const user = await open();
+  await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
+  const generate = await screen.findByRole("button", {
+    name: "Keywords Generation",
+  });
+  expect(generate).toBeDisabled();
+  fireEvent.change(document.querySelector('input[type="file"][multiple]'), {
+    target: {
+      files: [
+        new File(["lesson"], "New lesson.pdf", {
+          type: "application/pdf",
+        }),
+      ],
+    },
+  });
+  await waitFor(() => expect(generate).toBeEnabled());
+  await user.click(generate);
+  expect(
+    await screen.findByRole("button", {
+      name: "Approve keyword new lesson topic",
+    }),
+  ).toBeInTheDocument();
+  expect(api).toHaveBeenCalledWith(
+    "/courses/course-1/documents/f2/keyword-suggestions",
     { method: "POST" },
   );
 });

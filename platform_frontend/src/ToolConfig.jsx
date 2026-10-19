@@ -57,6 +57,7 @@ export function SocraticConfig({
   onMaterialsChange,
   hideConversation = false,
   hideDocuments = false,
+  documents,
   hideMaterials = false,
 }) {
   const change = (key, next) => onChange({ ...value, [key]: next });
@@ -110,6 +111,7 @@ export function SocraticConfig({
             frozen={frozen}
             embedded
             hideDocuments={hideDocuments}
+            documents={documents}
           />
         ) : (
           <p>Choose a course to manage its documents and learning objectives.</p>

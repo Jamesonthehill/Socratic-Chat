@@ -577,6 +577,7 @@ export default function CreateActivity({
                 frozen={frozen}
                 hideConversation
                 hideDocuments
+                documents={files}
                 onPendingKeywordChange={setPendingKeyword}
                 keywordPreparation={draft.keyword_preparation}
                 onConfirmKeywords={confirmKeywords}

@@ -301,6 +301,7 @@ export default function CourseLearningMaterials({
   frozen = false,
   embedded = false,
   hideDocuments = false,
+  documents,
 }) {
   const [resources, setResources] = useState({ files: [], objectives: [] });
   const [suggestedKeywords, setSuggestedKeywords] = useState([]);
@@ -334,6 +335,10 @@ export default function CourseLearningMaterials({
       alive.current = false;
     };
   }, [courseId]);
+  useEffect(() => {
+    if (!documents) return;
+    setResources((current) => ({ ...current, files: documents }));
+  }, [documents]);
   useEffect(() => {
     if (!busy) return;
     setElapsed(0);

@@ -169,12 +169,7 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "https://jamesonthehill.com/Socratic-Ch
 
 LTI_CANVAS_ISSUER = os.getenv("LTI_CANVAS_ISSUER", "").strip().rstrip("/")
 CANVAS_API_ORIGIN = os.getenv("CANVAS_API_ORIGIN", "https://instructure.charlotte.edu").strip().rstrip("/")
-LTI_CLIENT_ID = os.getenv("LTI_CLIENT_ID", "").strip()
-LTI_DEPLOYMENT_ID = os.getenv("LTI_DEPLOYMENT_ID", "").strip()
-LTI_PLATFORM_JWKS_URL = os.getenv("LTI_PLATFORM_JWKS_URL", "").strip()
 LTI_PUBLIC_BASE_URL = os.getenv("LTI_PUBLIC_BASE_URL", "").strip().rstrip("/")
-LTI_TOOL_PRIVATE_KEY_B64 = os.getenv("LTI_TOOL_PRIVATE_KEY_B64", "").strip()
-LTI_TOOL_KEY_ID = os.getenv("LTI_TOOL_KEY_ID", "cluball-lti-1").strip()
 LTI11_CONSUMER_KEY = os.getenv("LTI11_CONSUMER_KEY", "").strip()
 LTI11_SHARED_SECRET = os.getenv("LTI11_SHARED_SECRET", "")
 LTI_AUTO_CREATE_ASSIGNMENTS = os.getenv("LTI_AUTO_CREATE_ASSIGNMENTS", "true").lower() in {"1", "true", "yes"}

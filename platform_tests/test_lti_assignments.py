@@ -9,7 +9,6 @@ import pytest
 from app import settings
 from platform_app import lti, lti11, store
 from platform_tests.test_lti11 import configured_lti11, exchange, launch, signed
-from platform_tests.test_lti import configured_lti, launch_claims, start_login
 
 
 def assignment_launch(client, values=None, **kwargs):
@@ -34,7 +33,9 @@ def test_instructor_creates_draft_reopens_without_overwriting_and_student_opens_
     teacher = exchange(client, assignment_launch(client, params))
     aid = teacher['assignment_id']
     assert aid
-    assert teacher['redirect_path'] == f'/platform/professor/activities/{aid}'
+    assert teacher['redirect_path'] == (
+        f"/platform/professor/activities/{aid}?course={teacher['course_id']}"
+    )
     with store.connection() as conn:
         item = assignment(conn, aid)
         assert item['status'] == 'draft'
@@ -167,19 +168,6 @@ def test_invalid_optional_metadata_does_not_prevent_draft_creation(client, confi
         assert item['instructions'] == ''
 
 
-def test_lti13_assignment_custom_claim_creates_and_routes_a_draft(client, configured_lti, monkeypatch):
-    from platform_app import lti_assignments
-    state, _nonce = start_login(client)
-    claims = launch_claims(str(uuid4()), str(uuid4()), 'Instructor')
-    claims[lti_assignments.CUSTOM_CLAIM] = {'canvas_assignment_id': '55'}
-    claims[lti_assignments.RESOURCE_CLAIM] = {'id': 'resource-55', 'title': 'Review'}
-    monkeypatch.setattr(lti, '_verify_launch_token', lambda token, expected: claims)
-    response = client.post('/api/lti/launch', data={'state': state, 'id_token': 'verified-by-test'}, follow_redirects=False)
-    result = exchange(client, response)
-    assert result['assignment_id']
-    assert result['redirect_path'] == f"/platform/professor/activities/{result['assignment_id']}"
-
-
 def test_assignment_destination_is_bound_to_one_time_code_not_browser_query(client, configured_lti11):
     response = assignment_launch(client)
     code = parse_qs(urlsplit(response.headers['location']).query)['code'][0]
@@ -203,7 +191,9 @@ def test_canvas_chatbot_selection_survives_relaunch_and_opens_correct_student_en
     assert client.post(path + '/publish', headers=headers).status_code == 200
     reopened = exchange(client, assignment_launch(client, params))
     assert reopened['assignment_id'] == aid
-    assert reopened['redirect_path'] == f'/platform/professor/activities/{aid}'
+    assert reopened['redirect_path'] == (
+        f"/platform/professor/activities/{aid}?course={reopened['course_id']}"
+    )
     assert client.get(path, headers=headers).json()['tool'] == 'debate'
     learner = exchange(client, assignment_launch(client, {**params, 'user_id': str(uuid4()), 'roles': 'Learner'}))
     student_headers = {'Authorization': 'Bearer ' + learner['access_token']}

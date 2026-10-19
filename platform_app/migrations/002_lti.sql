@@ -19,16 +19,6 @@ CREATE TABLE IF NOT EXISTS lti_course_links_platform (
     UNIQUE (course_id)
 );
 
-CREATE TABLE IF NOT EXISTS lti_launch_states_platform (
-    state_hash TEXT PRIMARY KEY,
-    nonce TEXT NOT NULL,
-    issuer TEXT NOT NULL,
-    client_id TEXT NOT NULL,
-    expires_at TIMESTAMPTZ NOT NULL,
-    used_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
 CREATE TABLE IF NOT EXISTS lti_login_codes_platform (
     code_hash TEXT PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users_platform(id) ON DELETE CASCADE,
@@ -37,7 +27,3 @@ CREATE TABLE IF NOT EXISTS lti_login_codes_platform (
     used_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
-CREATE INDEX IF NOT EXISTS lti_launch_states_expiry
-ON lti_launch_states_platform(expires_at)
-WHERE used_at IS NULL;

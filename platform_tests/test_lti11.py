@@ -21,7 +21,6 @@ def configured_lti11(monkeypatch):
         "LTI11_CONSUMER_KEY": "cluball-test-consumer",
         "LTI11_SHARED_SECRET": "test secret & unicode é",
         "LTI_AUTO_CREATE_ASSIGNMENTS": True,
-        "LTI_CLIENT_ID": "", "LTI_DEPLOYMENT_ID": "", "LTI_TOOL_PRIVATE_KEY_B64": "",
     }
     for name, value in values.items():
         monkeypatch.setattr(settings, name, value)
@@ -72,7 +71,14 @@ def test_canvas_xml_and_independent_status(client, configured_lti11):
     assert settings.LTI11_SHARED_SECRET not in result.text
     status = client.get("/api/lti/status").json()
     assert status["lti11_launch_configured"] is True
-    assert status["launch_configured"] is False
+    assert status["assignment_auto_creation_enabled"] is True
+    for path in (
+        "/api/lti/jwks",
+        "/api/lti/canvas-config",
+        "/api/lti/login",
+        "/api/lti/launch",
+    ):
+        assert client.get(path).status_code == 404
 
 
 def test_full_instructor_student_and_course_flow(client, configured_lti11):
@@ -82,7 +88,7 @@ def test_full_instructor_student_and_course_flow(client, configured_lti11):
     assert teacher["user"]["authority_level"] == 1
     assert teacher["user"]["onboarding_complete"] is True
     assert teacher["access_token"]
-    assert teacher["redirect_path"] == "/platform/professor/activities/new"
+    assert teacher["redirect_path"] == f"/platform/professor/activities/new?course={teacher['course_id']}"
     repeated = exchange(client, launch(client, {"context_id": course, "user_id": teacher_id}))
     assert repeated["user"]["user_id"] == teacher["user"]["user_id"]
     assert repeated["course_id"] == teacher["course_id"]

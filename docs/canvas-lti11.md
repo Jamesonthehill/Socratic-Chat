@@ -26,8 +26,7 @@ python -c 'import secrets; print(secrets.token_urlsafe(32))'
 
 Keep the secret in deployment environment settings. Enter the identical consumer
 key and secret in Canvas. No Canvas personal access token, Developer Key, client
-ID, deployment ID, or RSA key is needed for LTI 1.1. Existing LTI 1.3 configuration
-is optional and remains supported on its original endpoints.
+ID, deployment ID, or RSA key is needed.
 
 Use the exact public HTTPS origin, without a path/query/fragment, for both URLs.
 `LTI_CANVAS_ISSUER` identifies the trusted Canvas instance administratively;
@@ -37,9 +36,9 @@ registration is supported per ClubALL deployment.
 
 Restart the gateway. Startup applies `003_lti11.sql` automatically, adding a
 nonce table for replay protection. Existing application data is preserved.
-`GET /api/lti/status` must show `lti11_launch_configured: true`. The existing
-`tool_configuration_ready` and `launch_configured` fields describe LTI 1.3 and
-may be false when only LTI 1.1 is configured.
+`GET /api/lti/status` must show `lti11_launch_configured: true`. The
+`assignment_auto_creation_enabled` field reports whether assignment launches
+create linked drafts.
 
 ## Install in Canvas course settings
 
@@ -81,7 +80,7 @@ schema. They do not substitute for this live Canvas check:
 ```bash
 .venv/bin/python -m pip install -r requirements-dev.txt
 TEST_DATABASE_URL=postgresql://USER:PASSWORD@HOST/TEST_DATABASE \
-  .venv/bin/python -m pytest platform_tests/test_lti.py platform_tests/test_lti11.py -q
+  .venv/bin/python -m pytest platform_tests/test_lti11.py platform_tests/test_lti_assignments.py -q
 ```
 
 The test database must have pgvector available and permit temporary schemas.
@@ -131,16 +130,13 @@ resource title; this is not a full API import of attachments, linked pages, or
 rubrics, and subsequent Canvas edits do not overwrite the draft. Grade return and
 Content-Item/Deep Linking selection are separate features.
 
-LTI 1.3 resource launches use the same assignment mapping when the signed custom
-claim includes `canvas_assignment_id` (included in the generated configuration),
-or the signed AGS endpoint claim includes a `lineitem`. Navigation links alone do
-not create activities. Setting `LTI_AUTO_CREATE_ASSIGNMENTS=false` restores the
-course-only launch flow for both protocols.
+Navigation links alone do not create activities. Setting
+`LTI_AUTO_CREATE_ASSIGNMENTS=false` restores the course-only launch flow.
 
-Course links are scoped to the consumer registration and protocol. Existing
-manually created courses or LTI 1.3 courses are not silently relinked. Changing
-the consumer key or configured Canvas issuer creates a new registration scope;
-rotating only the shared secret preserves the links.
+Course links are scoped to the consumer registration. Existing manually created
+courses are not silently relinked. Changing the consumer key or configured Canvas
+issuer creates a new registration scope; rotating only the shared secret
+preserves the links.
 
 - **503:** Check the key, secret, and two HTTPS origins; restart the gateway.
 - **401 signature:** Check the key/secret and exact public launch URL. Reverse

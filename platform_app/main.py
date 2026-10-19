@@ -23,6 +23,8 @@ from platform_app.routes import router  # noqa: E402
 legacy_frontend = app.router.routes.pop()
 app.title = "ClubALL Learning Platform"
 app.include_router(router)
+from platform_app.workspace import router as workspace_router
+app.include_router(workspace_router)
 app.include_router(lti_router)
 app.include_router(lti11_router)
 
@@ -47,7 +49,7 @@ async def platform_security(request, call_next):
         page = DIST / (
             "reflections.html"
             if request.url.path == "/platform/reflections.html"
-            else "index.html"
+            else "self-directed.html" if request.url.path == "/platform/self-directed.html" else "index.html"
         )
         if not page.exists():
             return Response(
@@ -83,7 +85,7 @@ if (DIST / "assets").exists():
 @app.get("/platform", include_in_schema=False)
 @app.get("/platform/{path:path}", include_in_schema=False)
 def frontend(path: str = ""):
-    page = DIST / ("reflections.html" if path == "reflections.html" else "index.html")
+    page = DIST / (path if path in {"reflections.html", "self-directed.html"} else "index.html")
     if not page.exists():
         return Response("Build the platform frontend: cd platform_frontend && npm install && npm run build", status_code=503)
     return FileResponse(page, headers={"Cache-Control": "no-cache"})

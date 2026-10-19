@@ -1004,12 +1004,10 @@ function routeAuthenticatedUser() {
     showGithubConnection();
     return "github";
   }
-  if (getRole() === "student") {
-    window.location.assign("/platform/student");
-    return "platform-dashboard";
-  }
-  showDashboard();
-  return "dashboard";
+  const course = new URLSearchParams(window.location.search).get("course");
+  const target = getRole() === "student" ? "/platform/student" : "/platform/professor";
+  window.location.assign(target + (course ? `?course=${encodeURIComponent(course)}` : ""));
+  return "platform-dashboard";
 }
 
 function showSignedOut() {

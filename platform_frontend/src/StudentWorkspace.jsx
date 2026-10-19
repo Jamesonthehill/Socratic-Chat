@@ -587,6 +587,7 @@ export default function StudentWorkspace() {
                 "Follow the prompts in this learning activity."}
             </Markdown>
           </div>
+          {assignment.tool === "debate" && <><h3>Debate scenario</h3><p>{assignment.student_config?.scenario}</p><p className="help">Send at least {assignment.student_config?.minimum_messages} message(s), then mark the activity complete.</p></>}
           {assignment.tool === "socratic" && (
             <p className="help">
               Send at least {assignment.student_config.minimum_messages}{" "}

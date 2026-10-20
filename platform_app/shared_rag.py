@@ -7,6 +7,7 @@ from uuid import uuid4
 import httpx
 from fastapi import HTTPException
 from app import db, settings
+from app.chunking import CHUNKING_VERSION, chunk_document
 from app.rag import EmbeddingError, chunk_text, create_embeddings, read_pdf_pages
 
 
@@ -54,12 +55,37 @@ def _parse_pdf(filename, content):
     return chunks
 
 
+def _parse_html(filename, content):
+    # Uploaded HTML already has a semantic, section-aware parser in Socratic Chat.
+    # Parse it here so indexing does not depend on the separate SDL service.
+    document = content.decode("utf-8-sig", errors="replace")
+    chunks = [
+        {
+            "text": chunk.text,
+            "position": position,
+            "metadata": {
+                "section_path": list(chunk.section_path),
+                "assignment_number": chunk.assignment_number,
+                "chunk_profile": chunk.profile,
+                "approximate_token_count": chunk.token_count,
+                "chunking_version": CHUNKING_VERSION,
+            },
+        }
+        for position, chunk in enumerate(chunk_document(filename, document, source_format=Path(filename).suffix))
+    ]
+    if not chunks:
+        raise HTTPException(422, "This HTML file has no readable text to index.")
+    return chunks
+
+
 def ingest(course_id, account, filename, content_type, content):
-    chunks = (
-        _parse_pdf(filename, content)
-        if Path(filename).suffix.lower() == ".pdf"
-        else pipeline("POST", "/internal/platform/rag/parse", files={"file": (filename, content, content_type)})["chunks"]
-    )
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".pdf":
+        chunks = _parse_pdf(filename, content)
+    elif suffix in {".html", ".htm"}:
+        chunks = _parse_html(filename, content)
+    else:
+        chunks = pipeline("POST", "/internal/platform/rag/parse", files={"file": (filename, content, content_type)})["chunks"]
     try:
         vectors = create_embeddings([c["text"] for c in chunks])
     except EmbeddingError as exc:

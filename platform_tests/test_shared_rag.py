@@ -1,3 +1,6 @@
+import pytest
+from fastapi import HTTPException
+
 from platform_app import shared_rag
 
 
@@ -72,3 +75,52 @@ def test_pdf_ingest_does_not_require_shared_parser(monkeypatch):
     assert result["chunk_count"] == 1
     assert calls[0][0][3][0]["page_number"] == 1
     assert calls[0][0][4] == vectors
+
+
+@pytest.mark.parametrize("filename", ["lesson.html", "lesson.htm"])
+def test_html_ingest_uses_local_semantic_parser(monkeypatch, filename):
+    captured = []
+    monkeypatch.setattr(
+        shared_rag,
+        "pipeline",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Uploaded HTML should be parsed in Platform")
+        ),
+    )
+    monkeypatch.setattr(shared_rag, "create_embeddings", lambda texts: [[0.1, 0.2] for _ in texts])
+    monkeypatch.setattr(shared_rag.db, "save_rag_file", lambda *_args, **_kwargs: "file-1")
+    monkeypatch.setattr(
+        shared_rag.db,
+        "replace_document_chunks",
+        lambda *args, **kwargs: captured.append((args, kwargs)),
+    )
+
+    result = shared_rag.ingest(
+        "course-1",
+        {"user_id": "instructor-1"},
+        filename,
+        "text/html",
+        b"<html><body><nav>Menu</nav><h1>Version control</h1>"
+        b"<p>Version control records changes to files over time.</p></body></html>",
+    )
+
+    assert result["chunk_count"] > 0
+    chunks = captured[0][0][3]
+    assert any("Version control records changes" in chunk["text"] for chunk in chunks)
+    assert all("Menu" not in chunk["text"] for chunk in chunks)
+    assert any(chunk["metadata"]["section_path"] for chunk in chunks)
+    assert captured[0][0][4] == [[0.1, 0.2] for _ in chunks]
+
+
+def test_html_ingest_rejects_empty_document_before_storage(monkeypatch):
+    monkeypatch.setattr(
+        shared_rag.db,
+        "save_rag_file",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("Empty HTML must not be saved")),
+    )
+    with pytest.raises(HTTPException, match="no readable text") as error:
+        shared_rag.ingest(
+            "course-1", {"user_id": "instructor-1"}, "empty.html", "text/html",
+            b"<html><body><script>hidden</script></body></html>",
+        )
+    assert error.value.status_code == 422

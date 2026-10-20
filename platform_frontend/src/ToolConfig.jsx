@@ -7,6 +7,7 @@ export const defaults = {
   socratic: {
     keywords: [],
     optional_keywords: [],
+    dismissed_keywords: [],
     document_ids: [],
     prompt: "",
     minimum_messages: 1,

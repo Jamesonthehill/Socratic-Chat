@@ -19,6 +19,7 @@ function AssignmentKeywords({
 }) {
   const [localKeywords, setLocalKeywords] = useState([]);
   const [localOptional, setLocalOptional] = useState([]);
+  const [localDismissed, setLocalDismissed] = useState([]);
   const [newKeyword, setNewKeyword] = useState("");
   const [error, setError] = useState("");
   const legacy = objectives.find(
@@ -57,21 +58,27 @@ function AssignmentKeywords({
     [onPendingKeywordChange],
   );
   const optionalKeywords = assignmentConfig?.optional_keywords || localOptional;
-  const update = (next, nextOptional = optionalKeywords) => {
+  const dismissedKeywords = assignmentConfig?.dismissed_keywords || localDismissed;
+  const update = (
+    next,
+    nextOptional = optionalKeywords,
+    nextDismissed = dismissedKeywords,
+  ) => {
     setLocalKeywords(next);
     setLocalOptional(nextOptional);
+    setLocalDismissed(nextDismissed);
     onAssignmentChange?.({
       ...assignmentConfig,
       keywords: next,
       optional_keywords: nextOptional,
+      dismissed_keywords: nextDismissed,
       learning_objective_id: null,
-      document_ids: [],
-      prompt: "",
     });
     setError("");
   };
   const candidates = [];
   const seen = new Set(keywords.map((item) => item.toLowerCase()));
+  const dismissed = new Set(dismissedKeywords.map((item) => item.toLowerCase()));
   for (const word of [
     ...optionalKeywords,
     ...suggestedKeywords,
@@ -79,7 +86,7 @@ function AssignmentKeywords({
       .filter((item) => item.status !== "rejected")
       .flatMap((item) => item.keywords || []),
   ]) {
-    if (!seen.has(word.toLowerCase())) {
+    if (!seen.has(word.toLowerCase()) && !dismissed.has(word.toLowerCase())) {
       seen.add(word.toLowerCase());
       candidates.push(word);
     }
@@ -96,27 +103,24 @@ function AssignmentKeywords({
       return;
     }
     if (optionalKeywords.length >= 40) return;
-    update(keywords, [...optionalKeywords, keyword]);
+    update(
+      keywords,
+      [...optionalKeywords, keyword],
+      dismissedKeywords.filter((item) => item.toLowerCase() !== keyword.toLowerCase()),
+    );
     setNewKeyword("");
   };
   const approve = (word) => {
     if (keywords.length < 8) update([...keywords, word]);
   };
-  const remove = (word, index) => {
-    const listed =
-      optionalKeywords.some(
-        (item) => item.toLowerCase() === word.toLowerCase(),
-      ) ||
-      objectives.some(
-        (item) =>
-          item.status !== "rejected" &&
-          (item.keywords || []).some(
-            (keyword) => keyword.toLowerCase() === word.toLowerCase(),
-          ),
-      );
+  const remove = (word) => {
+    const lower = word.toLowerCase();
     update(
-      keywords.filter((_, i) => i !== index),
-      listed ? optionalKeywords : [...optionalKeywords, word],
+      keywords.filter((item) => item.toLowerCase() !== lower),
+      optionalKeywords.filter((item) => item.toLowerCase() !== lower),
+      dismissedKeywords.some((item) => item.toLowerCase() === lower)
+        ? dismissedKeywords
+        : [...dismissedKeywords, word],
     );
   };
   const confirmed =
@@ -159,17 +163,30 @@ function AssignmentKeywords({
           </p>
           <div className="keyword-candidate-list">
             {candidates.map((keyword) => (
-              <button
-                type="button"
-                className="keyword-candidate"
-                key={keyword}
-                aria-label={`Approve keyword ${keyword}`}
-                disabled={disabled || frozen || keywords.length >= 8}
-                onClick={() => approve(keyword)}
-              >
-                <span>{keyword}</span>
-                <span aria-hidden="true">→</span>
-              </button>
+              <div className="keyword-candidate-row" key={keyword}>
+                <button
+                  type="button"
+                  className="keyword-candidate"
+                  aria-label={`Approve keyword ${keyword}`}
+                  disabled={disabled || frozen || keywords.length >= 8}
+                  onClick={() => approve(keyword)}
+                >
+                  <span>{keyword}</span>
+                  <span aria-hidden="true">→</span>
+                </button>
+                {!frozen && (
+                  <button
+                    type="button"
+                    className="keyword-dismiss"
+                    aria-label={`Delete keyword ${keyword}`}
+                    title={`Delete ${keyword}`}
+                    disabled={disabled}
+                    onClick={() => remove(keyword)}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
             ))}
             {!candidates.length && (
               <p className="help">
@@ -228,17 +245,18 @@ function AssignmentKeywords({
             Only these topics will guide this assignment’s chatbot.
           </p>
           <div className="keyword-approved-list">
-            {keywords.map((keyword, index) => (
+            {keywords.map((keyword) => (
               <span key={keyword} className="objective-keyword-chip">
                 <span>{keyword}</span>
                 <button
                   type="button"
                   className="keyword-remove"
-                  aria-label={`Remove ${keyword}`}
+                  aria-label={`Delete keyword ${keyword}`}
+                  title={`Delete ${keyword}`}
                   disabled={disabled || frozen}
-                  onClick={() => remove(keyword, index)}
+                  onClick={() => remove(keyword)}
                 >
-                  −
+                  ×
                 </button>
               </span>
             ))}

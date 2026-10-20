@@ -3294,6 +3294,11 @@ html[data-theme="dark"] .objective-status-rejected {
   overflow-y: auto;
   margin: 8px 0 14px;
 }
+.keyword-candidate-row {
+  display: flex;
+  align-items: stretch;
+  gap: 7px;
+}
 .keyword-candidate {
   display: flex;
   align-items: center;
@@ -3307,6 +3312,22 @@ html[data-theme="dark"] .objective-status-rejected {
   background: #fff;
   color: var(--ink);
   border-radius: 8px;
+}
+.keyword-candidate-row .keyword-candidate {
+  flex: 1;
+}
+.keyword-dismiss {
+  flex: 0 0 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel, #fff);
+  color: #b33140;
+  font-size: 22px;
+  cursor: pointer;
+}
+.keyword-dismiss:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 .keyword-candidate span:first-child {
   overflow-wrap: anywhere;

@@ -108,7 +108,7 @@ test("shows optional and approved boxes with combined suggestions instead of obj
   ).toBeDisabled();
 });
 
-test("only explicitly added keywords enter the assignment config, and minus removes them", async () => {
+test("only explicitly added keywords enter the assignment config, and X deletes them", async () => {
   const { fetch } = setup();
   const onChange = vi.fn();
   const user = userEvent.setup();
@@ -122,7 +122,6 @@ test("only explicitly added keywords enter the assignment config, and minus remo
     expect.objectContaining({
       keywords: ["correctness"],
       learning_objective_id: null,
-      document_ids: [],
     }),
   );
   await user.type(
@@ -141,13 +140,50 @@ test("only explicitly added keywords enter the assignment config, and minus remo
   expect(onChange).toHaveBeenLastCalledWith(
     expect.objectContaining({ keywords: ["correctness", "team conventions"] }),
   );
-  await user.click(screen.getByRole("button", { name: "Remove correctness" }));
+  await user.click(screen.getByRole("button", { name: "Delete keyword correctness" }));
   expect(onChange).toHaveBeenLastCalledWith(
-    expect.objectContaining({ keywords: ["team conventions"] }),
+    expect.objectContaining({
+      keywords: ["team conventions"],
+      dismissed_keywords: ["correctness"],
+    }),
   );
+  expect(screen.queryByRole("button", { name: "Approve keyword correctness" })).not.toBeInTheDocument();
   expect(
     fetch.mock.calls.some(([, options]) => options.method === "PATCH"),
   ).toBe(false);
+});
+
+test("teachers can dismiss optional suggestions without losing course materials", async () => {
+  setup();
+  const onChange = vi.fn();
+  const user = userEvent.setup();
+  const initial = {
+    keywords: ["code review"],
+    optional_keywords: ["team conventions"],
+    document_ids: ["doc-1"],
+    prompt: "How do reviews help?",
+  };
+  const view = render(<Config initial={initial} onChange={onChange} />);
+  await user.click(
+    await screen.findByRole("button", { name: "Delete keyword correctness" }),
+  );
+  const saved = onChange.mock.lastCall[0];
+  expect(saved).toEqual(expect.objectContaining({
+    keywords: ["code review"],
+    dismissed_keywords: ["correctness"],
+    document_ids: ["doc-1"],
+    prompt: "How do reviews help?",
+  }));
+  expect(screen.queryByRole("button", { name: "Approve keyword correctness" })).not.toBeInTheDocument();
+
+  view.unmount();
+  render(<Config initial={saved} />);
+  await screen.findByRole("button", { name: "Approve keyword team conventions" });
+  expect(screen.queryByRole("button", { name: "Approve keyword correctness" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Delete keyword team conventions" }));
+  expect(screen.queryByRole("button", { name: "Approve keyword team conventions" })).not.toBeInTheDocument();
+  await user.type(screen.getByRole("textbox", { name: "New keyword" }), "team conventions{Enter}");
+  expect(screen.getByRole("button", { name: "Approve keyword team conventions" })).toBeInTheDocument();
 });
 
 test("duplicate keywords are rejected and pending input is reported to the assignment form", async () => {
@@ -219,7 +255,7 @@ test("legacy selected goal becomes the initial single keyword list in an editabl
       onChange={onChange}
     />,
   );
-  await screen.findByRole("button", { name: "Remove maintainability" });
+  await screen.findByRole("button", { name: "Delete keyword maintainability" });
   expect(onChange).toHaveBeenLastCalledWith(
     expect.objectContaining({
       keywords: ["Code Review", "maintainability"],
@@ -232,7 +268,7 @@ test("published assignment keywords are displayed read-only", async () => {
   setup();
   render(<Config initial={{ keywords: ["code review"] }} frozen />);
   expect(
-    await screen.findByRole("button", { name: "Remove code review" }),
+    await screen.findByRole("button", { name: "Delete keyword code review" }),
   ).toBeDisabled();
   expect(
     screen.queryByRole("textbox", { name: "New keyword" }),
@@ -254,7 +290,7 @@ test("failed suggestions preserve the assignment's saved keywords", async () => 
   );
   expect(await screen.findByText("Model unavailable")).toBeInTheDocument();
   expect(
-    screen.getByRole("button", { name: "Remove code review" }),
+    screen.getByRole("button", { name: "Delete keyword code review" }),
   ).toBeInTheDocument();
 });
 
@@ -308,8 +344,8 @@ test("confirmation saves through the parent handler and changes invalidate the c
   ).toBeEnabled();
   await user.click(screen.getByRole("button", { name: "Confirm keywords" }));
   expect(confirm).toHaveBeenCalledTimes(1);
-  await user.click(screen.getByRole("button", { name: "Remove correctness" }));
+  await user.click(screen.getByRole("button", { name: "Delete keyword correctness" }));
   expect(
-    screen.getByRole("button", { name: "Approve keyword correctness" }),
-  ).toBeInTheDocument();
+    screen.queryByRole("button", { name: "Approve keyword correctness" }),
+  ).not.toBeInTheDocument();
 });

@@ -48,6 +48,7 @@ class Topic(StrictModel):
 class SocraticConfig(StrictModel):
     keywords: list[str] = Field(default_factory=list, max_length=8)
     optional_keywords: list[str] = Field(default_factory=list, max_length=48)
+    dismissed_keywords: list[str] = Field(default_factory=list, max_length=500)
     learning_objective_id: UUID | None = None
     document_ids: list[str] = Field(default_factory=list, max_length=100)
     prompt: str = Field(default="", max_length=10000)
@@ -70,6 +71,16 @@ class SocraticConfig(StrictModel):
                 seen.add(word.casefold())
                 optional.append(word)
         self.optional_keywords = optional
+        dismissed = []
+        seen.clear()
+        for item in self.dismissed_keywords:
+            word = " ".join(item.split())
+            if not word or len(word) > 120:
+                raise ValueError("Dismissed keywords must contain 1 to 120 characters each.")
+            if word.casefold() not in seen:
+                seen.add(word.casefold())
+                dismissed.append(word)
+        self.dismissed_keywords = dismissed
         return self
 
 

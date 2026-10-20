@@ -55,6 +55,17 @@ def test_changed_approved_keywords_require_confirmation_but_optional_changes_do_
     assert client.post(path+'/publish', headers=teacher).status_code == 200
 
 
+def test_dismissed_keyword_is_saved_with_draft_without_changing_approved_keywords(client, roster):
+    item, body, _chunk, path = ready_assignment(client, roster)
+    body['config']['dismissed_keywords'] = ['Unneeded topic']
+    saved = client.put(path, headers=roster['headers']['prof'], json=body)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()['config']['dismissed_keywords'] == ['Unneeded topic']
+    assert saved.json()['config']['keywords'] == ['code review']
+    reloaded = client.get(path, headers=roster['headers']['prof'])
+    assert reloaded.json()['config']['dismissed_keywords'] == ['Unneeded topic']
+
+
 def test_changed_materials_invalidate_preparation(client, roster):
     item, body, chunk, path = ready_assignment(client, roster)
     teacher = roster['headers']['prof']

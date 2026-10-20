@@ -61,6 +61,7 @@ export default function CreateActivity({
   const [stage, setStage] = useState(1);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [pendingKeyword, setPendingKeyword] = useState(false);
   const [error, setError] = useState("");
@@ -271,34 +272,39 @@ export default function CreateActivity({
     event.target.value = "";
     if (!uploads.length) return;
     setUploading(true);
+    setBusy(true);
+    setError("");
+    setUploadError("");
+    setNotice("");
     try {
-      await run(async () => {
-        const body = new FormData();
-        uploads.forEach((f) => body.append("files", f));
-        const result = await api(
-          `/platform/courses/${draft.course_id}/documents/upload`,
-          { method: "POST", body },
-        );
-        const data = await api(`/platform/courses/${draft.course_id}/documents`);
-        const names = new Set(uploads.map((f) => f.name));
-        setFiles(data.files);
-        setSelected((current) => [
-          ...new Set([
-            ...current,
-            ...data.files
-              .filter((f) => names.has(f.filename) && f.document_id)
-              .map((f) => f.document_id),
-          ]),
-        ]);
-        setStage(1);
-        setNotice(
-          result.skipped_files?.length
-            ? `Some files were skipped: ${result.skipped_files.join(", ")}`
-            : "Documents uploaded and ready to select.",
-        );
-      });
+      const body = new FormData();
+      uploads.forEach((f) => body.append("files", f));
+      const result = await api(
+        `/platform/courses/${draft.course_id}/documents/upload`,
+        { method: "POST", body },
+      );
+      const data = await api(`/platform/courses/${draft.course_id}/documents`);
+      setFiles(data.files);
+      const savedIds = new Set(data.files.map((file) => String(file.file_id)));
+      if (!Array.isArray(result.files) || result.files.some((file) => !savedIds.has(String(file.file_id || file.id)))) {
+        throw new Error("The upload request finished, but the document is not in this course's library. Please retry or contact the administrator.");
+      }
+      const uploadedIds = new Set(result.files.map((file) => String(file.file_id || file.id)));
+      setSelected((current) => [
+        ...new Set([
+          ...current,
+          ...data.files
+            .filter((file) => uploadedIds.has(String(file.file_id)) && file.document_id)
+            .map((file) => file.document_id),
+        ]),
+      ]);
+      setStage(1);
+      setNotice("Documents uploaded and ready to select.");
+    } catch (e) {
+      setUploadError(e.message);
     } finally {
       setUploading(false);
+      setBusy(false);
     }
   };
   const deleteDocument = (file) => {
@@ -467,6 +473,7 @@ export default function CreateActivity({
               onChange={upload}
             />
           </div>
+          <Notice error={uploadError} />
           <label>
             Search documents
             <input

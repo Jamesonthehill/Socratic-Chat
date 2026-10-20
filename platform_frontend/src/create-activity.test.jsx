@@ -48,7 +48,7 @@ beforeEach(() => {
           file_size: 1024,
         },
       ];
-      return { message: "Uploaded." };
+      return { files: [{ file_id: "f2", document_id: "d2" }] };
     }
     if (path === "/courses/course-1/documents")
       return { files: courseFiles };
@@ -190,6 +190,46 @@ test("clear all removes selected documents", async () => {
   expect(
     screen.getByRole("heading", { name: "Selected documents (0)" }),
   ).toBeInTheDocument();
+});
+
+test("a PDF upload appears in the course library and is selected", async () => {
+  const user = await open();
+  await user.upload(
+    document.querySelector('input[type="file"]'),
+    new File(["%PDF-1.4"], "New lesson.pdf", { type: "application/pdf" }),
+  );
+  expect(await screen.findByRole("checkbox", { name: /New lesson.pdf/ })).toBeChecked();
+  expect(screen.getByText("Documents uploaded and ready to select.")).toBeInTheDocument();
+});
+
+test("an embedding failure is shown next to the upload control", async () => {
+  const user = await open();
+  await screen.findByRole("checkbox", { name: /Requirements.pdf/ });
+  api.mockImplementationOnce(async () => {
+    throw new Error("Document search has no configured embedding provider.");
+  });
+  await user.upload(
+    document.querySelector('input[type="file"]'),
+    new File(["%PDF-1.4"], "New lesson.pdf", { type: "application/pdf" }),
+  );
+  expect(await screen.findByRole("alert")).toHaveTextContent("embedding provider");
+});
+
+test("a completed request is not reported as success when the PDF is absent from the refreshed library", async () => {
+  const user = await open();
+  await screen.findByRole("checkbox", { name: /Requirements.pdf/ });
+  const originalApi = api.getMockImplementation();
+  api.mockImplementation((path, options) =>
+    path === "/platform/courses/course-1/documents/upload" && options?.method === "POST"
+      ? Promise.resolve({ files: [{ file_id: "missing", document_id: "d2" }] })
+      : originalApi(path, options),
+  );
+  await user.upload(
+    document.querySelector('input[type="file"]'),
+    new File(["%PDF-1.4"], "New lesson.pdf", { type: "application/pdf" }),
+  );
+  expect(await screen.findByRole("alert")).toHaveTextContent("not in this course's library");
+  expect(screen.queryByText("Documents uploaded and ready to select.")).not.toBeInTheDocument();
 });
 
 test("instructors can delete uploaded documents from course materials", async () => {

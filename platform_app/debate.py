@@ -1,12 +1,23 @@
 """Native Debate response generation using the platform's configured LLM."""
 from __future__ import annotations
 
+import logging
+import re
 from typing import Any
 
 from fastapi import HTTPException
 
 from app import settings
 from app.schemas import Source
+
+logger = logging.getLogger(__name__)
+
+
+def _safe_request_id(value: object) -> str:
+    """Keep provider request IDs useful in logs without logging arbitrary response text."""
+    if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value):
+        return value
+    return "none"
 
 
 SYSTEM_PROMPT = """You are an AI debate opponent in a university learning activity.
@@ -73,16 +84,26 @@ async def generate_reply(
         )
 
     try:
-        response = await AsyncOpenAI(
+        async with AsyncOpenAI(
             api_key=api_key,
             base_url=base_url,
             timeout=60.0,
-            max_retries=0,
-        ).chat.completions.create(
-            **request
-        )
+            max_retries=1,
+        ) as client:
+            response = await client.chat.completions.create(**request)
         reply = (response.choices[0].message.content or "").strip()
     except Exception as exc:
+        # Never log the exception message, request body, or credentials: provider errors
+        # can contain student text or authentication details.
+        status_code = getattr(exc, "status_code", None)
+        logger.error(
+            "debate_ai_request_failed provider=%s model=%s error_type=%s status_code=%s request_id=%s",
+            provider,
+            model,
+            type(exc).__name__,
+            status_code if isinstance(status_code, int) else "none",
+            _safe_request_id(getattr(exc, "request_id", None)),
+        )
         raise HTTPException(503, "The Debate AI is unavailable. Please retry shortly.") from exc
     if not reply:
         raise HTTPException(503, "The Debate AI returned an empty response. Please retry.")

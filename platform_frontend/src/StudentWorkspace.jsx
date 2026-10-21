@@ -714,20 +714,6 @@ export default function StudentWorkspace({ user }) {
     ],
     ["Could you guide me?", "Could you guide me through this step?"],
   ];
-  const firstSocraticTurn =
-    assignment.tool === "socratic" &&
-    attempt?.messages.length === 0 &&
-    !completed &&
-    !conceptCheck;
-  const starterTopic =
-    socratic.objective_keywords?.join(", ") ||
-    assignment.title.replace(/\bassignment\b(?:\s*\d+)?/gi, "").trim() ||
-    "the topic in your instructor's materials";
-  const starterSuggestions = [
-    ["Explain the concept", `Could you explain ${starterTopic} in simple terms using our course materials?`],
-    ["Show me an example", `Could you show me a simple example of ${starterTopic} from our course materials?`],
-    ["Let me try a question", `Could you ask me one beginner-friendly question about ${starterTopic} based on our course materials?`],
-  ];
   const milestone =
     assignment.student_config?.module_type === "milestone_based";
   return (
@@ -1021,28 +1007,6 @@ export default function StudentWorkspace({ user }) {
                         )}
                     </article>
                   ),
-                )}
-                {firstSocraticTurn && (
-                  <section className="socratic-opening" aria-label="Start your Socratic conversation">
-                    <h3>Let’s explore {assignment.title}.</h3>
-                    <p>
-                      We’ll use your instructor’s course materials to understand
-                      this topic one step at a time. How would you like to begin?
-                    </p>
-                    <div className="suggested-responses" aria-label="Ways to begin">
-                      {starterSuggestions.map(([label, value]) => (
-                        <button
-                          type="button"
-                          className="suggestion-chip"
-                          disabled={busy}
-                          key={label}
-                          onClick={() => sendMessage(value)}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </section>
                 )}
                 {busy &&
                   (assignment.tool === "socratic" ? (

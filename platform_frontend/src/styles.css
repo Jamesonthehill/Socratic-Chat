@@ -1651,22 +1651,6 @@ button.evidence-drawer-close {
   gap: 8px;
   padding: 0 26px 14px;
 }
-.socratic-opening {
-  background: color-mix(in srgb, var(--surface) 94%, var(--brand-indigo));
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 24px;
-}
-.socratic-opening h3 {
-  margin: 0 0 10px;
-}
-.socratic-opening p {
-  color: var(--muted);
-  margin: 0 0 20px;
-}
-.socratic-opening .suggested-responses {
-  padding: 0;
-}
 .suggested-responses.is-busy {
   opacity: 0.55;
 }

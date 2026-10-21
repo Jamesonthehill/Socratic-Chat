@@ -146,6 +146,34 @@ def _keyword_learning_topic(keywords):
     return "Instructor-approved topics: " + ", ".join(keywords)
 
 
+def _keyword_opening(snapshot, keywords, question=None):
+    """Start with a short example quoted from the published course snapshot."""
+    focus = keywords[0]
+    terms = [word.casefold() for word in re.findall(r"[a-z0-9]+", " ".join(keywords).casefold()) if len(word) >= 4]
+    candidates = []
+    for chunk in snapshot.get("chunks") or []:
+        for sentence in re.split(r"(?<=[.!?])\s+|\n+", str(chunk.get("text") or "")):
+            passage = " ".join(sentence.split())
+            if not 35 <= len(passage) <= 320:
+                continue
+            words = re.findall(r"[a-z0-9]+", passage.casefold())
+            overlap = sum(any(word.startswith(term) or term.startswith(word) for word in words) for term in terms)
+            if not overlap:
+                continue
+            example_cue = bool(re.search(r"\b(?:example|when|suppose|imagine|if|team|student|developer|reviewer)\b", passage, re.I))
+            candidates.append((example_cue, overlap, passage))
+    opening = f"Let's begin with **{focus}**."
+    if candidates:
+        passage = max(candidates, key=lambda item: (item[0], item[1]))[2]
+        opening += f"\n\nFor example, consider this from your course material: “{passage}”"
+        follow_up = question or f"What is happening in this example, and how does it relate to {focus}?"
+    else:
+        opening += "\n\nWe'll explore this topic using your course materials."
+        follow_up = question or f"What do you already know about {focus}?"
+    opening += f"\n\n{follow_up}"
+    return opening
+
+
 def keyword_glossary(keywords, chunks):
     """Build short, course-grounded definitions for student-facing approved terms."""
     sentences = []
@@ -295,9 +323,8 @@ def start(assignment, attempt):
         state = {"pipeline_version": "local-socratic-v1", "phase": "teaching", "learning_topic": prompt or None}
         assignment_keywords = _assignment_keywords(snapshot)
         if "approved_keywords" in snapshot and assignment_keywords:
-            # A keyword-only assignment begins with the student's own question.
-            # There is no prescribed scenario, objective title or diagnostic question.
-            prompt = ""
+            # The example comes from frozen course evidence, never a hard-coded scenario.
+            prompt = _keyword_opening(snapshot, assignment_keywords)
             state.update({"learning_topic": _keyword_learning_topic(assignment_keywords),
                           "stable_concept": ", ".join(assignment_keywords)[:120],
                           "active_concept": ", ".join(assignment_keywords)[:120],
@@ -308,8 +335,12 @@ def start(assignment, attempt):
             opening = objective["diagnostic_question"] if "keywords" in objective else "\n\n".join(
                 part for part in (objective.get("starting_scenario"), objective["diagnostic_question"]) if part
             )
-            prompt = prompt or opening
             keywords = objective.get("keywords") or [objective.get("title") or objective["objective"]]
+            prompt = prompt or (
+                _keyword_opening(snapshot, keywords, objective["diagnostic_question"])
+                if "keywords" in objective and snapshot.get("chunks")
+                else opening
+            )
             concept = ", ".join(keywords)[:120]
             state.update({"learning_topic": _keyword_learning_topic(keywords) if "keywords" in objective else objective["objective"], "original_question": objective["diagnostic_question"],
                           "stable_concept": concept, "active_concept": concept, "objective_keywords": keywords,

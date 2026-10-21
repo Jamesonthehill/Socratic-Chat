@@ -203,44 +203,23 @@ test("student sees mixed assignments and opens the assigned tool without selecti
   expect(screen.queryByLabelText("Reflection type")).not.toBeInTheDocument();
 });
 
-test("keyword-based Socratic assignments offer a course-grounded first step", async () => {
+test("keyword-based Socratic assignments begin with an example and no starter choices", async () => {
   const newAttempt = {
     ...attempt,
-    messages: [],
+    messages: [{ role: "assistant", content: "Let's begin with **code review**. For example, your course material describes this situation: ‘A reviewer checks a proposed change.’ What is happening here?" }],
     engine_state: {
       socratic: { objective_keywords: ["code review", "correctness"] },
     },
   };
-  const fetch = mockApi("student", {
+  mockApi("student", {
     "/api/platform/assignments/assignment-1/start": newAttempt,
-    "POST /api/platform/assignments/assignment-1/messages": (options) => ({
-      ...newAttempt,
-      messages: [
-        { role: "user", content: JSON.parse(options.body).message },
-        { role: "assistant", content: "Here is a course-grounded example." },
-      ],
-    }),
   });
   open("/student/assignments/assignment-1");
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Start assignment" }));
-  expect(screen.getByRole("region", { name: "Start your Socratic conversation" })).toHaveTextContent(
-    "Let’s explore Discuss requirements.",
-  );
-  const starters = screen.getByLabelText("Ways to begin");
-  expect(starters).toHaveTextContent("Explain the concept");
-  expect(starters).toHaveTextContent("Show me an example");
-  expect(starters).toHaveTextContent("Let me try a question");
-
-  await user.click(screen.getByRole("button", { name: "Show me an example" }));
-  const posted = await waitFor(() => fetch.mock.calls.find(
-    ([url, options]) => url.endsWith("/messages") && options.method === "POST",
-  ));
-  const firstQuestion = JSON.parse(posted[1].body).message;
-  expect(firstQuestion).toContain("code review, correctness");
-  expect(firstQuestion).toMatch(/\?$/);
-  expect(await screen.findByText("Here is a course-grounded example.")).toBeInTheDocument();
+  expect(await screen.findByText(/A reviewer checks a proposed change/)).toBeInTheDocument();
   expect(screen.queryByLabelText("Ways to begin")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Show me an example" })).not.toBeInTheDocument();
 });
 
 test("Canvas student landing shows assignments without course selection or enrollment controls", async () => {

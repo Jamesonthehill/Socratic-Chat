@@ -111,7 +111,10 @@ def test_objective_selection_freezes_keywords_evidence_and_diagnostic_question(c
     db.update_course_learning_objective(roster['course'],obj['objective_id'],{'status':'rejected','keywords':['Changed later']})
     start=client.post(f"/api/platform/assignments/{item['id']}/start",headers=roster['headers']['student'])
     assert start.status_code==200,start.text
-    assert start.json()['messages'][0]['content']=='What should a reviewer check, and why?'
+    opening=start.json()['messages'][0]['content']
+    assert 'code review' in opening
+    assert 'A reviewer checks correctness and consistency before a change enters the codebase.' in opening
+    assert opening.endswith('What should a reviewer check, and why?')
     assert start.json()['engine_state']['socratic']['objective_keywords']==['code review','correctness']
     assert start.json()['engine_state']['socratic']['stable_concept']=='code review, correctness'
     with store.connection() as conn:
@@ -268,7 +271,10 @@ def test_single_assignment_keyword_box_saves_and_freezes_scope_without_an_object
     assert {item['chunk_id'] for item in snapshot['chunks']}=={chunk,otherchunk}
     started=client.post(path+'/start',headers=roster['headers']['student'])
     assert started.status_code==200,started.text
-    assert started.json()['messages']==[]
+    opening=started.json()['messages'][0]['content']
+    assert 'code review' in opening
+    assert 'A reviewer checks correctness and consistency before a change enters the codebase.' in opening
+    assert opening.endswith('how does it relate to code review?')
     assert started.json()['engine_state']['socratic']['objective_keywords']==['code review','knowledge sharing']
     assert client.put(path,headers=headers,json={**body,'config':{'keywords':['unrelated edit']}}).status_code==409
     assert snapshot['approved_keywords']==list(engines._assignment_keywords(snapshot))

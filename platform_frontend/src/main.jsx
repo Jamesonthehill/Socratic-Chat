@@ -460,16 +460,14 @@ function AssignmentList({ items, professor, view = "list" }) {
                   {item.due_at ? `Due ${date(item.due_at)}` : "No due date"}
                 </span>
               </div>
-              {(professor || view !== "cards") && (
-                <div className="assignment-state">
-                  <Badge value={professor ? item.status : item.progress} />
-                  {professor && item.status !== "draft" && (
-                    <small>
-                      {item.completed_count} of {item.recipient_count} completed
-                    </small>
-                  )}
-                </div>
-              )}
+              <div className="assignment-state">
+                <Badge value={professor ? item.status : item.progress} />
+                {professor && item.status !== "draft" && (
+                  <small>
+                    {item.completed_count} of {item.recipient_count} completed
+                  </small>
+                )}
+              </div>
               <Link
                 className="button secondary compact"
                 to={

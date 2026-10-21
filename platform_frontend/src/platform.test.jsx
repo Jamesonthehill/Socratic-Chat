@@ -181,7 +181,7 @@ test("student sees mixed assignments and opens the assigned tool without selecti
   expect(
     screen.queryByRole("link", { name: "Courses & access" }),
   ).not.toBeInTheDocument();
-  const ongoing = await screen.findByRole("region", { name: /^In progress/ });
+  const ongoing = await screen.findByRole("region", { name: /^Left to do/ });
   expect(
     await within(ongoing).findByRole("link", { name: "Resume" }),
   ).toHaveAttribute("href", "/student/assignments/reflection-1");
@@ -189,7 +189,7 @@ test("student sees mixed assignments and opens the assigned tool without selecti
     screen.queryByRole("link", { name: "View result" }),
   ).not.toBeInTheDocument();
   await user.click(
-    within(screen.getByRole("region", { name: /^New/ })).getByRole("link", {
+    within(screen.getByRole("region", { name: /^Left to do/ })).getByRole("link", {
       name: "Open assignment",
     }),
   );
@@ -201,6 +201,29 @@ test("student sees mixed assignments and opens the assigned tool without selecti
   ).not.toHaveLength(0);
   expect(screen.queryByLabelText("Student ID")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("Reflection type")).not.toBeInTheDocument();
+});
+
+test("dashboard link shows the student's finished and remaining assignments", async () => {
+  mockApi("student", {
+    "/api/platform/assignments": [
+      { ...assignment, progress: "in_progress" },
+      { ...assignment, id: "finished-1", title: "Completed discussion", progress: "completed" },
+    ],
+    "/api/platform/assignments/assignment-1/attempt": attempt,
+  });
+  open("/student/assignments/assignment-1");
+  const user = userEvent.setup();
+
+  await user.click(await screen.findByRole("link", { name: "Dashboard", exact: true }));
+
+  const left = await screen.findByRole("region", { name: /^Left to do/ });
+  const finished = screen.getByRole("region", { name: /^Finished/ });
+  expect(within(left).getByText("Discuss requirements")).toBeInTheDocument();
+  expect(within(left).getByText("In progress")).toBeInTheDocument();
+  expect(within(left).getByRole("link", { name: "Resume" })).toBeInTheDocument();
+  expect(within(finished).getByText("Completed discussion")).toBeInTheDocument();
+  expect(within(finished).getByText("Completed")).toBeInTheDocument();
+  expect(within(finished).getByRole("link", { name: "View result" })).toBeInTheDocument();
 });
 
 test("keyword-based Socratic assignments begin with an example and no starter choices", async () => {
@@ -388,14 +411,14 @@ test("Socratic response shows a generation timer, thinking step, and clickable e
   });
 
   expect(
-    await screen.findByText("Your next thinking step"),
-  ).toBeInTheDocument();
+    (await screen.findAllByText("Your next thinking step")).length,
+  ).toBeGreaterThan(0);
   expect(
     screen.getByText("version control", { selector: "strong" }),
   ).toBeInTheDocument();
   expect(screen.getByText(/Generated in \d+\.\ds/)).toBeInTheDocument();
   expect(screen.getByText("Score 76/100")).toBeInTheDocument();
-  expect(screen.getByText("Why am I being asked this?")).toBeInTheDocument();
+  expect(screen.queryByText("Why am I being asked this?")).not.toBeInTheDocument();
   await user.click(
     screen.getByRole("button", {
       name: "Version Control Notes · page 2",
@@ -479,6 +502,62 @@ test("Enter sends a student message and Shift Enter inserts a new line", async (
   expect(JSON.parse(requests[0][1].body).message).toBe(
     "First line\nSecond line",
   );
+});
+
+test("student returns to the message box after the tutor replies", async () => {
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1/attempt": attempt,
+    "/api/platform/assignments/assignment-1/messages": {
+      ...attempt,
+      messages: [
+        ...attempt.messages,
+        { role: "user", content: "My answer" },
+        { role: "assistant", content: "What would you try next?" },
+      ],
+    },
+  });
+  open("/student/assignments/assignment-1");
+  const user = userEvent.setup();
+  const input = await screen.findByLabelText("Your message");
+
+  await user.type(input, "My answer");
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+
+  expect(await screen.findByText("What would you try next?")).toBeInTheDocument();
+  await waitFor(() => expect(input).toHaveFocus());
+  expect(input).toHaveValue("");
+  expect(input.scrollIntoView).toHaveBeenCalled();
+});
+
+test("earlier tutor questions keep their question-card design after a new reply", async () => {
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1/attempt": attempt,
+    "POST /api/platform/assignments/assignment-1/messages": {
+      ...attempt,
+      messages: [
+        ...attempt.messages,
+        { role: "user", content: "A requirement should be clear." },
+        {
+          role: "assistant",
+          content: "That helps the team. What else makes it useful?",
+        },
+      ],
+    },
+  });
+  open("/student/assignments/assignment-1");
+  const user = userEvent.setup();
+  const input = await screen.findByLabelText("Your message");
+
+  expect(screen.getAllByRole("region", { name: "Your next thinking step" })).toHaveLength(1);
+  await user.type(input, "A requirement should be clear.");
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+
+  await waitFor(() => {
+    const questions = screen.getAllByRole("region", { name: "Your next thinking step" });
+    expect(questions).toHaveLength(2);
+    expect(questions[0]).toHaveTextContent("What makes a requirement useful?");
+    expect(questions[1]).toHaveTextContent("What else makes it useful?");
+  });
 });
 
 test("student cannot enter professor configuration routes", async () => {

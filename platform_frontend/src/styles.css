@@ -1463,21 +1463,6 @@ summary {
   line-height: 1.58;
   margin: 0;
 }
-.question-rationale {
-  border-top: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 13px;
-  margin: 0 20px 15px;
-  padding-top: 12px;
-}
-.question-rationale summary {
-  color: #3f47ad;
-  cursor: pointer;
-  font-weight: 700;
-}
-.question-rationale p {
-  margin: 9px 0 0;
-}
 .message-evidence {
   background: #f0f2f9;
   border-radius: 10px;
@@ -1926,7 +1911,6 @@ html[data-theme="dark"] .score-badge {
   background: #2a2850;
   color: #c9c4ff;
 }
-html[data-theme="dark"] .question-rationale summary,
 html[data-theme="dark"] button.evidence-chip {
   color: #bdb9ff;
 }
@@ -2458,6 +2442,10 @@ input[type="file"][hidden] {
   margin: 10px 0;
   overflow-wrap: anywhere;
 }
+.assignment-cards .assignment-state {
+  align-items: flex-start;
+  align-self: flex-start;
+}
 .assignment-cards .assignment-row > .button {
   align-self: stretch;
   margin-top: auto;
@@ -2504,6 +2492,45 @@ input[type="file"][hidden] {
   padding: 8px;
   justify-content: center;
 }
+.student-progress-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 28px;
+  margin-bottom: 34px;
+  padding: 22px 26px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+.student-progress-count {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.student-progress-count span {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+.student-progress-count strong {
+  color: var(--ink);
+  font-size: 28px;
+  line-height: 1;
+}
+.student-progress-track {
+  grid-column: 1 / -1;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+}
+.student-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand-indigo);
+}
 .student-assignment-group {
   margin: 0 0 32px;
   padding-bottom: 32px;
@@ -2522,6 +2549,17 @@ input[type="file"][hidden] {
 .student-group-empty {
   color: var(--muted);
   padding: 12px 0;
+}
+@media (max-width: 640px) {
+  .student-progress-summary {
+    gap: 14px;
+    padding: 20px;
+  }
+  .student-progress-count {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
 }
 .platform-sdl .composer {
   display: grid;

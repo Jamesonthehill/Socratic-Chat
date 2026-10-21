@@ -39,69 +39,6 @@ function EmphasizedText({ text, keywords = [] }) {
     );
 }
 
-function inferQuestionType(content) {
-  const text = String(content || "").toLowerCase();
-  if (
-    /\b(?:reflect|understanding changed|would you revise|first response)\b/.test(
-      text,
-    )
-  )
-    return "Reflection";
-  if (/\b(?:synthesi|combine|bring together|overall explanation)\b/.test(text))
-    return "Synthesis";
-  if (/\b(?:apply|application|new example|new domain)\b/.test(text))
-    return "Application";
-  if (/\b(?:compare|comparison|difference|distinction)\b/.test(text))
-    return "Comparison";
-  if (
-    /\b(?:evidence|support|source|detail|according|how do you know)\b/.test(
-      text,
-    )
-  )
-    return "Evidence";
-  if (/\b(?:assum|belie|thought|taking for granted)\b/.test(text))
-    return "Assumption";
-  if (
-    /\b(?:impact|implication|consequence|what happens|lead to|affect)\b/.test(
-      text,
-    )
-  )
-    return "Implication";
-  if (
-    /\b(?:alternative|another|different perspective|other viewpoint|instead)\b/.test(
-      text,
-    )
-  )
-    return "Alternative viewpoint";
-  return "Clarification";
-}
-
-function questionRationale(type) {
-  return (
-    {
-      Clarification:
-        "This question helps make the idea precise before the conversation moves deeper.",
-      Assumption:
-        "This question surfaces an underlying belief that may be shaping your conclusion.",
-      Evidence:
-        "This question asks you to connect your claim to support from the course material.",
-      Implication:
-        "This question explores what follows from the idea and why the consequence matters.",
-      "Alternative viewpoint":
-        "This question invites another perspective so you can compare possibilities.",
-      Synthesis:
-        "This question asks you to combine concepts and evidence into a coherent explanation.",
-      Reflection:
-        "This question helps you notice how your understanding changed during the conversation.",
-      Application:
-        "This question asks you to transfer the concept to a different situation.",
-      Comparison:
-        "This question helps distinguish related ideas by examining how they differ.",
-    }[type] ||
-    "This question helps make the idea precise before the conversation moves deeper."
-  );
-}
-
 function messageTime(createdAt) {
   const parsed = createdAt ? new Date(createdAt) : new Date();
   return new Intl.DateTimeFormat(undefined, {
@@ -323,15 +260,18 @@ function SocraticMessage({
   selectedEvidence,
   setSelectedEvidence,
 }) {
-  const question = latest ? thinkingStep : "";
-  const hasQuestion = question.endsWith("?");
+  const question =
+    message.role === "assistant"
+      ? latest
+        ? thinkingStep
+        : nextQuestion([message])
+      : "";
+  const showQuestion =
+    question.endsWith("?") && message.content.trim().endsWith(question);
   const lead =
-    question && message.content.trim().endsWith(question)
+    showQuestion
       ? message.content.trim().slice(0, -question.length).trim()
-      : question === message.content.trim()
-        ? ""
-        : message.content;
-  const questionType = hasQuestion ? inferQuestionType(question) : "";
+      : message.content;
   return (
     <article className={`message socratic-message-card ${message.role}`}>
       <header className="message-card-header">
@@ -356,7 +296,7 @@ function SocraticMessage({
         </div>
       </header>
       <div className="message-card-body">
-        {message.role === "assistant" && question ? (
+        {message.role === "assistant" && showQuestion ? (
           <>
             {lead && (
               <div className="prose message-lead">
@@ -379,12 +319,6 @@ function SocraticMessage({
           </div>
         )}
       </div>
-      {latest && hasQuestion && (
-        <details className="question-rationale">
-          <summary>Why am I being asked this?</summary>
-          <p>{questionRationale(questionType)}</p>
-        </details>
-      )}
       {latest && sources?.length > 0 && (
         <div className="message-evidence">
           <strong>Evidence context</strong>
@@ -495,6 +429,7 @@ export default function StudentWorkspace({ user }) {
     pending = useRef(null),
     reflectionPending = useRef(null),
     inputRef = useRef(null),
+    focusComposerAfterReply = useRef(false),
     evidenceResize = useRef(null);
   useEffect(() => {
     let active = true;
@@ -522,6 +457,14 @@ export default function StudentWorkspace({ user }) {
     if (attempt)
       endRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [attempt?.messages?.length]);
+  useEffect(() => {
+    if (busy || !focusComposerAfterReply.current) return;
+    focusComposerAfterReply.current = false;
+    const input = inputRef.current;
+    if (!input || input.disabled) return;
+    input.focus({ preventScroll: true });
+    input.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [busy, attempt?.messages?.length]);
   useEffect(() => {
     if (!generationStartedAt) return;
     const update = () =>
@@ -608,6 +551,7 @@ export default function StudentWorkspace({ user }) {
           : {}),
       };
     const startedAt = Date.now();
+    focusComposerAfterReply.current = true;
     setGenerationStartedAt(startedAt);
     setGenerationSeconds(0);
     setLastGenerationSeconds(null);

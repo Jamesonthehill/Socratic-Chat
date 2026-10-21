@@ -41,7 +41,7 @@ export default function DebateConfig({ value, onChange, courseId, frozen }) {
         </div>
         <div>
           <label>
-            Opening prompt
+            Optional opening prompt
             <textarea
               rows={4}
               maxLength={2000}
@@ -50,6 +50,10 @@ export default function DebateConfig({ value, onChange, courseId, frozen }) {
               placeholder="Take a position and give your strongest reason."
             />
           </label>
+          <p className="help">
+            Leave this blank to start the chat with the scenario above. Add a
+            different first message only if the class needs one.
+          </p>
           <label>
             Messages required before completion
             <input

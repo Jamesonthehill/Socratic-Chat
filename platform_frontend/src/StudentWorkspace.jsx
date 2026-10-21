@@ -715,7 +715,6 @@ export default function StudentWorkspace({ user }) {
                 "Follow the prompts in this learning activity."}
             </Markdown>
           </div>
-          {assignment.tool === "debate" && <><h3>Debate scenario</h3><p>{assignment.student_config?.scenario}</p><p className="help">Send at least {assignment.student_config?.minimum_messages} message(s), then mark the activity complete.</p></>}
           {assignment.tool === "socratic" && (
             <>
               {assignment.student_config?.keyword_glossary?.length > 0 && (
@@ -746,10 +745,15 @@ export default function StudentWorkspace({ user }) {
           )}
           {assignment.tool === "debate" && (
             <>
-              <h3>Scenario</h3>
-              <div className="prose">
-                <Markdown>{assignment.student_config.scenario}</Markdown>
-              </div>
+              {attempt?.messages?.[0]?.content?.trim() !==
+                assignment.student_config.scenario.trim() && (
+                <>
+                  <h3>Scenario</h3>
+                  <div className="prose">
+                    <Markdown>{assignment.student_config.scenario}</Markdown>
+                  </div>
+                </>
+              )}
               <p className="help">
                 Defend your position across at least{" "}
                 {assignment.student_config.minimum_messages} response(s), then

@@ -316,7 +316,15 @@ def start(assignment, attempt):
     snapshot = assignment["snapshot"]
     config = snapshot["config"]
     if assignment["tool"] == "debate":
-        return {"messages": [{"role": "assistant", "content": config["opening_prompt"] or "Take a position on the scenario and explain your strongest reason."}]}
+        opening = (config.get("opening_prompt") or "").strip()
+        # Older Canvas imports saved this generic prompt as though the instructor
+        # wrote it. Use the actual scenario instead of asking the same question twice.
+        if opening in {
+            "Take a position on this scenario and explain your strongest reason.",
+            "Take a position on the scenario and explain your strongest reason.",
+        }:
+            opening = ""
+        return {"messages": [{"role": "assistant", "content": opening or config["scenario"]}]}
     if assignment["tool"] == "socratic":
         objective = snapshot.get("learning_objective")
         prompt = config.get("prompt", "").strip()
@@ -346,12 +354,6 @@ def start(assignment, attempt):
                           "stable_concept": concept, "active_concept": concept, "objective_keywords": keywords,
                           "learning_objective_id": objective["objective_id"]})
         return {"messages": ([{"role": "assistant", "content": prompt}] if prompt else []), "socratic": state}
-    if assignment["tool"] == "debate":
-        opening = config["opening_prompt"] or (
-            "Take a position on the scenario and give your strongest reason. "
-            "I will challenge your reasoning and help you strengthen it."
-        )
-        return {"messages": [{"role": "assistant", "content": opening}]}
     if assignment["tool"] == "reflections":
         if config["module_type"] == "milestone_based":
             return {"messages": [{"role": "assistant", "content": config["milestone_prompt"]}]}

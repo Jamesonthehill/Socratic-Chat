@@ -206,7 +206,6 @@ def import_canvas_assignment(body: CanvasImportRequest, account=Depends(professo
                 f"Canvas assignment: {canvas_assignment['name']}\n\n"
                 f"{canvas_assignment['description']}"
             )[:10000].strip(),
-            "opening_prompt": "Take a position on this scenario and explain your strongest reason.",
             "minimum_messages": 3,
         }
     return create_assignment(

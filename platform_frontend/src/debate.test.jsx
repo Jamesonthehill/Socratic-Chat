@@ -15,7 +15,8 @@ test("instructor configures a Debate scenario and completion threshold", async (
     "Should cities restrict cars downtown?",
   );
   expect(onChange).toHaveBeenCalled();
-  expect(screen.getByLabelText("Opening prompt")).toHaveValue("");
+  expect(screen.getByLabelText("Optional opening prompt")).toHaveValue("");
+  expect(screen.getByText(/Leave this blank to start the chat with the scenario above/)).toBeInTheDocument();
   expect(
     screen.getByLabelText("Messages required before completion"),
   ).toHaveValue(3);

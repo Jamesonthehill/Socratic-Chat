@@ -95,7 +95,9 @@ export default function AssignmentDetails({ item, onClose }) {
               <p className="assignment-details-text">
                 {config.prompt ||
                   config.opening_prompt ||
-                  "No custom opening question set."}
+                  (item.tool === "debate"
+                    ? "The debate starts with the scenario above."
+                    : "No custom opening question set.")}
               </p>
               <p>
                 Messages required:{" "}

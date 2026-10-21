@@ -245,6 +245,30 @@ test("keyword-based Socratic assignments begin with an example and no starter ch
   expect(screen.queryByRole("button", { name: "Show me an example" })).not.toBeInTheDocument();
 });
 
+test("Debate shows the instructor scenario once when the student starts", async () => {
+  const scenario = "Should teams require code review before merging a change?";
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1": {
+      ...assignment,
+      tool: "debate",
+      title: "Code review debate",
+      instructions: "Defend your position with a reason.",
+      student_config: { scenario, minimum_messages: 3 },
+    },
+    "/api/platform/assignments/assignment-1/start": {
+      ...attempt,
+      messages: [{ role: "assistant", content: scenario }],
+    },
+  });
+  open("/student/assignments/assignment-1");
+  const user = userEvent.setup();
+
+  expect(await screen.findAllByText(scenario)).toHaveLength(1);
+  await user.click(screen.getByRole("button", { name: "Start assignment" }));
+  await waitFor(() => expect(screen.getAllByText(scenario)).toHaveLength(1));
+  expect(screen.getByLabelText("Your message")).toBeInTheDocument();
+});
+
 test("Canvas student landing shows assignments without course selection or enrollment controls", async () => {
   mockApi("student");
   open("/student");

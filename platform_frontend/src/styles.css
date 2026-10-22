@@ -363,9 +363,6 @@ small,
   stroke-linejoin: round;
   stroke-width: 2.4;
 }
-.brand-mark circle {
-  fill: currentColor;
-}
 .brand-name {
   color: var(--ink);
   font-family: "Manrope", sans-serif;

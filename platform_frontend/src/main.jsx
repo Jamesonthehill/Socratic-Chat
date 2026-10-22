@@ -92,10 +92,8 @@ function BrandLockup({ compact = false }) {
   return (
     <span className={`brand-lockup${compact ? " compact-brand" : ""}`}>
       <svg className="brand-mark" viewBox="0 0 44 44" aria-hidden="true">
-        <path d="M13 11.5h18a6 6 0 0 1 6 6v9a6 6 0 0 1-6 6H19l-7 6v-6a6 6 0 0 1-6-6v-9a6 6 0 0 1 6-6Z" />
-        <circle cx="16" cy="22" r="2.2" />
-        <circle cx="22" cy="22" r="2.2" />
-        <circle cx="28" cy="22" r="2.2" />
+        <path d="M22 12c-2-3-7-3-9 0-4-1-7 2-6 6-3 2-3 6 0 8-1 4 2 7 5 7 2 4 7 4 10 0m0-21c2-3 7-3 9 0 4-1 7 2 6 6 3 2 3 6 0 8 1 4-2 7-5 7-2 4-7 4-10 0M22 12v21" />
+        <path d="M13 17c3-1 5 1 5 4M9 25c3-2 6 0 6 4m16-12c-3-1-5 1-5 4m9 4c-3-2-6 0-6 4" />
       </svg>
       <span className="brand-name">
         Brain<span>Tutor</span>

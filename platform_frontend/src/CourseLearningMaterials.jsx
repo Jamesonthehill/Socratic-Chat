@@ -439,7 +439,7 @@ export default function CourseLearningMaterials({
           Upload course materials, then suggest keywords for the assignment.
         </p>
         <p className="help">
-          Supported formats: TXT, Markdown, PDF, LaTeX, HTML, and HTM. Published
+          Supported formats: TXT, Markdown, PDF, LaTeX, HTML, Word (DOC/DOCX), and PowerPoint (PPT/PPTX). Published
           assignments keep their saved materials.
         </p>
         <div className="course-document-upload">
@@ -449,7 +449,7 @@ export default function CourseLearningMaterials({
               ref={uploadInput}
               type="file"
               multiple
-              accept=".txt,.md,.pdf,.tex,.latex,.html,.htm"
+              accept=".txt,.md,.pdf,.tex,.latex,.html,.htm,.doc,.docx,.ppt,.pptx"
               disabled={Boolean(busy)}
               onChange={(e) => setSelectedFiles([...e.target.files])}
             />

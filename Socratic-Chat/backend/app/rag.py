@@ -13,6 +13,7 @@ from typing import Any
 
 from app import db, settings
 from app.llm_client import chat_completion
+from app.office_documents import OFFICE_SUFFIXES, OfficeDocumentError, parse_office_document
 from app.answer_evaluation import AnswerEvaluation, evaluation_tutor_instruction
 from app.classifier import MessageClassification, is_contextual_meaning_request
 from app.chunking import CHUNKING_VERSION, chunk_document
@@ -45,7 +46,7 @@ STOP_WORDS = {
     "tell", "that", "the", "their", "them", "then", "there", "these", "they", "this", "to",
     "was", "we", "what", "when", "where", "which", "who", "why", "with", "you", "your",
 }
-RAG_DOCUMENT_SUFFIXES = {".txt", ".md", ".pdf", ".tex", ".html", ".htm"}
+RAG_DOCUMENT_SUFFIXES = {".txt", ".md", ".pdf", ".tex", ".html", ".htm"} | OFFICE_SUFFIXES
 
 
 def tokenize(text: str) -> list[str]:
@@ -105,10 +106,10 @@ def requested_page_number(query: str) -> int | None:
         return None
 
 
-def chunk_text(text: str) -> list[str]:
+def chunk_text(text: str, title: str = "Uploaded document") -> list[str]:
     # Compatibility wrapper for PDF pages and callers that expect plain strings;
     # the implementation now preserves paragraphs instead of slicing characters.
-    return [chunk.text for chunk in chunk_document("Uploaded document", text)]
+    return [chunk.text for chunk in chunk_document(title, text)]
 
 
 def is_relevant_search_result(item: dict[str, Any]) -> bool:
@@ -260,6 +261,38 @@ def ingest_pdf_file(
     return doc_id, added
 
 
+def ingest_office_file(
+    path: Path,
+    conversation_id: str | None = None,
+    course_id: str | None = None,
+    file_id: str | None = None,
+) -> tuple[str, int]:
+    if not file_id:
+        raise ValueError("A PostgreSQL rag_files file_id is required for ingestion.")
+    try:
+        sections = parse_office_document(path)
+    except OfficeDocumentError as exc:
+        raise DocumentTextError(str(exc)) from exc
+    full_text = "\n".join(section.text for section in sections)
+    doc_id = document_id(path.name, full_text, conversation_id, course_id)
+    chunks = []
+    for section in sections:
+        for text in chunk_text(section.text, path.name):
+            chunks.append({
+                "text": f"Slide {section.slide}: {text}" if section.slide else text,
+                "metadata": {"chunking_version": CHUNKING_VERSION,
+                             **({"slide": section.slide} if section.slide else {})},
+            })
+    if not chunks:
+        raise DocumentTextError("No readable text was found in this Office file.")
+    embeddings = create_embeddings([str(chunk["text"]) for chunk in chunks])
+    added = db.replace_document_chunks(
+        file_id, doc_id, path.name, chunks, embeddings, settings.embedding_model_name(),
+        conversation_id=conversation_id, course_id=course_id,
+    )
+    return doc_id, added
+
+
 def read_latex_document(path: Path) -> str:
     text = path.read_text(encoding="utf-8", errors="ignore")
     text = re.sub(r"(?<!\\)%[^\n]*", "", text)
@@ -307,6 +340,8 @@ def ingest_file(
 ) -> tuple[str, int]:
     if path.suffix.lower() == ".pdf":
         return ingest_pdf_file(path, conversation_id, course_id, file_id)
+    if path.suffix.lower() in OFFICE_SUFFIXES:
+        return ingest_office_file(path, conversation_id, course_id, file_id)
     text = read_document(path)
     return ingest_text(path.name, text, conversation_id, course_id, file_id)
 

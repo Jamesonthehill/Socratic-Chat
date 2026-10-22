@@ -107,7 +107,7 @@ export default function DebateConfig({ value, onChange, courseId, frozen }) {
               {uploading ? "Uploading…" : "Upload optional course materials"}
               <input
                 type="file"
-                accept=".txt,.md,.pdf,.tex,.latex,.html,.htm,.doc,.docx"
+                accept=".txt,.md,.pdf,.tex,.latex,.html,.htm,.doc,.docx,.ppt,.pptx"
                 multiple
                 disabled={uploading || !courseId}
                 onChange={async (event) => {

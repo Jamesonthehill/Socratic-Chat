@@ -316,6 +316,15 @@ test("upload does not submit the assignment form", async () => {
   expect(submit).not.toHaveBeenCalled();
 });
 
+test("course upload picker offers Word and PowerPoint files", async () => {
+  setup();
+  render(<CourseLearningMaterials courseId="course-1" />);
+  const picker = await screen.findByLabelText("Choose course documents");
+  for (const extension of [".doc", ".docx", ".ppt", ".pptx"]) {
+    expect(picker.getAttribute("accept").split(",")).toContain(extension);
+  }
+});
+
 test("confirmation saves through the parent handler and changes invalidate the confirmed state", async () => {
   setup();
   const confirm = vi.fn();

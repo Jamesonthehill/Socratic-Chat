@@ -8,6 +8,7 @@ import httpx
 from fastapi import HTTPException
 from app import db, settings
 from app.chunking import CHUNKING_VERSION, chunk_document
+from app.office_documents import OFFICE_SUFFIXES, OfficeDocumentError, OfficeParserUnavailable, parse_office_document
 from app.rag import EmbeddingError, chunk_text, create_embeddings, read_pdf_pages
 
 
@@ -78,12 +79,38 @@ def _parse_html(filename, content):
     return chunks
 
 
+def _parse_office(filename, content):
+    with TemporaryDirectory() as directory:
+        path = Path(directory) / ("document" + Path(filename).suffix.lower())
+        path.write_bytes(content)
+        try:
+            sections = parse_office_document(path)
+        except OfficeDocumentError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except OfficeParserUnavailable as exc:
+            raise HTTPException(503, str(exc)) from exc
+    chunks = []
+    for section in sections:
+        for text in chunk_text(section.text, filename):
+            chunks.append({
+                "text": f"Slide {section.slide}: {text}" if section.slide else text,
+                "position": len(chunks),
+                "metadata": {"source_type": Path(filename).suffix.lower().lstrip("."),
+                             **({"slide": section.slide} if section.slide else {})},
+            })
+    if not chunks:
+        raise HTTPException(422, "No readable text was found in this Office file.")
+    return chunks
+
+
 def ingest(course_id, account, filename, content_type, content):
     suffix = Path(filename).suffix.lower()
     if suffix == ".pdf":
         chunks = _parse_pdf(filename, content)
     elif suffix in {".html", ".htm"}:
         chunks = _parse_html(filename, content)
+    elif suffix in OFFICE_SUFFIXES:
+        chunks = _parse_office(filename, content)
     else:
         chunks = pipeline("POST", "/internal/platform/rag/parse", files={"file": (filename, content, content_type)})["chunks"]
     try:

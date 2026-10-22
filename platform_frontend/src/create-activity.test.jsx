@@ -102,6 +102,14 @@ async function open() {
   );
   return user;
 }
+
+test("assignment material picker offers Word and PowerPoint files", async () => {
+  await open();
+  const picker = document.querySelector('input[type="file"]');
+  for (const extension of [".doc", ".docx", ".ppt", ".pptx"]) {
+    expect(picker.getAttribute("accept").split(",")).toContain(extension);
+  }
+});
 test("five choices replace Student Agent; settings follow Next and review invalidates after edits", async () => {
   const user = await open();
   for (const name of [

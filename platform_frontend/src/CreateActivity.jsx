@@ -468,7 +468,7 @@ export default function CreateActivity({
               ref={fileInput}
               type="file"
               multiple
-              accept=".txt,.md,.pdf,.tex,.latex,.html,.htm,.doc,.docx"
+              accept=".txt,.md,.pdf,.tex,.latex,.html,.htm,.doc,.docx,.ppt,.pptx"
               hidden
               onChange={upload}
             />

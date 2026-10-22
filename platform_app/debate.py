@@ -20,6 +20,27 @@ def _safe_request_id(value: object) -> str:
     return "none"
 
 
+def _error_category(exc: Exception) -> str:
+    """Classify provider failures without recording provider text or student content."""
+    body = getattr(exc, "body", None)
+    error = body.get("error", body) if isinstance(body, dict) else {}
+    if not isinstance(error, dict):
+        error = {}
+    detail = " ".join(
+        str(value) for value in (error.get("code"), error.get("type"), error.get("message"))
+        if isinstance(value, str)
+    ).lower()
+    if any(term in detail for term in ("content_filter", "content policy", "safety")):
+        return "content_policy"
+    if any(term in detail for term in ("context_length", "too many tokens", "too large")):
+        return "context_length"
+    if any(term in detail for term in ("unsupported", "not supported", "invalid parameter")):
+        return "unsupported_parameter"
+    if any(term in detail for term in ("model_decommissioned", "model not found", "model unavailable")):
+        return "model_unavailable"
+    return "other"
+
+
 SYSTEM_PROMPT = """You are an AI debate opponent in a university learning activity.
 Your purpose is to strengthen the student's reasoning, not to win or supply a model answer.
 
@@ -56,14 +77,13 @@ async def generate_reply(
     materials = "\n\n".join(
         f"[Source: {source.title}]\n{source.text}" for source in (sources or [])
     )
+    # Keep the provider request compact and give the scenario and materials
+    # the same instruction context as the tutor's rules.
+    context = f"{SYSTEM_PROMPT}\n<scenario>\n{scenario}\n</scenario>"
+    if materials:
+        context += f"\n<course_materials>\n{materials}\n</course_materials>"
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "system", "content": f"<scenario>\n{scenario}\n</scenario>"},
-        *(
-            [{"role": "system", "content": f"<course_materials>\n{materials}\n</course_materials>"}]
-            if materials
-            else []
-        ),
+        {"role": "system", "content": context},
         *[
             {"role": item["role"], "content": item["content"]}
             for item in history[-12:]
@@ -97,13 +117,20 @@ async def generate_reply(
         # can contain student text or authentication details.
         status_code = getattr(exc, "status_code", None)
         logger.error(
-            "debate_ai_request_failed provider=%s model=%s error_type=%s status_code=%s request_id=%s",
+            "debate_ai_request_failed provider=%s model=%s error_type=%s status_code=%s error_category=%s request_id=%s",
             provider,
             model,
             type(exc).__name__,
             status_code if isinstance(status_code, int) else "none",
+            _error_category(exc),
             _safe_request_id(getattr(exc, "request_id", None)),
         )
+        if status_code == 400:
+            raise HTTPException(502, "The Debate AI rejected this request. Please contact your instructor or administrator.") from exc
+        if status_code in {401, 403}:
+            raise HTTPException(503, "The Debate AI provider is not authorized. Please contact an administrator.") from exc
+        if status_code == 429:
+            raise HTTPException(503, "The Debate AI has reached its request limit. Please retry later.") from exc
         raise HTTPException(503, "The Debate AI is unavailable. Please retry shortly.") from exc
     if not reply:
         raise HTTPException(503, "The Debate AI returned an empty response. Please retry.")

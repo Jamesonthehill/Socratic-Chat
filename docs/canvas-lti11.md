@@ -103,7 +103,7 @@ configuration XML sets its default launch URL to
 using `/api/lti/1.1/launch`, which opens the course without creating an activity.
 Do not use the assignment URL for a course-navigation link.
 
-On the first instructor launch, CourseLab creates an **unassigned draft**, saves a
+On the first instructor launch, BrainTutor creates an **unassigned draft**, saves a
 mapping scoped by the trusted registration, course context, and `resource_link_id`,
 and opens the assignment editor. Repeated instructor launches open that same
 activity without overwriting instructor edits. Add the course materials, configure

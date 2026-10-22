@@ -112,6 +112,7 @@ test("user selects and persists the platform color theme", async () => {
   open("/student");
   const user = userEvent.setup();
 
+  expect(await screen.findByRole("link", { name: /BrainTutor/ })).toBeInTheDocument();
   const theme = await screen.findByLabelText("Choose color theme");
   expect(theme).toHaveValue("light");
 
@@ -224,6 +225,39 @@ test("dashboard link shows the student's finished and remaining assignments", as
   expect(within(finished).getByText("Completed discussion")).toBeInTheDocument();
   expect(within(finished).getByText("Completed")).toBeInTheDocument();
   expect(within(finished).getByRole("link", { name: "View result" })).toBeInTheDocument();
+});
+
+test("student dashboard lists Canvas-linked activities across courses", async () => {
+  const fetch = mockApi("student", {
+    "/api/platform/assignments": [
+      {
+        ...assignment,
+        id: "canvas-1",
+        title: "Code review debate",
+        tool: "debate",
+        course_code: "ITCS 3155",
+        course_title: "Software Engineering",
+        canvas_linked: true,
+      },
+      {
+        ...assignment,
+        id: "canvas-2",
+        title: "Logic reflection",
+        tool: "reflections",
+        course_code: "ITCS 3150",
+        course_title: "Proposition Logic",
+        canvas_linked: true,
+      },
+    ],
+  });
+  open("/student");
+
+  expect(await screen.findByText("Code review debate")).toBeInTheDocument();
+  expect(screen.getByText("Logic reflection")).toBeInTheDocument();
+  expect(screen.getByText("Software Engineering (ITCS 3155) · Debate · Canvas")).toBeInTheDocument();
+  expect(screen.getByText("Proposition Logic (ITCS 3150) · Reflections · Canvas")).toBeInTheDocument();
+  expect(fetch.mock.calls.some(([url]) => url === "/api/platform/assignments")).toBe(true);
+  expect(fetch.mock.calls.some(([url]) => url.startsWith("/api/platform/assignments?course_id="))).toBe(false);
 });
 
 test("keyword-based Socratic assignments begin with an example and no starter choices", async () => {

@@ -98,7 +98,7 @@ function BrandLockup({ compact = false }) {
         <circle cx="28" cy="22" r="2.2" />
       </svg>
       <span className="brand-name">
-        Course<span>Lab</span>
+        Brain<span>Tutor</span>
         {!compact && <small>Learning design studio</small>}
       </span>
     </span>
@@ -347,23 +347,25 @@ function StudentAssignmentEntry({ user }) {
   );
 }
 
-function useAssignments() {
+function useAssignments({ allCourses = false } = {}) {
   const [items, setItems] = useState(() => {
-      const context = cachedCourseContext();
-      return context
-        ? cachedAssignmentView(
-            `/platform/assignments?course_id=${encodeURIComponent(context.course_id)}`,
-          )
-        : null;
-    }),
-    [error, setError] = useState("");
-  const reload = () =>
-    loadCourseContext()
-      .then((context) =>
-        api(
+    if (allCourses) return cachedAssignmentView("/platform/assignments");
+    const context = cachedCourseContext();
+    return context
+      ? cachedAssignmentView(
           `/platform/assignments?course_id=${encodeURIComponent(context.course_id)}`,
-        ),
-      )
+        )
+      : null;
+  });
+  const [error, setError] = useState("");
+  const reload = () =>
+    (allCourses
+      ? api("/platform/assignments")
+      : loadCourseContext().then((context) =>
+          api(
+            `/platform/assignments?course_id=${encodeURIComponent(context.course_id)}`,
+          ),
+        ))
       .then((data) => {
         setItems(data);
         setError("");
@@ -371,7 +373,7 @@ function useAssignments() {
       .catch((e) => setError(e.message));
   useEffect(() => {
     reload();
-  }, []);
+  }, [allCourses]);
   return { items, error, reload };
 }
 
@@ -437,7 +439,13 @@ function AssignmentList({ items, professor, view = "list" }) {
               </div>
               <div className="assignment-name">
                 <span className="subtle">
-                  {item.course_code} · {tool?.name || "Choose an activity"}
+                  {item.course_title || item.course_code}
+                  {item.course_title && item.course_code
+                    ? ` (${item.course_code})`
+                    : ""}
+                  {" · "}
+                  {tool?.name || "Choose an activity"}
+                  {!professor && item.canvas_linked ? " · Canvas" : ""}
                 </span>
                 <h3>
                   <Link
@@ -661,7 +669,7 @@ function StudentDashboard() {
 
 function Dashboard({ professor = false }) {
   const { state: navigationState } = useLocation();
-  const { items, error, reload } = useAssignments();
+  const { items, error, reload } = useAssignments({ allCourses: !professor });
   const [status, setStatus] = useState("");
   const filtered = (items || []).filter(
     (a) => !status || (professor ? a.status : a.progress) === status,

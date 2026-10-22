@@ -17,7 +17,7 @@ def test_shared_login_and_public_frontend(client, roster):
     frontend = client.get('/platform/professor')
     if frontend.status_code != 503:  # Backend tests also run before the optional UI build.
         assert frontend.status_code == 200
-        assert 'CourseLab' in frontend.text
+        assert 'BrainTutor' in frontend.text
 
 
 def draft(client, roster, tool='socratic', **changes):

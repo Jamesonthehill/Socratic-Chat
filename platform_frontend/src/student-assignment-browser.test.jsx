@@ -37,6 +37,6 @@ test("dashboard separates finished work from work left to do", () => {
 test("empty dashboard shows what is left and finished", () => {
   render(<StudentAssignmentBrowser items={[]} renderItems={renderItems} />);
   expect(screen.getAllByRole("region")).toHaveLength(3);
-  expect(screen.getByText("You’re all caught up. No assignments left to do.")).toBeInTheDocument();
+  expect(screen.getByText(/No published assignments are available yet/)).toBeInTheDocument();
   expect(screen.getByText("Finished assignments will appear here.")).toBeInTheDocument();
 });

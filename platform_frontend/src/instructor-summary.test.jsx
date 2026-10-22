@@ -29,7 +29,7 @@ test("draft editor reuses the loaded assignment instead of fetching it twice",as
  api.mockClear();
  api.mockImplementationOnce(async()=>({id:"draft1",course_id:"course1",tool:"self-directed-learning",status:"draft",title:"Saved draft",instructions:"Saved description",config:{document_ids:[],prompt:"Saved focus",custom_questions:[]}}));
  render(<MemoryRouter initialEntries={["/professor/activities/draft1"]}><Routes><Route path="/professor/activities/:id" element={<InstructorActivityPage/>}/></Routes></MemoryRouter>);
- expect(await screen.findByLabelText("Activity title")).toHaveValue("Saved draft");
+ expect(await screen.findByLabelText("Assignment title")).toHaveValue("Saved draft");
  expect(screen.getByLabelText("Learning focus")).toHaveValue("Saved focus");
  expect(api.mock.calls.filter(([path])=>path==="/platform/assignments/draft1")).toHaveLength(1);
 });

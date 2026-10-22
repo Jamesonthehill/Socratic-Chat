@@ -236,12 +236,19 @@ def assignments(course_id: UUID | None = None, account=Depends(user)):
                 FROM assignments_platform a JOIN courses_platform c ON c.id=a.course_id
                 WHERE c.instructor_id=%s ORDER BY a.created_at DESC""", (account["user_id"],)).fetchall()
         else:
-            rows = conn.execute("""SELECT a.*, c.title AS course_title, c.course_code, coalesce(t.status, 'not_started') AS progress
+            rows = conn.execute("""SELECT a.*, c.title AS course_title, c.course_code,
+                coalesce(t.status, 'not_started') AS progress,
+                (l.assignment_id IS NOT NULL) AS canvas_linked
                 FROM assignments_platform a JOIN courses_platform c ON c.id=a.course_id
                 JOIN assignment_recipients_platform r ON r.assignment_id=a.id AND r.student_id=%s
                 JOIN course_memberships_platform m ON m.course_id=a.course_id AND m.user_id=r.student_id AND m.status='approved'
                 LEFT JOIN assignment_attempts_platform t ON t.assignment_id=a.id AND t.student_id=r.student_id
-                WHERE a.status='published' AND m.course_role='student' ORDER BY a.due_at NULLS LAST, a.created_at DESC""", (account["user_id"],)).fetchall()
+                LEFT JOIN lti_assignment_links_platform l ON l.assignment_id=a.id
+                WHERE a.status='published' AND m.course_role='student'
+                  AND (l.assignment_id IS NOT NULL OR NOT EXISTS (
+                      SELECT 1 FROM lti_course_links_platform lc WHERE lc.course_id=a.course_id
+                  ))
+                ORDER BY a.due_at NULLS LAST, a.created_at DESC""", (account["user_id"],)).fetchall()
         result = [public_assignment(row, is_prof) for row in rows if row["tool"] != "student-agent" and (not course_id or str(row['course_id']) == str(course_id))]
     if not is_prof and any(item["tool"] == "self-directed-learning" for item in result):
         lessons = self_directed_assignments(account)

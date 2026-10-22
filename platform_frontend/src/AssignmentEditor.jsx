@@ -30,7 +30,7 @@ export default function AssignmentEditor() {
     navigate = useNavigate();
   useEffect(() => {
     const previousTitle = document.title;
-    document.title = "CourseLab · Chatbot configuration";
+    document.title = "BrainTutor · Chatbot configuration";
     return () => {
       document.title = previousTitle;
     };

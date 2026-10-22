@@ -170,7 +170,7 @@ export default function CanvasImport({
                 disabled={busy || !canvasCourseId}
                 onClick={createPlatformCourse}
               >
-                Create CourseLab course from Canvas
+                Create BrainTutor course from Canvas
               </button>
             )}
           </>
@@ -203,13 +203,13 @@ export default function CanvasImport({
       </div>
       {!platformCourseId && (
         <p className="help">
-          Select a destination CourseLab course above, or create one from the
+          Select a destination BrainTutor course above, or create one from the
           selected Canvas course before importing.
         </p>
       )}
       <p className="help">
         Canvas content is copied into a draft. Review it, attach course
-        materials, choose recipients, and publish from CourseLab.
+        materials, choose recipients, and publish from BrainTutor.
       </p>
     </section>
   );

@@ -84,7 +84,7 @@ export default function ReflectionAssignment({ assignmentId }) {
             R
           </span>
           <span className="reflection-brand-name">
-            Course<span>Lab</span>
+            Brain<span>Tutor</span>
             <small>Reflections</small>
           </span>
         </span>

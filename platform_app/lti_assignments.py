@@ -65,15 +65,23 @@ def provision(conn, claims, *, issuer, deployment_id, context_id, course_id, use
             raise HTTPException(409, 'This Canvas link is already bound to a different assignment.')
         if linked['status'] == 'archived':
             raise HTTPException(409, 'Your instructor has archived this assignment.')
-        if role == 'instructor' and linked['status'] == 'draft':
-            canvas_title = _canvas_title(custom, resource)
-            canvas_due_at = _canvas_due_at(custom)
-            conn.execute(
-                '''UPDATE assignments_platform
-                   SET title=COALESCE(%s,title), due_at=COALESCE(%s,due_at), updated_at=now()
-                   WHERE id=%s''',
-                (canvas_title[:200] or None, canvas_due_at, linked['id']),
+        if linked['status'] in {'draft', 'published'}:
+            # A signed Canvas assignment launch can refresh display metadata
+            # without changing the published activity, its snapshot, or attempts.
+            # For published work, require the explicit Canvas assignment title:
+            # resource-link titles can be just the generic tool name.
+            canvas_title = (
+                _canvas_title(custom, resource) if linked['status'] == 'draft' and role == 'instructor'
+                else _value(custom.get('canvas_assignment_title'))
             )
+            canvas_due_at = _canvas_due_at(custom)
+            if canvas_title or canvas_due_at:
+                conn.execute(
+                    '''UPDATE assignments_platform
+                       SET title=COALESCE(%s,title), due_at=COALESCE(%s,due_at), updated_at=now()
+                       WHERE id=%s''',
+                    (canvas_title[:200] or None, canvas_due_at, linked['id']),
+                )
         if role == 'student':
             if linked['status'] != 'published':
                 raise HTTPException(409, 'Your instructor must finish configuring and publish this assignment before you can start.')
@@ -85,7 +93,7 @@ def provision(conn, claims, *, issuer, deployment_id, context_id, course_id, use
         return str(linked['id'])
 
     if role != 'instructor':
-        raise HTTPException(409, 'An instructor must open this Canvas assignment in CourseLab and publish it before students can start.')
+        raise HTTPException(409, 'An instructor must open this Canvas assignment in BrainTutor and publish it before students can start.')
     title = _canvas_title(custom, resource) or 'Canvas assignment'
     raw_description = _value(custom.get('canvas_assignment_description')) or _value(resource.get('description'))
     instructions = description_text(raw_description)

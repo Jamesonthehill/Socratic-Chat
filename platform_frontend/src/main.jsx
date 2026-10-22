@@ -203,7 +203,6 @@ export function App() {
               >
                 Analytics
               </Link>
-              <a href="/?manage=1">Courses &amp; access</a>
             </>
           ) : (
             <Link to={home}>Dashboard</Link>
@@ -405,7 +404,7 @@ function AssignmentList({ items, professor, view = "list" }) {
         <p>
           {professor
             ? "Create an activity to configure and publish your first assignment."
-            : "Published assignments appear here once your professor assigns them to you. Check Courses & access to join a class."}
+            : "Published assignments appear here once your professor assigns them to you."}
         </p>
       </div>
     );
@@ -808,8 +807,7 @@ function ToolDashboard() {
       <Notice error={error || courseError} />
       {!courses.length && !courseError && (
         <p className="notice">
-          Create a course and approve student enrollments in{" "}
-          <a href="/?manage=1">Courses &amp; access</a> to start assigning work.
+          Open your Canvas course as an instructor to bring its assignments into BrainTutor.
         </p>
       )}
       <p className="notice">

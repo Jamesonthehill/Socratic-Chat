@@ -129,6 +129,7 @@ test("professor opens activity creation from assignments rather than the teachin
   expect(
     await screen.findByRole("heading", { level: 1, name: "All assignments" }),
   ).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Courses & access" })).not.toBeInTheDocument();
   expect(screen.queryByText("Your teaching toolkit")).not.toBeInTheDocument();
   await user.click(
     screen.getByRole("link", { name: "Analytics", exact: true }),

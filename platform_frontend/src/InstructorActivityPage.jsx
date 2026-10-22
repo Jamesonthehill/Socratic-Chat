@@ -20,7 +20,10 @@ export function progressMetrics(students = []) {
 export default function InstructorActivityPage() {
   const {id} = useParams();
   const [item,setItem] = useState(()=>cachedAssignmentView(`/platform/assignments/${id}`));
-  const [context,setContext]=useState(()=>cachedCourseContext());
+  const [context,setContext]=useState(()=>{
+    const cached=cachedCourseContext();
+    return cached?.course_id===cachedAssignmentView(`/platform/assignments/${id}`)?.course_id ? cached : null;
+  });
   const [files,setFiles] = useState([]);
   const [error,setError] = useState("");
   useEffect(()=>{
@@ -28,7 +31,8 @@ export default function InstructorActivityPage() {
     setItem(cachedAssignmentView(`/platform/assignments/${id}`));setFiles([]);setError("");
     if(id === "new") return;
     const load=async()=>{
-      const [context,activity]=await Promise.all([loadCourseContext(),pendingAssignmentDetail(id) || api(`/platform/assignments/${id}`)]);
+      const activity=await (pendingAssignmentDetail(id) || api(`/platform/assignments/${id}`));
+      const context=await loadCourseContext(activity.course_id);
       if(String(activity.course_id)!==String(context.course_id)) throw Error("Open this activity from its Canvas course.");
       if(!active)return;
       setContext(context);setItem(activity);
@@ -43,7 +47,7 @@ export default function InstructorActivityPage() {
   if(id === "new") return <CreateActivity/>;
   if(error) return <><Link className="back" to="/professor">← All assignments</Link><Notice error={error}/></>;
   if(!item) return <p role="status">Opening activity…</p>;
-  if(item.status === "draft") return <CreateActivity initialActivity={item} initialContext={context}/>;
+  if(item.status === "draft") return context ? <CreateActivity initialActivity={item} initialContext={context}/> : <p role="status">Opening activity…</p>;
   const metrics=progressMetrics(item.students);
   const config=item.config || {};
   const progressValue=value=>item.progress_unavailable ? "Not available" : value;

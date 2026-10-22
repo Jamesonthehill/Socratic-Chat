@@ -666,7 +666,7 @@ function StudentDashboard() {
 
 function Dashboard({ professor = false }) {
   const { state: navigationState } = useLocation();
-  const { items, error, reload } = useAssignments({ allCourses: !professor });
+  const { items, error, reload } = useAssignments({ allCourses: true });
   const [status, setStatus] = useState("");
   const filtered = (items || []).filter(
     (a) => !status || (professor ? a.status : a.progress) === status,

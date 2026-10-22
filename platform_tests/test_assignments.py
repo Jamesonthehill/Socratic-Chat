@@ -41,6 +41,47 @@ def test_requires_signed_session_and_professor(client, roster):
     assert client.post('/api/platform/assignments', headers=roster['headers']['student'], json={}).status_code == 403
 
 
+def test_professor_catalog_only_shows_courses_they_manage(client, roster):
+    first, _ = draft(client, roster)
+    other_course = str(uuid4())
+    with store.connection() as conn:
+        conn.execute("INSERT INTO courses_platform(id,course_code,title,instructor_id) VALUES (%s,'SE202','Other course',%s)",
+                     (other_course, roster['other_prof']))
+        conn.execute("""INSERT INTO course_memberships_platform(id,course_id,user_id,course_role,status)
+            VALUES (%s,%s,%s,'instructor','approved')""",
+            (uuid4(), other_course, roster['other_prof']))
+    second = client.post('/api/platform/assignments', headers=roster['headers']['other_prof'], json={
+        'course_id': other_course, 'tool': 'reflections', 'title': 'Other teacher activity',
+        'instructions': 'Reflect.', 'audience': 'course', 'config': {},
+    })
+    assert second.status_code == 201, second.text
+    second_id = second.json()['id']
+
+    def listed(role):
+        response = client.get('/api/platform/assignments', headers=roster['headers'][role])
+        assert response.status_code == 200, response.text
+        return {item['id'] for item in response.json()}
+
+    assert listed('prof') == {first['id']}
+    assert listed('other_prof') == {second_id}
+
+    # Co-instructors can see the same course, regardless of who created an activity.
+    with store.connection() as conn:
+        conn.execute("""INSERT INTO course_memberships_platform(id,course_id,user_id,course_role,status)
+            VALUES (%s,%s,%s,'instructor','approved')""",
+            (uuid4(), roster['course'], roster['other_prof']))
+    assert listed('other_prof') == {first['id'], second_id}
+    assert client.get('/api/platform/assignments', headers=roster['headers']['other_prof'],
+                      params={'course_id': roster['course']}).json()[0]['id'] == first['id']
+
+    with store.connection() as conn:
+        conn.execute("""UPDATE course_memberships_platform SET status='rejected'
+            WHERE course_id=%s AND user_id=%s""", (roster['course'], roster['other_prof']))
+    assert listed('other_prof') == {second_id}
+    assert client.get(f"/api/platform/assignments/{first['id']}",
+                      headers=roster['headers']['other_prof']).status_code == 403
+
+
 def test_draft_publish_visibility_and_frozen_config(client, roster, monkeypatch):
     item, body = draft(client, roster)
     sid = item['id']; path = f'/api/platform/assignments/{sid}'

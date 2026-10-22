@@ -234,7 +234,10 @@ def assignments(course_id: UUID | None = None, account=Depends(user)):
                 (SELECT count(*) FROM assignment_recipients_platform WHERE assignment_id=a.id) AS recipient_count,
                 (SELECT count(*) FROM assignment_attempts_platform WHERE assignment_id=a.id AND status='completed') AS completed_count
                 FROM assignments_platform a JOIN courses_platform c ON c.id=a.course_id
-                WHERE c.instructor_id=%s ORDER BY a.created_at DESC""", (account["user_id"],)).fetchall()
+                WHERE EXISTS (SELECT 1 FROM course_memberships_platform m
+                    WHERE m.course_id=a.course_id AND m.user_id=%s
+                    AND m.course_role='instructor' AND m.status='approved')
+                ORDER BY a.created_at DESC""", (account["user_id"],)).fetchall()
         else:
             rows = conn.execute("""SELECT a.*, c.title AS course_title, c.course_code,
                 coalesce(t.status, 'not_started') AS progress,

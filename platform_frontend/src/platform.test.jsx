@@ -83,13 +83,14 @@ function mockApi(role = "instructor", override = {}) {
     ...override,
   };
   const fetch = vi.fn(async (url, options = {}) => {
+    const originalUrl = url;
     if (url.startsWith("/api/platform/context")) url = "/api/platform/context";
     if (url.startsWith("/api/platform/assignments?"))
       url = "/api/platform/assignments";
     const entry =
       responses[`${options.method || "GET"} ${url}`] ?? responses[url];
     if (entry === undefined) throw new Error("Unexpected API call: " + url);
-    const data = typeof entry === "function" ? await entry(options) : entry;
+    const data = typeof entry === "function" ? await entry(options, originalUrl) : entry;
     return {
       ok: !data?.error,
       status: data?.error ? 422 : 200,
@@ -152,6 +153,39 @@ test("professor opens activity creation from assignments rather than the teachin
     screen.getByRole("heading", { name: "Select activity" }),
   ).toBeInTheDocument();
   expect(screen.queryByText("Student Agent Bot")).not.toBeInTheDocument();
+});
+
+test("professor dashboard lists managed courses and opens each activity in its own course", async () => {
+  const otherCourse = "9db10962-81ad-4fe1-bd37-701f263720e8";
+  const other = {
+    ...assignment,
+    id: "other-activity",
+    course_id: otherCourse,
+    course_code: "SE202",
+    course_title: "Other managed course",
+    title: "Co-taught activity",
+    status: "draft",
+    config: {},
+  };
+  const fetch = mockApi("instructor", {
+    "/api/platform/context": (_options, url) => {
+      if (url.includes(`course_id=${otherCourse}`)) return {
+        course_id: otherCourse, course_code: "SE202", title: "Other managed course",
+      };
+      return { error: "A Canvas course must be selected" };
+    },
+    "/api/platform/assignments": [assignment, other],
+    "/api/platform/assignments/other-activity": other,
+    [`/api/platform/courses/${otherCourse}/documents`]: { files: [] },
+    [`/api/courses/${otherCourse}/learning-objectives`]: { objectives: [] },
+  });
+  open("/professor");
+  expect(await screen.findByRole("link", { name: "Co-taught activity" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Discuss requirements" })).toBeInTheDocument();
+  expect(fetch.mock.calls.some(([url]) => url.startsWith("/api/platform/context"))).toBe(false);
+  await userEvent.setup().click(screen.getByRole("link", { name: "Co-taught activity" }));
+  expect(await screen.findByRole("heading", { name: "Activity details" })).toBeInTheDocument();
+  expect(fetch.mock.calls.some(([url]) => url.includes(`course_id=${otherCourse}`))).toBe(true);
 });
 
 test("student sees mixed assignments and opens the assigned tool without selecting configuration", async () => {

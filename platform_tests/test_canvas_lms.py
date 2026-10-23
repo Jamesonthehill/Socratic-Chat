@@ -97,3 +97,38 @@ def test_assignment_description_is_plain_text_and_exact_endpoint_is_used():
     assert requests[0].url.path == "/api/v1/courses/7/assignments/42"
     assert assignment["description"] == "Explain one tradeoff."
     assert assignment["due_at"] == "2026-10-01T16:00:00Z"
+
+
+def test_canvas_assignment_preserves_links_without_fetching_private_files():
+    description = (
+        '<p>Read <a class="instructure_file_link" '
+        'href="/courses/7/files/99/download?download_frd=1" '
+        'data-api-endpoint="https://instructure.charlotte.edu/api/v1/files/99" '
+        'data-api-returntype="File">Modular Sandwich Maker Machine.pdf</a>.</p>'
+        '<p><a href="https://github.com/example/skeleton">Download code skeleton</a></p>'
+    )
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={"id": 42, "description": description})
+
+    with mock_client(handler) as client:
+        assignment = canvas_lms.get_assignment(7, 42, "teacher-token", client=client)
+
+    assert len(requests) == 1
+    assert "[Modular Sandwich Maker Machine.pdf](https://instructure.charlotte.edu/courses/7/files/99/download?download_frd=1)" in assignment["description"]
+    assert "[Download code skeleton](https://github.com/example/skeleton)" in assignment["description"]
+
+
+def test_canvas_description_rejects_unsafe_links_and_ignores_scripts():
+    description = (
+        '<a href="javascript:alert(1)">unsafe</a>'
+        '<a href="https://example.org/docs">[Guide]</a>'
+        '<script><a href="https://example.org/secret">secret</a></script>'
+    )
+    result = canvas_lms.description_with_links(description)
+    assert "unsafe" in result
+    assert "javascript:" not in result
+    assert "[\\[Guide\\]](https://example.org/docs)" in result
+    assert "secret" not in result

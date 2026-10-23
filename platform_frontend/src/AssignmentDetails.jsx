@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import Markdown from "react-markdown";
 import { date, TOOLS } from "./api";
 import { Badge } from "./ui";
 
@@ -73,9 +74,9 @@ export default function AssignmentDetails({ item, onClose }) {
         </dl>
         <section>
           <h3>Instructions</h3>
-          <p className="assignment-details-text">
-            {item.instructions || "No instructions provided yet."}
-          </p>
+          <div className="assignment-details-text prose">
+            <Markdown>{item.instructions || "No instructions provided yet."}</Markdown>
+          </div>
         </section>
         <section>
           <h3>Chatbot settings</h3>

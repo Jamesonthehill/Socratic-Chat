@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from psycopg.types.json import Jsonb
 
 from app import settings
-from platform_app.canvas_lms import description_text
+from platform_app.canvas_lms import description_with_links
 
 RESOURCE_CLAIM = 'https://purl.imsglobal.org/spec/lti/claim/resource_link'
 CUSTOM_CLAIM = 'https://purl.imsglobal.org/spec/lti/claim/custom'
@@ -96,7 +96,7 @@ def provision(conn, claims, *, issuer, deployment_id, context_id, course_id, use
         raise HTTPException(409, 'An instructor must open this Canvas assignment in BrainTutor and publish it before students can start.')
     title = _canvas_title(custom, resource) or 'Canvas assignment'
     raw_description = _value(custom.get('canvas_assignment_description')) or _value(resource.get('description'))
-    instructions = description_text(raw_description)
+    instructions = description_with_links(raw_description)
     due_at = _canvas_due_at(custom)
     assignment_id = str(uuid4())
     config = {}

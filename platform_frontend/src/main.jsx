@@ -97,7 +97,7 @@ function BrandLockup({ compact = false }) {
       </svg>
       <span className="brand-name">
         Brain<span>Tutor</span>
-        {!compact && <small>Learning design studio</small>}
+        {!compact && <small>Guide, Learn, Think!</small>}
       </span>
     </span>
   );

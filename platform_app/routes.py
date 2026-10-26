@@ -1,13 +1,15 @@
 import json
 import hashlib
 import secrets
+from urllib.parse import quote
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel, Field
 from psycopg.types.json import Jsonb
 
 from app import auth, db, settings
-from platform_app import canvas_lms, engines, store, keyword_preparation
+from platform_app import canvas_lms, engines, store, evidence_diagram
 from platform_app.schemas import (
     ActionInput,
     SelfDirectedStudyInput, SelfDirectedQuizInput, SelfDirectedMessageInput, SelfDirectedTaskInput, SelfDirectedLearningTurn,
@@ -22,6 +24,10 @@ from platform_app.schemas import (
 )
 
 router = APIRouter(prefix="/api/platform", tags=["platform"])
+
+
+class EvidenceDiagramInput(BaseModel):
+    chunk_id: str = Field(min_length=1, max_length=150)
 
 
 def user(request: Request):
@@ -73,10 +79,11 @@ def public_assignment(item, manage=False):
     result = {k: v for k, v in item.items() if k not in ("snapshot", "config")}
     if manage:
         result["config"] = item["config"]
+        if item["tool"] == "socratic" and item.get("snapshot"):
+            result["concept_map"] = item["snapshot"].get("concept_map") or []
         if item["tool"] == "socratic" and item["status"] != "draft":
-            # Display the published list, not later edits to a legacy objective row.
             result["config"] = {**item["config"],
-                "keywords": list(engines._assignment_keywords(item.get("snapshot") or {})),
+                "scope_mode": "assignment", "keywords": [],
                 "learning_objective_id": None}
     else:
         cfg = (item.get("snapshot") or {}).get("config", item["config"])
@@ -86,19 +93,74 @@ def public_assignment(item, manage=False):
         elif item["tool"] == "debate":
             result["student_config"] = {k: cfg[k] for k in ("scenario", "minimum_messages")}
         elif item["tool"] == "socratic":
-            snapshot = item.get("snapshot") or {}
-            glossary = snapshot.get("keyword_glossary") or engines.keyword_glossary(
-                engines._assignment_keywords(snapshot),
-                snapshot.get("chunks") or [],
-            )
+            guided = cfg.get("guidance_mode", "guided" if cfg.get("learning_steps") else "basic") == "guided"
             result["student_config"] = {
                 "minimum_messages": cfg["minimum_messages"],
-                "keyword_glossary": glossary,
+                "keyword_glossary": [],
+                "guidance_mode": "guided" if guided else "basic",
+                "learning_steps": [
+                    {"title": step["title"], "goal": step["goal"], "source_file": step.get("source_file", "")}
+                    for step in (cfg.get("learning_steps") or []) if guided
+                ],
             }
         elif item["tool"] == "student-agent":
             topic = cfg["topic"]
             result["student_config"] = {"topic_name": topic["name"], "resources": [topic["resource"], topic["alt_resource"]]}
     return result
+
+
+def published_socratic_material(assignment_id, document_id, account):
+    """Only a recipient or course instructor may read the selected published material."""
+    with store.connection() as conn:
+        assignment = get_assignment(conn, assignment_id, account, manage=int(account["authority_level"]) <= 1)
+    if assignment["tool"] != "socratic" or assignment["status"] != "published":
+        raise HTTPException(404, "Published course material was not found.")
+    snapshot = assignment.get("snapshot") or {}
+    selected = {str(value) for value in (snapshot.get("config") or {}).get("document_ids") or []}
+    chunks = [chunk for chunk in snapshot.get("chunks") or [] if str(chunk.get("document_id")) == document_id]
+    if document_id not in selected or not chunks:
+        raise HTTPException(404, "This material is not in the published assignment.")
+    return assignment, chunks
+
+
+@router.get("/assignments/{assignment_id}/materials")
+def assignment_materials(assignment_id: UUID, account=Depends(user)):
+    with store.connection() as conn:
+        assignment = get_assignment(conn, assignment_id, account, manage=int(account["authority_level"]) <= 1)
+    if assignment["tool"] != "socratic" or assignment["status"] != "published":
+        raise HTTPException(404, "Published course materials were not found.")
+    snapshot = assignment.get("snapshot") or {}
+    selected = {str(value) for value in (snapshot.get("config") or {}).get("document_ids") or []}
+    grouped = {}
+    for chunk in snapshot.get("chunks") or []:
+        document_id = str(chunk.get("document_id") or "")
+        if document_id in selected and document_id not in grouped:
+            grouped[document_id] = {"document_id": document_id, "title": str(chunk.get("title") or "Course material"),
+                                    "pages": set()}
+        if document_id in grouped and chunk.get("page_number") is not None:
+            grouped[document_id]["pages"].add(chunk["page_number"])
+    for document_id, material in grouped.items():
+        original = db.get_course_rag_file(str(assignment["course_id"]), document_id)
+        if original:
+            material["title"] = original["filename"]
+            material["original_available"] = True
+        else:
+            material["original_available"] = False
+        material["page_count"] = len(material.pop("pages"))
+    return {"materials": list(grouped.values())}
+
+
+@router.get("/assignments/{assignment_id}/materials/{document_id}/download")
+def download_assignment_material(assignment_id: UUID, document_id: str, account=Depends(user)):
+    assignment, _ = published_socratic_material(assignment_id, document_id, account)
+    original = db.get_course_rag_file(str(assignment["course_id"]), document_id, include_content=True)
+    if not original:
+        raise HTTPException(404, "The original file is no longer available. Ask your instructor to upload it again.")
+    return Response(
+        content=original["content"], media_type=original["content_type"] or "application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(str(original['filename']))}",
+                 "X-Content-Type-Options": "nosniff"},
+    )
 
 
 def public_attempt(attempt):
@@ -283,14 +345,29 @@ def create_assignment(body: AssignmentInput, account=Depends(professor)):
     return public_assignment(row, True)
 
 
+@router.post("/assignments/{assignment_id}/evidence-diagram")
+async def assignment_evidence_diagram(assignment_id: UUID, body: EvidenceDiagramInput, account=Depends(user)):
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account, manage=int(account["authority_level"]) <= 1)
+    if item["tool"] != "socratic" or item["status"] != "published":
+        raise HTTPException(404, "Published Socratic evidence was not found.")
+    chunks = (item.get("snapshot") or {}).get("chunks") or []
+    passage = next((chunk for chunk in chunks if str(chunk.get("chunk_id")) == body.chunk_id), None)
+    if passage is None:
+        raise HTTPException(404, "This passage is not in the published assignment.")
+    try:
+        steps = await evidence_diagram.build(str(passage.get("text") or ""))
+    except Exception as exc:
+        raise HTTPException(503, "A verified diagram is unavailable for this passage. You can still read the original text.") from exc
+    return {"steps": steps}
+
+
 @router.get("/assignments/{assignment_id}")
 def assignment_detail(assignment_id: UUID, account=Depends(user)):
     is_prof = int(account["authority_level"]) <= 1
     with store.connection() as conn:
         item = get_assignment(conn, assignment_id, account, manage=is_prof)
         result = public_assignment(item, is_prof)
-        if is_prof and item["tool"] == "socratic":
-            result["keyword_preparation"] = keyword_preparation.status(conn, item)
         if is_prof:
             result["recipient_ids"] = [r["student_id"] for r in conn.execute("SELECT student_id FROM assignment_recipients_platform WHERE assignment_id=%s", (assignment_id,))]
             result["students"] = conn.execute("""SELECT u.display_name, u.username, u.id AS student_id,
@@ -323,19 +400,7 @@ def update_assignment(assignment_id: UUID, body: AssignmentInput, account=Depend
             WHERE id=%s RETURNING *""", (body.course_id, body.tool, body.title, body.instructions, body.due_at, body.audience, Jsonb(body.config), assignment_id)).fetchone()
         recipients(conn, assignment_id, body)
         result = public_assignment(row, True)
-        if row["tool"] == "socratic":
-            result["keyword_preparation"] = keyword_preparation.status(conn, row)
         return result
-
-
-@router.post("/assignments/{assignment_id}/keywords/confirm")
-def confirm_keywords(assignment_id: UUID, account=Depends(professor)):
-    with store.connection() as conn:
-        item = get_assignment(conn, assignment_id, account, manage=True, lock=True)
-        try:
-            return keyword_preparation.confirm(conn, item)
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
 
 
 @router.post("/assignments/{assignment_id}/publish")
@@ -361,9 +426,7 @@ def publish(assignment_id: UUID, account=Depends(professor)):
             if item["tool"] == "self-directed-learning":
                 from platform_app.workspace import publish_sdl
                 publish_sdl(conn, item, account)
-            snapshot = (keyword_preparation.snapshot_for_publish(conn, item)
-                        if item["tool"] == "socratic" and item["config"].get("keywords")
-                        else engines.publish_snapshot(item))
+            snapshot = engines.publish_snapshot(item)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         row = conn.execute("UPDATE assignments_platform SET status='published', snapshot=%s, published_at=now(),updated_at=now() WHERE id=%s RETURNING *",
@@ -410,6 +473,53 @@ def start(assignment_id: UUID, account=Depends(user)):
         return public_attempt(attempt)
 
 
+@router.post("/assignments/{assignment_id}/next-step")
+def next_socratic_step(assignment_id: UUID, account=Depends(user)):
+    """Advance the learner's saved path only after they have discussed this step."""
+    with store.locked_attempt(assignment_id, account["user_id"]) as (conn, attempt):
+        assignment = get_assignment(conn, assignment_id, account)
+        if not attempt or assignment["tool"] != "socratic" or attempt["status"] == "completed":
+            raise HTTPException(409, "Start an active Socratic assignment first.")
+        config = (assignment.get("snapshot") or {}).get("config", {})
+        guided = config.get("guidance_mode", "guided" if config.get("learning_steps") else "basic") == "guided"
+        steps = (config.get("learning_steps") or []) if guided else []
+        state = dict(attempt["engine_state"].get("socratic") or {})
+        index = int(state.get("learning_step_index") or 0)
+        if not steps or index >= len(steps) - 1:
+            raise HTTPException(409, "There is no next learning step.")
+        if state.get("pending_clarification") or state.get("concept_check") or state.get("phase") != "teaching":
+            raise HTTPException(409, "Finish the current question before moving to the next step.")
+        since = int(state.get("step_started_at_message_count") or 0)
+        if not any(message.get("role") == "user" for message in attempt["messages"][since:]):
+            raise HTTPException(409, "Discuss this step with the tutor before continuing.")
+        index += 1
+        step = steps[index]
+        state.update({
+            "learning_step_index": index,
+            "learning_topic": step["title"],
+            "step_started_at_message_count": len(attempt["messages"]) + 1,
+        })
+        state.pop("stable_concept", None)
+        state.pop("active_concept", None)
+        scenario = str(step.get("scenario") or "").strip()
+        question = str(step.get("question") or "").strip()
+        if not scenario:
+            quote = str(step.get("evidence_quote") or "").strip()
+            scenario = f"From the assignment: “{quote}”" if quote else ""
+        if not question:
+            question = f"How would you approach {step['title'].lower()} in this assignment?"
+        elif not question.endswith("?"):
+            question = f"{question.rstrip('.!')}?"
+        state["next_thinking_step"] = question
+        attempt["engine_state"]["socratic"] = state
+        attempt["messages"].append({
+            "role": "assistant",
+            "content": "\n\n".join(part for part in (f"Step {index + 1}: {step['title']}", scenario, question) if part),
+        })
+        store.save_attempt(conn, attempt)
+        return public_attempt(attempt)
+
+
 def apply_state(attempt, state, content=None):
     if "messages" in state:
         attempt["messages"] = state.pop("messages")
@@ -444,28 +554,16 @@ def message(assignment_id: UUID, body: MessageInput, account=Depends(user)):
             message_options["clarification_index"] = body.clarification_index
         if body.concept_check_option is not None:
             message_options["concept_check_option"] = body.concept_check_option
+        inline_clarification_choice = (
+            body.clarification_index is not None
+            and bool(attempt.get("engine_state", {}).get("socratic", {}).get("pending_clarification", {}).get("inline"))
+        )
         state = engines.message(
             assignment, attempt, body.message, rid, **message_options
         )
+        quiz_only = state.pop("quiz_only", False)
         student_message = state.pop("student_message", body.message)
-        assessment = state.pop("assessment", None)
-        apply_state(attempt, state, student_message)
-        if assessment:
-            if attempt["messages"] and attempt["messages"][-1]["role"] == "assistant":
-                attempt["messages"][-1]["total_score"] = assessment["total_score"]
-            for saved_message in reversed(attempt["messages"]):
-                if saved_message["role"] == "user":
-                    saved_message["total_score"] = assessment["total_score"]
-                    break
-            conn.execute("""INSERT INTO assignment_assessments_platform
-                (id,attempt_id,assignment_id,student_id,course_id,request_id,concept,student_answer,
-                 total_score,correctness,completeness,reasoning,application,critical_misconception,evaluation)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ON CONFLICT (attempt_id,request_id) DO NOTHING""",
-                (uuid4(),attempt["id"],assignment_id,account["user_id"],assignment["course_id"],rid,
-                 assessment["concept"],student_message,assessment["total_score"],assessment["correctness"],
-                 assessment["completeness"],assessment["reasoning"],assessment["application"],
-                 assessment["critical_misconception"],Jsonb(assessment)))
+        apply_state(attempt, state, None if quiz_only or inline_clarification_choice else student_message)
         attempt["processed_requests"].append(rid)
         store.save_attempt(conn, attempt)
         return public_attempt(attempt)

@@ -1,14 +1,17 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { api } from "./api";
-import { Notice } from "./ui";
+import { GenerationStatus, Notice } from "./ui";
 import CourseLearningMaterials from "./CourseLearningMaterials";
 
 export const defaults = {
   socratic: {
+    scope_mode: "assignment",
+    guidance_mode: "basic",
     keywords: [],
     optional_keywords: [],
     dismissed_keywords: [],
     document_ids: [],
+    learning_steps: [],
     prompt: "",
     minimum_messages: 1,
   },
@@ -32,11 +35,13 @@ export const defaults = {
   "student-agent": { topic: null, provider: "openai", personality: "confused" },
 };
 
-function Lines({ label, value = [], onChange, rows = 4, description }) {
+function Lines({ label, value = [], onChange, rows = 4, description, publishTarget, invalid = false }) {
   return (
     <label>
       {label}
       <textarea
+        data-publish-target={publishTarget}
+        aria-invalid={invalid || undefined}
         rows={rows}
         value={value.join("\n")}
         onChange={(e) => onChange(e.target.value.split("\n"))}
@@ -51,34 +56,193 @@ export function SocraticConfig({
   onChange,
   courseId,
   frozen,
-  onPendingKeywordChange,
-  keywordPreparation,
-  onConfirmKeywords,
-  onInvalidateKeywordPreparation,
   onMaterialsChange,
   hideConversation = false,
   hideDocuments = false,
   documents,
   hideMaterials = false,
+  onGenerateSetup,
+  onGenerateOpening,
+  publishIssue,
+  generatingSetup = false,
+  canGenerateSetup = false,
 }) {
   const change = (key, next) => onChange({ ...value, [key]: next });
+  const guidanceMode = value.guidance_mode || (value.learning_steps?.length ? "guided" : "basic");
+  const draggedStep = useRef(null);
+  const [dragOverStep, setDragOverStep] = useState(null);
+  const [expandedStep, setExpandedStep] = useState(0);
+  const stepCount = value.learning_steps?.length || 0;
+  useEffect(() => {
+    setExpandedStep((current) => Math.min(current, Math.max(0, stepCount - 1)));
+  }, [stepCount]);
+  const openingPromptId = useId();
+  const reorderStep = (from, to) => {
+    const steps = value.learning_steps || [];
+    if (from === to || from < 0 || to < 0 || from >= steps.length || to >= steps.length) return;
+    const next = [...steps];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setExpandedStep((current) => {
+      if (current === from) return to;
+      if (from < to && current > from && current <= to) return current - 1;
+      if (from > to && current >= to && current < from) return current + 1;
+      return current;
+    });
+    change("learning_steps", next);
+  };
+  const removeStep = (index) => {
+    const next = value.learning_steps.filter((_, position) => position !== index);
+    setExpandedStep((current) => current === index
+      ? Math.min(index, Math.max(0, next.length - 1))
+      : current > index ? current - 1 : current);
+    change("learning_steps", next);
+  };
+  const dropPosition = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+  };
   return (
     <>
+      <p className="help"><strong>Teaching scope:</strong> Selected assignment materials.</p>
+      <p className="help">
+        Students can move among topics supported by the selected documents. Canvas links alone are not indexed; upload the PDF and any source files below.
+      </p>
+      <fieldset className="socratic-guidance-mode">
+        <legend>How should the tutor guide students?</legend>
+        <label>
+          <input type="radio" name="socratic-guidance-mode" value="basic" checked={guidanceMode === "basic"} disabled={frozen} onChange={() => change("guidance_mode", "basic")} />
+          <span><strong>Basic conversation</strong><small>Use the selected documents and your opening question. Students choose where the discussion goes.</small></span>
+        </label>
+        <label>
+          <input type="radio" name="socratic-guidance-mode" value="guided" checked={guidanceMode === "guided"} disabled={frozen} onChange={() => change("guidance_mode", "guided")} />
+          <span><strong>Guided learning path</strong><small>Generate and review ordered steps from the selected documents. Students work through them one by one.</small></span>
+        </label>
+      </fieldset>
+      {!frozen && guidanceMode === "guided" && (
+        <div className="socratic-source-generation" data-publish-target="learning-path">
+          <button
+            type="button"
+            className="secondary socratic-generate-setup"
+            disabled={!canGenerateSetup || generatingSetup}
+            onClick={onGenerateSetup}
+          >
+            {generatingSetup ? "Generating setup…" : "Generate setup from selected sources"}
+          </button>
+          <p className="help">
+            AI drafts a beginning-to-end learning path, opening question, student/submission instructions, and a completion-message count from the selected indexed documents. Review and edit these before publishing.
+          </p>
+          {publishIssue?.target === "learning-path" && <p className="publish-inline-error">{publishIssue.message}</p>}
+        </div>
+      )}
       {!hideConversation && (
         <section
           className="socratic-conversation-settings"
           aria-label="Conversation settings"
         >
         {!hideMaterials && <h3>Conversation settings</h3>}
-        <label>
-          Opening question or prompt
+        <div className="socratic-opening-heading">
+          <label htmlFor={openingPromptId}>Opening question or prompt</label>
+          {!frozen && guidanceMode === "basic" && onGenerateOpening && <button
+            type="button"
+            className="secondary socratic-generate-opening"
+            disabled={!canGenerateSetup || generatingSetup}
+            onClick={onGenerateOpening}
+          >{generatingSetup ? "Generating question…" : "Generate opening question"}</button>}
+        </div>
           <textarea
+            id={openingPromptId}
             rows={4}
             value={value.prompt || ""}
             onChange={(e) => change("prompt", e.target.value)}
             placeholder="What assumptions does this design make?"
           />
-        </label>
+        {guidanceMode === "basic" && !frozen && onGenerateOpening && <p className="help">Generate one opening question from the selected indexed documents, then review or edit it. Other settings stay as they are.</p>}
+        {guidanceMode === "guided" && <section className="socratic-learning-steps" aria-label="Learning steps">
+          <h3>Learning steps</h3>
+          <p className="help">Scan the path below. Select a step to edit its details, or drag a row or use the arrows to change the order. Students can still ask related questions at any point.</p>
+          {!value.learning_steps?.length && <p className="help">No steps generated yet. Generate the guided setup before publishing.</p>}
+          <ol className="socratic-step-list">
+          {(value.learning_steps || []).map((step, index) => {
+            const updateStep = (field, next) => change("learning_steps", value.learning_steps.map((item, position) => position === index ? { ...item, [field]: next } : item));
+            const isExpanded = expandedStep === index;
+            const dropClass = dragOverStep?.index === index && draggedStep.current !== index
+              ? ` is-drag-over-${dragOverStep.position}` : "";
+            return <li
+              className={`socratic-learning-step${isExpanded ? " is-expanded" : ""}${dropClass}`}
+              key={`${step.source_chunk_id}-${index}`}
+              draggable={!frozen}
+              onDragStart={(event) => {
+                if (frozen || event.target.closest("input, textarea, select, a, .socratic-step-control, [contenteditable='true']")) {
+                  event.preventDefault();
+                  return;
+                }
+                draggedStep.current = index;
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", String(index));
+              }}
+              onDragEnd={() => {
+                draggedStep.current = null;
+                setDragOverStep(null);
+              }}
+              onDragOver={(event) => {
+                if (frozen || draggedStep.current === null) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                if (draggedStep.current === index) {
+                  setDragOverStep(null);
+                  return;
+                }
+                const position = dropPosition(event);
+                setDragOverStep((current) => current?.index === index && current.position === position
+                  ? current : { index, position });
+              }}
+              onDrop={(event) => {
+                if (frozen || draggedStep.current === null) return;
+                event.preventDefault();
+                const from = draggedStep.current;
+                const insertion = index + (dropPosition(event) === "after" ? 1 : 0);
+                reorderStep(from, insertion > from ? insertion - 1 : insertion);
+                draggedStep.current = null;
+                setDragOverStep(null);
+              }}
+            >
+              <div className="socratic-learning-step-heading">
+                <button
+                  type="button"
+                  className="socratic-step-summary"
+                  draggable={!frozen}
+                  aria-label={`Step ${index + 1}: ${step.title || "Untitled step"}. ${step.question || step.goal || "Add a question for this step"}. Source: ${step.source_file || "Selected document"}`}
+                  aria-expanded={isExpanded}
+                  aria-controls={`${openingPromptId}-step-${index}`}
+                  onClick={() => setExpandedStep(isExpanded ? -1 : index)}
+                >
+                  <span className="socratic-step-summary-main">
+                    {!frozen && <span className="socratic-step-drag-handle" aria-hidden="true" title={`Drag step ${index + 1} card to reorder`}>⋮⋮</span>}
+                    <span className="socratic-step-number"><span className="sr-only">Step </span>{index + 1}</span>
+                    <strong className="socratic-step-name">{step.title || "Untitled step"}</strong>
+                    <span className="socratic-step-expand-icon" aria-hidden="true">{isExpanded ? "▾" : "▸"}</span>
+                  </span>
+                  <span className="socratic-step-question">{step.question || step.goal || "Add a question for this step"}</span>
+                  <span className="socratic-step-source">{step.source_file || "Selected document"}</span>
+                </button>
+                {!frozen && <div className="socratic-step-controls">
+                  <button type="button" className="quiet compact socratic-step-control socratic-step-move" disabled={index === 0} onClick={() => reorderStep(index, index - 1)} aria-label={`Move step ${index + 1} up`} title="Move up">↑</button>
+                  <button type="button" className="quiet compact socratic-step-control socratic-step-move" disabled={index === value.learning_steps.length - 1} onClick={() => reorderStep(index, index + 1)} aria-label={`Move step ${index + 1} down`} title="Move down">↓</button>
+                  <button type="button" className="quiet compact socratic-step-control socratic-step-remove" onClick={() => removeStep(index)} aria-label={`Remove step ${index + 1}`} title="Remove step">×</button>
+                </div>}
+              </div>
+              {isExpanded && <div id={`${openingPromptId}-step-${index}`} className="socratic-step-editor">
+                <label>Step title<input value={step.title} disabled={frozen} onChange={(event) => updateStep("title", event.target.value)} /></label>
+                <label>What the student should reason about<textarea rows={2} value={step.goal} disabled={frozen} onChange={(event) => updateStep("goal", event.target.value)} /></label>
+                <label>How the assignment scenario continues<textarea rows={3} maxLength={700} value={step.scenario || ""} disabled={frozen} onChange={(event) => updateStep("scenario", event.target.value)} placeholder="Continue the same situation with a detail from this step's source." /></label>
+                <label>Question for this step<textarea rows={2} maxLength={500} value={step.question || ""} disabled={frozen} onChange={(event) => updateStep("question", event.target.value)} placeholder="What should the student reason about next?" /></label>
+                <details className="socratic-step-evidence"><summary>View supporting passage</summary><p>{step.evidence_quote}</p></details>
+              </div>}
+            </li>;
+          })}
+          </ol>
+        </section>}
         <label>
           Messages required before completion
           <input
@@ -103,12 +267,8 @@ export function SocraticConfig({
             key={courseId}
             courseId={courseId}
             onChange={onMaterialsChange}
-            assignmentConfig={value}
+            assignmentConfig={{ ...value, scope_mode: "assignment" }}
             onAssignmentChange={onChange}
-            onPendingKeywordChange={onPendingKeywordChange}
-            keywordPreparation={keywordPreparation}
-            onConfirmKeywords={onConfirmKeywords}
-            onInvalidateKeywordPreparation={onInvalidateKeywordPreparation}
             frozen={frozen}
             embedded
             hideDocuments={hideDocuments}
@@ -131,7 +291,7 @@ function ReflectionHelp({ text }) {
   );
 }
 
-export function ReflectionConfig({ value, onChange }) {
+export function ReflectionConfig({ value, onChange, publishIssue }) {
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const change = (k, v) => onChange({ ...value, [k]: v });
@@ -166,10 +326,13 @@ export function ReflectionConfig({ value, onChange }) {
             <div>
               <Lines
                 label="Sub-topics to explore"
+                publishTarget="reflection-subtopics"
+                invalid={publishIssue?.target === "reflection-subtopics"}
                 description="Add specific concepts to discuss in order. Generate a draft from your learning topics, then review it."
                 value={value.sub_topics}
                 onChange={(v) => change("sub_topics", v)}
               />
+              {publishIssue?.target === "reflection-subtopics" && <p className="publish-inline-error">{publishIssue.message}</p>}
               <button
                 className="secondary compact"
                 type="button"
@@ -196,6 +359,7 @@ export function ReflectionConfig({ value, onChange }) {
               >
                 {busy ? "Generating…" : "Generate sub-topics"}
               </button>
+              {busy && <GenerationStatus message="Generating reflection sub-topics…" fullScreen />}
             </div>
           </div>
           <div className="form-columns">
@@ -252,16 +416,21 @@ export function ReflectionConfig({ value, onChange }) {
           <label>
             Milestone prompt
             <textarea
+              data-publish-target="milestone-prompt"
+              aria-invalid={publishIssue?.target === "milestone-prompt" || undefined}
               rows={5}
               placeholder="What was your biggest challenge this week, and what solution did you try?"
               value={value.milestone_prompt}
               onChange={(e) => change("milestone_prompt", e.target.value)}
             />
           </label>
+          {publishIssue?.target === "milestone-prompt" && <p className="publish-inline-error">{publishIssue.message}</p>}
           <p className="help">Students see this prompt when they open the reflection. Ask them to describe a challenge and the solution they tried.</p>
           <label>
             Historical responses (CSV)
             <input
+              data-publish-target="historical-csv"
+              aria-invalid={publishIssue?.target === "historical-csv" || undefined}
               type="file"
               accept=".csv,text/csv"
               onChange={async (e) => {
@@ -276,6 +445,7 @@ export function ReflectionConfig({ value, onChange }) {
               }}
             />
           </label>
+          {publishIssue?.target === "historical-csv" && <p className="publish-inline-error">{publishIssue.message}</p>}
           <p className="help">
             Required columns: name, challenge, solution. Historical responses
             are used for recommendations and are not exposed as assignment
@@ -443,6 +613,7 @@ export function TutorConfig({ value, onChange, frozen }) {
           >
             {busy ? "Generating…" : "Generate draft"}
           </button>
+          {busy && <GenerationStatus message="Generating topic draft…" fullScreen />}
         </div>
       )}
       {topic ? (

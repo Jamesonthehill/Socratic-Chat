@@ -31,7 +31,7 @@ import { loadCourseContext, cachedCourseContext } from "./courseContext";
 import StudentWorkspace from "./StudentWorkspace";
 import "./styles.css";
 
-import { Notice, Badge } from "./ui";
+import { Notice, Badge, GenerationStatus } from "./ui";
 
 const THEME_KEY = "socratic_chat_theme";
 const THEME_OPTIONS = ["light", "dark", "system"];
@@ -172,7 +172,8 @@ export function App() {
     return (
       <main className="loading">
         <BrandLockup />
-        <Notice error={error}>{!error && "Opening your workspace…"}</Notice>
+        <Notice error={error} />
+        {!error && <GenerationStatus message="Opening your workspace…" fullScreen />}
         {error && <a href="/">Return to sign in</a>}
       </main>
     );

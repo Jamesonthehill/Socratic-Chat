@@ -5,3 +5,5 @@ __pycache__/
 node_modules/
 .DS_Store
 backend/storage/rag_index.json
+backend/storage/pipeline-traces.json
+backend/storage/pipeline_prompts/

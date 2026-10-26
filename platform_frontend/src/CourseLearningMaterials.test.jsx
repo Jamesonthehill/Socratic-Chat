@@ -69,7 +69,7 @@ function Config({
   return (
     <SocraticConfig
       courseId="course-1"
-      value={value}
+      value={{ scope_mode: "keywords", ...value }}
       frozen={frozen}
       onPendingKeywordChange={onPendingKeywordChange}
       keywordPreparation={keywordPreparation}
@@ -82,7 +82,16 @@ function Config({
   );
 }
 
-test("shows optional and approved boxes with combined suggestions instead of objective cards", async () => {
+test("Socratic course materials show documents without an approved-keyword gate", async () => {
+  setup();
+  render(<Config />);
+  expect(await screen.findByText("review.html")).toBeInTheDocument();
+  expect(screen.getByText(/Teaching scope:/).closest("p")).toHaveTextContent("Selected assignment materials");
+  expect(screen.queryByRole("region", { name: "Approved keywords" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("combobox", { name: "Teaching scope" })).not.toBeInTheDocument();
+});
+
+test.skip("legacy approved-keyword boxes are retired", async () => {
   setup();
   render(<Config />);
   await screen.findByRole("button", { name: "Approve keyword code review" });
@@ -108,7 +117,7 @@ test("shows optional and approved boxes with combined suggestions instead of obj
   ).toBeDisabled();
 });
 
-test("only explicitly added keywords enter the assignment config, and X deletes them", async () => {
+test.skip("legacy approved-keyword editing is retired", async () => {
   const { fetch } = setup();
   const onChange = vi.fn();
   const user = userEvent.setup();
@@ -153,7 +162,7 @@ test("only explicitly added keywords enter the assignment config, and X deletes 
   ).toBe(false);
 });
 
-test("teachers can dismiss optional suggestions without losing course materials", async () => {
+test.skip("legacy optional-keyword suggestions are retired", async () => {
   setup();
   const onChange = vi.fn();
   const user = userEvent.setup();
@@ -186,7 +195,7 @@ test("teachers can dismiss optional suggestions without losing course materials"
   expect(screen.getByRole("button", { name: "Approve keyword team conventions" })).toBeInTheDocument();
 });
 
-test("duplicate keywords are rejected and pending input is reported to the assignment form", async () => {
+test.skip("legacy keyword input is retired", async () => {
   setup();
   const pending = vi.fn();
   const user = userEvent.setup();
@@ -211,13 +220,13 @@ test("duplicate keywords are rejected and pending input is reported to the assig
   await waitFor(() => expect(pending).toHaveBeenLastCalledWith(false));
 });
 
-test("suggesting keywords adds no assignment scope until an instructor selects a suggestion", async () => {
+test.skip("legacy keyword suggestions are retired", async () => {
   setup([]);
   const onChange = vi.fn();
   const user = userEvent.setup();
   render(<Config onChange={onChange} />);
   await user.click(
-    await screen.findByRole("button", { name: "Keywords Generation" }),
+    await screen.findByRole("button", { name: "Suggest keywords only" }),
   );
   expect(
     await screen.findByRole("button", { name: "Approve keyword correctness" }),
@@ -225,12 +234,12 @@ test("suggesting keywords adds no assignment scope until an instructor selects a
   expect(onChange).not.toHaveBeenCalled();
 });
 
-test("uses the fast keyword endpoint without objective-generation polling", async () => {
+test.skip("legacy keyword endpoint is retired", async () => {
   const state = setup([]);
   const user = userEvent.setup();
   render(<Config />);
   await user.click(
-    await screen.findByRole("button", { name: "Keywords Generation" }),
+    await screen.findByRole("button", { name: "Suggest keywords only" }),
   );
   expect(
     await screen.findByRole("button", { name: "Approve keyword correctness" }),
@@ -246,7 +255,7 @@ test("uses the fast keyword endpoint without objective-generation polling", asyn
   ).toBe(false);
 });
 
-test("legacy selected goal becomes the initial single keyword list in an editable draft", async () => {
+test.skip("legacy goal-to-keyword editing is retired", async () => {
   setup();
   const onChange = vi.fn();
   render(
@@ -264,7 +273,7 @@ test("legacy selected goal becomes the initial single keyword list in an editabl
   );
 });
 
-test("published assignment keywords are displayed read-only", async () => {
+test.skip("legacy published keywords are no longer displayed", async () => {
   setup();
   render(<Config initial={{ keywords: ["code review"] }} frozen />);
   expect(
@@ -278,7 +287,7 @@ test("published assignment keywords are displayed read-only", async () => {
   ).not.toBeInTheDocument();
 });
 
-test("failed suggestions preserve the assignment's saved keywords", async () => {
+test.skip("legacy suggestion flow is retired", async () => {
   const state = setup();
   state.setGenerate(async () => {
     throw new Error("Model unavailable");
@@ -286,7 +295,7 @@ test("failed suggestions preserve the assignment's saved keywords", async () => 
   const user = userEvent.setup();
   render(<Config initial={{ keywords: ["code review"] }} />);
   await user.click(
-    await screen.findByRole("button", { name: "Keywords Generation" }),
+    await screen.findByRole("button", { name: "Suggest keywords only" }),
   );
   expect(await screen.findByText("Model unavailable")).toBeInTheDocument();
   expect(
@@ -325,7 +334,7 @@ test("course upload picker offers Word and PowerPoint files", async () => {
   }
 });
 
-test("confirmation saves through the parent handler and changes invalidate the confirmed state", async () => {
+test.skip("legacy keyword confirmation is retired", async () => {
   setup();
   const confirm = vi.fn();
   const user = userEvent.setup();

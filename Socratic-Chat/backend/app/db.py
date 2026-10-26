@@ -1279,6 +1279,28 @@ def get_rag_file(file_id: str, user_id: str | None = None) -> dict[str, object] 
     }
 
 
+def get_course_rag_file(course_id: str, document_id: str, *, include_content: bool = False) -> dict[str, object] | None:
+    """Find the published original for one course document, without exposing other course files."""
+    init_db(force=False)
+    columns = "id::text, filename, content_type, file_size"
+    if include_content:
+        columns += ", content"
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT {columns} FROM documents WHERE course_id=%s AND document_id=%s "
+                "AND is_published=TRUE ORDER BY created_at DESC LIMIT 1",
+                (course_id, document_id),
+            )
+            row = cur.fetchone()
+    if not row:
+        return None
+    file = {"file_id": row[0], "filename": row[1], "content_type": row[2], "file_size": row[3]}
+    if include_content:
+        file["content"] = bytes(row[4])
+    return file
+
+
 def list_indexable_rag_files(course_id: str | None = None) -> list[dict[str, object]]:
     """Return the durable, published source files used by the RAG migration."""
     init_db(force=False)

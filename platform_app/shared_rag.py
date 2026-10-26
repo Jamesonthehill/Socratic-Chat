@@ -101,6 +101,18 @@ def _parse_html(filename, content):
     return chunks
 
 
+def _parse_python(filename, content):
+    """Index source as text; never execute uploaded instructor code."""
+    source = content.decode("utf-8-sig", errors="replace")
+    chunks = [
+        {"text": text, "position": position, "metadata": {"source_type": "python"}}
+        for position, text in enumerate(chunk_text(source, filename))
+    ]
+    if not chunks:
+        raise HTTPException(422, "This Python file has no readable source to index.")
+    return chunks
+
+
 def _parse_office(filename, content):
     with TemporaryDirectory() as directory:
         path = Path(directory) / ("document" + Path(filename).suffix.lower())
@@ -131,6 +143,8 @@ def ingest(course_id, account, filename, content_type, content):
         chunks = _parse_pdf(filename, content)
     elif suffix in {".html", ".htm"}:
         chunks = _parse_html(filename, content)
+    elif suffix == ".py":
+        chunks = _parse_python(filename, content)
     elif suffix in OFFICE_SUFFIXES:
         chunks = _parse_office(filename, content)
     else:

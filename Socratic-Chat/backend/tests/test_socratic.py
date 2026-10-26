@@ -191,6 +191,32 @@ class SocraticPolicyTests(unittest.TestCase):
         self.assertEqual(decision.strategy, "feedback_then_question")
         self.assertEqual(decision.example_type, "current_scenario")
 
+    def test_evaluated_answer_keeps_the_original_example_instead_of_page_recall(self) -> None:
+        evaluation = AnswerEvaluation(
+            concept="prompt", keyword_coverage=0.5, semantic_alignment=0.5,
+            rubric_score=0.5, total_score=50, correctness=2, completeness=2,
+            reasoning=2, application=2, supported_concepts=(),
+            missing_concepts=("input choice",), critical_misconception=False,
+            misconception=None, feedback="The choice and prompt are confused.", confidence=0.9,
+        )
+        history = [ChatMessage(
+            role="assistant",
+            content="Imagine the sandwich machine asks what you would like. What would you choose?",
+        )]
+        decision = choose_socratic_strategy(
+            "I would choose small.", history, [SOURCE],
+            MessageClassification(message_role="student_answer", dialogue_status="answering_tutor"),
+            evaluation,
+        )
+        instruction = socratic_system_instruction(decision)
+        self.assertIn("sandwich machine", instruction)
+        self.assertIn("Use the established example only when it helps", decision.instruction)
+        self.assertIn("do not require it to advance the previous tutor question", decision.instruction)
+        self.assertIn("not what words appear on a page", instruction)
+        self.assertIn("unless the learner explicitly asks for a different example", instruction)
+        self.assertIn("Do not force each new question to follow the previous tutor question", instruction)
+        self.assertNotIn("Extend it one decision at a time", instruction)
+
     def test_low_score_with_correctness_three_still_uses_partial_feedback(self) -> None:
         evaluation = AnswerEvaluation(
             concept="code review", keyword_coverage=0, semantic_alignment=0.6,

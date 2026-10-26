@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
-import { Notice } from "./ui";
+import { GenerationStatus, Notice } from "./ui";
 
 function AssignmentKeywords({
   objectives,
@@ -150,8 +150,8 @@ function AssignmentKeywords({
                   onClick={onGenerateKeywords}
                 >
                   {generatingKeywords
-                    ? "Generating keywords…"
-                    : "Keywords Generation"}
+                    ? "Finding keyword suggestions…"
+                    : "Suggest keywords only"}
                 </button>
               )}
             </div>
@@ -332,10 +332,10 @@ export default function CourseLearningMaterials({
   const uploadInput = useRef(null);
   const prefix = `/courses/${courseId}`;
   async function load() {
-    const [docs, objectives] = await Promise.all([
-      api(`${prefix}/documents`),
-      api(`${prefix}/learning-objectives`),
-    ]);
+    const docs = await api(`${prefix}/documents`);
+    const objectives = assignmentConfig?.scope_mode === "assignment"
+      ? { objectives: [] }
+      : await api(`${prefix}/learning-objectives`);
     const value = {
       files: docs.files || [],
       objectives: objectives.objectives || [],
@@ -436,10 +436,10 @@ export default function CourseLearningMaterials({
         >
         <Heading>Course documents</Heading>
         <p>
-          Upload course materials, then suggest keywords for the assignment.
+          Upload course materials, then select the files this assignment should use.
         </p>
         <p className="help">
-          Supported formats: TXT, Markdown, PDF, LaTeX, HTML, Word (DOC/DOCX), and PowerPoint (PPT/PPTX). Published
+          Supported formats: TXT, Markdown, PDF, Python (.py), LaTeX, HTML, Word (DOC/DOCX), and PowerPoint (PPT/PPTX). Published
           assignments keep their saved materials.
         </p>
         <div className="course-document-upload">
@@ -449,7 +449,7 @@ export default function CourseLearningMaterials({
               ref={uploadInput}
               type="file"
               multiple
-              accept=".txt,.md,.pdf,.tex,.latex,.html,.htm,.doc,.docx,.ppt,.pptx"
+              accept=".txt,.md,.pdf,.py,.tex,.latex,.html,.htm,.doc,.docx,.ppt,.pptx"
               disabled={Boolean(busy)}
               onChange={(e) => setSelectedFiles([...e.target.files])}
             />
@@ -491,7 +491,7 @@ export default function CourseLearningMaterials({
               <div className="course-document-actions">
                 <button
                   type="button"
-                  className="quiet"
+                  className="quiet course-document-delete"
                   disabled={Boolean(busy)}
                   onClick={() => {
                     if (
@@ -514,7 +514,7 @@ export default function CourseLearningMaterials({
         </div>
         </section>
       )}
-      <AssignmentKeywords
+      {assignmentConfig?.scope_mode !== "assignment" && <AssignmentKeywords
         objectives={resources.objectives}
         suggestedKeywords={suggestedKeywords}
         assignmentConfig={assignmentConfig}
@@ -528,12 +528,8 @@ export default function CourseLearningMaterials({
         generatingKeywords={busy === "Generating keywords"}
         disabled={Boolean(busy)}
         frozen={frozen}
-      />
-      {busy && (
-        <p role="status">
-          {busy}… {elapsed}s elapsed
-        </p>
-      )}
+      />}
+      {busy && <GenerationStatus message={`${busy}…`} elapsedSeconds={elapsed} fullScreen />}
       <Notice error={error} />
       <Notice>{notice}</Notice>
     </div>

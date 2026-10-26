@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import { Notice } from "./ui";
+import { GenerationStatus, Notice } from "./ui";
 
 export default function DebateConfig({ value, onChange, courseId, frozen }) {
   const [files, setFiles] = useState([]);
@@ -133,6 +133,7 @@ export default function DebateConfig({ value, onChange, courseId, frozen }) {
               />
             </label>
           )}
+          {uploading && <GenerationStatus message="Uploading and indexing debate materials…" fullScreen />}
         </div>
       </div>
     </>

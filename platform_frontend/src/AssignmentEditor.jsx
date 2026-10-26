@@ -136,7 +136,7 @@ export default function AssignmentEditor() {
           method: "POST",
         });
         publishSucceeded = true;
-        navigate(`/professor/tools/${saved.tool}`, { replace: true });
+        navigate(`/professor/activities/${saved.id}`, { replace: true, state: { showStudentPreview: true } });
       } else setNotice("Draft saved.");
     } finally {
       // Preserve the saved draft on publish failure, without racing the detail fetch.

@@ -2,7 +2,7 @@ import asyncio
 from copy import deepcopy
 from uuid import uuid4
 
-from app.answer_evaluation import AnswerEvaluation
+from app.answer_evaluation import QualitativeFeedback
 from app.classifier import MessageClassification
 from app.schemas import Source
 from platform_app import engines
@@ -60,34 +60,25 @@ def test_assignment_message_uses_classifier_evaluation_and_mastery_state(monkeyp
         text="Version control tracks revisions.",
         score=1.0,
     )
-    evaluation = AnswerEvaluation(
+    evaluation = QualitativeFeedback(
         concept="version control",
-        keyword_coverage=1.0,
-        semantic_alignment=0.9,
-        rubric_score=0.9,
-        total_score=70,
-        correctness=4,
-        completeness=3,
-        reasoning=3,
-        application=2,
         supported_concepts=("revision history",),
         missing_concepts=(),
         critical_misconception=False,
         misconception=None,
         feedback="You connected version control to revision history.",
-        confidence=0.9,
     )
 
-    async def evaluate(message, history, sources, classification, concept_hint=None):
-        calls.append(("evaluate", concept_hint, len(sources)))
+    async def evaluate(message, history, sources, classification, **kwargs):
+        calls.append(("evaluate", len(sources)))
         return evaluation
 
     async def generate(message, history, sources, classification=None, evaluation=None, **kwargs):
-        calls.append(("generate", classification.target, evaluation.progress_status))
+        calls.append(("generate", classification.target, evaluation.concept))
         return "That identifies revision history. How does it help two developers collaborate?"
 
     monkeypatch.setattr(engines, "classify_message", classify)
-    monkeypatch.setattr(engines, "evaluate_student_answer", evaluate)
+    monkeypatch.setattr(engines, "assess_student_answer_qualitatively", evaluate)
     monkeypatch.setattr(engines.rag, "retrieve_snapshot", lambda *_args, **_kwargs: [source])
     monkeypatch.setattr(engines.rag, "generate_answer", generate)
 
@@ -107,13 +98,16 @@ def test_assignment_message_uses_classifier_evaluation_and_mastery_state(monkeyp
     assert result["socratic"]["active_concept"] == "version control"
     assert result["socratic"]["next_thinking_step"] == "How does it help two developers collaborate?"
     assert result["socratic"]["keywords"] == ["version control"]
-    assert result["socratic"]["last_score"] == 70
-    assert result["socratic"]["progress"]["version control"]["status"] == "developing"
+    assert "last_score" not in result["socratic"]
+    assert result["socratic"]["latest_feedback"]["concept"] == "version control"
     assert [call[0] for call in calls] == ["classify", "evaluate", "generate"]
 
 
 def test_third_substantive_answer_adds_one_persisted_concept_check(monkeypatch):
+    calls = []
+
     async def classify(message, history, learning_topic=None, **kwargs):
+        calls.append("classify")
         return MessageClassification(
             message_role="student_answer",
             route="learning",
@@ -126,35 +120,28 @@ def test_third_substantive_answer_adds_one_persisted_concept_check(monkeypatch):
             keyword_scope_match=True,
         )
 
-    evaluation = AnswerEvaluation(
+    evaluation = QualitativeFeedback(
         concept="version control",
-        keyword_coverage=1.0,
-        semantic_alignment=0.9,
-        rubric_score=0.9,
-        total_score=70,
-        correctness=4,
-        completeness=3,
-        reasoning=3,
-        application=2,
         supported_concepts=("revision history",),
         missing_concepts=(),
         critical_misconception=False,
         misconception=None,
         feedback="Good connection.",
-        confidence=0.9,
     )
 
     async def evaluate(*args, **kwargs):
+        calls.append("evaluate")
         return evaluation
 
     async def generate(*args, **kwargs):
+        calls.append("generate")
         return "How would you apply this idea on a team?"
 
     async def resolve(*args, **kwargs):
         return None
 
     monkeypatch.setattr(engines, "classify_message", classify)
-    monkeypatch.setattr(engines, "evaluate_student_answer", evaluate)
+    monkeypatch.setattr(engines, "assess_student_answer_qualitatively", evaluate)
     monkeypatch.setattr(engines, "resolve_term", resolve)
     monkeypatch.setattr(engines.rag, "retrieve_snapshot", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(engines.rag, "generate_answer", generate)
@@ -219,17 +206,34 @@ def test_third_substantive_answer_adds_one_persisted_concept_check(monkeypatch):
             {"role": "assistant", "content": result["reply"]},
         ]
     )
-    follow_up = asyncio.run(
+    calls_before_quiz = calls.copy()
+    correct_text = engines._concept_example(assignment["snapshot"]["keyword_glossary"][0])
+    correct_index = next(index for index, option in enumerate(check["options"]) if option["text"] == correct_text)
+    quiz_result = asyncio.run(
         engines._socratic_message(
             assignment,
             attempt,
-            "It describes keeping a record of changes.",
-            concept_check_option=0,
+            check["options"][correct_index]["text"],
+            concept_check_option=correct_index,
         )
     )
 
-    assert "concept_check" not in follow_up["socratic"]
-    assert follow_up["socratic"]["concept_check_completed"] is True
-    assert follow_up["student_message"].endswith(
-        "My reason: It describes keeping a record of changes."
+    assert calls == calls_before_quiz
+    assert quiz_result["quiz_only"] is True
+    assert "reply" not in quiz_result and "student_message" not in quiz_result
+    assert "concept_check" not in quiz_result["socratic"]
+    assert quiz_result["socratic"]["concept_check_completed"] is True
+    assert quiz_result["socratic"]["concept_check_response"]["correct"] is True
+    assert quiz_result["socratic"]["concept_check_response"]["correct_option"] == check["options"][correct_index]
+
+    wrong_index = next(index for index in range(len(check["options"])) if index != correct_index)
+    wrong_result = asyncio.run(
+        engines._socratic_message(
+            assignment,
+            attempt,
+            check["options"][wrong_index]["text"],
+            concept_check_option=wrong_index,
+        )
     )
+    assert wrong_result["socratic"]["concept_check_response"]["correct"] is False
+    assert calls == calls_before_quiz

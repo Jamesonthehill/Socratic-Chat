@@ -1,5 +1,6 @@
 .env
 .venv/
+.local/
 **/.env
 **/.venv/
 **/node_modules/

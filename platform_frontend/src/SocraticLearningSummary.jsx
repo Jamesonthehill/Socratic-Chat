@@ -23,9 +23,25 @@ export default function SocraticLearningSummary({ summary }) {
       )}
       <h3>Tutor feedback</h3>
       <Markdown>{summary.final_comment}</Markdown>
-      {summary.misconception_correction && (
+      {summary.concepts_to_revisit?.length > 0 ? (
+        <section className="learning-revisit" aria-label="Concepts to revisit">
+          <h3>Concepts to revisit</h3>
+          <p>These are places where your explanation may differ from the course material.</p>
+          <ul>
+            {summary.concepts_to_revisit.map((item, i) => (
+              <li key={`${item.student_quote}-${i}`}>
+                <span className="learning-revisit-label">You wrote</span>
+                <blockquote><mark>{item.student_quote}</mark></blockquote>
+                <span className="learning-revisit-label">A clearer way to think about it</span>
+                <Markdown>{item.correction}</Markdown>
+                {item.source_title && <small>Course source: {item.source_title}</small>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : summary.misconception_correction && (
         <>
-          <h3>Misconception to correct</h3>
+          <h3>Concept to revisit</h3>
           <Markdown>{summary.misconception_correction}</Markdown>
         </>
       )}

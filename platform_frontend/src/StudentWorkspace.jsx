@@ -2,8 +2,8 @@ import SocraticLearningSummary from "./SocraticLearningSummary";
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Markdown from "react-markdown";
-import { api, date, TOOLS } from "./api";
-import { Badge, Notice } from "./ui";
+import { api, date, session, TOOLS } from "./api";
+import { Badge, GenerationStatus, Notice } from "./ui";
 
 function nextQuestion(messages) {
   const answer = [...(messages || [])]
@@ -16,6 +16,70 @@ function nextQuestion(messages) {
       .reverse()
       .find((sentence) => sentence.trim().endsWith("?")) || answer
   ).trim();
+}
+
+function moneyBreakdownFromQuestion(text) {
+  if (!text || !/\b(?:insert|pay|paid|coin|cash|change|costs?)\b/i.test(text)) return null;
+  const priceMatch = text.match(/\b(?:costs?|price(?: is| of)?)\s*(?:\$|USD\s*)(\d+(?:\.\d{1,2})?)\b/i);
+  if (!priceMatch) return null;
+  const numberWords = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+  const denominations = [
+    { pattern: "large dollars?", label: "Large dollar", value: "$1.00" },
+    { pattern: "half dollars?", label: "Half dollar", value: "$0.50" },
+    { pattern: "quarters?", label: "Quarter", value: "$0.25" },
+    { pattern: "dimes?", label: "Dime", value: "$0.10" },
+    { pattern: "nickels?", label: "Nickel", value: "$0.05" },
+    { pattern: "penn(?:y|ies)", label: "Penny", value: "$0.01" },
+    { pattern: "dollars?", label: "Dollar", value: "$1.00" },
+  ];
+  const rows = [];
+  for (const denomination of denominations) {
+    const countMatch = text.match(new RegExp(`\\b(\\d+|one|two|three|four|five|six|seven|eight|nine|ten)\\s+${denomination.pattern}\\b`, "i"));
+    if (countMatch) {
+      rows.push({
+        label: denomination.label,
+        count: numberWords[countMatch[1].toLowerCase()] || Number(countMatch[1]),
+        value: denomination.value,
+      });
+    }
+  }
+  return rows.length ? { rows, price: `$${Number(priceMatch[1]).toFixed(2)}` } : null;
+}
+
+function structuredEvidence(text) {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return [];
+  const fragments = normalized.split(/(?<=[.!?])\s+(?=[A-Z]|how\b|what\b|if\b|when\b)/i);
+  return fragments.filter((fragment) => fragment.length >= 12).map((fragment) => {
+    const excerpt = fragment.trim();
+    let kind = "Source detail";
+    if (/\b(?:sorry|refund(?:ed)?|ready|change|display|output|result)\b/i.test(excerpt)) {
+      kind = "Outcome";
+    } else if (/\b(?:insert|enter|choose|select|input|prompt)\b|\?/i.test(excerpt)) {
+      kind = "Input or choice";
+    } else if (/\b(?:check|must|require|enough|available|if|when)\b/i.test(excerpt)) {
+      kind = "Rule or check";
+    }
+    return { kind, excerpt };
+  });
+}
+
+function transcriptEvidence(text) {
+  const source = String(text || "").replace(/\s+/g, " ").trim();
+  const prompt = /What would you like\?\s*\([^)]*\)\s*:\s*([^\s]+)/gi;
+  const matches = [...source.matchAll(prompt)];
+  if (matches.length < 2) return null;
+  const rows = matches.map((match, index) => {
+    const segment = source.slice(match.index + match[0].length, matches[index + 1]?.index ?? source.length);
+    const coins = [...segment.matchAll(/how many\s+([^?:]{2,35})\?\s*:\s*(\d+)/gi)]
+      .map((entry) => `${entry[1].trim()}: ${entry[2]}`);
+    const outcome = segment
+      .replace(/Please insert coins\.?/gi, "")
+      .replace(/how many\s+[^?:]{2,35}\?\s*:\s*\d+/gi, "")
+      .trim();
+    return { choice: match[1], coins, outcome: outcome || "—" };
+  });
+  return { initial: source.slice(0, matches[0].index).trim(), rows };
 }
 
 function EmphasizedText({ text, keywords = [] }) {
@@ -54,58 +118,26 @@ function maximumEvidenceWidth() {
 
 function SocraticThinkingMessage({ elapsedSeconds }) {
   return (
-    <article
-      className="message socratic-thinking-message"
-      role="status"
-      aria-label="Socratic tutor is thinking through your response"
-    >
-      <span className="thinking-mark" aria-hidden="true">
-        <svg viewBox="0 0 44 44" focusable="false">
-          <circle className="thinking-orbit-track" cx="22" cy="22" r="16" />
-          <g className="thinking-orbit-particles">
-            <circle
-              className="thinking-particle thinking-particle-primary"
-              cx="22"
-              cy="6"
-              r="3.2"
-            />
-            <circle
-              className="thinking-particle thinking-particle-secondary"
-              cx="22"
-              cy="38"
-              r="2.4"
-            />
-          </g>
-          <circle className="thinking-mark-center" cx="22" cy="22" r="10" />
-          <g className="thinking-mark-stage">
-            <path d="m17 27 2-1 9-9-2-2-9 9-1 4z" />
-          </g>
-        </svg>
-      </span>
-      <span className="thinking-copy">
-        <strong>Socratic tutor</strong>
-        <span className="thinking-status">Thinking through your response</span>
-        <span className="thinking-elapsed" aria-hidden="true">
-          {elapsedSeconds.toFixed(1)}s elapsed
-        </span>
-      </span>
-    </article>
+    <GenerationStatus
+      title="Socratic tutor"
+      message="Thinking through your response"
+      elapsedSeconds={elapsedSeconds}
+      ariaLabel="Socratic tutor is thinking through your response"
+      messageCard
+    />
   );
 }
 
 function ConceptCheck({
   check,
   selectedOption,
-  reason,
   busy,
   hintVisible,
   onShowHint,
   onSelect,
-  onReasonChange,
-  onSubmit,
 }) {
   return (
-    <form className="concept-check" onSubmit={onSubmit}>
+    <section className="concept-check">
       <div className="concept-check-heading">
         <p className="context">Quick concept check</p>
         <button
@@ -144,31 +176,13 @@ function ConceptCheck({
           ))}
         </div>
       </fieldset>
-      {selectedOption !== null && (
-        <div className="concept-check-reason">
-          <label htmlFor="concept-check-reason">
-            Why did you choose this option?
-          </label>
-          <p className="help">
-            Explain your thinking before the tutor gives feedback.
-          </p>
-          <textarea
-            id="concept-check-reason"
-            value={reason}
-            rows={4}
-            maxLength={20000}
-            disabled={busy}
-            onChange={(event) => onReasonChange(event.target.value)}
-            placeholder="I chose this because…"
-          />
-          <button disabled={busy || !reason.trim()}>Submit my reasoning</button>
-        </div>
-      )}
-    </form>
+      {busy && <p className="help" role="status">Checking your answer…</p>}
+    </section>
   );
 }
 
 function EvidenceDrawer({
+  assignmentId,
   evidence,
   keywords,
   width,
@@ -178,6 +192,36 @@ function EvidenceDrawer({
   onResizeEnd,
   onResizeKeyDown,
 }) {
+  const [diagram, setDiagram] = useState(null);
+  const [diagramBusy, setDiagramBusy] = useState(false);
+  const [diagramError, setDiagramError] = useState("");
+  const [showOriginal, setShowOriginal] = useState(false);
+  useEffect(() => {
+    setDiagram(null);
+    setDiagramBusy(false);
+    setDiagramError("");
+    setShowOriginal(false);
+  }, [evidence?.chunk_id]);
+  async function createDiagram() {
+    if (!assignmentId || !evidence?.chunk_id) return;
+    setDiagramBusy(true);
+    setDiagramError("");
+    try {
+      const result = await api(`/platform/assignments/${assignmentId}/evidence-diagram`, {
+        method: "POST", body: { chunk_id: evidence.chunk_id },
+      });
+      if (!result.steps?.length) {
+        setDiagramError("This passage does not have a clear sequence to diagram. You can open the original text below.");
+      } else {
+        setDiagram(result.steps);
+        setShowOriginal(false);
+      }
+    } catch (error) {
+      setDiagramError(error.message);
+    } finally {
+      setDiagramBusy(false);
+    }
+  }
   useEffect(() => {
     if (!evidence) return;
     const closeOnEscape = (event) => {
@@ -191,6 +235,8 @@ function EvidenceDrawer({
   }, [evidence, onClose]);
 
   if (!evidence) return null;
+  const details = structuredEvidence(evidence.text);
+  const transcript = transcriptEvidence(evidence.text);
   return (
     <aside
       className="evidence-drawer"
@@ -234,12 +280,40 @@ function EvidenceDrawer({
         {evidence.chunk_id && <span>Passage {evidence.chunk_id}</span>}
         <span>Published assignment snapshot</span>
       </div>
-      <article className="evidence-drawer-passage">
-        <span>Selected passage</span>
-        <p>
-          <EmphasizedText text={evidence.text} keywords={keywords} />
-        </p>
-      </article>
+      <div className="evidence-diagram-actions">
+        <button type="button" className="secondary compact" onClick={createDiagram} disabled={diagramBusy}>
+          {diagramBusy ? "Making visual steps…" : diagram ? "Regenerate visual steps" : "Make visual steps"}
+        </button>
+        <button type="button" className="quiet compact" aria-expanded={showOriginal} onClick={() => setShowOriginal((value) => !value)}>
+          {showOriginal ? "Hide original text" : "Show original text"}
+        </button>
+      </div>
+      {diagramError && <p className="help" role="status">{diagramError}</p>}
+      {!diagram && <section className="evidence-structured" aria-label="Structured source evidence">
+        <h3>Evidence at a glance</h3>
+        <p className="help">These are exact details from the selected passage, organized for reading—not a generated answer.</p>
+        {transcript ? <>
+          {transcript.initial && <p className="evidence-initial-stock"><strong>Before the first choice:</strong> {transcript.initial}</p>}
+          <div className="evidence-transcript-table"><table>
+            <thead><tr><th scope="col">Turn</th><th scope="col">Choice</th><th scope="col">Coins entered</th><th scope="col">Recorded outcome</th></tr></thead>
+            <tbody>{transcript.rows.map((row, index) => <tr key={index}>
+              <th scope="row">{index + 1}</th><td>{row.choice}</td><td>{row.coins.length ? row.coins.join(" · ") : "—"}</td><td>{row.outcome}</td>
+            </tr>)}</tbody>
+          </table></div>
+        </> : details.length ? <ol>{details.slice(0, 12).map((detail, index) => <li key={`${index}-${detail.excerpt}`}>
+          <span>{detail.kind}</span><p>{detail.excerpt}</p>
+        </li>)}</ol> : <p className="help">No readable details were extracted from this passage.</p>}
+        {!transcript && details.length > 12 && <p className="help">Showing 12 of {details.length} details. Open the original text to see the whole passage.</p>}
+      </section>}
+      {diagram && <section className="evidence-flow" aria-label="Visual steps from this passage">
+        <h3>Passage flow</h3>
+        <p className="help">Each step is quoted from this passage, in source order.</p>
+        <ol>{diagram.map((step, index) => <li key={`${index}-${step}`}><span>Step {index + 1}</span><p>{step}</p></li>)}</ol>
+      </section>}
+      {showOriginal && <article className="evidence-drawer-passage">
+        <span>Original selected passage</span>
+        <p><EmphasizedText text={evidence.text} keywords={keywords} /></p>
+      </article>}
       <p className="evidence-drawer-note">
         This passage comes from the frozen document version attached when the
         assignment was published.
@@ -256,11 +330,25 @@ function SocraticMessage({
   thinkingStep,
   keywords,
   sources,
-  score,
   responseSeconds,
   selectedEvidence,
   setSelectedEvidence,
 }) {
+  const [showSources, setShowSources] = useState(false);
+  const visualCue = latest && message.role === "assistant"
+    ? message.content.match(/\b(table|equation|formula|figure|chart|graph|matrix)\b/i)?.[1]
+    : null;
+  const visualSource = visualCue && sources?.find((source) => {
+    const content = source.text || "";
+    return new RegExp(`\\b${visualCue}\\b`, "i").test(content) ||
+      (["equation", "formula"].includes(visualCue.toLowerCase()) && /[=∑∫]/.test(content));
+  });
+  const visualText = visualSource?.text || "";
+  const visualStart = Math.max(0, visualText.search(/\b(?:table|equation|formula|figure|chart|graph|matrix)\b|[=∑∫]/i) - 100);
+  const visualExcerpt = visualText.slice(visualStart, visualStart + 650).trim();
+  const moneyBreakdown = message.role === "assistant"
+    ? moneyBreakdownFromQuestion(message.content) || (latest ? moneyBreakdownFromQuestion(thinkingStep) : null)
+    : null;
   const question =
     message.role === "assistant"
       ? latest
@@ -287,15 +375,12 @@ function SocraticMessage({
           <strong>
             {message.role === "user" ? studentName : "Socratic tutor"}
           </strong>
-          {message.role === "assistant" && score != null && (
-            <span className="score-badge">Score {Math.round(score)}/100</span>
-          )}
         </div>
         <div className="message-card-meta">
           {isPending && <span>Sending…</span>}
           <time>{messageTime(message.created_at)}</time>
           {latest && responseSeconds !== null && (
-            <span>Generated in {responseSeconds.toFixed(1)}s</span>
+            <span>Generated in {Math.max(1, Math.round(responseSeconds))}s</span>
           )}
         </div>
       </header>
@@ -323,10 +408,30 @@ function SocraticMessage({
           </div>
         )}
       </div>
+      {moneyBreakdown && <section className="message-calculation-aid" aria-label="Money breakdown">
+        <strong>Organize the amounts</strong>
+        <p>Use the counts from the question to work out each amount, then compare the total with the sandwich price.</p>
+        <table>
+          <thead><tr><th scope="col">Coin</th><th scope="col">Count</th><th scope="col">Each</th><th scope="col">Amount</th></tr></thead>
+          <tbody>{moneyBreakdown.rows.map((row) => <tr key={row.label}>
+            <th scope="row">{row.label}</th><td>{row.count}</td><td>{row.value}</td><td>?</td>
+          </tr>)}</tbody>
+          <tfoot><tr><th scope="row" colSpan="3">Total inserted</th><td>?</td></tr>
+            <tr><th scope="row" colSpan="3">Sandwich price</th><td>{moneyBreakdown.price}</td></tr>
+            <tr><th scope="row" colSpan="3">Change</th><td>?</td></tr></tfoot>
+        </table>
+      </section>}
       {latest && sources?.length > 0 && (
         <div className="message-evidence">
-          <strong>Evidence context</strong>
-          <div>
+          {visualSource && <section className="message-visual-reference" aria-label="Relevant source excerpt">
+            <strong>Relevant {visualCue.toLowerCase()} from your course material</strong>
+            <p className="help">Text extracted from {visualSource.title}{visualSource.page_number ? `, page ${visualSource.page_number}` : ""}.</p>
+            <pre>{visualExcerpt}</pre>
+          </section>}
+          <button type="button" className="quiet compact" aria-expanded={showSources} onClick={() => setShowSources((current) => !current)}>
+            {showSources ? "Hide supporting sources" : "View supporting sources"}
+          </button>
+          {showSources && <div>
             {sources.map((source, index) => (
               <button
                 type="button"
@@ -345,7 +450,7 @@ function SocraticMessage({
                 {source.page_number ? ` · page ${source.page_number}` : ""}
               </button>
             ))}
-          </div>
+          </div>}
         </div>
       )}
     </article>
@@ -357,7 +462,7 @@ function Result({ result }) {
   const evaluation = result.evaluation;
   return (
     <section className="result">
-      <h2>Assignment complete</h2>
+      <h2 className="result-complete-title">Assignment complete</h2>
       <p>Your work has been saved and your professor can see your progress.</p>
       {evaluation && (
         <>
@@ -424,23 +529,43 @@ export default function StudentWorkspace({ user }) {
     [generationStartedAt, setGenerationStartedAt] = useState(null),
     [generationSeconds, setGenerationSeconds] = useState(0),
     [lastGenerationSeconds, setLastGenerationSeconds] = useState(null),
+    [finalFeedbackBusy, setFinalFeedbackBusy] = useState(false),
     [selectedEvidence, setSelectedEvidence] = useState(null),
+    [materials, setMaterials] = useState([]),
+    [materialsLoading, setMaterialsLoading] = useState(false),
+    [materialBusy, setMaterialBusy] = useState(null),
+    [materialError, setMaterialError] = useState(""),
     [evidenceWidth, setEvidenceWidth] = useState(420),
     [chatExpanded, setChatExpanded] = useState(false);
   const [selectedConceptOption, setSelectedConceptOption] = useState(null),
-    [conceptCheckReason, setConceptCheckReason] = useState(""),
-    [conceptCheckHintVisible, setConceptCheckHintVisible] = useState(false);
+    [conceptCheckHintVisible, setConceptCheckHintVisible] = useState(false),
+    [showLearningSummary, setShowLearningSummary] = useState(false);
   const endRef = useRef(null),
+    learningPathRef = useRef(null),
     pending = useRef(null),
     reflectionPending = useRef(null),
     inputRef = useRef(null),
+    summaryFormRef = useRef(null),
+    summaryInputRef = useRef(null),
     focusComposerAfterReply = useRef(false),
     evidenceResize = useRef(null);
+  const currentLearningStep = attempt?.engine_state?.socratic?.learning_step_index ?? 0;
+  useEffect(() => {
+    const list = learningPathRef.current;
+    const current = list?.querySelector('[aria-current="step"]');
+    if (!current) return;
+    list.scrollTop = Math.max(0, current.offsetTop - list.offsetTop - (list.clientHeight - current.clientHeight) / 2);
+  }, [currentLearningStep, assignment?.id, attempt?.id]);
   useEffect(() => {
     let active = true;
     setLoaded(false);
     setAssignment(null);
     setAttempt(null);
+    setMaterials([]);
+    setMaterialError("");
+    setSelectedEvidence(null);
+    setShowLearningSummary(false);
+    setFinalFeedbackBusy(false);
     pending.current = null;
     Promise.all([
       api(`/platform/assignments/${id}`),
@@ -459,6 +584,16 @@ export default function StudentWorkspace({ user }) {
     };
   }, [id]);
   useEffect(() => {
+    if (assignment?.tool !== "socratic") return;
+    let active = true;
+    setMaterialsLoading(true);
+    api(`/platform/assignments/${id}/materials`)
+      .then((result) => { if (active) setMaterials(result.materials || []); })
+      .catch((failure) => { if (active) setMaterialError(failure.message); })
+      .finally(() => { if (active) setMaterialsLoading(false); });
+    return () => { active = false; };
+  }, [id, assignment?.tool]);
+  useEffect(() => {
     if (attempt)
       endRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [attempt?.messages?.length, outgoingMessage]);
@@ -471,6 +606,11 @@ export default function StudentWorkspace({ user }) {
     input.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [busy, attempt?.messages?.length]);
   useEffect(() => {
+    if (!showLearningSummary && attempt?.engine_state?.socratic?.phase !== "awaiting_reflection") return;
+    summaryFormRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+    summaryInputRef.current?.focus({ preventScroll: true });
+  }, [showLearningSummary, attempt?.engine_state?.socratic?.phase]);
+  useEffect(() => {
     if (!generationStartedAt) return;
     const update = () =>
       setGenerationSeconds((Date.now() - generationStartedAt) / 1000);
@@ -481,11 +621,32 @@ export default function StudentWorkspace({ user }) {
   useEffect(() => {
     setSelectedEvidence(null);
   }, [attempt?.engine_state?.sources]);
+  async function downloadMaterial(material) {
+    setMaterialBusy(material.document_id);
+    setMaterialError("");
+    try {
+      const response = await fetch(`/api/platform/assignments/${id}/materials/${encodeURIComponent(material.document_id)}/download`, {
+        headers: { Authorization: `Bearer ${session()?.access_token || ""}` },
+      });
+      if (!response.ok) throw new Error("The original file is unavailable. Please ask your instructor to upload it again.");
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = material.title;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (failure) {
+      setMaterialError(failure.message);
+    } finally {
+      setMaterialBusy(null);
+    }
+  }
   const conceptCheckId =
     attempt?.engine_state?.socratic?.concept_check?.id || null;
   useEffect(() => {
     setSelectedConceptOption(null);
-    setConceptCheckReason("");
     setConceptCheckHintVisible(false);
   }, [conceptCheckId]);
   useEffect(() => {
@@ -495,6 +656,13 @@ export default function StudentWorkspace({ user }) {
     );
     return () => document.body.classList.remove("evidence-workspace-open");
   }, [selectedEvidence]);
+  useEffect(() => {
+    document.body.classList.toggle(
+      "socratic-workspace-open",
+      assignment?.tool === "socratic",
+    );
+    return () => document.body.classList.remove("socratic-workspace-open");
+  }, [assignment?.tool]);
   useEffect(() => {
     if (assignment?.tool !== "reflections") return;
     let active = true;
@@ -512,7 +680,7 @@ export default function StudentWorkspace({ user }) {
       window.removeEventListener("focus", refresh);
     };
   }, [id, assignment?.tool]);
-  async function perform(path, body) {
+  async function perform(path, body, onResult) {
     setBusy(true);
     setError("");
     try {
@@ -521,6 +689,7 @@ export default function StudentWorkspace({ user }) {
         body,
       });
       setAttempt(result);
+      onResult?.(result);
       return true;
     } catch (e) {
       setError(e.message);
@@ -560,19 +729,26 @@ export default function StudentWorkspace({ user }) {
           : {}),
       };
     const startedAt = Date.now();
-    setOutgoingMessage({
-      role: "user",
-      content: text,
-      created_at: new Date(startedAt).toISOString(),
-    });
+    if (clarificationIndex === null) {
+      setOutgoingMessage({
+        role: "user",
+        content: text,
+        created_at: new Date(startedAt).toISOString(),
+      });
+    }
     if (fromComposer) setMessage("");
     focusComposerAfterReply.current = true;
     setGenerationStartedAt(startedAt);
     setGenerationSeconds(0);
     setLastGenerationSeconds(null);
-    const sent = await perform("messages", pending.current);
+    let awaitingClarification = false;
+    const sent = await perform("messages", pending.current, (result) => {
+      awaitingClarification = Boolean(
+        result.engine_state?.socratic?.pending_clarification?.inline,
+      );
+    });
     setOutgoingMessage(null);
-    setLastGenerationSeconds(sent ? (Date.now() - startedAt) / 1000 : null);
+    setLastGenerationSeconds(sent && !awaitingClarification ? (Date.now() - startedAt) / 1000 : null);
     setGenerationStartedAt(null);
     if (sent) {
       setMessage("");
@@ -581,11 +757,19 @@ export default function StudentWorkspace({ user }) {
       setMessage(text);
     }
   }
-  async function submitConceptCheck(event) {
-    event.preventDefault();
-    const reason = conceptCheckReason.trim();
-    if (selectedConceptOption === null || !reason || busy) return;
-    await sendMessage(reason, null, selectedConceptOption);
+  async function submitConceptCheck(optionIndex) {
+    if (busy) return;
+    setSelectedConceptOption(optionIndex);
+    const option = attempt?.engine_state?.socratic?.concept_check?.options?.[optionIndex];
+    if (!option) return;
+    if (pending.current?.concept_check_option !== optionIndex) {
+      pending.current = {
+        message: option.text,
+        request_id: crypto.randomUUID(),
+        concept_check_option: optionIndex,
+      };
+    }
+    if (await perform("messages", pending.current)) pending.current = null;
   }
   async function finishLearningSummary(event) {
     event.preventDefault();
@@ -597,14 +781,19 @@ export default function StudentWorkspace({ user }) {
     )
       reflectionPending.current = { summary, request_id: crypto.randomUUID() };
     const startedAt = Date.now();
+    setFinalFeedbackBusy(true);
     setGenerationStartedAt(startedAt);
     setGenerationSeconds(0);
-    const sent = await perform("reflection", reflectionPending.current);
-    setLastGenerationSeconds(sent ? (Date.now() - startedAt) / 1000 : null);
-    setGenerationStartedAt(null);
-    if (sent) {
-      setStudentReflection("");
-      reflectionPending.current = null;
+    try {
+      const sent = await perform("reflection", reflectionPending.current);
+      setLastGenerationSeconds(sent ? (Date.now() - startedAt) / 1000 : null);
+      if (sent) {
+        setStudentReflection("");
+        reflectionPending.current = null;
+      }
+    } finally {
+      setGenerationStartedAt(null);
+      setFinalFeedbackBusy(false);
     }
   }
   function clampEvidenceWidth(width) {
@@ -655,6 +844,9 @@ export default function StudentWorkspace({ user }) {
     completed = attempt?.status === "completed",
     state = attempt?.engine_state || {};
   const socratic = state.socratic || {};
+  const inlineClarification = socratic.pending_clarification?.inline
+    ? socratic.pending_clarification
+    : null;
   const conceptCheck = socratic.concept_check || null;
   const thinkingStep =
     assignment.tool === "socratic"
@@ -668,14 +860,16 @@ export default function StudentWorkspace({ user }) {
   const latestAssistantIndex = attempt?.messages
     ? attempt.messages.findLastIndex((item) => item.role === "assistant")
     : -1;
-  const suggestions = [
-    ["I’m not sure yet", "I’m not sure yet."],
-    [
-      "Draft an example answer",
-      "Could you draft a small example answer to help me understand?",
-    ],
-    ["Could you guide me?", "Could you guide me through this step?"],
-  ];
+  const hasDiscussedCurrentStep = attempt?.messages?.slice(socratic.step_started_at_message_count || 0)
+    .some((item) => item.role === "user");
+  const stepActionDisabled = busy || socratic.phase !== "teaching" ||
+    Boolean(socratic.pending_clarification || socratic.concept_check) || !hasDiscussedCurrentStep;
+  const learningStepCount = assignment.student_config?.learning_steps?.length || 0;
+  const activeLearningStep = Math.min(Math.max(Number(socratic.learning_step_index) || 0, 0), Math.max(learningStepCount - 1, 0));
+  const finalLearningStepFinished = Boolean(attempt && learningStepCount && activeLearningStep === learningStepCount - 1 && (
+    showLearningSummary || attempt.status === "completed" || ["awaiting_reflection", "ready_to_submit"].includes(socratic.phase)
+  ));
+  const completedLearningSteps = attempt ? Math.min(learningStepCount, activeLearningStep + Number(finalLearningStepFinished)) : 0;
   const milestone =
     assignment.student_config?.module_type === "milestone_based";
   return (
@@ -700,7 +894,7 @@ export default function StudentWorkspace({ user }) {
       </div>
       <Notice error={error} />
       <div
-        className={`workspace-grid${selectedEvidence ? " evidence-open" : ""}${chatExpanded ? " chat-expanded" : ""}${conceptCheck ? " concept-check-active" : ""}`}
+        className={`workspace-grid${assignment.tool === "socratic" ? " socratic-workspace" : ""}${selectedEvidence ? " evidence-open" : ""}${chatExpanded ? " chat-expanded" : ""}${conceptCheck ? " concept-check-active" : ""}`}
         style={
           selectedEvidence
             ? { "--evidence-drawer-width": `${evidenceWidth}px` }
@@ -717,6 +911,56 @@ export default function StudentWorkspace({ user }) {
           </div>
           {assignment.tool === "socratic" && (
             <>
+              {assignment.student_config?.learning_steps?.length > 0 && (
+                <section className="student-learning-path" aria-labelledby="student-learning-path-title">
+                  <h3 id="student-learning-path-title">Your learning path</h3>
+                  <p className="help">Follow these steps from beginning to end. You can ask the tutor questions about any step.</p>
+                  <div className="student-learning-progress">
+                    <p>{completedLearningSteps} of {learningStepCount} steps complete{attempt && completedLearningSteps < learningStepCount ? ` · Stage ${activeLearningStep + 1} of ${learningStepCount}` : ""}</p>
+                    <div role="progressbar" aria-label="Learning path progress" aria-valuemin={0} aria-valuemax={learningStepCount} aria-valuenow={completedLearningSteps}>
+                      <span style={{ width: `${Math.round(completedLearningSteps / learningStepCount * 100)}%` }} />
+                    </div>
+                  </div>
+                  <ol ref={learningPathRef} aria-label="Learning path steps" tabIndex={0}>
+                    {assignment.student_config.learning_steps.map((step, index) => {
+                      const completed = attempt && (index < activeLearningStep || (finalLearningStepFinished && index === activeLearningStep));
+                      const current = attempt && attempt.status !== "completed" && !finalLearningStepFinished && index === activeLearningStep;
+                      return (
+                        <li key={`${index}-${step.title}`} className={current ? "is-current" : ""} aria-current={current ? "step" : undefined}>
+                          {current && <span className="student-step-active-label">Current step</span>}
+                          <div className="student-step-title">
+                            <strong>{step.title}</strong>
+                            {completed && <span className="student-step-complete-icon" role="img" aria-label="Completed step">✓</span>}
+                          </div>
+                          <span>{step.goal}</span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                  {attempt && attempt.status !== "completed" && !showLearningSummary &&
+                    (activeLearningStep < learningStepCount - 1 ? (
+                      <button type="button" className="compact next-learning-step" disabled={stepActionDisabled} onClick={() => perform("next-step", {})}>
+                        Continue to next step
+                      </button>
+                    ) : socratic.phase !== "ready_to_submit" && (
+                      <button type="button" className="compact next-learning-step" disabled={stepActionDisabled} onClick={() => setShowLearningSummary(true)}>
+                        Finish conversation and summarize
+                      </button>
+                    ))}
+                </section>
+              )}
+              <section className="student-course-materials" aria-labelledby="student-course-materials-title">
+                <h3 id="student-course-materials-title">Course materials</h3>
+                <p className="help">Download the original documents your instructor selected for this assignment.</p>
+                {materialError && <p className="help" role="alert">{materialError}</p>}
+                {materialsLoading ? <p className="help" role="status">Loading course materials…</p> : materials.length ? <ul>
+                  {materials.map((material) => <li key={material.document_id}>
+                    {material.original_available ? <button type="button" className="quiet" onClick={() => downloadMaterial(material)} disabled={materialBusy === material.document_id}>
+                      {materialBusy === material.document_id ? "Downloading…" : `Download ${material.title}`}
+                    </button> : <span>{material.title} · Original file unavailable</span>}
+                  </li>)}
+                </ul> : !materialError && <p className="help">No published documents are available.</p>}
+              </section>
               {assignment.student_config?.keyword_glossary?.length > 0 && (
                 <section
                   className="student-keyword-glossary"
@@ -794,7 +1038,9 @@ export default function StudentWorkspace({ user }) {
               </p>
               {!milestone && (
                 <button
-                  className="secondary"
+                  className={assignment.tool === "socratic" && socratic.phase === "ready_to_submit"
+                    ? "submit-assignment-ready"
+                    : "secondary"}
                   disabled={
                     busy ||
                     (assignment.tool === "socratic" &&
@@ -914,16 +1160,10 @@ export default function StudentWorkspace({ user }) {
                       key={i}
                       studentName={studentName}
                       message={m}
-                      latest={i === latestAssistantIndex}
+                      latest={i === latestAssistantIndex && !inlineClarification}
                       thinkingStep={thinkingStep}
                       keywords={keywords}
                       sources={state.sources}
-                      score={
-                        m.total_score ??
-                        (i === latestAssistantIndex
-                          ? socratic.last_score
-                          : null)
-                      }
                       responseSeconds={lastGenerationSeconds}
                       selectedEvidence={selectedEvidence}
                       setSelectedEvidence={setSelectedEvidence}
@@ -991,7 +1231,7 @@ export default function StudentWorkspace({ user }) {
                       </div>
                     </article>
                   ))}
-                {busy &&
+                {busy && !finalFeedbackBusy &&
                   (assignment.tool === "socratic" ? (
                     <SocraticThinkingMessage
                       elapsedSeconds={
@@ -999,40 +1239,35 @@ export default function StudentWorkspace({ user }) {
                       }
                     />
                   ) : (
-                    <p className="working" role="status">
-                      Working on your response…
-                    </p>
+                    <GenerationStatus
+                      title={TOOLS[assignment.tool]?.name || "BrainTutor"}
+                      message="Working on your response…"
+                      messageCard
+                    />
                   ))}
+                {assignment.tool === "socratic" &&
+                  inlineClarification &&
+                  !completed &&
+                  !busy && (
+                    <div className="intent-confirmation" role="group" aria-label="Clarify your question">
+                      <span className="intent-confirmation-label">Quick check before I answer</span>
+                      <p>{inlineClarification.question}</p>
+                      <div className="intent-confirmation-options">
+                        {socratic.clarification_options?.map((option, index) => (
+                          <button
+                            type="button"
+                            className="suggestion-chip"
+                            key={index}
+                            onClick={() => sendMessage(option.label, index)}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 <div ref={endRef} />
               </div>
-              {assignment.tool === "socratic" &&
-                thinkingStep.endsWith("?") &&
-                !completed &&
-                !["awaiting_reflection", "ready_to_submit"].includes(
-                  socratic.phase,
-                ) &&
-                !conceptCheck &&
-                !socratic.clarification_options?.length && (
-                  <div
-                    className={`suggested-responses${busy ? " is-busy" : ""}`}
-                    aria-label="Suggested responses"
-                  >
-                    {suggestions.map(([label, value]) => (
-                      <button
-                        type="button"
-                        className="suggestion-chip"
-                        disabled={busy}
-                        key={label}
-                        onClick={() => {
-                          setMessage(value);
-                          inputRef.current?.focus();
-                        }}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                )}
               {!completed && assignment.tool === "student-agent" && (
                 <div className="tutor-controls">
                   {state.nav?.map((n) => (
@@ -1076,6 +1311,7 @@ export default function StudentWorkspace({ user }) {
               )}
               {assignment.tool === "socratic" &&
                 socratic.clarification_options?.length > 0 &&
+                !inlineClarification &&
                 !conceptCheck &&
                 !completed && (
                   <div
@@ -1098,30 +1334,56 @@ export default function StudentWorkspace({ user }) {
                 <ConceptCheck
                   check={conceptCheck}
                   selectedOption={selectedConceptOption}
-                  reason={conceptCheckReason}
                   busy={busy}
                   hintVisible={conceptCheckHintVisible}
                   onShowHint={() =>
                     setConceptCheckHintVisible((visible) => !visible)
                   }
-                  onSelect={setSelectedConceptOption}
-                  onReasonChange={setConceptCheckReason}
-                  onSubmit={submitConceptCheck}
+                  onSelect={submitConceptCheck}
                 />
+              )}
+              {assignment.tool === "socratic" && socratic.concept_check_response && !conceptCheck && (
+                <div className="concept-check concept-check-feedback" role="status">
+                  <strong>{socratic.concept_check_response.correct ? "Correct—this example applies the concept." : "Not quite—review the best example below."}</strong>
+                  {!socratic.concept_check_response.correct && (
+                    <p>{socratic.concept_check_response.correct_option?.text}</p>
+                  )}
+                  <p>Continue the discussion when you are ready.</p>
+                </div>
               )}
               {assignment.tool === "socratic" && (
                 <SocraticLearningSummary
                   summary={socratic.completion_summary}
                 />
               )}
+              {!completed &&
+                assignment.tool === "socratic" &&
+                !assignment.student_config?.learning_steps?.length &&
+                socratic.phase === "teaching" &&
+                !showLearningSummary &&
+                !conceptCheck &&
+                !inlineClarification &&
+                attempt.messages.some((item) => item.role === "user") && (
+                  <button
+                    type="button"
+                    className="secondary compact"
+                    disabled={busy}
+                    onClick={() => setShowLearningSummary(true)}
+                  >
+                    Finish conversation and summarize
+                  </button>
+                )}
               {completed ? (
                 <Result result={attempt.result || {}} />
               ) : assignment.tool === "socratic" &&
-                socratic.phase === "awaiting_reflection" ? (
+                (socratic.phase === "awaiting_reflection" ||
+                  (socratic.phase === "teaching" && showLearningSummary)) ? (
                 <form
-                  className="composer learning-reflection-form"
+                  ref={summaryFormRef}
+                  className={`composer learning-reflection-form${finalLearningStepFinished ? " is-highlighted" : ""}`}
                   onSubmit={finishLearningSummary}
                 >
+                  {finalLearningStepFinished && <p className="summary-focus-label">Final step complete · Summarize your learning</p>}
                   <label htmlFor="student-learning-summary">
                     Summarize what you learned in your own words
                   </label>
@@ -1131,6 +1393,7 @@ export default function StudentWorkspace({ user }) {
                   </p>
                   <textarea
                     id="student-learning-summary"
+                    ref={summaryInputRef}
                     value={studentReflection}
                     maxLength={4000}
                     rows={5}
@@ -1142,6 +1405,16 @@ export default function StudentWorkspace({ user }) {
                   <button disabled={busy || !studentReflection.trim()}>
                     Get final feedback
                   </button>
+                  {socratic.phase === "teaching" && (
+                    <button
+                      type="button"
+                      className="secondary compact"
+                      disabled={busy}
+                      onClick={() => setShowLearningSummary(false)}
+                    >
+                      Keep chatting
+                    </button>
+                  )}
                 </form>
               ) : assignment.tool === "socratic" &&
                 socratic.phase === "ready_to_submit" ? (
@@ -1194,6 +1467,7 @@ export default function StudentWorkspace({ user }) {
         </section>
       </div>
       <EvidenceDrawer
+        assignmentId={id}
         evidence={selectedEvidence}
         keywords={keywords}
         width={evidenceWidth}
@@ -1203,6 +1477,12 @@ export default function StudentWorkspace({ user }) {
         onResizeEnd={stopEvidenceResize}
         onResizeKeyDown={resizeEvidenceWithKeyboard}
       />
+      {finalFeedbackBusy && <GenerationStatus
+        message="Evaluating your learning summary and preparing final feedback…"
+        elapsedSeconds={generationSeconds}
+        ariaLabel="BrainTutor is preparing final feedback"
+        fullScreen
+      />}
     </>
   );
 }

@@ -21,6 +21,20 @@ test("published assignment opens summary and KPIs with navigation to Analytics",
  await userEvent.setup().click(screen.getByRole("link",{name:"Detailed Insights →"}));
  expect(screen.getByText("Analytics will come here.")).toBeInTheDocument();
 });
+test("published assignment can preview the student start without creating an attempt",async()=>{
+ api.mockClear();
+ render(<MemoryRouter initialEntries={[{pathname:"/professor/activities/a1",state:{showStudentPreview:true}}]}><Routes><Route path="/professor/activities/:id" element={<InstructorActivityPage/>}/></Routes></MemoryRouter>);
+ const preview=await screen.findByRole("region",{name:"Student-view preview"});
+ expect(preview).toHaveTextContent("Design tradeoffs");
+ expect(preview).toHaveTextContent("read only");
+ expect(screen.queryByRole("complementary",{name:"Instructor quick guide"})).not.toBeInTheDocument();
+ await userEvent.setup().click(screen.getByRole("button",{name:"Preview start"}));
+ expect(preview).toHaveTextContent("Should teams favor simple design?");
+ expect(screen.getByLabelText("Your response")).toBeDisabled();
+ expect(api.mock.calls.some(([path])=>path.includes("/start") || path.includes("/attempt"))).toBe(false);
+ await userEvent.setup().click(screen.getByRole("button",{name:"Hide student preview"}));
+ expect(screen.queryByRole("region",{name:"Student-view preview"})).not.toBeInTheDocument();
+});
 test("missing grade data is unavailable rather than a fabricated score",()=>{
  expect(progressMetrics([{progress:"completed",result:{message_count:4}},{progress:"not_started"}])).toMatchObject({assigned:2,started:1,completed:1,pending:1,completionRate:50,averageGrade:null});
 });

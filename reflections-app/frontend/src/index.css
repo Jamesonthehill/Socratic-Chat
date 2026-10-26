@@ -594,3 +594,25 @@ th {
   line-height: 1.5;
   margin: 0.35rem 0 0.65rem;
 }
+.reflection-thinking {
+    align-items: center;
+    display: flex;
+    gap: 10px;
+}
+.reflection-thinking-icon {
+    color: #5148e6;
+    display: inline-flex;
+    height: 28px;
+    width: 28px;
+}
+.reflection-thinking-icon svg {
+    animation: reflection-thinking-orbit 1.8s linear infinite;
+    height: 28px;
+    width: 28px;
+}
+@keyframes reflection-thinking-orbit {
+    to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .reflection-thinking-icon svg { animation: none; }
+}

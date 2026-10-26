@@ -8,7 +8,7 @@ from app.schemas import ChatMessage, Source
 from app.classifier import is_contextual_meaning_request
 
 if TYPE_CHECKING:
-    from app.answer_evaluation import AnswerEvaluation
+    from app.answer_evaluation import AnswerEvaluation, QualitativeFeedback
     from app.classifier import MessageClassification
 
 
@@ -107,7 +107,7 @@ def choose_socratic_strategy(
     history: list[ChatMessage],
     sources: list[Source],
     classification: MessageClassification | None = None,
-    evaluation: AnswerEvaluation | None = None,
+    evaluation: AnswerEvaluation | QualitativeFeedback | None = None,
     stable_concept: str | None = None,
 ) -> SocraticDecision:
     # Strategy selection is explicit code, so logs can explain why the tutor
@@ -129,7 +129,7 @@ def _choose_socratic_strategy(
     history: list[ChatMessage],
     sources: list[Source],
     classification: MessageClassification | None = None,
-    evaluation: AnswerEvaluation | None = None,
+    evaluation: AnswerEvaluation | QualitativeFeedback | None = None,
 ) -> SocraticDecision:
     """Choose one explainable teaching action after document retrieval."""
     clean_message = " ".join(message.strip().split())
@@ -153,6 +153,7 @@ def _choose_socratic_strategy(
     if classification:
         direct_request = (
             classification.route == "administrative"
+            or classification.conversation_action == "direct"
             or bool(DIRECT_REQUEST_PATTERN.search(clean_message))
         )
     else:
@@ -281,8 +282,11 @@ def _choose_socratic_strategy(
             "Use the answer evaluation as evidence, not as a learner level. Write one natural, non-empty response "
             "to what the learner actually said. Acknowledge only supported ideas, address any stated misconception "
             "or missing concept plainly, and keep the established people, objects, and goal when they remain useful. "
-            "Then ask exactly one question that either checks the unresolved concept or advances to the next grounded "
-            "decision when no gap remains. Do not mention a score, level, category, or tutoring stage."
+            "If a follow-up would help, ask one question about the concept raised by the learner's latest message. "
+            "It may check an unresolved idea or explore another relevant part of the current learning goal; do not "
+            "require it to advance the previous tutor question. Use the established example only when it helps. "
+            "Do not turn the follow-up into a request to quote or locate words on a document page. "
+            "Do not mention a score, level, category, or tutoring stage."
         )
         return SocraticDecision(
             mode="socratic", student_state="answer_evaluated", strategy="feedback_then_question",
@@ -389,8 +393,12 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
             f"{emphasis_instruction}"
         )
     continuity = (
-        "Scenario continuity: keep one concrete example throughout diagnosis, hints, correction, and reasoning. "
-        "Reuse its people, objects, names, and goal. Extend it one decision at a time. "
+        "Scenario continuity: when an established example remains useful, keep its people, objects, names, and goal. "
+        "After the first example is established, do not invent a fresh example or switch settings unless the learner "
+        "explicitly asks for a different example. Do not force each new question to follow the previous tutor "
+        "question or advance the example in a fixed sequence. Choose what to ask from the learner's latest message "
+        "and current learning goal. When using the example, ask what the learner would choose, predict, or explain "
+        "there, not what words appear on a page or where a fact is written. "
         "Make that continuity visible by naming concrete details from the original example rather than referring "
         "only to 'the same people', 'the same situation', or 'another complication'. "
         "Struggling students need a simpler step in that same example, not an unrelated analogy. "
@@ -412,7 +420,8 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
         )
     return (
         continuity + "The teaching objective is for the learner to understand and use the instructor-published topic. "
-        "Make the next question advance that understanding rather than prolonging the dialogue. "
+        "Ask a question only when it helps the learner understand the current goal; it need not continue the "
+        "previous question's line of reasoning. "
         f"Socratic teaching state: {decision.student_state}. Strategy: {decision.strategy}. "
         f"Target concept: {decision.target_concept or 'infer from the latest message'}. "
         f"Example pattern: {decision.example_type}. "

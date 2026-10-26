@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { api, cachedAssignmentView, pendingAssignmentDetail, date, TOOLS } from "./api";
 import { Notice, Badge } from "./ui";
 import { loadCourseContext, cachedCourseContext } from "./courseContext";
 import CreateActivity from "./CreateActivity";
+import { StudentActivityPreview } from "./StudentActivityPreview";
 
 export function progressMetrics(students = []) {
   const assigned = students.length;
@@ -19,6 +20,9 @@ export function progressMetrics(students = []) {
 
 export default function InstructorActivityPage() {
   const {id} = useParams();
+  const location = useLocation();
+  const [showPreview,setShowPreview] = useState(Boolean(location.state?.showStudentPreview));
+  useEffect(()=>setShowPreview(Boolean(location.state?.showStudentPreview)),[id,location.state]);
   const [item,setItem] = useState(()=>cachedAssignmentView(`/platform/assignments/${id}`));
   const [context,setContext]=useState(()=>{
     const cached=cachedCourseContext();
@@ -52,8 +56,9 @@ export default function InstructorActivityPage() {
   const config=item.config || {};
   const progressValue=value=>item.progress_unavailable ? "Not available" : value;
   return <>
-    <div className="activity-detail-nav"><Link className="back" to="/professor">← All assignments</Link></div>
+    <div className="activity-detail-nav"><Link className="back" to="/professor">← All assignments</Link><button type="button" className="secondary" aria-expanded={showPreview} aria-controls="student-activity-preview" onClick={()=>setShowPreview(value=>!value)}>{showPreview ? "Hide student preview" : "Preview as student"}</button></div>
     <div className="page-heading"><div><p className="context">{TOOLS[item.tool]?.name || item.tool}</p><h1>{item.title}</h1></div><Badge value={item.status}/></div>
+    {showPreview && <StudentActivityPreview item={item} files={files}/>}
     <section className="panel" aria-labelledby="activity-progress-title"><div className="activity-glance-heading"><h2 id="activity-progress-title">At a glance</h2><Link className="button compact" to="/professor/analytics">Detailed Insights →</Link></div><div className="activity-kpis">{[
       ["Assigned students",metrics.assigned],["Students started",progressValue(metrics.started)],["Completed",progressValue(metrics.completed)],["Pending",progressValue(metrics.pending)],["Completion rate",progressValue(`${metrics.completionRate}%`)],["Average grade",metrics.averageGrade===null ? "Not available" : `${metrics.averageGrade}%`]
     ].map(([label,value])=><div className="activity-kpi" key={label}><span>{label}</span><strong>{value}</strong></div>)}</div><p className="help">Pending includes students who have not finished. Grades appear when the chatbot supplies percentage scores.</p></section>

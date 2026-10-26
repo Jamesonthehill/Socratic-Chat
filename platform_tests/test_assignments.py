@@ -98,6 +98,31 @@ def test_draft_publish_visibility_and_frozen_config(client, roster, monkeypatch)
     assert duplicate['status'] == 'draft' and duplicate['id'] != sid
 
 
+def test_concept_check_choice_is_saved_without_adding_chat_messages(client, roster, monkeypatch):
+    item, _ = draft(client, roster)
+    publish(client, roster, item, monkeypatch)
+    path = f"/api/platform/assignments/{item['id']}"
+    started = client.post(path + '/start', headers=roster['headers']['student'])
+    assert started.status_code == 200, started.text
+    before = started.json()['messages']
+    monkeypatch.setattr(engines, 'message', lambda *_args, **_kwargs: {
+        'quiz_only': True,
+        'socratic': {'concept_check_completed': True, 'concept_check_response': {'correct': True}},
+    })
+    request_id = str(uuid4())
+    answer = client.post(path + '/messages', headers=roster['headers']['student'], json={
+        'message': 'Selected quiz option', 'request_id': request_id, 'concept_check_option': 0,
+    })
+    assert answer.status_code == 200, answer.text
+    assert answer.json()['messages'] == before
+    assert answer.json()['engine_state']['socratic']['concept_check_response']['correct'] is True
+    repeat = client.post(path + '/messages', headers=roster['headers']['student'], json={
+        'message': 'Selected quiz option', 'request_id': request_id, 'concept_check_option': 0,
+    })
+    assert repeat.status_code == 200
+    assert repeat.json()['messages'] == before
+
+
 def test_socratic_snapshot_survives_material_changes(client, roster, monkeypatch):
     monkeypatch.setattr(engines.db, 'list_rag_files', lambda **kw: [{'document_id':'doc'}])
     chunks = [{'document_id':'doc','chunk_id':'doc:0','course_id':roster['course'],'title':'Notes','text':'An actor is an external role.','embedding':[1.0, 0.0]}]

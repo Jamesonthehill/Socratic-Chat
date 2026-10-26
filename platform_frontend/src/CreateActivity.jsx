@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, TOOLS, date } from "./api";
 import { SocraticConfig, ReflectionConfig, defaults } from "./ToolConfig";
-import { Notice } from "./ui";
+import { GenerationStatus, Notice } from "./ui";
 import LessonPreview from "./LessonPreview";
 import ActivityRail from "./ActivityRail";
 import ActivityIcon from "./ActivityIcon";
+import ActivityTutorial from "./ActivityTutorial";
 import { loadCourseContext } from "./courseContext";
 
 const initial = {
@@ -60,13 +61,16 @@ export default function CreateActivity({
   const [search, setSearch] = useState("");
   const [stage, setStage] = useState(1);
   const [busy, setBusy] = useState(false);
+  const [busyLabel, setBusyLabel] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [loadingFiles, setLoadingFiles] = useState(false);
-  const [pendingKeyword, setPendingKeyword] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [publishIssue, setPublishIssue] = useState(null);
+  const [showTutorial, setShowTutorial] = useState(false);
   const fileInput = useRef(null);
+  const tutorialButton = useRef(null);
   const chatConfigs = useRef({});
   const settingsRef = useRef(null);
   const reviewRef = useRef(null);
@@ -128,13 +132,16 @@ export default function CreateActivity({
   const change = (key, value) => {
     setDraft((d) => ({ ...d, [key]: value }));
     setStage(1);
+    setPublishIssue(null);
+    setError("");
   };
   const setConfig = (value) => {
     setDraft((d) => ({ ...d, config: value }));
     setStage(2);
+    setPublishIssue(null);
+    setError("");
   };
   const chooseTool = (key) => {
-    setPendingKeyword(false);
     chatConfigs.current[draft.tool] = draft.config;
     setDraft((d) => ({
       ...d,
@@ -146,31 +153,19 @@ export default function CreateActivity({
     }));
     setStage(2);
     setNotice("");
+    setPublishIssue(null);
+    setError("");
   };
   const ready = !!draft.title.trim() && !!draft.course_id && !!draft.tool;
   const connected = draft.tool !== "aiducate";
   const frozen = draft.status && draft.status !== "draft";
-  useEffect(() => {
-    if (!draft.tool || busy || frozen) return;
-    const clear = (event) => {
-      const target = event.target;
-      if (
-        !(target instanceof Element) ||
-        target.closest(
-          ".activity-rail, .activity-settings, .activity-review, input, textarea, select, button, a, label",
-        )
-      )
-        return;
-      chatConfigs.current[draft.tool] = draft.config;
-      setDraft((d) => ({ ...d, tool: "", config: {} }));
-      setStage(1);
-      setNotice("");
-    };
-    document.addEventListener("pointerdown", clear);
-    return () => document.removeEventListener("pointerdown", clear);
-  }, [draft.tool, draft.config, busy, frozen]);
-  const run = async (fn) => {
+  const closeTutorial = () => {
+    setShowTutorial(false);
+    requestAnimationFrame(() => tutorialButton.current?.focus({ preventScroll: true }));
+  };
+  const run = async (fn, label = "Saving activity") => {
     setBusy(true);
+    setBusyLabel(label);
     setError("");
     setNotice("");
     try {
@@ -179,6 +174,7 @@ export default function CreateActivity({
       setError(e.message);
     } finally {
       setBusy(false);
+      setBusyLabel("");
     }
   };
   const save = async (publish, quiet = false) => {
@@ -197,7 +193,9 @@ export default function CreateActivity({
               custom_questions: draft.config.custom_questions || [],
               learning_plan: draft.config.learning_plan || {},
             }
-          : { ...draft.config, document_ids: selected };
+          : draft.tool === "socratic"
+            ? { ...draft.config, guidance_mode: draft.config.guidance_mode || (draft.config.learning_steps?.length ? "guided" : "basic"), learning_steps: draft.config.guidance_mode === "basic" ? [] : (draft.config.learning_steps || []), document_ids: selected }
+            : { ...draft.config, document_ids: selected };
     const payload = {
       course_id: draft.course_id,
       title: draft.title,
@@ -216,7 +214,7 @@ export default function CreateActivity({
       await api(`/platform/assignments/${saved.id}/publish`, {
         method: "POST",
       });
-      navigate("/professor");
+      navigate(`/professor/activities/${saved.id}`, { state: { showStudentPreview: true } });
     } else if (!quiet) {
       navigate("/professor", { state: { notice: "Draft saved." } });
     }
@@ -246,33 +244,63 @@ export default function CreateActivity({
           block: "start",
         }),
       );
-    });
-  const confirmKeywords = () =>
+    }, draft.tool === "self-directed-learning" ? "Generating lesson review" : "Preparing activity review");
+  const generateSocraticSetup = () =>
     run(async () => {
-      if (!draft.title.trim())
-        throw new Error("Enter an activity title before confirming keywords.");
-      if (pendingKeyword)
-        throw new Error("Press + to add the keyword before confirming.");
-      const saved = await save(false, true);
-      const prepared = await api(
-        `/platform/assignments/${saved.id}/keywords/confirm`,
-        { method: "POST" },
-      );
+      if (!selected.length)
+        throw new Error("Select at least one indexed course document before generating the setup.");
+      const generated = await api(`/courses/${draft.course_id}/socratic-setup/generate`, {
+        method: "POST",
+        body: {
+          document_ids: selected,
+          title: draft.title,
+          assignment_instructions: draft.instructions,
+        },
+      });
       setDraft((current) => ({
         ...current,
-        ...saved,
-        keyword_preparation: prepared,
+        instructions: generated.instructions,
+        keyword_preparation: null,
+        config: {
+          ...current.config,
+          scope_mode: "assignment",
+          guidance_mode: "guided",
+          keywords: [],
+          optional_keywords: [],
+          prompt: generated.prompt,
+          minimum_messages: generated.minimum_messages,
+          learning_steps: generated.learning_steps || [],
+        },
       }));
-      setNotice(
-        "Keywords confirmed. Course materials are prepared; publish when ready.",
-      );
-    });
+      setStage(2);
+      setPublishIssue(null);
+      setNotice(`AI drafted ${(generated.learning_steps || []).length} learning steps from ${(generated.source_files || []).join(", ")}. Review the path before publishing.`);
+    }, "Generating setup from selected documents");
+  const generateSocraticOpening = () =>
+    run(async () => {
+      if (!selected.length)
+        throw new Error("Select at least one indexed course document before generating an opening question.");
+      const generated = await api(`/courses/${draft.course_id}/socratic-opening/generate`, {
+        method: "POST",
+        body: {
+          document_ids: selected,
+          title: draft.title,
+          assignment_instructions: draft.instructions,
+        },
+      });
+      setDraft((current) => ({
+        ...current,
+        config: { ...current.config, prompt: generated.prompt },
+      }));
+      setNotice("AI drafted an opening question from your selected documents. Review or edit it before publishing.");
+    }, "Generating opening question from selected documents");
   const upload = async (event) => {
     const uploads = [...event.target.files];
     event.target.value = "";
     if (!uploads.length) return;
     setUploading(true);
     setBusy(true);
+    setBusyLabel("Uploading and indexing course materials");
     setError("");
     setUploadError("");
     setNotice("");
@@ -300,11 +328,13 @@ export default function CreateActivity({
       ]);
       setStage(1);
       setNotice("Documents uploaded and ready to select.");
+      setPublishIssue(null);
     } catch (e) {
       setUploadError(e.message);
     } finally {
       setUploading(false);
       setBusy(false);
+      setBusyLabel("");
     }
   };
   const deleteDocument = (file) => {
@@ -340,59 +370,89 @@ export default function CreateActivity({
         <Link className="back" to="/professor">
           ← All assignments
         </Link>
-        <p role="status">
-          {id ? "Loading saved activity…" : "Opening activity creation…"}
-        </p>
+        <GenerationStatus message={id ? "Loading saved activity…" : "Opening activity creation…"} fullScreen />
       </>
     );
+  const focusPublishIssue = (issue) => {
+    setPublishIssue(issue);
+    requestAnimationFrame(() => {
+      const selectors = {
+        title: '[data-publish-target="title"]',
+        activity: '[data-activity-tutorial="activity"] .activity-choice',
+        "learning-path": '[data-publish-target="learning-path"] .socratic-generate-setup',
+        "debate-scenario": '[data-publish-target="debate-scenario"]',
+        "reflection-subtopics": '[data-publish-target="reflection-subtopics"]',
+        "milestone-prompt": '[data-publish-target="milestone-prompt"]',
+        "historical-csv": '[data-publish-target="historical-csv"]',
+      };
+      const selector = selectors[issue.target];
+      const target = issue.target === "materials"
+        ? document.querySelector('.activity-document-row input:not(:disabled)')
+          || document.querySelector('[data-activity-tutorial="materials"] .activity-material-heading button')
+        : selector ? document.querySelector(selector) : null;
+      const destination = target?.disabled
+        ? document.querySelector('input[name="socratic-guidance-mode"][value="guided"]')
+        : target;
+      (destination || feedbackRef.current)?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      (destination || feedbackRef.current)?.focus({ preventScroll: true });
+    });
+  };
+  const serverPublishIssue = (message) => {
+    if (/learning.step|learning.path|guidance_mode/i.test(message)) return "learning-path";
+    if (/document|course material|indexed|embedding/i.test(message)) return "materials";
+    if (/sub.?topic/i.test(message)) return "reflection-subtopics";
+    if (/milestone.*prompt/i.test(message)) return "milestone-prompt";
+    if (/historical|csv|required columns/i.test(message)) return "historical-csv";
+    if (/scenario/i.test(message)) return "debate-scenario";
+    if (/title/i.test(message)) return "title";
+    if (/chatbot|activity type|aiducate/i.test(message)) return "activity";
+    return null;
+  };
   const publishActivity = () => {
     const missing = [];
-    if (!draft.title.trim()) missing.push("Enter an activity title.");
+    if (!draft.title.trim()) missing.push({ target: "title", message: "Enter an activity title." });
     if (!draft.course_id)
-      missing.push(
-        "The Canvas course context is missing. Reopen the tool from your course.",
-      );
-    if (!draft.tool) missing.push("Select an activity type.");
-    if (draft.tool === "socratic" && pendingKeyword)
-      missing.push("Press + to add the typed keyword before continuing.");
+      missing.push({ target: "course", message: "The Canvas course context is missing. Reopen the tool from your course." });
+    if (!draft.tool) missing.push({ target: "activity", message: "Select an activity type." });
     if (
       ["socratic", "self-directed-learning"].includes(draft.tool) &&
       !selected.length
     )
-      missing.push(
-        "Select at least one indexed course document or upload course materials.",
-      );
+      missing.push({ target: "materials", message: "Select at least one indexed course document or upload course materials." });
+    if (draft.tool === "socratic" && draft.config.guidance_mode === "guided" && !(draft.config.learning_steps || []).length)
+      missing.push({ target: "learning-path", message: "Generate a learning path before publishing Guided learning path, or choose Basic conversation." });
     if (
       draft.tool === "debate" &&
       (draft.config.scenario || draft.title).trim().length < 10
     )
-      missing.push("Enter a Debate scenario of at least 10 characters.");
+      missing.push({ target: "debate-scenario", message: "Enter a Debate scenario of at least 10 characters." });
     if (draft.tool === "reflections") {
       if (draft.config.module_type === "milestone_based") {
         if (!draft.config.milestone_prompt?.trim())
-          missing.push("Enter the milestone reflection prompt.");
+          missing.push({ target: "milestone-prompt", message: "Enter the milestone reflection prompt." });
         if (!draft.config.historical_data?.trim())
-          missing.push("Upload the historical CSV for milestone reflections.");
+          missing.push({ target: "historical-csv", message: "Upload the historical CSV for milestone reflections." });
       } else if (!(draft.config.sub_topics || []).some((topic) => topic.trim()))
-        missing.push("Add at least one reflection sub-topic.");
+        missing.push({ target: "reflection-subtopics", message: "Add at least one reflection sub-topic." });
     }
     if (draft.tool === "aiducate")
-      missing.push(
-        "AIducate needs a backend connection before publishing. You can save a draft.",
-      );
+      missing.push({ target: "activity", message: "AIducate needs a backend connection before publishing. You can save a draft." });
     if (missing.length) {
-      setError(missing.join(" "));
+      setError(missing.map(({ message }) => message).join(" "));
       setNotice("");
-      requestAnimationFrame(() => {
-        feedbackRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
-        feedbackRef.current?.focus({ preventScroll: true });
-      });
+      focusPublishIssue(missing[0]);
       return;
     }
-    if (stage === 3) run(() => save(true));
+    setPublishIssue(null);
+    if (stage === 3) run(async () => {
+      try {
+        await save(true);
+      } catch (error) {
+        const target = serverPublishIssue(error.message);
+        if (target) focusPublishIssue({ target, message: error.message });
+        throw error;
+      }
+    });
     else review();
   };
   const course = courses.find((c) => c.course_id === draft.course_id);
@@ -415,20 +475,30 @@ export default function CreateActivity({
         <Notice error={error} />
         <Notice>{notice}</Notice>
       </div>
+      {busy && <GenerationStatus message={busyLabel || "Working on your activity"} fullScreen />}
+      {showTutorial && <ActivityTutorial tool={draft.tool} onClose={closeTutorial} />}
       <fieldset className="editor-fieldset" disabled={busy || frozen}>
         <section className="panel">
-          <h2>Activity details</h2>
+          <div className="activity-details-heading">
+            <h2>Activity details</h2>
+            <button ref={tutorialButton} type="button" className="secondary compact" aria-label="Open assignment tutorial" onClick={() => setShowTutorial(true)}>Tutorial</button>
+          </div>
           <div className="activity-title-date-row">
-            <label>
-              Assignment title
-              <input
-                maxLength={200}
-                value={draft.title}
-                onChange={(e) => change("title", e.target.value)}
-                placeholder="Enter activity title"
-              />
-            </label>
-            <label>
+            <div>
+              <label data-activity-tutorial="title">
+                Assignment title
+                <input
+                  data-publish-target="title"
+                  aria-invalid={publishIssue?.target === "title" || undefined}
+                  maxLength={200}
+                  value={draft.title}
+                  onChange={(e) => change("title", e.target.value)}
+                  placeholder="Enter activity title"
+                />
+              </label>
+              {publishIssue?.target === "title" && <span className="publish-inline-error">{publishIssue.message}</span>}
+            </div>
+            <label data-activity-tutorial="due">
               Due date
               <input
                 type="datetime-local"
@@ -443,8 +513,8 @@ export default function CreateActivity({
             automatically. You can enter them here for assignments created
             directly in ClubALL.
           </p>
-          <label>
-            Description
+          <label data-activity-tutorial="instructions">
+              {draft.tool === "socratic" ? "Student instructions and submission" : "Description"}
             <textarea
               rows={4}
               value={draft.instructions}
@@ -452,9 +522,13 @@ export default function CreateActivity({
               placeholder="Describe the activity and what students should do."
             />
           </label>
+            {draft.tool === "socratic" && (
+              <p className="help">Describe what students do in this chat and any Canvas submission. BrainTutor completion does not submit files to Canvas.</p>
+            )}
         </section>
-        <section className="panel">
+        <section className="panel" data-activity-tutorial="materials">
           <h2>Course materials</h2>
+          {publishIssue?.target === "materials" && <p className="publish-inline-error">{publishIssue.message}</p>}
           <div className="activity-material-heading">
             <h3>Existing documents</h3>
             <button
@@ -468,7 +542,7 @@ export default function CreateActivity({
               ref={fileInput}
               type="file"
               multiple
-              accept=".txt,.md,.pdf,.tex,.latex,.html,.htm,.doc,.docx,.ppt,.pptx"
+              accept=".txt,.md,.pdf,.py,.tex,.latex,.html,.htm,.doc,.docx,.ppt,.pptx"
               hidden
               onChange={upload}
             />
@@ -509,6 +583,8 @@ export default function CreateActivity({
                               : s.filter((v) => v !== f.document_id),
                           );
                           setStage(1);
+                          setPublishIssue(null);
+                          setError("");
                         }}
                       />
                       <span>
@@ -544,6 +620,8 @@ export default function CreateActivity({
                 onClick={() => {
                   setSelected([]);
                   setStage(1);
+                  setPublishIssue(null);
+                  setError("");
                 }}
               >
                 Clear all
@@ -565,6 +643,8 @@ export default function CreateActivity({
                           s.filter((v) => v !== f.document_id),
                         );
                         setStage(1);
+                        setPublishIssue(null);
+                        setError("");
                       }}
                     >
                       ×
@@ -576,8 +656,9 @@ export default function CreateActivity({
             <p className="help">No documents selected.</p>
           )}
         </section>
-        <section className="panel">
+        <section className="panel" data-activity-tutorial="activity">
           <h2>Select activity</h2>
+          {publishIssue?.target === "activity" && <p className="publish-inline-error">{publishIssue.message}</p>}
           <ActivityRail label="activity choices" className="activity-rail">
             {ACTIVITY_TYPES.map((key, index) => {
               const tool = TOOLS[key];
@@ -593,9 +674,11 @@ export default function CreateActivity({
                     <span className="tool-mark">
                       <ActivityIcon tool={key} />
                     </span>
-                    <span className="tool-step" aria-hidden="true">
-                      0{index + 1}
-                    </span>
+                    {draft.tool === key ? (
+                      <span className="activity-selected-indicator" aria-hidden="true"><span>✓</span> Selected</span>
+                    ) : (
+                      <span className="tool-step" aria-hidden="true">0{index + 1}</span>
+                    )}
                   </span>
                   <span className="tool-mode">
                     {
@@ -618,7 +701,7 @@ export default function CreateActivity({
           </ActivityRail>
         </section>
         {draft.tool && (
-          <section className="panel activity-settings" ref={settingsRef}>
+          <section className="panel activity-settings" ref={settingsRef} data-activity-tutorial="settings">
             <h2>{TOOLS[draft.tool].name} settings</h2>
             {draft.tool === "socratic" ? (
               <SocraticConfig
@@ -626,18 +709,13 @@ export default function CreateActivity({
                 onChange={setConfig}
                 courseId={draft.course_id}
                 frozen={frozen}
-                hideConversation
                 hideDocuments
                 documents={files}
-                onPendingKeywordChange={setPendingKeyword}
-                keywordPreparation={draft.keyword_preparation}
-                onConfirmKeywords={confirmKeywords}
-                onInvalidateKeywordPreparation={() =>
-                  setDraft((current) => ({
-                    ...current,
-                    keyword_preparation: null,
-                  }))
-                }
+                onGenerateSetup={generateSocraticSetup}
+                onGenerateOpening={generateSocraticOpening}
+                publishIssue={publishIssue}
+                generatingSetup={busy}
+                canGenerateSetup={Boolean(draft.title.trim() && selected.length && selected.length <= 12 && !busy)}
                 onMaterialsChange={({ files: nextFiles }) => {
                   setFiles(nextFiles);
                   const available = new Set(
@@ -653,7 +731,7 @@ export default function CreateActivity({
                 }}
               />
             ) : draft.tool === "reflections" ? (
-              <ReflectionConfig value={draft.config} onChange={setConfig} />
+              <ReflectionConfig value={draft.config} onChange={setConfig} publishIssue={publishIssue} />
             ) : draft.tool === "self-directed-learning" ? (
               <>
                 <label>
@@ -694,6 +772,8 @@ export default function CreateActivity({
                     ? "Debate topic or scenario"
                     : "Activity instructions"}
                   <textarea
+                    data-publish-target={draft.tool === "debate" ? "debate-scenario" : undefined}
+                    aria-invalid={publishIssue?.target === "debate-scenario" || undefined}
                     rows={4}
                     value={draft.config.scenario || draft.config.prompt || ""}
                     onChange={(e) =>
@@ -705,6 +785,7 @@ export default function CreateActivity({
                     }
                   />
                 </label>
+                {publishIssue?.target === "debate-scenario" && <p className="publish-inline-error">{publishIssue.message}</p>}
                 <p className="help">
                   {draft.tool === "aiducate"
                     ? "AIducate has no backend yet. You can save a draft."
@@ -716,10 +797,10 @@ export default function CreateActivity({
             )}
           </section>
         )}
-        <div className="editor-actions">
+        <div className="editor-actions" data-activity-tutorial="publish">
           <button
             className="secondary"
-            disabled={!ready || pendingKeyword}
+            disabled={!ready}
             onClick={() => run(() => save(false))}
           >
             Save draft
@@ -728,7 +809,6 @@ export default function CreateActivity({
             className="secondary"
             disabled={
               !ready ||
-              pendingKeyword ||
               (draft.tool === "self-directed-learning" && !selected.length)
             }
             onClick={review}
@@ -762,6 +842,19 @@ export default function CreateActivity({
               <dd>{draft.due ? date(draft.due) : "No due date"}</dd>
               <dt>Description</dt>
               <dd>{draft.instructions || "No description"}</dd>
+              {draft.tool === "socratic" && (
+                <>
+                  <dt>Teaching scope</dt>
+                  <dd>Entire selected assignment materials</dd>
+                  <dt>Tutor guidance</dt>
+                  <dd>{(draft.config.guidance_mode || (draft.config.learning_steps?.length ? "guided" : "basic")) === "guided" ? "Guided learning path" : "Basic conversation"}</dd>
+                  <dt>Opening question</dt>
+                  <dd>{draft.config.prompt || "Generated from course materials"}</dd>
+                  {(draft.config.guidance_mode || (draft.config.learning_steps?.length ? "guided" : "basic")) === "guided" && <><dt>Learning path</dt><dd>{draft.config.learning_steps?.length ? draft.config.learning_steps.map((step, index) => `${index + 1}. ${step.title}`).join(" → ") : "No generated steps"}</dd></>}
+                  <dt>Messages before completion</dt>
+                  <dd>{draft.config.minimum_messages ?? 1}</dd>
+                </>
+              )}
               <dt>Chat</dt>
               <dd>{TOOLS[draft.tool].name}</dd>
               <dt>Materials</dt>

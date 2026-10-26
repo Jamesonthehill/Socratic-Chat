@@ -78,6 +78,23 @@ export default function AssignmentDetails({ item, onClose }) {
             <Markdown>{item.instructions || "No instructions provided yet."}</Markdown>
           </div>
         </section>
+        {item.tool === "socratic" && (
+          <section>
+            <h3>Indexed assignment coverage</h3>
+            {item.concept_map?.length ? (
+              <ul>
+                {item.concept_map.map((document) => (
+                  <li key={document.document_id}>
+                    {document.title}: {document.passages} passage{document.passages === 1 ? "" : "s"}
+                    {document.topics?.length ? ` · ${document.topics.join(", ")}` : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>No indexed assignment materials are included yet.</p>
+            )}
+          </section>
+        )}
         <section>
           <h3>Chatbot settings</h3>
           {!item.tool ? (

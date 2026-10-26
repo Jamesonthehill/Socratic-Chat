@@ -41,7 +41,7 @@ def test_requires_signed_session_and_professor(client, roster):
     assert client.post('/api/platform/assignments', headers=roster['headers']['student'], json={}).status_code == 403
 
 
-def test_professor_catalog_only_shows_courses_they_manage(client, roster):
+def test_professor_catalog_shows_all_courses_but_details_require_membership(client, roster):
     first, _ = draft(client, roster)
     other_course = str(uuid4())
     with store.connection() as conn:
@@ -62,8 +62,8 @@ def test_professor_catalog_only_shows_courses_they_manage(client, roster):
         assert response.status_code == 200, response.text
         return {item['id'] for item in response.json()}
 
-    assert listed('prof') == {first['id']}
-    assert listed('other_prof') == {second_id}
+    assert listed('prof') == {first['id'], second_id}
+    assert listed('other_prof') == {first['id'], second_id}
 
     # Co-instructors can see the same course, regardless of who created an activity.
     with store.connection() as conn:
@@ -77,7 +77,9 @@ def test_professor_catalog_only_shows_courses_they_manage(client, roster):
     with store.connection() as conn:
         conn.execute("""UPDATE course_memberships_platform SET status='rejected'
             WHERE course_id=%s AND user_id=%s""", (roster['course'], roster['other_prof']))
-    assert listed('other_prof') == {second_id}
+    assert listed('other_prof') == {first['id'], second_id}
+    assert client.get('/api/platform/assignments', headers=roster['headers']['other_prof'],
+                      params={'course_id': roster['course']}).status_code == 403
     assert client.get(f"/api/platform/assignments/{first['id']}",
                       headers=roster['headers']['other_prof']).status_code == 403
 
@@ -305,3 +307,39 @@ def test_instructor_can_choose_and_change_draft_chatbot(client, roster, monkeypa
     assert client.put(path, headers=roster['headers']['prof'], json=payload).status_code == 200
     publish(client, roster, saved, monkeypatch)
     assert client.put(path, headers=roster['headers']['prof'], json={**body, 'tool': alternate, 'config': {}}).status_code == 409
+
+
+def test_professor_catalog_includes_other_instructors_and_preserves_access(client, roster):
+    # A co-instructor creates an activity in a course owned by someone else.
+    with store.connection() as conn:
+        conn.execute("""INSERT INTO course_memberships_platform
+            (id,course_id,user_id,course_role,status) VALUES (%s,%s,%s,'instructor','approved')""",
+            (uuid4(), roster['course'], roster['other_prof']))
+    response = client.post('/api/platform/assignments', headers=roster['headers']['other_prof'], json={
+        'course_id': roster['course'], 'tool': 'reflections', 'title': 'Co-instructor reflection',
+        'instructions': 'Reflect on your learning.', 'audience': 'course',
+        'config': {'module_type': 'topic_based', 'required_topics': ['Testing'],
+                   'custom_notes': 'Private teaching guidance'},
+    })
+    assert response.status_code == 201, response.text
+    assignment_id = response.json()['id']
+    for role in ('prof', 'other_prof'):
+        listed = client.get('/api/platform/assignments', headers=roster['headers'][role])
+        assert listed.status_code == 200
+        item = next(a for a in listed.json() if a['id'] == assignment_id)
+        assert item['can_manage'] is True
+
+    # Visibility is global for instructors even without membership in this course.
+    with store.connection() as conn:
+        conn.execute("DELETE FROM course_memberships_platform WHERE course_id=%s AND user_id=%s",
+                     (roster['course'], roster['other_prof']))
+    items = client.get('/api/platform/assignments', headers=roster['headers']['other_prof']).json()
+    item = next(a for a in items if a['id'] == assignment_id)
+    assert item['can_manage'] is False
+    assert 'config' not in item and 'snapshot' not in item
+    assert client.get(f'/api/platform/assignments/{assignment_id}', headers=roster['headers']['other_prof']).status_code == 403
+    assert client.post(f'/api/platform/assignments/{assignment_id}/archive', headers=roster['headers']['other_prof']).status_code == 403
+    for role in ('student', 'other_student'):
+        items = client.get('/api/platform/assignments', headers=roster['headers'][role]).json()
+        assert assignment_id not in {a['id'] for a in items}
+    assert client.get('/api/platform/assignments').status_code == 401

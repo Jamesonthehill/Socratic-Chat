@@ -1,9 +1,136 @@
 import SocraticLearningSummary from "./SocraticLearningSummary";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useParams } from "react-router-dom";
 import Markdown from "react-markdown";
 import { api, date, session, TOOLS } from "./api";
 import { Badge, GenerationStatus, Notice } from "./ui";
+
+const SOCRATIC_TOUR_STEPS = [
+  { selector: '[data-socratic-tour="assignment"]', title: "Read the assignment", detail: "Read the instructor’s question and goals before starting." },
+  { selector: '[data-socratic-tour="learning-path"]', title: "Review the learning path", detail: "These are the topics you will work through in order." },
+  { selector: '[data-socratic-tour="materials"]', title: "Read the course materials", detail: "Download the instructor-selected documents so you can refer to them during the chat." },
+  { demo: "start", title: "Start with the first example", detail: "Start assignment opens the tutor’s first example and question." },
+  { demo: "chat", title: "Discuss the example", detail: "Share your reasoning or ask a question. The tutor responds in the conversation." },
+  { demo: "continue", title: "Continue when ready", detail: "When you have discussed a topic enough, use Continue to next step." },
+  { demo: "finish", title: "Finish the last topic", detail: "After the final topic, finish the conversation to open your summary." },
+  { demo: "summary", title: "Summarize and review feedback", detail: "Explain what you learned, get final feedback, and read it before submitting." },
+  { demo: "submit", title: "Submit the assignment", detail: "Submit only after you have reviewed your final feedback." },
+];
+
+function SocraticTourPreview({ kind, onAdvance }) {
+  return (
+    <div className="socratic-tour-preview" aria-label="Example of the student experience">
+      {kind === "start" && <>
+        <div className="socratic-tour-preview-heading">Socratic Chat · Ready to begin</div>
+        <button type="button" className="socratic-tour-preview-action is-highlighted" onClick={onAdvance}>Start assignment</button>
+        <div className="socratic-tour-preview-message">Tutor: Let’s begin with the first example from your course materials. What do you notice?</div>
+      </>}
+      {kind === "chat" && <>
+        <div className="socratic-tour-preview-heading">Socratic Chat · First topic</div>
+        <div className="socratic-tour-preview-message">Tutor: What do you notice in this example?</div>
+        <div className="socratic-tour-preview-message is-student">You: I think the first condition matters because…</div>
+        <div className="socratic-tour-preview-message">Tutor: Good observation. What might happen if that condition changes?</div>
+        <div className="socratic-tour-preview-composer is-highlighted">Write your answer or ask a question… <button type="button" onClick={onAdvance}>Send message</button></div>
+      </>}
+      {kind === "continue" && <>
+        <div className="socratic-tour-preview-heading">Your learning path · Topic 1</div>
+        <div className="socratic-tour-preview-message">You and the tutor have discussed the first example. You can keep chatting or move on.</div>
+        <button type="button" className="socratic-tour-preview-action is-highlighted" onClick={onAdvance}>Continue to next step</button>
+        <div className="socratic-tour-preview-next">✓ Topic 1 <span>→</span> Topic 2</div>
+      </>}
+      {kind === "finish" && <>
+        <div className="socratic-tour-preview-heading">Your learning path · Final topic</div>
+        <div className="socratic-tour-preview-message">After discussing the final example, you can close the conversation.</div>
+        <button type="button" className="socratic-tour-preview-action is-highlighted" onClick={onAdvance}>Finish conversation and summarize</button>
+      </>}
+      {kind === "summary" && <>
+        <div className="socratic-tour-preview-heading">Summarize your learning</div>
+        <div className="socratic-tour-preview-composer is-highlighted">In my own words, I learned…</div>
+        <button type="button" className="socratic-tour-preview-action" onClick={onAdvance}>Get final feedback</button>
+        <div className="socratic-tour-preview-message">Tutor feedback: Here is what you explained well and one idea to revisit.</div>
+      </>}
+      {kind === "submit" && <>
+        <div className="socratic-tour-preview-heading">Final feedback reviewed</div>
+        <div className="socratic-tour-preview-message">Your summary and feedback are ready. You can now complete the activity.</div>
+        <button type="button" className="socratic-tour-preview-action is-highlighted is-submit" onClick={onAdvance}>Submit assignment</button>
+      </>}
+    </div>
+  );
+}
+
+function SocraticSpotlightTour({ step, steps, onStep, onClose }) {
+  const [rect, setRect] = useState(null);
+  const closeRef = useRef(null);
+  const current = steps[step];
+  useEffect(() => { closeRef.current?.focus(); }, []);
+  useEffect(() => {
+    if (!current.selector) {
+      setRect(null);
+      return;
+    }
+    const target = document.querySelector(current.selector);
+    if (!target) {
+      setRect(null);
+      return;
+    }
+    target.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    const update = () => {
+      const bounds = target.getBoundingClientRect();
+      const pad = 8;
+      setRect({
+        left: Math.max(0, bounds.left - pad),
+        top: Math.max(0, bounds.top - pad),
+        right: Math.min(window.innerWidth, bounds.right + pad),
+        bottom: Math.min(window.innerHeight, bounds.bottom + pad),
+      });
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [current.selector, current.title]);
+  useEffect(() => {
+    const escape = (event) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  }, [onClose]);
+  const left = rect?.left ?? 0;
+  const top = rect?.top ?? 0;
+  const right = rect?.right ?? 0;
+  const bottom = rect?.bottom ?? 0;
+  const cardWidth = Math.min(380, window.innerWidth - 32);
+  const cardTop = bottom + 196 < window.innerHeight ? bottom + 16 : Math.max(16, top - 190);
+  const cardLeft = Math.min(Math.max(16, left), window.innerWidth - cardWidth - 16);
+  const demo = Boolean(current.demo);
+  const advance = () => step === steps.length - 1 ? onClose() : onStep(step + 1);
+  return createPortal(
+    <div className="socratic-spotlight-tour" role="dialog" aria-label="Tutorial" aria-modal="false">
+      {demo ? <div className="socratic-spotlight-shade is-full" onClick={onClose} /> : <>
+        <div className="socratic-spotlight-shade" style={{ top: 0, left: 0, right: 0, height: top }} onClick={onClose} />
+        <div className="socratic-spotlight-shade" style={{ top: bottom, left: 0, right: 0, bottom: 0 }} onClick={onClose} />
+        <div className="socratic-spotlight-shade" style={{ top, left: 0, width: left, height: Math.max(0, bottom - top) }} onClick={onClose} />
+        <div className="socratic-spotlight-shade" style={{ top, left: right, right: 0, height: Math.max(0, bottom - top) }} onClick={onClose} />
+        <div className="socratic-spotlight-outline" style={{ left, top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) }} aria-hidden="true" />
+      </>}
+      <div className={`socratic-spotlight-card${demo ? " is-demo" : ""}`} style={demo ? undefined : { top: cardTop, left: cardLeft, width: cardWidth }}>
+        <div className="socratic-spotlight-card-top"><span>Tutorial · {step + 1} of {steps.length}</span><button ref={closeRef} type="button" className="quiet" aria-label="Close tutorial" onClick={onClose}>✕</button></div>
+        <h3>{current.title}</h3>
+        <p>{current.detail}</p>
+        <p className="socratic-tour-demo-label">Preview only — the tutorial does not change your assignment.</p>
+        {demo && <SocraticTourPreview kind={current.demo} onAdvance={advance} />}
+        <div className="socratic-spotlight-actions">
+          <button type="button" className="secondary compact" disabled={step === 0} onClick={() => onStep(step - 1)}>Back</button>
+          <button type="button" className="compact" onClick={advance}>{step === steps.length - 1 ? "Done" : "Next"}</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
 
 function nextQuestion(messages) {
   const answer = [...(messages || [])]
@@ -536,7 +663,9 @@ export default function StudentWorkspace({ user }) {
     [materialBusy, setMaterialBusy] = useState(null),
     [materialError, setMaterialError] = useState(""),
     [evidenceWidth, setEvidenceWidth] = useState(420),
-    [chatExpanded, setChatExpanded] = useState(false);
+    [chatExpanded, setChatExpanded] = useState(false),
+    [socraticGuideOpen, setSocraticGuideOpen] = useState(false),
+    [socraticTourStep, setSocraticTourStep] = useState(0);
   const [selectedConceptOption, setSelectedConceptOption] = useState(null),
     [conceptCheckHintVisible, setConceptCheckHintVisible] = useState(false),
     [showLearningSummary, setShowLearningSummary] = useState(false);
@@ -566,6 +695,7 @@ export default function StudentWorkspace({ user }) {
     setSelectedEvidence(null);
     setShowLearningSummary(false);
     setFinalFeedbackBusy(false);
+    setSocraticGuideOpen(false);
     pending.current = null;
     Promise.all([
       api(`/platform/assignments/${id}`),
@@ -575,6 +705,7 @@ export default function StudentWorkspace({ user }) {
         if (active) {
           setAssignment(a);
           setAttempt(t);
+          setSocraticGuideOpen(false);
           setLoaded(true);
         }
       })
@@ -697,6 +828,12 @@ export default function StudentWorkspace({ user }) {
     } finally {
       setBusy(false);
     }
+  }
+  function closeSocraticGuide() {
+    setSocraticGuideOpen(false);
+  }
+  async function startAssignment() {
+    await perform("start");
   }
   async function send(e) {
     e.preventDefault();
@@ -870,6 +1007,10 @@ export default function StudentWorkspace({ user }) {
     showLearningSummary || attempt.status === "completed" || ["awaiting_reflection", "ready_to_submit"].includes(socratic.phase)
   ));
   const completedLearningSteps = attempt ? Math.min(learningStepCount, activeLearningStep + Number(finalLearningStepFinished)) : 0;
+  const socraticTourSteps = SOCRATIC_TOUR_STEPS.filter((step) =>
+    (!conceptCheck || step.demo) &&
+    (learningStepCount || step.selector !== '[data-socratic-tour="learning-path"]')
+  );
   const milestone =
     assignment.student_config?.module_type === "milestone_based";
   return (
@@ -903,7 +1044,7 @@ export default function StudentWorkspace({ user }) {
       >
         <aside className="assignment-info">
           <h2>Your assignment</h2>
-          <div className="prose">
+          <div className="prose" data-socratic-tour="assignment">
             <Markdown>
               {assignment.instructions ||
                 "Follow the prompts in this learning activity."}
@@ -912,7 +1053,7 @@ export default function StudentWorkspace({ user }) {
           {assignment.tool === "socratic" && (
             <>
               {assignment.student_config?.learning_steps?.length > 0 && (
-                <section className="student-learning-path" aria-labelledby="student-learning-path-title">
+                <section className="student-learning-path" data-socratic-tour="learning-path" aria-labelledby="student-learning-path-title">
                   <h3 id="student-learning-path-title">Your learning path</h3>
                   <p className="help">Follow these steps from beginning to end. You can ask the tutor questions about any step.</p>
                   <div className="student-learning-progress">
@@ -939,25 +1080,35 @@ export default function StudentWorkspace({ user }) {
                   </ol>
                   {attempt && attempt.status !== "completed" && !showLearningSummary &&
                     (activeLearningStep < learningStepCount - 1 ? (
-                      <button type="button" className="compact next-learning-step" disabled={stepActionDisabled} onClick={() => perform("next-step", {})}>
-                        Continue to next step
-                      </button>
+                      <div>
+                        <button type="button" className="compact next-learning-step" disabled={stepActionDisabled} onClick={() => perform("next-step", {})}>
+                          Continue to next step
+                        </button>
+                      </div>
                     ) : socratic.phase !== "ready_to_submit" && (
-                      <button type="button" className="compact next-learning-step" disabled={stepActionDisabled} onClick={() => setShowLearningSummary(true)}>
-                        Finish conversation and summarize
-                      </button>
+                      <div>
+                        <button type="button" className="compact next-learning-step" disabled={stepActionDisabled} onClick={() => setShowLearningSummary(true)}>
+                          Finish conversation and summarize
+                        </button>
+                      </div>
                     ))}
                 </section>
               )}
-              <section className="student-course-materials" aria-labelledby="student-course-materials-title">
+              <section className="student-course-materials" data-socratic-tour="materials" aria-labelledby="student-course-materials-title">
                 <h3 id="student-course-materials-title">Course materials</h3>
                 <p className="help">Download the original documents your instructor selected for this assignment.</p>
                 {materialError && <p className="help" role="alert">{materialError}</p>}
                 {materialsLoading ? <p className="help" role="status">Loading course materials…</p> : materials.length ? <ul>
                   {materials.map((material) => <li key={material.document_id}>
-                    {material.original_available ? <button type="button" className="quiet" onClick={() => downloadMaterial(material)} disabled={materialBusy === material.document_id}>
-                      {materialBusy === material.document_id ? "Downloading…" : `Download ${material.title}`}
-                    </button> : <span>{material.title} · Original file unavailable</span>}
+                    <span className="student-material-name" title={material.title}>{material.title}</span>
+                    {material.original_available ? <button
+                      type="button"
+                      className="secondary compact student-material-download"
+                      aria-label={`${materialBusy === material.document_id ? "Downloading" : "Download"} ${material.title}`}
+                      onClick={() => downloadMaterial(material)}
+                      disabled={materialBusy === material.document_id}
+                    >{materialBusy === material.document_id ? "Downloading…" : "↓ Download"}</button>
+                      : <span className="student-material-unavailable">Original file unavailable</span>}
                   </li>)}
                 </ul> : !materialError && <p className="help">No published documents are available.</p>}
               </section>
@@ -1037,6 +1188,7 @@ export default function StudentWorkspace({ user }) {
                 dashboard at any time.
               </p>
               {!milestone && (
+                <div>
                 <button
                   className={assignment.tool === "socratic" && socratic.phase === "ready_to_submit"
                     ? "submit-assignment-ready"
@@ -1054,6 +1206,7 @@ export default function StudentWorkspace({ user }) {
                       ? "Finish reflection & evaluate"
                       : "Mark assignment complete"}
                 </button>
+                </div>
               )}
             </>
           )}
@@ -1072,9 +1225,25 @@ export default function StudentWorkspace({ user }) {
                     : tool.description)}
               </p>
             </div>
-            {assignment.tool === "socratic" &&
-              !selectedEvidence &&
-              !conceptCheck && (
+            {assignment.tool === "socratic" && (
+              <div className="chat-heading-actions">
+                <button
+                  type="button"
+                  className="secondary compact socratic-guide-toggle"
+                  aria-pressed={socraticGuideOpen}
+                  onClick={() => {
+                    if (socraticGuideOpen) closeSocraticGuide();
+                    else {
+                      setSelectedEvidence(null);
+                      setChatExpanded(false);
+                      setSocraticTourStep(0);
+                      setSocraticGuideOpen(true);
+                    }
+                  }}
+                >
+                  Tutorial
+                </button>
+                {!selectedEvidence && !conceptCheck && (
                 <button
                   type="button"
                   className="secondary compact chat-expand-control"
@@ -1093,7 +1262,9 @@ export default function StudentWorkspace({ user }) {
                     </svg>
                   )}
                 </button>
-              )}
+                )}
+              </div>
+            )}
           </div>
           {assignment.tool === "reflections" ? (
             <div className="start-state">
@@ -1147,7 +1318,7 @@ export default function StudentWorkspace({ user }) {
                 Your professor’s settings are already loaded. Start to open your
                 learning session.
               </p>
-              <button disabled={busy} onClick={() => perform("start")}>
+              <button disabled={busy} onClick={assignment.tool === "socratic" ? startAssignment : () => perform("start")}>
                 {busy ? "Starting…" : "Start assignment"}
               </button>
             </div>
@@ -1331,16 +1502,18 @@ export default function StudentWorkspace({ user }) {
                   </div>
                 )}
               {assignment.tool === "socratic" && conceptCheck && !completed && (
-                <ConceptCheck
-                  check={conceptCheck}
-                  selectedOption={selectedConceptOption}
-                  busy={busy}
-                  hintVisible={conceptCheckHintVisible}
-                  onShowHint={() =>
-                    setConceptCheckHintVisible((visible) => !visible)
-                  }
-                  onSelect={submitConceptCheck}
-                />
+                <div>
+                  <ConceptCheck
+                    check={conceptCheck}
+                    selectedOption={selectedConceptOption}
+                    busy={busy}
+                    hintVisible={conceptCheckHintVisible}
+                    onShowHint={() =>
+                      setConceptCheckHintVisible((visible) => !visible)
+                    }
+                    onSelect={submitConceptCheck}
+                  />
+                </div>
               )}
               {assignment.tool === "socratic" && socratic.concept_check_response && !conceptCheck && (
                 <div className="concept-check concept-check-feedback" role="status">
@@ -1483,6 +1656,14 @@ export default function StudentWorkspace({ user }) {
         ariaLabel="BrainTutor is preparing final feedback"
         fullScreen
       />}
+      {assignment.tool === "socratic" && socraticGuideOpen && (
+        <SocraticSpotlightTour
+          step={Math.min(socraticTourStep, socraticTourSteps.length - 1)}
+          steps={socraticTourSteps}
+          onStep={setSocraticTourStep}
+          onClose={closeSocraticGuide}
+        />
+      )}
     </>
   );
 }

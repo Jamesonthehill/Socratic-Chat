@@ -1241,13 +1241,29 @@ summary {
   margin: 10px 0 0;
   padding: 0;
 }
+.student-course-materials li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
 .student-course-materials li + li {
   margin-top: 6px;
 }
-.student-course-materials button {
-  max-width: 100%;
+.student-material-name {
+  min-width: 0;
   overflow-wrap: anywhere;
-  text-align: left;
+  font-weight: 650;
+}
+.student-course-materials .student-material-download { flex: none; white-space: nowrap; }
+.student-material-unavailable { color: var(--muted); font-size: 12px; text-align: right; }
+@media (max-width: 520px) {
+  .student-course-materials li { align-items: flex-start; flex-direction: column; }
+  .student-material-unavailable { text-align: left; }
 }
 .student-learning-path ol {
   display: grid;
@@ -1618,6 +1634,99 @@ html[data-theme="dark"] .socratic-learning-step-heading button.socratic-step-rem
   font-size: 13px;
   color: var(--muted);
   margin: 0;
+}
+.chat-heading-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 8px;
+  margin-left: auto;
+}
+.chat-heading-actions .chat-expand-control { margin-left: 0; }
+.socratic-guide-toggle { white-space: nowrap; }
+.socratic-spotlight-tour { position: fixed; inset: 0; z-index: 5000; pointer-events: none; }
+.socratic-spotlight-shade {
+  position: fixed;
+  background: rgba(8, 12, 30, .78);
+  pointer-events: auto;
+}
+.socratic-spotlight-shade.is-full { inset: 0; }
+.socratic-spotlight-outline {
+  position: fixed;
+  border: 3px solid #92a4ff;
+  border-radius: 12px;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, .3);
+  pointer-events: none;
+}
+.socratic-spotlight-card {
+  position: fixed;
+  z-index: 1;
+  padding: 18px;
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 20px 65px rgba(0, 0, 0, .36);
+  pointer-events: auto;
+}
+.socratic-spotlight-card.is-demo {
+  top: 50%;
+  left: 50%;
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  transform: translate(-50%, -50%);
+}
+.socratic-spotlight-card-top,
+.socratic-spotlight-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.socratic-spotlight-card-top { color: var(--brand-indigo); font-size: 12px; font-weight: 800; }
+.socratic-spotlight-card-top button { color: var(--muted); min-width: 36px; }
+.socratic-spotlight-card h3 { margin: 8px 0; font-size: 19px; }
+.socratic-spotlight-card p { margin: 0 0 20px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.socratic-spotlight-actions { justify-content: flex-end; }
+.socratic-tour-demo-label { color: var(--brand-indigo) !important; font-weight: 700; margin-bottom: 12px !important; }
+.socratic-tour-preview {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--surface) 90%, var(--brand-indigo));
+  font-size: 13px;
+}
+.socratic-tour-preview-heading { font-weight: 800; border-bottom: 1px solid var(--line); padding-bottom: 9px; }
+.socratic-tour-preview-message,
+.socratic-tour-preview-composer {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  line-height: 1.45;
+}
+.socratic-tour-preview-message.is-student { margin-left: 28px; background: color-mix(in srgb, var(--brand-indigo) 12%, var(--surface)); }
+.socratic-tour-preview-composer { color: var(--muted); min-height: 56px; }
+.socratic-tour-preview-composer button { display: block; width: fit-content; margin: 8px 0 0 auto; font-weight: 800; }
+.socratic-tour-preview-action {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  padding: 10px 14px;
+  border-radius: 9px;
+  background: var(--brand-indigo);
+  color: white;
+  font-weight: 800;
+}
+.socratic-tour-preview-action.is-submit { background: #087c46; }
+.socratic-tour-preview .is-highlighted { outline: 3px solid #76b3ff; outline-offset: 3px; }
+.socratic-tour-preview-next { color: var(--muted); font-weight: 700; }
+.socratic-tour-preview-next span { margin: 0 8px; color: var(--brand-indigo); }
+.socratic-guide-toggle[aria-pressed="true"] {
+  border-color: var(--brand-indigo);
+  color: var(--brand-indigo);
+}
+@media (max-width: 540px) {
+  .chat-heading { flex-wrap: wrap; }
+  .chat-heading-actions { width: 100%; justify-content: flex-end; }
 }
 .chat-expand-control {
   margin-left: auto;

@@ -244,6 +244,60 @@ test("student sees mixed assignments and opens the assigned tool without selecti
   expect(screen.queryByLabelText("Reflection type")).not.toBeInTheDocument();
 });
 
+test("Socratic tutorial previews every stage without starting the real assignment", async () => {
+  mockApi("student");
+  open("/student/assignments/assignment-1");
+  const user = userEvent.setup();
+  const toggle = await screen.findByRole("button", { name: "Tutorial" });
+  expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await user.click(toggle);
+  const tutorial = screen.getByRole("dialog", { name: "Tutorial" });
+  expect(within(tutorial).getByText("Tutorial · 1 of 8")).toBeInTheDocument();
+  expect(within(tutorial).getByRole("heading", { name: "Read the assignment" })).toBeInTheDocument();
+  expect(tutorial.querySelectorAll(".socratic-spotlight-shade")).toHaveLength(4);
+  await user.click(within(tutorial).getByRole("button", { name: "Next" }));
+  expect(within(tutorial).getByRole("heading", { name: "Read the course materials" })).toBeInTheDocument();
+  await user.click(within(tutorial).getByRole("button", { name: "Next" }));
+  expect(within(tutorial).getByRole("heading", { name: "Start with the first example" })).toBeInTheDocument();
+  expect(within(tutorial).getByText(/Preview only/)).toBeInTheDocument();
+  await user.click(within(tutorial).getByRole("button", { name: "Start assignment" }));
+  expect(within(tutorial).getByRole("heading", { name: "Discuss the example" })).toBeInTheDocument();
+  await user.click(within(tutorial).getByRole("button", { name: "Send message" }));
+  expect(within(tutorial).getByRole("heading", { name: "Continue when ready" })).toBeInTheDocument();
+  await user.click(within(tutorial).getByRole("button", { name: "Continue to next step" }));
+  expect(within(tutorial).getByRole("heading", { name: "Finish the last topic" })).toBeInTheDocument();
+  await user.click(within(tutorial).getByRole("button", { name: "Finish conversation and summarize" }));
+  expect(within(tutorial).getByRole("heading", { name: "Summarize and review feedback" })).toBeInTheDocument();
+  await user.click(within(tutorial).getByRole("button", { name: "Get final feedback" }));
+  expect(within(tutorial).getByRole("heading", { name: "Submit the assignment" })).toBeInTheDocument();
+  await user.click(within(tutorial).getByRole("button", { name: "Submit assignment" }));
+  expect(screen.getByRole("button", { name: "Start assignment" })).toBeInTheDocument();
+  expect(screen.queryByText("What makes a requirement useful?")).not.toBeInTheDocument();
+  await user.click(toggle);
+  await user.click(screen.getByRole("button", { name: "Close tutorial" }));
+  expect(screen.queryByRole("dialog", { name: "Tutorial" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Start assignment" }));
+  expect(await screen.findByText("What makes a requirement useful?")).toBeInTheDocument();
+});
+
+test("Socratic tutorial highlights the instructor's learning path when one exists", async () => {
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1": {
+      ...assignment,
+      student_config: {
+        ...assignment.student_config,
+        learning_steps: [{ title: "Inspect an example", goal: "Notice the first important condition." }],
+      },
+    },
+  });
+  open("/student/assignments/assignment-1");
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Tutorial" }));
+  expect(screen.getByText("Tutorial · 1 of 9")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Next" }));
+  expect(screen.getByRole("heading", { name: "Review the learning path" })).toBeInTheDocument();
+});
+
 test("dashboard link shows the student's finished and remaining assignments", async () => {
   mockApi("student", {
     "/api/platform/assignments": [
@@ -394,7 +448,10 @@ test("student downloads the original selected material instead of opening extrac
   const documentId = "selected-pdf";
   const fetch = mockApi("student", {
     "/api/platform/assignments/assignment-1/materials": {
-      materials: [{ document_id: documentId, title: "Sandwich Maker.pdf", original_available: true, page_count: 2 }],
+      materials: [
+        { document_id: documentId, title: "Sandwich Maker.pdf", original_available: true, page_count: 2 },
+        { document_id: "missing-file", title: "Starter code.py", original_available: false },
+      ],
     },
     [`/api/platform/assignments/assignment-1/materials/${documentId}/download`]: new Blob(["%PDF-1.4"], { type: "application/pdf" }),
   });
@@ -407,6 +464,11 @@ test("student downloads the original selected material instead of opening extrac
   const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
   open("/student/assignments/assignment-1");
   expect(await screen.findByRole("heading", { name: "Course materials" })).toBeInTheDocument();
+  const availableRow = screen.getByText("Sandwich Maker.pdf").closest("li");
+  expect(within(availableRow).getByRole("button", { name: "Download Sandwich Maker.pdf" })).toHaveTextContent("Download");
+  const unavailableRow = screen.getByText("Starter code.py").closest("li");
+  expect(within(unavailableRow).getByText("Original file unavailable")).toBeInTheDocument();
+  expect(within(unavailableRow).queryByRole("button")).not.toBeInTheDocument();
   await userEvent.setup().click(await screen.findByRole("button", { name: "Download Sandwich Maker.pdf" }));
   await waitFor(() => expect(createObjectURL).toHaveBeenCalled());
   expect(click).toHaveBeenCalledOnce();

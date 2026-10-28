@@ -210,7 +210,7 @@ class SocraticSetupTests(unittest.TestCase):
         self.assertEqual(result["learning_steps"][1]["question"], payload["learning_steps"][1]["question"])
         self.assertEqual(result["learning_steps"][0]["source_file"], "assignment.pdf")
 
-    def test_hosted_generation_allows_a_complete_multistep_response(self):
+    def test_hosted_generation_has_no_application_output_token_cap(self):
         requests = []
 
         async def fake_completion(_key, _url, request):
@@ -227,7 +227,8 @@ class SocraticSetupTests(unittest.TestCase):
                     [{"id": "file-1", "filename": "assignment.pdf"}], "Sandwich Maker", ""
                 ))
         self.assertEqual(len(requests), 2)
-        self.assertTrue(all(request["max_completion_tokens"] == 8000 for request in requests))
+        self.assertTrue(all("max_completion_tokens" not in request and "max_tokens" not in request
+                            for request in requests))
 
     def test_basic_opening_generation_only_returns_grounded_question(self):
         responses = [

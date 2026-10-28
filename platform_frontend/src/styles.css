@@ -1481,6 +1481,22 @@ summary {
   letter-spacing: -.02em;
   margin: 3px 0 0;
 }
+.student-materials-title-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+.socratic-assignment-info .student-materials-reading-cue {
+  background: color-mix(in srgb, var(--brand-indigo) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--brand-indigo) 20%, var(--line));
+  border-radius: 999px;
+  color: var(--brand-indigo);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.3;
+  padding: 4px 8px;
+}
 .socratic-assignment-info .student-section-count {
   background: color-mix(in srgb, var(--brand-indigo) 10%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--brand-indigo) 22%, var(--line));

@@ -1274,7 +1274,13 @@ export default function StudentWorkspace({ user }) {
               )}
               <section className="student-course-materials" data-socratic-tour="materials" aria-labelledby="student-course-materials-title">
                 <div className="student-section-heading">
-                  <div><span className="student-panel-kicker">Your reference shelf</span><h3 id="student-course-materials-title">Course materials</h3></div>
+                  <div>
+                    <span className="student-panel-kicker">Your reference shelf</span>
+                    <div className="student-materials-title-row">
+                      <h3 id="student-course-materials-title">Course materials</h3>
+                      {materials.length > 0 && <span className="student-materials-reading-cue">Recommended: read these materials before chatting</span>}
+                    </div>
+                  </div>
                   {materials.length > 0 && <span className="student-section-count">{materials.length} {materials.length === 1 ? "file" : "files"}</span>}
                 </div>
                 <p className="help">View or download the original documents your instructor selected for this assignment.</p>

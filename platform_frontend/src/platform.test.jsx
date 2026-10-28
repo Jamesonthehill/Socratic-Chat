@@ -3,6 +3,9 @@ import { beforeEach, expect, test, vi } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+vi.mock("./PdfMaterialPreview", () => ({
+  default: ({ title, focusPage, focusTerm, zoom }) => <div data-testid="pdf-page-viewer" data-page={focusPage || 1} data-focus-term={focusTerm} data-zoom={zoom}>{title}</div>,
+}));
 import { App } from "./main";
 import { SESSION_KEY } from "./api";
 import { resetCourseContext } from "./courseContext";
@@ -81,9 +84,6 @@ function mockApi(role = "instructor", override = {}) {
     "/api/platform/assignments/assignment-1/materials": { materials: [] },
     "/api/platform/assignments/assignment-1/attempt": null,
     "/api/platform/assignments/assignment-1/start": attempt,
-    "POST /api/platform/assignments/assignment-1/evidence-diagram": {
-      steps: ["Version control preserves revision history", "revision history for a team."],
-    },
     ...override,
   };
   const fetch = vi.fn(async (url, options = {}) => {
@@ -317,48 +317,59 @@ test("guided Socratic chat opens with its scenario and first question", async ()
   expect(within(screen.getByRole("region", { name: "Your next thinking step" })).getByText(question)).toBeInTheDocument();
 });
 
-test("guided Socratic opening shows a source-backed menu table without a passage button", async () => {
-  const source = {
-    chunk_id: "menu-1", title: "Sandwich assignment.pdf", page_number: 3,
-    evidence_quote: "What would you like? (small/ medium/ large/ off/ report)",
-    text: "What would you like? (small/ medium/ large/ off/ report): small Please insert coins.",
-  };
+test("guided Socratic opening links a named source section without generating a card", async () => {
   mockApi("student", {
+    "/api/platform/assignments/assignment-1/attempt": {
+      ...attempt,
+      messages: [{ role: "assistant", content: "In the sample output, which option would you choose?" }],
+    },
+    "/api/platform/assignments/assignment-1/materials": { materials: [
+      { document_id: "selected-pdf", title: "Sandwich assignment.pdf", original_available: true },
+    ] },
+    "/api/platform/assignments/assignment-1/material-reference?phrase=sample+output": {
+      document_id: "selected-pdf", page_number: 3, title: "Sandwich assignment.pdf",
+    },
+    "/api/platform/assignments/assignment-1/materials/selected-pdf/download":
+      new Blob(["%PDF-1.4"], { type: "application/pdf" }),
+  });
+  open("/student/assignments/assignment-1");
+  await userEvent.setup().click(await screen.findByRole("button", { name: "sample output" }));
+  expect(await screen.findByTestId("pdf-page-viewer")).toHaveAttribute("data-page", "3");
+  expect(screen.getByTestId("pdf-page-viewer")).toHaveAttribute("data-focus-term", "sample output");
+  expect(screen.queryByText("Details for this question")).not.toBeInTheDocument();
+});
+
+test("a general step question does not automatically expose its full source", async () => {
+  const source = {
+    document_id: "selected-pdf", chunk_id: "chunk-1", title: "Assignment.pdf", page_number: 1,
+    evidence_quote: "Review the code before merging.", text: "Review the code before merging.",
+  };
+  const fetch = mockApi("student", {
     "/api/platform/assignments/assignment-1": {
       ...assignment, student_config: { minimum_messages: 1, guidance_mode: "guided",
-        learning_steps: [{ title: "Choose a size", goal: "Read the menu", source }] },
+        learning_steps: [{ title: "Review", goal: "Explain the review", source }] },
     },
     "/api/platform/assignments/assignment-1/attempt": {
-      ...attempt, engine_state: { socratic: { phase: "teaching", learning_step_index: 0 } },
-      messages: [{ role: "assistant", content: "The machine shows its menu. Which option would you choose?", step_source: source }],
+      ...attempt, messages: [{ role: "assistant", content: "Step 1: Review\n\nHow would you begin the review?", step_source: source }],
     },
   });
   open("/student/assignments/assignment-1");
-  const table = await screen.findByRole("region", { name: "Visible course source" });
-  expect(within(table).getByText("Sandwich assignment.pdf · page 3")).toBeInTheDocument();
-  expect(within(table).getByRole("cell", { name: "small" })).toBeInTheDocument();
-  expect(within(table).getByRole("cell", { name: "report" })).toBeInTheDocument();
-  expect(within(table).queryByRole("button", { name: "View passage" })).not.toBeInTheDocument();
+  expect(await screen.findByRole("region", { name: "Your next thinking step" })).toHaveTextContent("How would you begin the review?");
+  expect(screen.queryByRole("region", { name: "Question visual aid" })).not.toBeInTheDocument();
+  expect(fetch.mock.calls.some(([url]) => url.endsWith("/evidence-visual"))).toBe(false);
 });
 
-test("a source visual stays with its step opening instead of carrying into the next tutor reply", async () => {
-  const source = {
-    chunk_id: "menu-1", title: "Sandwich assignment.pdf", page_number: 3,
-    evidence_quote: "What would you like? (small/ medium/ large/ off/ report)",
-    text: "What would you like? (small/ medium/ large/ off/ report): small Please insert coins.",
-  };
+test("a reference link stays with the tutor reply that mentions it", async () => {
   mockApi("student", {
-    "/api/platform/assignments/assignment-1": {
-      ...assignment, student_config: { minimum_messages: 1, guidance_mode: "guided",
-        learning_steps: [{ title: "Choose a size", goal: "Read the menu", source }] },
-    },
+    "/api/platform/assignments/assignment-1/materials": { materials: [
+      { document_id: "selected-pdf", title: "Sandwich assignment.pdf", original_available: true },
+    ] },
     "/api/platform/assignments/assignment-1/attempt": {
       ...attempt,
-      engine_state: { socratic: { phase: "teaching", learning_step_index: 0 }, sources: [source] },
       messages: [
-        { role: "assistant", content: "The machine shows its menu. Which option would you choose?", step_source: source },
+        { role: "assistant", content: "Look at sample output. What happens first?" },
         { role: "user", content: "small" },
-        { role: "assistant", content: "What ingredients should the machine check before accepting payment?", sources: [source] },
+        { role: "assistant", content: "What ingredients should the machine check?" },
       ],
     },
   });
@@ -366,10 +377,8 @@ test("a source visual stays with its step opening instead of carrying into the n
   const tutorCards = await screen.findAllByText("Socratic tutor");
   const opening = tutorCards[0].closest(".socratic-message-card");
   const nextReply = tutorCards[1].closest(".socratic-message-card");
-  expect(within(opening).getByText("Choices shown in the source")).toBeInTheDocument();
-  expect(within(nextReply).queryByText("Choices shown in the source")).not.toBeInTheDocument();
-  await userEvent.setup().click(within(nextReply).getByRole("button", { name: "View supporting sources" }));
-  expect(within(nextReply).getByText("Choices shown in the source")).toBeInTheDocument();
+  expect(within(opening).getByRole("button", { name: "sample output" })).toBeInTheDocument();
+  expect(within(nextReply).queryByRole("button", { name: "sample output" })).not.toBeInTheDocument();
 });
 
 test("Socratic source cards remain with the reply that produced them", async () => {
@@ -383,6 +392,9 @@ test("Socratic source cards remain with the reply that produced them", async () 
     text: "Payment must be checked before the sandwich is served.",
   };
   mockApi("student", {
+    "/api/platform/assignments/assignment-1/materials": { materials: [
+      { document_id: "doc", title: "Selected materials.pdf", original_available: true },
+    ] },
     "/api/platform/assignments/assignment-1/attempt": {
       ...attempt,
       engine_state: { sources: [secondSource] },
@@ -400,8 +412,9 @@ test("Socratic source cards remain with the reply that produced them", async () 
   await userEvent.setup().click(within(firstCard).getByRole("button", { name: "View supporting sources" }));
   expect(firstCard).toHaveTextContent("Menu.pdf");
   expect(firstCard).not.toHaveTextContent("Payment.pdf");
-  expect(within(firstCard).getByText("Choices shown in the source")).toBeInTheDocument();
-  expect(within(secondCard).queryByText("Choices shown in the source")).not.toBeInTheDocument();
+  expect(within(firstCard).getByText("Details for this question")).toBeInTheDocument();
+  expect(within(firstCard).getByRole("row", { name: "Menu choice small" })).toBeInTheDocument();
+  expect(within(secondCard).queryByText("Details for this question")).not.toBeInTheDocument();
   await userEvent.setup().click(within(secondCard).getByRole("button", { name: "View supporting sources" }));
   expect(secondCard).toHaveTextContent("Payment.pdf");
   expect(secondCard).not.toHaveTextContent("Menu.pdf");
@@ -543,13 +556,14 @@ test("keyword-based Socratic assignments begin with an example and no starter ch
 });
 
 test("student follows a generated Socratic path one step at a time", async () => {
+  const stepTwoScenario = "The customer has chosen a small sandwich, and the same machine now checks its supplies. Its report shows how much bread, ham, and cheese remain. The machine must decide whether those amounts cover this order before it asks for coins. You are deciding what information the program should compare.";
   const learning_steps = [
     { title: "Choose a size", goal: "Explain how you choose a sandwich size." },
-    { title: "Check ingredients", goal: "Explain when the machine checks its ingredients.", scenario: "The customer chooses small, and the same machine checks its ingredients.", question: "What should it check before asking for coins?" },
+    { title: "Check ingredients", goal: "Explain when the machine checks its ingredients.", scenario: stepTwoScenario, question: "What should it check before asking for coins?" },
   ];
   const started = { ...attempt, engine_state: { socratic: { learning_step_index: 0, step_started_at_message_count: 1, phase: "teaching" } } };
   const discussed = { ...started, messages: [...started.messages, { role: "user", content: "I choose small." }, { role: "assistant", content: "What will happen after choosing small?" }] };
-  const advanced = { ...discussed, messages: [...discussed.messages, { role: "assistant", content: "Step 2: Check ingredients\n\nThe customer chooses small, and the same machine checks its ingredients.\n\nWhat should it check before asking for coins?" }], engine_state: { socratic: { learning_step_index: 1, step_started_at_message_count: 4, phase: "teaching", next_thinking_step: "What should it check before asking for coins?" } } };
+  const advanced = { ...discussed, messages: [...discussed.messages, { role: "assistant", content: `Step 2: Check ingredients\n\n${stepTwoScenario}\n\nWhat should it check before asking for coins?` }], engine_state: { socratic: { learning_step_index: 1, step_started_at_message_count: 4, phase: "teaching", next_thinking_step: "What should it check before asking for coins?" } } };
   const fetch = mockApi("student", {
     "/api/platform/assignments/assignment-1": { ...assignment, student_config: { minimum_messages: 1, learning_steps } },
     "/api/platform/assignments/assignment-1/attempt": discussed,
@@ -575,7 +589,8 @@ test("student follows a generated Socratic path one step at a time", async () =>
   expect(nextStep).toHaveClass("next-learning-step");
   expect(nextStep).toBeEnabled();
   await userEvent.setup().click(nextStep);
-  expect(await screen.findByText(/same machine checks its ingredients/)).toBeInTheDocument();
+  expect(await screen.findByText(/the same machine now checks its supplies/)).toBeInTheDocument();
+  expect(screen.getByText(/You are deciding what information the program should compare/)).toBeInTheDocument();
   expect(screen.getByRole("separator", { name: "Step 2 of 2: Check ingredients" })).toBeInTheDocument();
   expect(screen.getByRole("separator", { name: "Step 2 of 2: Check ingredients" })).toHaveClass("is-new-step");
   expect(document.querySelector(".socratic-step-divider + .socratic-message-card.assistant")).not.toHaveTextContent("Step 2: Check ingredients");
@@ -730,13 +745,86 @@ test("student opens the original PDF beside the chat and can return to the learn
     open("/student/assignments/assignment-1");
     await userEvent.setup().click(await screen.findByRole("button", { name: "View Sandwich Maker.pdf" }));
     const preview = await screen.findByRole("complementary", { name: "Course material preview: Sandwich Maker.pdf" });
-    expect(within(preview).getByTitle("Sandwich Maker.pdf")).toHaveAttribute("src", "blob:original-course-pdf");
+    const pdf = within(preview).getByTestId("pdf-page-viewer");
+    expect(pdf).toHaveAttribute("data-page", "1");
+    expect(pdf).toHaveAttribute("data-zoom", "100");
+    await userEvent.setup().click(within(preview).getByRole("button", { name: "Zoom in course material" }));
+    expect(within(preview).getByLabelText("Course material zoom level")).toHaveTextContent("125%");
+    expect(pdf).toHaveAttribute("data-zoom", "125");
+    await userEvent.setup().click(within(preview).getByRole("button", { name: "Reset zoom" }));
+    expect(pdf).toHaveAttribute("data-zoom", "100");
+    await userEvent.setup().click(within(preview).getByRole("button", { name: "Zoom out course material" }));
+    expect(within(preview).getByLabelText("Course material zoom level")).toHaveTextContent("75%");
+    expect(pdf).toHaveAttribute("data-zoom", "75");
     expect(within(preview).getByRole("button", { name: "Download" })).toBeInTheDocument();
     expect(document.querySelector(".workspace-grid")).toHaveClass("material-preview-open");
     await userEvent.setup().click(within(preview).getByRole("button", { name: "Close document" }));
     expect(screen.queryByRole("complementary", { name: /Course material preview/ })).not.toBeInTheDocument();
     await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:original-course-pdf"));
     expect(screen.getByRole("heading", { name: "Course materials" })).toBeInTheDocument();
+  } finally {
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+  }
+});
+
+test("a tutor reference to sample output opens the relevant original PDF page", async () => {
+  const source = {
+    document_id: "selected-pdf", chunk_id: "sample-output-page-3",
+    title: "Sandwich Maker.pdf p. 3",
+    text: "Page 3: Sample output: What would you like? (small/ medium/ large/ off/ report): small Please insert coins.",
+  };
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1/attempt": {
+      ...attempt,
+      messages: [{ role: "assistant", content: "In that sample output, what does the machine ask first?", sources: [source] }],
+    },
+    "/api/platform/assignments/assignment-1/materials": { materials: [
+      { document_id: "selected-pdf", title: "Sandwich Maker.pdf", original_available: true, page_count: 3 },
+    ] },
+    "/api/platform/assignments/assignment-1/material-reference?phrase=sample+output&document_id=selected-pdf": {
+      document_id: "selected-pdf", page_number: 3, title: "Sandwich Maker.pdf",
+    },
+    "/api/platform/assignments/assignment-1/materials/selected-pdf/download":
+      new Blob(["%PDF-1.4"], { type: "application/pdf" }),
+  });
+  const originalCreateObjectURL = URL.createObjectURL;
+  const originalRevokeObjectURL = URL.revokeObjectURL;
+  URL.createObjectURL = vi.fn(() => "blob:sample-output-pdf");
+  URL.revokeObjectURL = vi.fn();
+  try {
+    open("/student/assignments/assignment-1");
+    await userEvent.setup().click(await screen.findByRole("button", { name: "sample output" }));
+    const preview = await screen.findByRole("complementary", { name: "Course material preview: Sandwich Maker.pdf" });
+    expect(within(preview).queryByText(/Relevant section/)).not.toBeInTheDocument();
+    expect(within(preview).getByTestId("pdf-page-viewer")).toHaveAttribute("data-page", "3");
+    expect(within(preview).getByTestId("pdf-page-viewer")).toHaveAttribute("data-focus-term", "sample output");
+  } finally {
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+  }
+});
+
+test("student can enlarge an HTML course material in the preview", async () => {
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1/materials": { materials: [
+      { document_id: "html-notes", title: "Lecture notes.html", original_available: true },
+    ] },
+    "/api/platform/assignments/assignment-1/materials/html-notes/download":
+      new Blob(["<h1>Lecture notes</h1>"], { type: "text/html" }),
+  });
+  const originalCreateObjectURL = URL.createObjectURL;
+  const originalRevokeObjectURL = URL.revokeObjectURL;
+  URL.createObjectURL = vi.fn(() => "blob:lecture-notes");
+  URL.revokeObjectURL = vi.fn();
+  try {
+    open("/student/assignments/assignment-1");
+    await userEvent.setup().click(await screen.findByRole("button", { name: "View Lecture notes.html" }));
+    const preview = await screen.findByRole("complementary", { name: "Course material preview: Lecture notes.html" });
+    const documentFrame = within(preview).getByTitle("Lecture notes.html");
+    await userEvent.setup().click(within(preview).getByRole("button", { name: "Zoom in course material" }));
+    expect(documentFrame).toHaveStyle({ transform: "scale(1.25)", width: "80%" });
+    expect(within(preview).getByLabelText("Course material zoom level")).toHaveTextContent("125%");
   } finally {
     URL.createObjectURL = originalCreateObjectURL;
     URL.revokeObjectURL = originalRevokeObjectURL;
@@ -899,7 +987,7 @@ test("retrying a failed student message reuses its idempotency key", async () =>
   expect(requests[0].request_id).toBe(requests[1].request_id);
 });
 
-test("Socratic response shows a generation timer, thinking step, and clickable evidence", async () => {
+test("Socratic response shows a generation timer and thinking step", async () => {
   let resolveMessage;
   mockApi("student", {
     "/api/platform/assignments/assignment-1/attempt": attempt,
@@ -978,107 +1066,29 @@ test("Socratic response shows a generation timer, thinking step, and clickable e
   ).not.toBeInTheDocument();
   expect(within(document.querySelector(".messages")).getAllByText("My answer")).toHaveLength(1);
   expect(screen.queryByText("Why am I being asked this?")).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "View passage" })).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "View supporting sources" }));
-  expect(screen.getByRole("region", { name: "Visible course source" })).toHaveTextContent("Version control preserves revision history for a team.");
-  await user.click(screen.getByRole("button", { name: "View passage" }));
-  const drawer = screen.getByRole("dialog", {
-    name: "Evidence document: Version Control Notes",
-  });
-  expect(drawer).toBeInTheDocument();
-  expect(within(drawer).getByRole("region", { name: "Structured source evidence" })).toHaveTextContent("Version control preserves revision history for a team.");
-  expect(within(drawer).queryByText("Original selected passage")).not.toBeInTheDocument();
-  expect(document.querySelector(".workspace-grid")).toHaveClass(
-    "evidence-open",
-  );
-  expect(document.body).toHaveClass("evidence-workspace-open");
-  const resizer = screen.getByRole("separator", {
-    name: "Resize evidence document",
-  });
-  expect(resizer).toHaveAttribute("aria-valuenow", "420");
-  resizer.focus();
-  await user.keyboard("{ArrowLeft}");
-  expect(resizer).toHaveAttribute("aria-valuenow", "444");
-  expect(
-    within(drawer).getByText(/preserves revision history for a team/),
-  ).toBeInTheDocument();
-  expect(screen.getByText("Page 2")).toBeInTheDocument();
-  expect(screen.getByText("Passage chunk-2")).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "Make visual steps" }));
-  expect(await screen.findByRole("region", { name: "Visual steps from this passage" })).toBeInTheDocument();
-  expect(screen.getByText("Step 1")).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Regenerate visual steps" })).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Show original text" })).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "Close passage" }));
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(document.querySelector(".workspace-grid")).not.toHaveClass(
-    "evidence-open",
-  );
-  expect(document.body).not.toHaveClass("evidence-workspace-open");
-  await user.click(screen.getByRole("button", { name: "View passage" }));
-  await user.click(
-    screen.getByRole("button", { name: "Close evidence document" }),
-  );
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "I’m not sure yet" })).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Draft an example answer" })).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Could you guide me?" })).not.toBeInTheDocument();
+  expect(screen.queryByText("Details for this question")).not.toBeInTheDocument();
+
 });
 
-test("Socratic chat shows a relevant table excerpt but keeps other sources tucked away", async () => {
+test("a specific table reference opens the selected document page", async () => {
   mockApi("student", {
     "/api/platform/assignments/assignment-1/attempt": {
       ...attempt,
-      engine_state: {
-        sources: [{
-          document_id: "doc",
-          chunk_id: "table-1",
-          title: "Sandwich requirements",
-          page_number: 3,
-          text: "Table 1: Sandwich sizes\nSize | Bread\nSmall | 2\nMedium | 4",
-        }],
-      },
-      messages: [{
-        role: "assistant",
-        content: "Use the table in your course material. How much bread does a small sandwich need?",
-      }],
+      messages: [{ role: "assistant", content: "Use Table 1 in your course material. How much bread does a small sandwich need?" }],
     },
-  });
-
-  open("/student/assignments/assignment-1");
-  expect(await screen.findByRole("region", { name: "Relevant source excerpt" })).toBeInTheDocument();
-  expect(document.querySelectorAll(".socratic-message-card.assistant.is-current-reply")).toHaveLength(1);
-  expect(document.querySelector(".socratic-message-card.assistant.is-current-reply .message-avatar")).toHaveTextContent("S");
-  const excerpt = await screen.findByRole("region", { name: "Relevant source excerpt" });
-  expect(within(excerpt).getByRole("row", { name: "Small 2" })).toBeInTheDocument();
-  expect(screen.queryByText("Original selected passage")).not.toBeInTheDocument();
-  await userEvent.setup().click(screen.getByRole("button", { name: "View supporting sources" }));
-  expect(screen.getByRole("region", { name: "Visible course source" })).toHaveTextContent("Sandwich requirements · page 3");
-  expect(screen.getByRole("button", { name: "View passage" })).toBeInTheDocument();
-});
-
-test("console-style source evidence opens as choices and outcomes instead of a raw script", async () => {
-  mockApi("student", {
-    "/api/platform/assignments/assignment-1/attempt": {
-      ...attempt,
-      engine_state: { sources: [{
-        document_id: "doc", chunk_id: "script-1", title: "Machine example", page_number: 3,
-        text: "Bread: 6 slices What would you like? (small/ medium/ off): small Please insert coins. how many large dollars?: 1 how many quarters?: 2 Sorry, that's not enough money. Money refunded. What would you like? (small/ medium/ off): report Bread: 6 slices Ham: 8 slices",
-      }] },
-      messages: [{ role: "assistant", content: "What does the example show about payment?" }],
+    "/api/platform/assignments/assignment-1/materials": { materials: [
+      { document_id: "doc", title: "Sandwich requirements.pdf", original_available: true },
+    ] },
+    "/api/platform/assignments/assignment-1/material-reference?phrase=Table+1": {
+      document_id: "doc", page_number: 3, title: "Sandwich requirements.pdf",
     },
+    "/api/platform/assignments/assignment-1/materials/doc/download":
+      new Blob(["%PDF-1.4"], { type: "application/pdf" }),
   });
   open("/student/assignments/assignment-1");
-  await userEvent.setup().click(await screen.findByRole("button", { name: "View supporting sources" }));
-  const inlineTable = within(screen.getByRole("region", { name: "Visible course source" })).getByRole("table");
-  expect(within(inlineTable).getByRole("row", { name: /1 small large dollars: 1 · quarters: 2 Sorry, that's not enough money/ })).toBeInTheDocument();
-  await userEvent.setup().click(screen.getByRole("button", { name: "View passage" }));
-  const drawer = screen.getByRole("dialog", { name: "Evidence document: Machine example" });
-  const table = within(drawer).getByRole("table");
-  expect(within(table).getByRole("row", { name: /1 small large dollars: 1 · quarters: 2 Sorry, that's not enough money/ })).toBeInTheDocument();
-  expect(within(table).getByRole("row", { name: /2 report — Bread: 6 slices Ham: 8 slices/ })).toBeInTheDocument();
-  expect(within(drawer).queryByText("Original selected passage")).not.toBeInTheDocument();
-  expect(within(drawer).queryByRole("button", { name: "Show original text" })).not.toBeInTheDocument();
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Table 1" }));
+  expect(await screen.findByTestId("pdf-page-viewer")).toHaveAttribute("data-page", "3");
+  expect(screen.queryByText("Details for this question")).not.toBeInTheDocument();
 });
 
 test("Socratic money question provides a table without solving the exercise", async () => {

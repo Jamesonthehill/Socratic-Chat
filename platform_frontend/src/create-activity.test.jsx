@@ -497,7 +497,7 @@ test("source generation drafts editable opening, submission and completion setti
   expect(within(steps).getByLabelText("First example students will see")).toHaveValue(
     "A team begins by reviewing its design requirements.",
   );
-  expect(within(steps).getByText(/enough context to picture the situation/)).toBeInTheDocument();
+  expect(within(steps).getByText(/enough context to picture this step/)).toBeInTheDocument();
   expect(within(steps).getAllByText("Requirements.pdf")).toHaveLength(2);
   expect(within(steps).getAllByLabelText("Step title")).toHaveLength(1);
   const secondStep = within(steps).getByRole("button", { name: /Step 2.*Submit your design.*What should the team include/ });
@@ -505,7 +505,7 @@ test("source generation drafts editable opening, submission and completion setti
   await user.click(secondStep);
   expect(secondStep).toHaveAttribute("aria-expanded", "true");
   expect(within(steps).getByLabelText("Step title")).toHaveValue("Submit your design");
-  expect(within(steps).getByLabelText("How the assignment scenario continues")).toHaveValue("The same team finishes its design and prepares to submit it.");
+  expect(within(steps).getByLabelText("Detailed scene students will see")).toHaveValue("The same team finishes its design and prepares to submit it.");
   expect(within(steps).getByLabelText("Question for this step")).toHaveValue("What should the team include in its submission?");
   expect(within(steps).getAllByLabelText("Step title")).toHaveLength(1);
   await user.clear(screen.getByLabelText("Opening question or prompt"));

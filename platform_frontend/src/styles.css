@@ -1628,17 +1628,80 @@ summary {
 }
 .material-preview-header h2 { font-size: 16px; margin: 4px 0 0; overflow-wrap: anywhere; }
 .material-preview-actions { display: flex; flex-wrap: wrap; gap: 7px; }
-.material-preview iframe {
+.material-preview-zoom {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 8px;
+  padding: 8px 18px;
+}
+.material-preview-zoom button { min-width: 32px; }
+.material-preview-zoom output { font-variant-numeric: tabular-nums; min-width: 44px; text-align: center; }
+.material-preview-viewport { flex: 1; min-height: 0; overflow: auto; }
+.material-preview-pdf { min-height: 100%; overflow: auto; padding: 16px; }
+.material-preview-page { position: relative; width: fit-content; margin: 0 auto; }
+.material-preview-pdf canvas {
+  background: #fff;
+  box-shadow: 0 3px 16px #18243a26;
+  display: block;
+  margin: 0 auto;
+}
+.material-preview-match {
+  position: absolute;
+  background: #facc1566;
+  outline: 2px solid #d97706;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.material-preview-pages {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+.material-preview-pages span { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.material-preview-loading { color: var(--muted); margin: 8px 0 16px; text-align: center; }
+.material-preview-viewport iframe {
   background: #fff;
   border: 0;
-  flex: 1;
-  min-height: 0;
+  display: block;
+  height: 100%;
   width: 100%;
 }
-.material-preview-image { align-items: flex-start; display: flex; flex: 1; justify-content: center; overflow: auto; padding: 16px; }
-.material-preview-image img { height: auto; max-width: 100%; }
+.material-preview-image { align-items: flex-start; display: flex; flex: 1; overflow: auto; padding: 16px; }
+.material-preview-image img { height: auto; }
 .material-preview-unavailable { color: var(--muted); flex: 1; line-height: 1.55; margin: 0; padding: 24px; }
 .material-preview-note { border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; margin: 0; padding: 10px 18px; }
+.source-reference-link {
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  color: var(--brand-indigo);
+  cursor: pointer;
+  display: inline;
+  font: inherit;
+  font-weight: 700;
+  line-height: inherit;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.source-reference-link:hover, .source-reference-link:focus-visible {
+  background: color-mix(in srgb, var(--brand-indigo) 12%, transparent);
+}
+.source-page-button {
+  background: color-mix(in srgb, var(--brand-indigo) 6%, var(--surface));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--brand-indigo);
+  cursor: pointer;
+  display: block;
+  margin-top: 8px;
+  padding: 8px 10px;
+  text-align: left;
+  width: 100%;
+}
 @media (max-width: 980px) {
   .workspace-grid.socratic-workspace.material-preview-open:not(.evidence-open):not(.chat-expanded):not(.concept-check-active) {
     grid-template-columns: minmax(0, 1fr);
@@ -2477,6 +2540,21 @@ html[data-theme="dark"] .socratic-learning-step-heading button.socratic-step-rem
   margin: 0 20px 17px;
   padding: 13px 15px;
 }
+.message-question-visual {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--brand-indigo);
+  border-radius: 12px;
+  margin: 12px 20px 18px;
+  padding: 16px 18px;
+}
+.message-question-visual-heading { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; }
+.message-question-visual-heading strong { color: var(--ink); display: block; font-size: 14px; }
+.message-question-visual-heading span, .message-question-visual small { color: var(--muted); display: block; font-size: 12px; }
+.message-question-visual > p { margin: 10px 0; }
+.message-question-visual .message-step-source-table { margin: 12px 0; overflow-x: auto; }
+.message-question-visual table { border-collapse: collapse; font-size: 13px; width: 100%; }
+.message-question-visual th, .message-question-visual td { border-bottom: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
+.message-question-visual thead { background: var(--surface-subtle); }
 .message-step-source-heading { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; }
 .message-step-source-heading strong { color: var(--ink); display: block; font-size: 14px; }
 .message-step-source-heading span, .message-step-source small { color: var(--muted); display: block; font-size: 12px; }

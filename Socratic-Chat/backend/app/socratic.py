@@ -234,12 +234,14 @@ def _choose_socratic_strategy(
             student_state="support_requested",
             strategy="respond_to_support",
             instruction=(
-                "Respond first to the learner's exact support request. If they ask for help answering or understanding "
-                "the previous question, explain what they need for that step and ask an easier version in the same "
-                "example. If they question why a term, phrase, example, or question was introduced, explain its "
+                "Respond first to the learner's exact support request. If they say they do not know, give the "
+                "documented answer or the missing idea directly. If the tutor already stated the answer, do not "
+                "ask the learner to repeat or recall it. You may ask a different question about applying that idea, "
+                "but only if it helps; otherwise stop after the explanation. If they question why a term, phrase, "
+                "example, or question was introduced, explain its "
                 "relevance briefly; if it was an unnecessary detour, say so and return to the original learning "
                 "goal instead of retrying it. Do not interpret every support request as failure to answer. Keep the "
-                "same people, objects, and goal when the existing example remains relevant. Then ask exactly one "
+                "same people, objects, and goal when the existing example remains relevant. Ask at most one "
                 "clear, useful follow-up question when a question is appropriate. "
                 "Do not withhold the explanation again and do not repeat the previous question."
             ),
@@ -443,7 +445,7 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
         "on the right track,' and do not append missing course facts to the feedback; "
         "for an unsupported or incorrect response, do not praise it. Positive feedback must be specific, concise, "
         "and proportional—it must not imply complete mastery. "
-        "Put the final question in its own paragraph. Write it in plain, conversational language and name the "
+        "If you ask a final question, put it in its own paragraph. Write it in plain, conversational language and name the "
         "specific action, decision, example, or outcome the learner should examine. Do not expose internal question "
         "categories through canned stems such as 'What evidence', 'What factor', 'Which assumption', 'What "
         "implication', or 'What alternative viewpoint'. If asking the learner to choose a scenario, include the "

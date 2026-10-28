@@ -235,12 +235,12 @@ export function SocraticConfig({
               {isExpanded && <div id={`${openingPromptId}-step-${index}`} className="socratic-step-editor">
                 <label>Step title<input value={step.title} disabled={frozen} onChange={(event) => updateStep("title", event.target.value)} /></label>
                 <label>What the student should reason about<textarea rows={2} value={step.goal} disabled={frozen} onChange={(event) => updateStep("goal", event.target.value)} /></label>
-                <label>{index === 0 ? "First example students will see" : "How the assignment scenario continues"}
-                  <textarea rows={index === 0 ? 5 : 3} maxLength={700} value={step.scenario || ""} disabled={frozen}
+                <label>{index === 0 ? "First example students will see" : "Detailed scene students will see"}
+                  <textarea rows={5} maxLength={700} value={step.scenario || ""} disabled={frozen}
                     onChange={(event) => updateStep("scenario", event.target.value)}
-                    placeholder={index === 0 ? "Set a concrete scene from the selected material: who is involved, what they are doing, and what they need to decide." : "Continue the same situation with a detail from this step's source."} />
+                    placeholder={index === 0 ? "Set a concrete scene from the selected material: who is involved, what they are doing, and what they need to decide." : "Continue the same example: what happened before, what is happening now, and what decision remains?"} />
                 </label>
-                {index === 0 && <p className="help">Give students enough context to picture the situation before the first question. Use a few short sentences and only details supported by the selected material; leave the answer open.</p>}
+                <p className="help">Give students enough context to picture this step before its question. Continue the same example, use only details supported by this step’s selected material, and leave the answer open.</p>
                 <label>Question for this step<textarea rows={2} maxLength={500} value={step.question || ""} disabled={frozen} onChange={(event) => updateStep("question", event.target.value)} placeholder="What should the student reason about next?" /></label>
                 <details className="socratic-step-evidence"><summary>View supporting passage</summary><p>{step.evidence_quote}</p></details>
               </div>}

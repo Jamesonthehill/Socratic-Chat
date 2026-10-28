@@ -1,5 +1,6 @@
 import json
 import hashlib
+import re
 import secrets
 from urllib.parse import quote
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
@@ -75,6 +76,25 @@ def get_assignment(conn, assignment_id, account, manage=False, lock=False):
     return item
 
 
+def socratic_step_source(item, step):
+    """Return only the published, instructor-selected passage for a guided step."""
+    snapshot = item.get("snapshot") or {}
+    selected = {str(value) for value in (snapshot.get("config") or {}).get("document_ids") or []}
+    chunk = next((chunk for chunk in snapshot.get("chunks") or []
+                  if str(chunk.get("chunk_id")) == str(step.get("source_chunk_id"))
+                  and str(chunk.get("document_id")) in selected), None)
+    if not chunk:
+        return None
+    return {
+        "document_id": str(chunk["document_id"]),
+        "chunk_id": str(chunk["chunk_id"]),
+        "title": chunk.get("title") or step.get("source_file") or "Course material",
+        "page_number": chunk.get("page_number"),
+        "text": chunk["text"],
+        "evidence_quote": step.get("evidence_quote", ""),
+    }
+
+
 def public_assignment(item, manage=False):
     result = {k: v for k, v in item.items() if k not in ("snapshot", "config")}
     if manage:
@@ -94,13 +114,6 @@ def public_assignment(item, manage=False):
             result["student_config"] = {k: cfg[k] for k in ("scenario", "minimum_messages")}
         elif item["tool"] == "socratic":
             guided = cfg.get("guidance_mode", "guided" if cfg.get("learning_steps") else "basic") == "guided"
-            snapshot = item.get("snapshot") or {}
-            selected_ids = set(cfg.get("document_ids") or [])
-            step_sources = {
-                str(chunk.get("chunk_id")): chunk
-                for chunk in snapshot.get("chunks") or []
-                if str(chunk.get("document_id")) in selected_ids
-            }
             result["student_config"] = {
                 "minimum_messages": cfg["minimum_messages"],
                 "keyword_glossary": [],
@@ -110,13 +123,7 @@ def public_assignment(item, manage=False):
                     {
                         "title": step["title"], "goal": step["goal"],
                         "source_file": step.get("source_file", ""),
-                        "source": {
-                            "chunk_id": str(source["chunk_id"]),
-                            "title": source.get("title") or step.get("source_file") or "Course material",
-                            "page_number": source.get("page_number"),
-                            "text": source["text"],
-                            "evidence_quote": step.get("evidence_quote", ""),
-                        } if (source := step_sources.get(str(step.get("source_chunk_id")))) else None,
+                        "source": socratic_step_source(item, step),
                     }
                     for step in (cfg.get("learning_steps") or []) if guided
                 ],
@@ -372,14 +379,47 @@ def create_assignment(body: AssignmentInput, account=Depends(professor)):
     return public_assignment(row, True)
 
 
+@router.get("/assignments/{assignment_id}/material-reference")
+def assignment_material_reference(assignment_id: UUID, phrase: str, document_id: str | None = None,
+                                  account=Depends(user)):
+    """Resolve a tutor's document phrase against the selected published pages."""
+    phrase = " ".join(phrase.split())
+    if not 3 <= len(phrase) <= 80:
+        raise HTTPException(422, "Enter a short document reference.")
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account, manage=int(account["authority_level"]) <= 1)
+    if item["tool"] != "socratic" or item["status"] != "published":
+        raise HTTPException(404, "Published Socratic materials were not found.")
+    snapshot = item.get("snapshot") or {}
+    selected = {str(value) for value in (snapshot.get("config") or {}).get("document_ids") or []}
+    chunks = [chunk for chunk in snapshot.get("chunks") or []
+              if str(chunk.get("document_id")) in selected and chunk.get("page_number")]
+    preferred = [chunk for chunk in chunks if str(chunk.get("document_id")) == document_id]
+    others = [chunk for chunk in chunks if str(chunk.get("document_id")) != document_id]
+    page_match = re.fullmatch(r"page\s+(\d+)", phrase, re.I)
+    for chunk in preferred + others:
+        if page_match:
+            matches = int(chunk["page_number"]) == int(page_match.group(1))
+        else:
+            matches = phrase.casefold() in " ".join(str(chunk.get("text") or "").split()).casefold()
+        if matches:
+            return {"document_id": str(chunk["document_id"]),
+                    "page_number": int(chunk["page_number"]),
+                    "title": chunk.get("title") or "Course material"}
+    raise HTTPException(404, "That section was not found in the instructor-selected materials.")
+
+
 @router.post("/assignments/{assignment_id}/evidence-diagram")
 async def assignment_evidence_diagram(assignment_id: UUID, body: EvidenceDiagramInput, account=Depends(user)):
     with store.connection() as conn:
         item = get_assignment(conn, assignment_id, account, manage=int(account["authority_level"]) <= 1)
     if item["tool"] != "socratic" or item["status"] != "published":
         raise HTTPException(404, "Published Socratic evidence was not found.")
-    chunks = (item.get("snapshot") or {}).get("chunks") or []
-    passage = next((chunk for chunk in chunks if str(chunk.get("chunk_id")) == body.chunk_id), None)
+    snapshot = item.get("snapshot") or {}
+    selected = {str(value) for value in (snapshot.get("config") or {}).get("document_ids") or []}
+    passage = next((chunk for chunk in snapshot.get("chunks") or []
+                    if str(chunk.get("chunk_id")) == body.chunk_id
+                    and str(chunk.get("document_id")) in selected), None)
     if passage is None:
         raise HTTPException(404, "This passage is not in the published assignment.")
     try:
@@ -501,8 +541,8 @@ def start(assignment_id: UUID, account=Depends(user)):
         attempt["messages"] = state.pop("messages", [])
         if assignment["tool"] == "socratic" and attempt["messages"]:
             first_step = ((assignment.get("snapshot") or {}).get("config") or {}).get("learning_steps") or []
-            if first_step and first_step[0].get("source"):
-                attempt["messages"][0]["step_source"] = first_step[0]["source"]
+            if first_step and (source := socratic_step_source(assignment, first_step[0])):
+                attempt["messages"][0]["step_source"] = source
             opening_question = state.get("socratic", {}).get("next_thinking_step")
             if opening_question:
                 attempt["messages"][0]["next_thinking_step"] = opening_question
@@ -554,7 +594,7 @@ def next_socratic_step(assignment_id: UUID, account=Depends(user)):
             "role": "assistant",
             "content": "\n\n".join(part for part in (f"Step {index + 1}: {step['title']}", scenario, question) if part),
             "next_thinking_step": question,
-            **({"step_source": step["source"]} if step.get("source") else {}),
+            **({"step_source": source} if (source := socratic_step_source(assignment, step)) else {}),
         })
         store.save_attempt(conn, attempt)
         return public_attempt(attempt)

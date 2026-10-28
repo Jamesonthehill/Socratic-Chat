@@ -1,8 +1,9 @@
 import SocraticLearningSummary from "./SocraticLearningSummary";
-import { useEffect, useRef, useState } from "react";
+import { Children, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useParams } from "react-router-dom";
 import Markdown from "react-markdown";
+import PdfMaterialPreview from "./PdfMaterialPreview";
 import { api, date, session, TOOLS } from "./api";
 import { Badge, GenerationStatus, Notice } from "./ui";
 
@@ -216,14 +217,14 @@ function transcriptEvidence(text) {
   return { initial: source.slice(0, matches[0].index).trim(), rows };
 }
 
-function sourceVisual(source) {
+function sourceVisual(source, question = "") {
   if (!source?.text) return null;
   const original = String(source.text);
   const text = original.replace(/\s+/g, " ");
   const quote = String(source.evidence_quote || "").replace(/\s+/g, " ").trim();
   const menu = text.match(/(What would you like\?)\s*\(([^)]{3,100})\)/i);
   if (menu && (quote.toLowerCase().includes(menu[1].toLowerCase()) ||
-    /(?:menu|choice|choose|size|order|option|prompt)/i.test(quote))) {
+    /(?:menu|choice|choose|size|order|option|prompt)/i.test(`${quote} ${question}`))) {
     const choices = menu[2].split(/[\/|,]/).map((choice) => choice.trim()).filter(Boolean);
     if (choices.length >= 2 && choices.length <= 10) {
       return { heading: "Choices shown in the source", columns: ["Source type", "Document text"],
@@ -254,17 +255,14 @@ function sourceVisual(source) {
     rows: details.map((detail) => [detail.kind, detail.excerpt]) } : null;
 }
 
-function StepSourceVisual({ source, selectedEvidence, setSelectedEvidence }) {
-  const visual = sourceVisual(source);
+function QuestionVisual({ source, question, onViewOriginal, canViewOriginal }) {
+  if (!source?.text || !/\b(?:sample output|table|chart|diagram|figure|menu|choices?|options?|prompt)\b/i.test(question)) return null;
+  const visual = sourceVisual(source, question);
   if (!visual) return null;
-  return <section className="message-step-source" aria-label="Visible course source">
-    <div className="message-step-source-heading">
-      <div><strong>{visual.heading}</strong><span>{source.title}{source.page_number ? ` · page ${source.page_number}` : ""}</span></div>
-      {visual.heading !== "Choices shown in the source" && <button type="button" className="quiet compact" aria-controls="evidence-document-drawer"
-        aria-expanded={selectedEvidence?.chunk_id === source.chunk_id}
-        onClick={() => setSelectedEvidence((current) => current?.chunk_id === source.chunk_id ? null : source)}>
-        {selectedEvidence?.chunk_id === source.chunk_id ? "Close passage" : "View passage"}
-      </button>}
+  return <section className="message-question-visual" role="region" aria-label="Question visual aid">
+    <div className="message-question-visual-heading">
+      <div><strong>Details for this question</strong><span>{visual.heading} · {source.title}{sourcePageNumber(source) ? ` · page ${sourcePageNumber(source)}` : ""}</span></div>
+      {canViewOriginal?.(source) && <button type="button" className="quiet compact" onClick={() => onViewOriginal(source)}>View original page</button>}
     </div>
     {visual.caption && <p>{visual.caption}</p>}
     <div className="message-step-source-table"><table><thead><tr>{visual.columns.map((column) => <th key={column} scope="col">{column}</th>)}</tr></thead>
@@ -272,8 +270,29 @@ function StepSourceVisual({ source, selectedEvidence, setSelectedEvidence }) {
         cellIndex === 0 ? <th key={cellIndex} scope="row">{cell}</th> : <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody>
     </table></div>
     {visual.note && <small>{visual.note}</small>}
-    <small>Copied from the instructor-selected material. Use it as a reference while you reason through the question.</small>
+    <small>From the instructor-selected material. Use these details while you reason through the question.</small>
   </section>;
+}
+
+function sourcePageNumber(source) {
+  const page = Number(source?.page_number || String(source?.title || "").match(/\bp\.\s*(\d+)$/i)?.[1]);
+  return Number.isInteger(page) && page > 0 ? page : null;
+}
+
+const DOCUMENT_REFERENCE = /\b(?:sample output|page\s+\d+|section\s+\d+(?:\.\d+)*|table\s+\d+|figure\s+\d+|diagram\s+\d+)\b/gi;
+
+function ReferenceText({ text, onOpen, enabled, keywords = [] }) {
+  if (!enabled) return <EmphasizedText text={text} keywords={keywords} />;
+  const parts = [];
+  let previous = 0;
+  for (const match of String(text).matchAll(DOCUMENT_REFERENCE)) {
+    if (match.index > previous) parts.push(<EmphasizedText key={`text-${previous}`} text={text.slice(previous, match.index)} keywords={keywords} />);
+    parts.push(<button key={`reference-${match.index}`} type="button" className="source-reference-link"
+      onClick={() => onOpen(match[0])} title={`Open ${match[0]} in course material`}>{match[0]}</button>);
+    previous = match.index + match[0].length;
+  }
+  if (previous < text.length) parts.push(<EmphasizedText key={`text-${previous}`} text={text.slice(previous)} keywords={keywords} />);
+  return parts.length ? parts : <EmphasizedText text={text} keywords={keywords} />;
 }
 
 function EmphasizedText({ text, keywords = [] }) {
@@ -518,18 +537,12 @@ function SocraticMessage({
   sources,
   stepSource,
   responseSeconds,
-  selectedEvidence,
-  setSelectedEvidence,
+  onViewOriginal,
+  canViewOriginal,
+  onOpenReference,
+  canOpenReference,
 }) {
   const [showSources, setShowSources] = useState(false);
-  const visualCue = message.role === "assistant"
-    ? message.content.match(/\b(table|equation|formula|figure|chart|graph|matrix)\b/i)?.[1]
-    : null;
-  const visualSource = visualCue && sources?.find((source) => {
-    const content = source.text || "";
-    return new RegExp(`\\b${visualCue}\\b`, "i").test(content) ||
-      (["equation", "formula"].includes(visualCue.toLowerCase()) && /[=∑∫]/.test(content));
-  });
   const moneyBreakdown = message.role === "assistant"
     ? moneyBreakdownFromQuestion(message.content) || (latest ? moneyBreakdownFromQuestion(thinkingStep) : null)
     : null;
@@ -542,6 +555,20 @@ function SocraticMessage({
     showQuestion && message.content.trim().endsWith(question)
       ? message.content.trim().slice(0, -question.length).trim()
       : message.content;
+  const preferredSource = sources?.[0] || stepSource;
+  const visualQuestion = showQuestion ? question : message.content;
+  const visualSource = message.role === "assistant" ? [stepSource, ...(sources || [])]
+    .filter(Boolean).find((source) => sourceVisual(source, visualQuestion)) : null;
+  const openReference = (phrase) => onOpenReference?.(phrase, preferredSource);
+  const renderReferences = (children) => Children.map(children, (child) => typeof child === "string"
+    ? <ReferenceText text={child} onOpen={openReference} enabled={message.role === "assistant" && canOpenReference} />
+    : child);
+  const referenceMarkdown = {
+    p: ({ children }) => <p>{renderReferences(children)}</p>,
+    strong: ({ children }) => <strong>{renderReferences(children)}</strong>,
+    em: ({ children }) => <em>{renderReferences(children)}</em>,
+    li: ({ children }) => <li>{renderReferences(children)}</li>,
+  };
   return (
     <article
       className={`message socratic-message-card ${message.role}${isPending ? " is-pending" : ""}${currentReply ? " is-current-reply" : ""}${isNewReply ? " is-new-reply" : ""}`}
@@ -570,7 +597,7 @@ function SocraticMessage({
           <>
             {lead && (
               <div className="prose message-lead">
-                <Markdown>{lead}</Markdown>
+                <Markdown components={referenceMarkdown}>{lead}</Markdown>
               </div>
             )}
             <section
@@ -579,16 +606,18 @@ function SocraticMessage({
             >
               <span>Your next thinking step</span>
               <p>
-                <EmphasizedText text={question} keywords={keywords} />
+                <ReferenceText text={question} onOpen={openReference} enabled={canOpenReference} keywords={keywords} />
               </p>
             </section>
           </>
         ) : (
           <div className="prose">
-            <Markdown>{message.content}</Markdown>
+            <Markdown components={referenceMarkdown}>{message.content}</Markdown>
           </div>
         )}
       </div>
+      {visualSource && <QuestionVisual source={visualSource} question={visualQuestion}
+        onViewOriginal={onViewOriginal} canViewOriginal={canViewOriginal} />}
       {moneyBreakdown && <section className="message-calculation-aid" aria-label="Money breakdown">
         <strong>Organize the amounts</strong>
         <p>Use the counts from the question to work out each amount, then compare the total with the sandwich price.</p>
@@ -602,21 +631,17 @@ function SocraticMessage({
             <tr><th scope="row" colSpan="3">Change</th><td>?</td></tr></tfoot>
         </table>
       </section>}
-      {message.role === "assistant" && stepSource && <StepSourceVisual
-        source={stepSource} selectedEvidence={selectedEvidence} setSelectedEvidence={setSelectedEvidence}
-      />}
       {message.role === "assistant" && sources?.length > 0 && (
         <div className="message-evidence">
-          {visualSource && !showSources && <div className="message-visual-reference" role="region" aria-label="Relevant source excerpt">
-            <StepSourceVisual source={visualSource} selectedEvidence={selectedEvidence} setSelectedEvidence={setSelectedEvidence} />
-          </div>}
           <button type="button" className="quiet compact" aria-expanded={showSources} onClick={() => setShowSources((current) => !current)}>
             {showSources ? "Hide supporting sources" : "View supporting sources"}
           </button>
           {showSources && <div className="message-supporting-sources">
-            {sources.map((source, index) => (
-              <StepSourceVisual key={source.chunk_id || index} source={source}
-                selectedEvidence={selectedEvidence} setSelectedEvidence={setSelectedEvidence} />
+            {sources.filter((source) => canViewOriginal?.(source)).map((source, index) => (
+              <button key={source.chunk_id || index} type="button" className="source-page-button"
+                onClick={() => onViewOriginal(source)}>
+                {source.title}{sourcePageNumber(source) ? ` · page ${sourcePageNumber(source)}` : ""}
+              </button>
             ))}
           </div>}
         </div>
@@ -707,6 +732,7 @@ export default function StudentWorkspace({ user }) {
     [materialBusyAction, setMaterialBusyAction] = useState(null),
     [materialError, setMaterialError] = useState(""),
     [materialPreview, setMaterialPreview] = useState(null),
+    [materialZoom, setMaterialZoom] = useState(100),
     [evidenceWidth, setEvidenceWidth] = useState(420),
     [chatExpanded, setChatExpanded] = useState(false),
     [socraticGuideOpen, setSocraticGuideOpen] = useState(false),
@@ -830,8 +856,13 @@ export default function StudentWorkspace({ user }) {
       setMaterialBusyAction(null);
     }
   }
-  async function previewMaterial(material) {
+  async function previewMaterial(material, focusPage = null, focusTerm = "") {
     if (!material.original_available || materialBusy) return;
+    if (materialPreview?.document_id === material.document_id && materialPreview.url) {
+      setMaterialPreview((current) => ({ ...current, focusPage, focusTerm }));
+      setSelectedEvidence(null);
+      return;
+    }
     setMaterialBusy(material.document_id);
     setMaterialBusyAction("view");
     setMaterialError("");
@@ -854,7 +885,10 @@ export default function StudentWorkspace({ user }) {
         previewType = "text";
       }
       setMaterialPreview({ document_id: material.document_id, title: material.title, type: previewType,
+        focusPage, focusTerm,
+        blob: previewType === "pdf" ? blob : null,
         url: previewType === "unavailable" ? null : URL.createObjectURL(blob) });
+      setMaterialZoom(100);
       setSelectedEvidence(null);
       setChatExpanded(false);
     } catch (failure) {
@@ -862,6 +896,25 @@ export default function StudentWorkspace({ user }) {
     } finally {
       setMaterialBusy(null);
       setMaterialBusyAction(null);
+    }
+  }
+  function canViewOriginal(source) {
+    return Boolean(source?.document_id && materials.some((material) =>
+      material.document_id === source.document_id && material.original_available));
+  }
+  function viewOriginalSource(source, focusTerm = "") {
+    const material = materials.find((item) => item.document_id === source.document_id);
+    if (material?.original_available) previewMaterial(material, sourcePageNumber(source), focusTerm);
+  }
+  async function openCourseReference(phrase, preferredSource) {
+    setMaterialError("");
+    const query = new URLSearchParams({ phrase });
+    if (preferredSource?.document_id) query.set("document_id", preferredSource.document_id);
+    try {
+      const location = await api(`/platform/assignments/${id}/material-reference?${query}`);
+      viewOriginalSource(location, /^page\s+\d+$/i.test(phrase) ? "" : phrase);
+    } catch (failure) {
+      setMaterialError(failure.message || "That section was not found in the selected materials.");
     }
   }
   const conceptCheckId =
@@ -1353,10 +1406,26 @@ export default function StudentWorkspace({ user }) {
               <button type="button" className="quiet compact" onClick={() => setMaterialPreview(null)}>Close document</button>
             </div>
           </header>
-          {materialPreview.type === "pdf" && <iframe title={materialPreview.title} src={materialPreview.url} />}
-          {materialPreview.type === "html" && <iframe title={materialPreview.title} src={materialPreview.url} sandbox="" />}
-          {materialPreview.type === "text" && <iframe title={materialPreview.title} src={materialPreview.url} sandbox="" />}
-          {materialPreview.type === "image" && <div className="material-preview-image"><img src={materialPreview.url} alt={materialPreview.title} /></div>}
+          {materialPreview.type !== "unavailable" && <div className="material-preview-zoom" role="group" aria-label="Course material zoom">
+            <button type="button" className="secondary compact" aria-label="Zoom out course material"
+              disabled={materialZoom <= 75} onClick={() => setMaterialZoom((zoom) => Math.max(75, zoom - 25))}>−</button>
+            <output aria-label="Course material zoom level">{materialZoom}%</output>
+            <button type="button" className="secondary compact" aria-label="Zoom in course material"
+              disabled={materialZoom >= 200} onClick={() => setMaterialZoom((zoom) => Math.min(200, zoom + 25))}>+</button>
+            <button type="button" className="quiet compact" disabled={materialZoom === 100}
+              onClick={() => setMaterialZoom(100)}>Reset zoom</button>
+          </div>}
+          {materialPreview.type === "pdf" && <div className="material-preview-viewport">
+            <PdfMaterialPreview blob={materialPreview.blob} title={materialPreview.title}
+              focusPage={materialPreview.focusPage} focusTerm={materialPreview.focusTerm} zoom={materialZoom} />
+          </div>}
+          {["html", "text"].includes(materialPreview.type) && <div className="material-preview-viewport">
+            <iframe title={materialPreview.title} src={materialPreview.url} sandbox=""
+              style={{ transform: `scale(${materialZoom / 100})`, transformOrigin: "top left",
+                width: `${10000 / materialZoom}%`, height: `${10000 / materialZoom}%` }} />
+          </div>}
+          {materialPreview.type === "image" && <div className="material-preview-image"><img src={materialPreview.url}
+            alt={materialPreview.title} style={{ width: `${materialZoom}%`, maxWidth: "none" }} /></div>}
           {materialPreview.type === "unavailable" && <p className="material-preview-unavailable">This file cannot be displayed in the browser. Use Download to open the original document in a compatible app.</p>}
           <p className="material-preview-note">This is the instructor's original uploaded file, not extracted text.</p>
         </aside>}
@@ -1496,10 +1565,16 @@ export default function StudentWorkspace({ user }) {
                       thinkingStep={thinkingStep}
                       keywords={keywords}
                       sources={m.sources ?? (i === latestAssistantIndex ? state.sources : [])}
-                      stepSource={m.step_source || null}
+                      stepSource={m.step_source || (i === 0
+                        ? assignment.student_config?.learning_steps?.[0]?.source
+                        : stepBoundaries[i]
+                          ? assignment.student_config?.learning_steps?.[stepBoundaries[i].index - 1]?.source
+                          : null)}
                       responseSeconds={lastGenerationSeconds}
-                      selectedEvidence={selectedEvidence}
-                      setSelectedEvidence={setSelectedEvidence}
+                      onViewOriginal={viewOriginalSource}
+                      canViewOriginal={canViewOriginal}
+                      onOpenReference={openCourseReference}
+                      canOpenReference={materials.some((material) => material.original_available)}
                     />
                   ] : (
                     <article className={`message ${m.role}`} key={i}>

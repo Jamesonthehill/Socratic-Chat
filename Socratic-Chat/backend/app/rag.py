@@ -7,6 +7,7 @@ import json
 import logging
 import math
 import re
+from difflib import SequenceMatcher
 from pathlib import Path
 from time import monotonic
 from typing import Any
@@ -727,6 +728,21 @@ def answer_format_instruction(question: str) -> str:
     return "Prefer short paragraphs and bullets when they improve readability."
 
 
+def repeated_tutor_question(candidate: str, history: list[ChatMessage]) -> bool:
+    """Catch near-identical follow-ups after a student asks for help."""
+    if not candidate.strip():
+        return False
+    normalized = lambda text: " ".join(re.findall(r"[a-z0-9]+", text.casefold()))
+    current = normalized(candidate)
+    for item in history[-8:]:
+        if item.role != "assistant":
+            continue
+        previous = re.search(r"([^.!?]*\?)\s*$", item.content.strip())
+        if previous and SequenceMatcher(None, current, normalized(previous.group(1))).ratio() >= 0.78:
+            return True
+    return False
+
+
 
 def generation_client_config() -> tuple[str, str, str, str] | None:
     """Use the configured OpenAI-compatible provider for tutor generation."""
@@ -890,8 +906,10 @@ async def generate_answer(
         if support_request:
             teaching_instruction += (
                 " Read the learner's exact support request before deciding what needs repair. If they ask for help "
-                "answering or understanding the latest tutor question, explain the idea needed for that question "
-                "and ask an easier version. If they question why the tutor introduced a term, phrase, example, or "
+                "answering or understanding the latest tutor question, explain the idea needed for that question. "
+                "If a previous tutor message already gave the requested answer, state it plainly now instead of "
+                "quizzing the learner to repeat its wording. Move to an application or consequence only when useful; "
+                "a response with no new question is valid. If they question why the tutor introduced a term, phrase, example, or "
                 "question, answer that relevance concern directly. Admit an unnecessary detour when appropriate and "
                 "return to the original learning goal; do not automatically retry the disputed question."
             )
@@ -962,8 +980,10 @@ async def generate_answer(
             "role": "system",
             "content": (
                 "For this Socratic turn, put any brief feedback or scenario explanation in lead_in "
-                "(an empty string is fine). Put exactly one new, specific question for the learner "
-                "in next_question. Both fields are your own words. Keep that question connected "
+                "(an empty string is fine). Put at most one new, specific question for the learner "
+                "in next_question; use an empty string when the learner needs a direct explanation before another question. "
+                "Never rephrase a question that already received a support request without adding a new idea. "
+                "Both fields are your own words. Keep any question connected "
                 "to the established scenario and the original learning goal. These are parts of one natural "
                 "chat reply, not labeled sections; make the question flow from the lead-in."
             ),
@@ -1028,6 +1048,26 @@ async def generate_answer(
         debug_preview("candidate_answer", raw_answer)
         if socratic_decision.mode == "socratic" and raw_answer.strip() not in {fallback_answer(question, []), "That topic is outside the currently published course documentation.", "That topic has not been approved by your instructor for tutoring."}:
             turn = json.loads(raw_answer)
+            if support_request and repeated_tutor_question(turn["next_question"], recent_history):
+                log_event(10, "repeated_support_question_detected")
+                repair_messages = [*messages, {"role": "assistant", "content": raw_answer}, {
+                    "role": "system", "content": (
+                        "Your proposed next question repeats the tutor's earlier question after the learner asked for help. "
+                        "Return a new JSON turn. State the documented answer or missing idea plainly in lead_in. "
+                        "Ask a meaningfully different application question only if useful; otherwise make next_question empty. "
+                        "Do not ask the learner to recall the same answer again."
+                    ),
+                }]
+                repair_request = {**request, "messages": repair_messages}
+                try:
+                    repaired = await chat_completion(api_key, base_url, repair_request)
+                    repaired_turn = json.loads(repaired.choices[0].message.content or "")
+                    if isinstance(repaired_turn, dict) and isinstance(repaired_turn.get("lead_in"), str) and isinstance(repaired_turn.get("next_question"), str):
+                        turn = repaired_turn
+                except Exception as repair_error:
+                    log_exception(10, "repeated_support_question_repair_failed", repair_error)
+                if repeated_tutor_question(turn["next_question"], recent_history):
+                    turn["next_question"] = ""
             answer = "\n\n".join(
                 part.strip() for part in (turn["lead_in"], turn["next_question"]) if part.strip()
             )

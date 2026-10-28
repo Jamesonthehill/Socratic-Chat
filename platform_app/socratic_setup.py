@@ -20,6 +20,19 @@ def brief_opening(example: str, source: str, minimum_words: int = 50) -> bool:
     return len(source.split()) >= 100 and len(example.split()) < minimum_words
 
 
+def brief_step_indices(steps: list[dict[str, Any]], evidence: str) -> list[int]:
+    """Find generated scenes that are too short for their own cited passage."""
+    source_by_chunk = {
+        chunk_id: passage
+        for chunk_id, passage in re.findall(
+            r"\[chunk_id=([^\]]+)\]\s*(.*?)(?=\n\[chunk_id=|\n</file>|$)", evidence, flags=re.S,
+        )
+    }
+    return [index + 1 for index, step in enumerate(steps)
+            if brief_opening(step.get("scenario", ""), source_by_chunk.get(str(step.get("source_chunk_id")), ""),
+                             minimum_words=50 if index == 0 else 45)]
+
+
 def grounded_excerpt(source: str, proposed_quote: str, title: str, goal: str) -> str:
     """Use a verbatim passage even when the model paraphrases its citation."""
     source = " ".join(source.split())
@@ -187,16 +200,18 @@ async def generate_setup(files: list[dict[str, Any]], title: str, canvas_instruc
                 "copied from its supporting indexed passage, and that quote's "
                 "chunk ID. Cover the meaningful phases without repeating a trivial detail or inventing a task. "
                 "These are an editable learning path, not a rigid script or a completed solution. "
-                "Use ONE evolving example across all steps. Make the FIRST step's scenario a concrete, "
-                "student-friendly scene of about 50 to 90 words (roughly 3 to 5 short sentences): identify who "
-                "is involved, what they are trying to do, at least two specific relevant details from the cited "
-                "passage, and the unresolved decision. Explain unfamiliar terms in plain language without giving "
-                "away the answer. Do not invent quantities, rules, or events that the selected materials do not "
-                "support. If the source is too sparse, use fewer details rather than inventing them. The first "
-                "question should follow naturally from that scene and ask about ONE decision, not require the "
-                "student to recall an unintroduced page or exact wording. Later scenarios can be shorter and "
-                "should continue that same situation using only supported details from their cited passages. Do not "
-                "restart the story, repeat the first choice, or reveal the answer. Each question should focus on that "
+                "Use ONE evolving example across all steps. Give EVERY step its own concrete, student-friendly "
+                "scene before its question. The first scene should be about 50 to 90 words; each later scene "
+                "should usually be about 45 to 75 words (roughly 3 to 5 short sentences). At every step, remind "
+                "a new student who is involved, what has happened so far, what the current situation is, and "
+                "at least two relevant details from that step's cited passage when the passage supports them. "
+                "Explain unfamiliar terms in plain language, then leave one meaningful decision unresolved for "
+                "the question. Do not reveal that step's answer in its scene. Do not invent quantities, rules, "
+                "or events that the selected materials do not support. If a cited passage is sparse, use fewer "
+                "details rather than inventing them. Each question should follow naturally from its own scene "
+                "and ask about ONE decision, not require the student to recall an unintroduced page or exact "
+                "wording. Later scenes must continue the same situation rather than restart the story or repeat "
+                "the first choice. Each question should focus on that "
                 "step's new decision and must end in a question mark. Never use generic repeats such as 'What would "
                 "you try first?'. Write one short opening question about the first step using a concrete example from the assignment, "
                 "not a page-lookup or a request to quote the document. Student instructions must say what students "
@@ -232,17 +247,21 @@ async def generate_setup(files: list[dict[str, Any]], title: str, canvas_instruc
             draft = validate_draft(raw, chunk_ids, evidence, source_files_by_chunk)
             if any(len(step["scenario"]) < 12 or len(step["question"]) < 10 for step in draft["learning_steps"]):
                 raise ValueError("Every generated step needs a scenario continuation and a specific question.")
-            if brief_opening(draft["learning_steps"][0]["scenario"], evidence):
-                draft["first_example_needs_review"] = True
+            brief_steps = brief_step_indices(draft["learning_steps"], evidence)
+            if brief_steps:
+                draft["brief_steps_needing_review"] = brief_steps
+                draft["first_example_needs_review"] = 1 in brief_steps
                 brief_valid_draft = draft
                 if attempt == 0:
                     request["messages"].append({"role": "system", "content": (
-                        "The first example is too brief for a new student. Regenerate the full source-grounded "
-                        "draft with a concrete first scene of 3 to 5 short sentences before its question. "
-                        "Use only details supported by the cited passage; do not reveal the answer."
+                        f"Scenes for steps {', '.join(map(str, brief_steps))} are too brief for a new student. "
+                        "Regenerate the full source-grounded draft. Give each of those steps its own concrete "
+                        "scene of 3 to 5 short sentences before its question. Continue the same example, use only "
+                        "details supported by each cited passage, and do not reveal the answer."
                     )})
                     continue
             else:
+                draft.pop("brief_steps_needing_review", None)
                 draft.pop("first_example_needs_review", None)
             return draft
         except (ValueError, json.JSONDecodeError) as exc:

@@ -636,6 +636,10 @@ def _socratic_result(answer, sources, state, classification, score=None):
         "" if classification.conversation_action in {"soft_close", "complete"}
         else next_question or (previous_question if previous_question.endswith("?") else "")
     )
+    if classification.message_role == "support_request" and not next_question:
+        # A direct explanation must clear the old question. Keeping it here
+        # makes the UI show the same prompt even when the tutor has moved on.
+        state["next_thinking_step"] = ""
     state["keywords"] = list(state["objective_keywords"]) if state.get("objective_keywords") else list(dict.fromkeys([state["stable_concept"]] + concepts if state.get("stable_concept") else concepts))[:5]
     if score is None:
         state.pop("last_score", None)

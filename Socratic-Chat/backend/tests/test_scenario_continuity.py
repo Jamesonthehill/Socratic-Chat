@@ -196,6 +196,53 @@ class ScenarioContinuityTests(unittest.TestCase):
         self.assertIn("relevance concern", messages[1]["content"])
         self.assertIn("do not automatically retry", messages[1]["content"])
 
+    def test_student_stuck_after_answer_was_given_can_receive_explanation_without_repeat(self):
+        history = [ChatMessage(role="assistant", content=(
+            "If bread is missing, show 'Sorry there is not enough bread.' "
+            "What exact phrase should appear on the screen?"
+        ))]
+        classification = replace(CLASSIFICATION, message_role="support_request",
+                                 dialogue_status="requesting_support", has_substantive_claim=False)
+        model_reply = json.dumps({
+            "lead_in": "The screen should say 'Sorry there is not enough bread.' The machine cannot make that order.",
+            "next_question": "",
+        })
+        response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=model_reply))])
+        create = AsyncMock(return_value=response)
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch("app.rag.generation_client_config", return_value=(
+            "Ollama", "ollama", "http://127.0.0.1:11434/v1", "test-model"
+        )), patch("openai.AsyncOpenAI", return_value=client):
+            answer = asyncio.run(rag.generate_answer("I don't know", history, [SOURCE], classification,
+                                                       assignment_scope=True))
+        self.assertEqual(answer, json.loads(model_reply)["lead_in"])
+        prompt = create.call_args.kwargs["messages"]
+        self.assertIn("a response with no new question is valid", prompt[1]["content"])
+        self.assertIn("use an empty string", prompt[3]["content"])
+
+    def test_repeated_support_question_is_repaired_before_returning(self):
+        previous = "If you chose small with one slice of bread, what exact phrase should appear on the screen?"
+        history = [ChatMessage(role="assistant", content=previous)]
+        classification = replace(CLASSIFICATION, message_role="support_request",
+                                 dialogue_status="requesting_support", has_substantive_claim=False)
+        replies = [
+            json.dumps({"lead_in": "Let's try again.", "next_question": previous}),
+            json.dumps({"lead_in": "The message is 'Sorry there is not enough bread.'",
+                        "next_question": "What should the machine do with this order after displaying that message?"}),
+        ]
+        responses = [SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=reply))])
+                     for reply in replies]
+        create = AsyncMock(side_effect=responses)
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch("app.rag.generation_client_config", return_value=(
+            "Ollama", "ollama", "http://127.0.0.1:11434/v1", "test-model"
+        )), patch("openai.AsyncOpenAI", return_value=client):
+            answer = asyncio.run(rag.generate_answer("I don't know", history, [SOURCE], classification,
+                                                       assignment_scope=True))
+        self.assertEqual(create.await_count, 2)
+        self.assertIn("What should the machine do", answer)
+        self.assertNotIn(previous, answer)
+
     def test_original_example_survives_beyond_eight_messages(self):
         history = [ChatMessage(role="assistant", content=SCENARIO)]
         history += [ChatMessage(role="user", content="Save a revision."), ChatMessage(role="assistant", content="Why preserve it?")] * 8

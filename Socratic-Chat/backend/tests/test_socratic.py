@@ -308,7 +308,7 @@ class SocraticPolicyTests(unittest.TestCase):
         self.assertIn("exceed 40 words only when", instruction)
         self.assertIn("Markdown bold", instruction)
         self.assertIn("Do not bold complete sentences", instruction)
-        self.assertIn("final question in its own paragraph", instruction)
+        self.assertIn("If you ask a final question, put it in its own paragraph", instruction)
         self.assertIn("plain, conversational language", instruction)
         self.assertIn("Do not expose internal question", instruction)
 

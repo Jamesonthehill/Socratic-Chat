@@ -8,6 +8,17 @@ from app.schemas import Source
 from platform_app import engines
 
 
+def test_support_explanation_clears_previous_unanswered_question():
+    classification = MessageClassification(message_role="support_request", conversation_action="continue")
+    state = {"next_thinking_step": "What exact phrase should appear on the screen?"}
+
+    result = engines._socratic_result(
+        "The material says: 'Sorry there is not enough bread.'", [], state, classification,
+    )
+
+    assert result["socratic"]["next_thinking_step"] == ""
+
+
 def test_snapshot_retrieval_uses_frozen_embeddings_and_text(monkeypatch):
     chunks = [
         {

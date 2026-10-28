@@ -299,7 +299,8 @@ export default function CreateActivity({
       }));
       setStage(2);
       setPublishIssue(null);
-      setNotice(`AI drafted ${(generated.learning_steps || []).length} learning steps from ${(generated.source_files || []).join(", ")}. ${generated.first_example_needs_review ? "The first example is brief; expand it for students before publishing." : "Review the path before publishing."}`);
+      const briefSteps = generated.brief_steps_needing_review || (generated.first_example_needs_review ? [1] : []);
+      setNotice(`AI drafted ${(generated.learning_steps || []).length} learning steps from ${(generated.source_files || []).join(", ")}. ${briefSteps.length ? `Steps ${briefSteps.join(", ")} need a more detailed scene before publishing.` : "Review each scene and question before publishing."}`);
     }, "Generating setup from selected documents");
   const generateSocraticOpening = () =>
     run(async () => {

@@ -20,6 +20,31 @@ from platform_app.schemas import SocraticConfig
 
 
 class SocraticSetupTests(unittest.TestCase):
+    def test_material_reference_resolves_only_selected_published_pages(self):
+        assignment = {"tool": "socratic", "status": "published", "snapshot": {
+            "config": {"document_ids": ["selected"]}, "chunks": [
+                {"document_id": "other", "page_number": 1, "title": "Private.pdf",
+                 "text": "Sample output must stay private."},
+                {"document_id": "selected", "page_number": 2, "title": "Selected.pdf",
+                 "text": "Table 1 lists the choices."},
+                {"document_id": "selected", "page_number": 3, "title": "Selected.pdf",
+                 "text": "Sample output: What would you like?"},
+            ]}}
+        account = {"authority_level": 2, "user_id": "student"}
+
+        @contextmanager
+        def connection():
+            yield object()
+
+        with patch.object(routes.store, "connection", side_effect=connection), \
+             patch.object(routes, "get_assignment", return_value=assignment):
+            resolved = routes.assignment_material_reference(uuid4(), "sample output", "other", account)
+            self.assertEqual((resolved["document_id"], resolved["page_number"]), ("selected", 3))
+            self.assertEqual(routes.assignment_material_reference(uuid4(), "page 2", None, account)["page_number"], 2)
+            with self.assertRaises(HTTPException) as not_found:
+                routes.assignment_material_reference(uuid4(), "page 1", None, account)
+            self.assertEqual(not_found.exception.status_code, 404)
+
     def test_guided_learning_path_duration_is_instructor_configurable(self):
         self.assertEqual(SocraticConfig().learning_path_minutes, 7)
         config = {"minimum_messages": 1, "guidance_mode": "guided", "learning_path_minutes": 20,
@@ -50,8 +75,11 @@ class SocraticSetupTests(unittest.TestCase):
         steps = student_config["learning_steps"]
         self.assertEqual(student_config["learning_path_time_limit_seconds"], 420)
         self.assertEqual(steps[0]["source"]["title"], "menu.pdf")
+        self.assertEqual(steps[0]["source"]["document_id"], "selected")
         self.assertEqual(steps[0]["source"]["page_number"], 3)
         self.assertIsNone(steps[1]["source"])
+        self.assertEqual(routes.socratic_step_source(assignment, config["learning_steps"][0]), steps[0]["source"])
+        self.assertIsNone(routes.socratic_step_source(assignment, config["learning_steps"][1]))
 
     def test_student_material_reader_exposes_only_published_selection(self):
         assignment = {"tool": "socratic", "status": "published", "course_id": uuid4(),
@@ -162,7 +190,7 @@ class SocraticSetupTests(unittest.TestCase):
         async def fake_completion(_key, _url, request):
             self.assertIn("[chunk_id=chunk-1]", request["messages"][1]["content"])
             self.assertIn("Canvas description: Submit the code through Canvas", request["messages"][1]["content"])
-            self.assertIn("FIRST step's scenario a concrete", request["messages"][0]["content"])
+            self.assertIn("EVERY step its own concrete", request["messages"][0]["content"])
             self.assertIn("Do not invent quantities", request["messages"][0]["content"])
             self.assertNotIn("max_tokens", request)
             return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload)))])
@@ -234,7 +262,12 @@ class SocraticSetupTests(unittest.TestCase):
                 "merged yet, so you can investigate the problem and discuss it with your teammate. You need "
                 "to decide what to check before changing the code."
             )},
-            payload["learning_steps"][1],
+            {**payload["learning_steps"][1], "scenario": (
+                "The same developer has discussed the crash with the reviewer, and the change is still waiting "
+                "to be merged. Ordinary lists worked, but an empty list caused the function to fail. The team "
+                "now needs a test that captures what happened before they change the code. You are deciding "
+                "which input to try next and why it matters for this review."
+            )},
         ]
         responses = [payload, longer]
         requests = []
@@ -254,6 +287,46 @@ class SocraticSetupTests(unittest.TestCase):
         self.assertEqual(requests, [2, 3])
         self.assertTrue(result["learning_steps"][0]["scenario"].startswith("You are the developer"))
         self.assertNotIn("first_example_needs_review", result)
+        self.assertNotIn("brief_steps_needing_review", result)
+
+    def test_rich_source_retries_a_brief_later_scene(self):
+        source = ("A teammate reviews the code before merging and notices that an empty list crashes the function. "
+                  "The developer needs to decide how to respond and what to test next. ") * 12
+        first = ("You are the developer reviewing a proposed change with a teammate. The function behaves well "
+                 "for populated lists, but the reviewer found that it crashes on an empty list. The code has "
+                 "not been merged yet, and both of you want to understand what went wrong before editing it. "
+                 "You can inspect the feedback and decide what needs attention first.")
+        brief = {"title": "Plan a test", "goal": "Choose an edge-case test.",
+                 "scenario": "The same team prepares another test.",
+                 "question": "Which input should the team test next?",
+                 "evidence_quote": "an empty list crashes the function", "source_chunk_id": "chunk-1"}
+        payload = {"opening_prompt": "A teammate reviews your change. What would you check first?",
+                   "student_instructions": "You will discuss the review and plan a response.",
+                   "minimum_messages": 2, "source_chunk_ids": ["chunk-1"],
+                   "learning_steps": [{"title": "Review feedback", "goal": "Explain what the reviewer found.",
+                                       "scenario": first, "question": "How should you respond to this review?",
+                                       "evidence_quote": "A teammate reviews the code before merging",
+                                       "source_chunk_id": "chunk-1"}, brief]}
+        improved = {**payload, "learning_steps": [payload["learning_steps"][0], {**brief, "scenario": (
+            "The same developer and reviewer are still examining the empty-list crash before merging. A "
+            "populated list worked, but the empty list did not, so an ordinary test would miss the issue. "
+            "The reviewer wants a test that makes the failure visible while the developer investigates. "
+            "You need to decide which input will show the problem and what result you expect to observe."
+        )}]}
+        replies = [payload, improved]
+        with patch.object(socratic_setup.db, "get_document_chunks_for_objectives", return_value=[
+            {"chunk_id": "chunk-1", "text": source, "title": "Code review"}
+        ]), patch.object(socratic_setup.settings, "llm_client_config", return_value=("Ollama", "test", "http://localhost", "model")), patch.object(
+            socratic_setup, "chat_completion", side_effect=lambda *_args: SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(replies.pop(0))))]
+            ),
+        ) as completion:
+            result = asyncio.run(socratic_setup.generate_setup(
+                [{"id": "file-1", "filename": "review.pdf"}], "Code review", "Discuss the review."
+            ))
+        self.assertEqual(completion.call_count, 2)
+        self.assertGreaterEqual(len(result["learning_steps"][1]["scenario"].split()), 45)
+        self.assertNotIn("brief_steps_needing_review", result)
 
     def test_short_scene_is_flagged_even_when_it_has_a_question_and_concrete_details(self):
         source = "The machine asks the customer to choose a size before checking ingredients. " * 12
@@ -294,6 +367,27 @@ class SocraticSetupTests(unittest.TestCase):
             },
         }, {})
         self.assertEqual(started["messages"][0]["content"], opening)
+
+    def test_start_route_attaches_the_selected_source_to_the_opening_message(self):
+        assignment = {"tool": "socratic", "title": "Sandwich Maker", "snapshot": {
+            "config": {"document_ids": ["selected"], "learning_steps": [{
+                "title": "Choose a size", "scenario": "A customer sees the sandwich menu.",
+                "question": "Which menu option would you choose?", "source_chunk_id": "menu-page",
+                "evidence_quote": "What would you like? (small/ medium/ large)"}]},
+            "chunks": [{"document_id": "selected", "chunk_id": "menu-page", "title": "Sandwich.pdf",
+                        "page_number": 3, "text": "What would you like? (small/ medium/ large)"}],
+        }}
+        attempt = {"status": "in_progress", "messages": [], "engine_state": {}}
+        connection = SimpleNamespace(execute=lambda *_: SimpleNamespace(fetchone=lambda: attempt))
+        @contextmanager
+        def locked(_assignment_id, _student_id):
+            yield connection, None
+        with patch.object(routes.store, "locked_attempt", side_effect=locked), \
+             patch.object(routes, "get_assignment", return_value=assignment), \
+             patch.object(routes.store, "save_attempt"):
+            result = routes.start(uuid4(), {"user_id": "student"})
+        self.assertEqual(result["messages"][0]["step_source"]["page_number"], 3)
+        self.assertEqual(result["messages"][0]["step_source"]["document_id"], "selected")
 
     def test_student_start_tracks_first_generated_step(self):
         started = engines.start({
@@ -376,12 +470,14 @@ class SocraticSetupTests(unittest.TestCase):
                 engines.publish_snapshot(assignment)
 
     def test_next_step_waits_for_a_response_then_advances_once(self):
-        assignment = {"tool": "socratic", "snapshot": {"config": {"learning_steps": [
+        assignment = {"tool": "socratic", "snapshot": {"config": {"document_ids": ["selected"], "learning_steps": [
             {"title": "Choose a size", "goal": "Explain how you choose a size."},
             {"title": "Check ingredients", "goal": "Explain when to check ingredients.",
              "scenario": "The customer chooses a small sandwich, so the same machine now checks its ingredients.",
-             "question": "What should it verify before asking for coins?"},
-        ]}}}
+             "question": "What should it verify before asking for coins?",
+             "source_chunk_id": "ingredient-page", "evidence_quote": "Check ingredients before taking coins."},
+        ]}, "chunks": [{"document_id": "selected", "chunk_id": "ingredient-page", "title": "Sandwich.pdf",
+                       "page_number": 2, "text": "Check ingredients before taking coins."}]}}
         attempt = {"status": "in_progress", "messages": [{"role": "assistant", "content": "Which size?"}],
                    "engine_state": {"socratic": {"phase": "teaching", "learning_step_index": 0,
                                                    "step_started_at_message_count": 1}}, "processed_requests": []}
@@ -400,6 +496,7 @@ class SocraticSetupTests(unittest.TestCase):
             self.assertIn("same machine now checks", result["messages"][-1]["content"])
             self.assertTrue(result["messages"][-1]["content"].endswith("What should it verify before asking for coins?"))
             self.assertEqual(result["engine_state"]["socratic"]["next_thinking_step"], "What should it verify before asking for coins?")
+            self.assertEqual(result["messages"][-1]["step_source"]["page_number"], 2)
             self.assertNotIn("What would you try first?", result["messages"][-1]["content"])
             save.assert_called_once()
 

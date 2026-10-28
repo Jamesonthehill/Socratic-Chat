@@ -255,6 +255,15 @@ class SocraticSetupTests(unittest.TestCase):
         self.assertTrue(result["learning_steps"][0]["scenario"].startswith("You are the developer"))
         self.assertNotIn("first_example_needs_review", result)
 
+    def test_short_scene_is_flagged_even_when_it_has_a_question_and_concrete_details(self):
+        source = "The machine asks the customer to choose a size before checking ingredients. " * 12
+        scene = (
+            "You walk up to the machine and see its size menu. You decide to order a small ham "
+            "sandwich. The machine will check whether it has enough ingredients before asking you "
+            "to pay, and you need to decide what should happen next."
+        )
+        self.assertTrue(socratic_setup.brief_opening(scene, source))
+
     def test_student_as_tutor_is_rejected(self):
         payload = {
             "opening_prompt": "Imagine choosing a sandwich size. What would you do?",

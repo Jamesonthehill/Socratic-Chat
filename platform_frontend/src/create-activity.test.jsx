@@ -11,9 +11,21 @@ import {
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import CreateActivity from "./CreateActivity";
+import { tutorialPopoverPosition } from "./ActivityTutorial";
 import { resetCourseContext } from "./courseContext";
 import { api } from "./api";
 vi.mock("./api", async (original) => ({ ...(await original()), api: vi.fn() }));
+
+test("tutorial explanation stays clear of a wide highlighted field", () => {
+  const card = { width: 330, height: 190 };
+  const viewport = { width: 1200, height: 800 };
+  const field = { left: 80, right: 1120, top: 240, bottom: 420 };
+  const position = tutorialPopoverPosition(field, card, viewport);
+  expect(position.top).toBeGreaterThanOrEqual(field.bottom);
+  expect(position.left).toBeGreaterThanOrEqual(16);
+  expect(position.left + card.width).toBeLessThanOrEqual(viewport.width - 16);
+});
+
 const course = {
   course_id: "course-1",
   course_code: "SE101",

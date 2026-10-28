@@ -19,6 +19,32 @@ const STEPS = [
   { target: "publish", title: "Review and publish", text: "Review the setup, publish it, then check the read-only student preview." },
 ];
 
+export function tutorialPopoverPosition(target, popoverSize, viewport) {
+  const padding = 16;
+  const gap = 18;
+  const width = Math.min(popoverSize.width, viewport.width - padding * 2);
+  const height = Math.min(popoverSize.height, viewport.height - padding * 2);
+  const clamp = (value, max) => Math.min(Math.max(padding, value), Math.max(padding, max - padding));
+  const rightAligned = target.right - width;
+  const candidates = [
+    { left: target.right + gap, top: target.top },
+    { left: target.left - width - gap, top: target.top },
+    { left: rightAligned, top: target.bottom + gap },
+    { left: rightAligned, top: target.top - height - gap },
+  ];
+  let best = null;
+  for (const candidate of candidates) {
+    const left = clamp(candidate.left, viewport.width - width);
+    const top = clamp(candidate.top, viewport.height - height);
+    const overlapWidth = Math.max(0, Math.min(left + width, target.right) - Math.max(left, target.left));
+    const overlapHeight = Math.max(0, Math.min(top + height, target.bottom) - Math.max(top, target.top));
+    const overlap = overlapWidth * overlapHeight;
+    if (!best || overlap < best.overlap) best = { left, top, overlap };
+    if (overlap === 0) break;
+  }
+  return { left: best.left, top: best.top };
+}
+
 export default function ActivityTutorial({ tool, onClose }) {
   const [index, setIndex] = useState(0);
   const [position, setPosition] = useState(null);
@@ -37,14 +63,10 @@ export default function ActivityTutorial({ tool, onClose }) {
     target.scrollIntoView?.({ block: "center", behavior: "smooth" });
     const place = () => {
       const box = target.getBoundingClientRect();
-      const width = Math.min(330, window.innerWidth - 32);
-      const height = popover.current?.offsetHeight || 190;
-      let left = box.right + 18;
-      if (left + width > window.innerWidth - 16) left = box.left - width - 18;
-      if (left < 16) left = Math.min(window.innerWidth - width - 16, Math.max(16, box.left));
-      let top = box.top;
-      if (top + height > window.innerHeight - 16) top = window.innerHeight - height - 16;
-      setPosition({ left: Math.max(16, left), top: Math.max(16, top) });
+      setPosition(tutorialPopoverPosition(box, {
+        width: popover.current?.offsetWidth || 330,
+        height: popover.current?.offsetHeight || 190,
+      }, { width: window.innerWidth, height: window.innerHeight }));
     };
     place();
     window.addEventListener("resize", place);

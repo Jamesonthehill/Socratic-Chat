@@ -15,7 +15,7 @@ MAX_FILES = 12
 SUBMISSION_TERMS = re.compile(r"\b(?:submit|submission|turn\s+in|deliverable|upload|due\s+date|rubric)\b", re.I)
 
 
-def brief_opening(example: str, source: str, minimum_words: int = 35) -> bool:
+def brief_opening(example: str, source: str, minimum_words: int = 50) -> bool:
     """Ask for richer context only when the selected source has enough to support it."""
     return len(source.split()) >= 100 and len(example.split()) < minimum_words
 

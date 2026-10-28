@@ -741,6 +741,7 @@ export default function StudentWorkspace({ user }) {
     [conceptCheckHintVisible, setConceptCheckHintVisible] = useState(false),
     [showLearningSummary, setShowLearningSummary] = useState(false);
   const endRef = useRef(null),
+    messagesRef = useRef(null),
     learningPathRef = useRef(null),
     pending = useRef(null),
     reflectionPending = useRef(null),
@@ -800,9 +801,13 @@ export default function StudentWorkspace({ user }) {
     if (materialPreview?.url) URL.revokeObjectURL(materialPreview.url);
   }, [materialPreview?.url]);
   useEffect(() => {
-    if (attempt)
-      endRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [attempt?.messages?.length, outgoingMessage]);
+    if (!attempt) return;
+    if (assignment?.tool === "socratic" && attempt.messages?.length === 1 && !outgoingMessage) {
+      if (messagesRef.current) messagesRef.current.scrollTop = 0;
+      return;
+    }
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [assignment?.tool, attempt?.messages?.length, outgoingMessage]);
   useEffect(() => {
     if (busy || !focusComposerAfterReply.current) return;
     focusComposerAfterReply.current = false;
@@ -1550,7 +1555,33 @@ export default function StudentWorkspace({ user }) {
             </div>
           ) : (
             <>
-              <div className="messages" aria-live="polite" aria-busy={busy}>
+              <div className="messages" ref={messagesRef} aria-live="polite" aria-busy={busy}>
+                {assignment.tool === "socratic" && (materialsLoading || materials.length > 0) && (
+                  <section className="socratic-chat-materials" aria-label="Course materials before chatting">
+                    <span className="student-panel-kicker">Before you chat</span>
+                    <h3>Read your course materials</h3>
+                    <p>Read each instructor-selected file at least once before answering the tutor. You can return to these files any time.</p>
+                    {materialError && <p className="publish-inline-error" role="alert">{materialError}</p>}
+                    {materialsLoading ? <p role="status">Loading course materials…</p> : <ul>
+                      {materials.map((material) => <li key={material.document_id}>
+                        <span className="student-material-icon" aria-hidden="true">▤</span>
+                        <span className="student-material-name" title={material.title}>{material.title}</span>
+                        <div className="socratic-chat-material-actions">
+                          {material.original_available ? <>
+                            <button type="button" className="compact secondary" aria-label={`View ${material.title} in chat`}
+                              onClick={() => previewMaterial(material)} disabled={materialBusy === material.document_id}>
+                              {materialBusy === material.document_id && materialBusyAction === "view" ? "Opening…" : "View"}
+                            </button>
+                            <button type="button" className="compact" aria-label={`Download ${material.title} from chat`}
+                              onClick={() => downloadMaterial(material)} disabled={materialBusy === material.document_id}>
+                              {materialBusy === material.document_id && materialBusyAction === "download" ? "Downloading…" : "↓ Download"}
+                            </button>
+                          </> : <span className="student-material-unavailable">Original file unavailable</span>}
+                        </div>
+                      </li>)}
+                    </ul>}
+                  </section>
+                )}
                 {attempt.messages.map((m, i) =>
                   assignment.tool === "socratic" ? [
                     stepBoundaries[i] && (

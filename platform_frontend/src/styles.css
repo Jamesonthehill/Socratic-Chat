@@ -2191,6 +2191,32 @@ html[data-theme="dark"] .socratic-learning-step-heading button.socratic-step-rem
   max-height: 72vh;
   min-height: min(60vh, 560px);
 }
+.socratic-chat-materials {
+  background: color-mix(in srgb, var(--brand-indigo) 5%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--brand-indigo) 24%, var(--line));
+  border-left: 4px solid var(--brand-indigo);
+  border-radius: 14px;
+  margin: 0 0 22px;
+  padding: 16px;
+}
+.socratic-chat-materials h3 { font-size: 17px; margin: 4px 0 6px; }
+.socratic-chat-materials p { color: var(--muted); line-height: 1.45; margin: 0 0 12px; }
+.socratic-chat-materials .publish-inline-error { color: #b4232f; }
+html[data-theme="dark"] .socratic-chat-materials .publish-inline-error { color: #fca5a5; }
+.socratic-chat-materials ul { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.socratic-chat-materials li {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 9px;
+}
+.socratic-chat-materials .student-material-name { flex: 1 1 160px; font-size: 13px; }
+.socratic-chat-material-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.socratic-chat-material-actions button { font-size: 12px; padding: 7px 10px; white-space: nowrap; }
 @media (max-width: 900px) {
   .workspace-grid.socratic-workspace:not(.evidence-open):not(.chat-expanded):not(.concept-check-active) {
     grid-template-columns: minmax(0, 1fr);

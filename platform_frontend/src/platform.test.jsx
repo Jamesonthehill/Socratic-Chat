@@ -555,6 +555,24 @@ test("keyword-based Socratic assignments begin with an example and no starter ch
   expect(screen.queryByRole("button", { name: "Show me an example" })).not.toBeInTheDocument();
 });
 
+test("starting Socratic chat also shows selected materials beside the opening question", async () => {
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1/materials": { materials: [
+      { document_id: "selected-pdf", title: "Sandwich Maker.pdf", original_available: true },
+    ] },
+  });
+  open("/student/assignments/assignment-1");
+  expect(screen.queryByRole("region", { name: "Course materials before chatting" })).not.toBeInTheDocument();
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Start assignment" }));
+  const chatMaterials = await screen.findByRole("region", { name: "Course materials before chatting" });
+  expect(within(chatMaterials).getByText(/Read each instructor-selected file at least once/)).toBeInTheDocument();
+  expect(within(chatMaterials).getByText("Sandwich Maker.pdf")).toBeInTheDocument();
+  expect(within(chatMaterials).getByRole("button", { name: "View Sandwich Maker.pdf in chat" })).toBeInTheDocument();
+  expect(within(chatMaterials).getByRole("button", { name: "Download Sandwich Maker.pdf from chat" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Course materials" })).toBeInTheDocument();
+  expect(screen.getByText("What makes a requirement useful?")).toBeInTheDocument();
+});
+
 test("student follows a generated Socratic path one step at a time", async () => {
   const stepTwoScenario = "The customer has chosen a small sandwich, and the same machine now checks its supplies. Its report shows how much bread, ham, and cheese remain. The machine must decide whether those amounts cover this order before it asks for coins. You are deciding what information the program should compare.";
   const learning_steps = [

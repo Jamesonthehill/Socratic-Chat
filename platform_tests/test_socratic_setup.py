@@ -15,11 +15,36 @@ from fastapi import HTTPException
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "Socratic-Chat/backend"))
 
-from platform_app import engines, routes, socratic_setup
-from platform_app.schemas import SocraticConfig
+from platform_app import engines, objectives, routes, socratic_setup
+from platform_app.schemas import SocraticConfig, SocraticSetupInput
 
 
 class SocraticSetupTests(unittest.TestCase):
+    def test_hosted_setup_reports_provider_quota_and_retry_time(self):
+        course_id = uuid4()
+        file_id = uuid4()
+
+        @contextmanager
+        def connection():
+            yield SimpleNamespace(execute=lambda *_args: SimpleNamespace(fetchall=lambda: [
+                {"id": file_id, "filename": "Assignment.pdf", "document_id": "selected"}
+            ]))
+
+        class ProviderLimit(Exception):
+            status_code = 429
+
+        async def limited(*_args):
+            raise ProviderLimit("Rate limit reached on tokens per day in organization secret. Please try again in 34m34.896s.")
+
+        body = SocraticSetupInput(document_ids=["selected"], title="Assignment")
+        with patch.object(objectives, "manage_course"), patch.object(objectives.store, "connection", side_effect=connection), patch.object(objectives, "generate_setup", side_effect=limited):
+            with self.assertRaises(HTTPException) as raised:
+                asyncio.run(objectives.generate_socratic_setup(course_id, body, account={}))
+        self.assertEqual(raised.exception.status_code, 429)
+        self.assertIn("daily token quota", raised.exception.detail)
+        self.assertIn("34m34.896s", raised.exception.detail)
+        self.assertNotIn("organization secret", raised.exception.detail)
+
     def test_material_reference_resolves_only_selected_published_pages(self):
         assignment = {"tool": "socratic", "status": "published", "snapshot": {
             "config": {"document_ids": ["selected"]}, "chunks": [

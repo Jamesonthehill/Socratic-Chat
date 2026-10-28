@@ -1,6 +1,7 @@
 """Instructor review of document-grounded teaching plans from local-socratic-chat."""
 import asyncio
 import logging
+import re
 from threading import Lock
 from uuid import UUID, uuid4
 
@@ -17,6 +18,15 @@ from platform_app.socratic_setup import generate_opening_prompt, generate_setup
 router = APIRouter(prefix="/api/courses", tags=["learning objectives"])
 _generation_jobs: dict[str, dict[str, object]] = {}
 _generation_jobs_lock = Lock()
+
+
+def _provider_rate_limit_detail(exc: Exception) -> str:
+    """Show the provider's retry window without exposing its account details."""
+    daily = "tokens per day" in str(exc).lower()
+    detail = ("The AI provider's daily token quota has been reached."
+              if daily else "The AI provider is rate limiting requests.")
+    retry = re.search(r"Please try again in ([0-9hms.]+)", str(exc), re.I)
+    return f"{detail} Try again in {retry.group(1).rstrip('.')}." if retry else f"{detail} Please try again later."
 
 
 @router.post("/{course_id}/socratic-setup/generate")
@@ -44,6 +54,9 @@ async def generate_socratic_setup(course_id: UUID, body: SocraticSetupInput, acc
     except RuntimeError as exc:
         raise HTTPException(503, str(exc)) from exc
     except Exception as exc:
+        if getattr(exc, "status_code", None) == 429:
+            logging.getLogger(__name__).warning("Socratic setup provider rate limited for course %s", course_id)
+            raise HTTPException(429, _provider_rate_limit_detail(exc)) from exc
         logging.getLogger(__name__).exception("Could not draft Socratic setup for course %s", course_id)
         raise HTTPException(503, "The AI could not generate a setup from these materials. Check the model service and retry.") from exc
     return {**draft, "source_files": [by_document[item]["filename"] for item in selected]}
@@ -74,6 +87,9 @@ async def generate_socratic_opening(course_id: UUID, body: SocraticSetupInput, a
     except RuntimeError as exc:
         raise HTTPException(503, str(exc)) from exc
     except Exception as exc:
+        if getattr(exc, "status_code", None) == 429:
+            logging.getLogger(__name__).warning("Socratic opening provider rate limited for course %s", course_id)
+            raise HTTPException(429, _provider_rate_limit_detail(exc)) from exc
         logging.getLogger(__name__).exception("Could not draft Socratic opening for course %s", course_id)
         raise HTTPException(503, "The AI could not generate an opening question. Check the model service and retry.") from exc
     return {"prompt": prompt, "source_files": [by_document[item]["filename"] for item in selected]}

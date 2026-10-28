@@ -517,6 +517,20 @@ test("source generation drafts editable opening, submission and completion setti
   expect(screen.getByRole("button", { name: "Publish activity" })).toBeEnabled();
 });
 
+test("source generation shows a failed request beside its button", async () => {
+  const original = api.getMockImplementation();
+  api.mockImplementation((path, options) => path === "/courses/course-1/socratic-setup/generate"
+    ? Promise.reject(new Error("The model could not finish the setup."))
+    : original(path, options));
+  const user = await open();
+  await user.click(await screen.findByRole("checkbox", { name: /Requirements.pdf/ }));
+  await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
+  await user.click(screen.getByRole("radio", { name: /Guided learning path/ }));
+  await user.click(screen.getByRole("button", { name: "Generate setup from selected sources" }));
+  const generator = document.querySelector(".socratic-source-generation");
+  expect(await within(generator).findByRole("alert")).toHaveTextContent("The model could not finish the setup.");
+});
+
 test("guided Socratic setup has no timer setting or duration in review", async () => {
   const user = await open();
   await user.click(await screen.findByRole("checkbox", { name: /Requirements.pdf/ }));

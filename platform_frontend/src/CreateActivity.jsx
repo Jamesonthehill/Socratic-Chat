@@ -66,6 +66,7 @@ export default function CreateActivity({
   const [uploadError, setUploadError] = useState("");
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [error, setError] = useState("");
+  const [setupError, setSetupError] = useState("");
   const [notice, setNotice] = useState("");
   const [publishIssue, setPublishIssue] = useState(null);
   const [showTutorial, setShowTutorial] = useState(false);
@@ -272,16 +273,23 @@ export default function CreateActivity({
     }, draft.tool === "self-directed-learning" ? "Generating lesson review" : "Preparing activity review");
   const generateSocraticSetup = () =>
     run(async () => {
+      setSetupError("");
       if (!selected.length)
         throw new Error("Select at least one indexed course document before generating the setup.");
-      const generated = await api(`/courses/${draft.course_id}/socratic-setup/generate`, {
-        method: "POST",
-        body: {
-          document_ids: selected,
-          title: draft.title,
-          assignment_instructions: draft.instructions,
-        },
-      });
+      let generated;
+      try {
+        generated = await api(`/courses/${draft.course_id}/socratic-setup/generate`, {
+          method: "POST",
+          body: {
+            document_ids: selected,
+            title: draft.title,
+            assignment_instructions: draft.instructions,
+          },
+        });
+      } catch (exc) {
+        setSetupError(exc.message);
+        throw exc;
+      }
       setDraft((current) => ({
         ...current,
         instructions: generated.instructions,
@@ -764,6 +772,7 @@ export default function CreateActivity({
                 onGenerateSetup={generateSocraticSetup}
                 onGenerateOpening={generateSocraticOpening}
                 publishIssue={publishIssue}
+                setupError={setupError}
                 generatingSetup={busy}
                 canGenerateSetup={Boolean(draft.title.trim() && selected.length && selected.length <= 12 && !busy)}
                 onMaterialsChange={({ files: nextFiles }) => {

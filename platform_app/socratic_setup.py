@@ -235,7 +235,9 @@ async def generate_setup(files: list[dict[str, Any]], title: str, canvas_instruc
     # Local setup drafts can span many source-grounded steps. Let Ollama finish
     # the JSON instead of cutting it off at an application-imposed token count.
     if provider != "Ollama":
-        request.update(settings.completion_token_parameters(provider, 3500))
+        # Detailed scenes across several steps can exceed the former 3,500-token
+        # response budget, leaving the strict JSON response incomplete.
+        request.update(settings.completion_token_parameters(provider, 8000))
     if provider != "Ollama" and "gpt-oss" in model:
         request["reasoning_effort"] = "low"
     last_error = None

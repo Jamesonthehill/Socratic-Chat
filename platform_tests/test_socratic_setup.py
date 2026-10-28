@@ -210,6 +210,25 @@ class SocraticSetupTests(unittest.TestCase):
         self.assertEqual(result["learning_steps"][1]["question"], payload["learning_steps"][1]["question"])
         self.assertEqual(result["learning_steps"][0]["source_file"], "assignment.pdf")
 
+    def test_hosted_generation_allows_a_complete_multistep_response(self):
+        requests = []
+
+        async def fake_completion(_key, _url, request):
+            requests.append(request.copy())
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))])
+
+        with patch.object(socratic_setup.db, "get_document_chunks_for_objectives", return_value=[
+            {"chunk_id": "chunk-1", "text": "Choose a sandwich size.", "title": "Assignment"}
+        ]), patch.object(socratic_setup.settings, "llm_client_config", return_value=("Groq", "test", "https://example.invalid", "openai/gpt-oss-20b")), patch.object(
+            socratic_setup, "chat_completion", side_effect=fake_completion,
+        ):
+            with self.assertRaises(ValueError):
+                asyncio.run(socratic_setup.generate_setup(
+                    [{"id": "file-1", "filename": "assignment.pdf"}], "Sandwich Maker", ""
+                ))
+        self.assertEqual(len(requests), 2)
+        self.assertTrue(all(request["max_completion_tokens"] == 8000 for request in requests))
+
     def test_basic_opening_generation_only_returns_grounded_question(self):
         responses = [
             {"opening_prompt": "Which sandwich would you choose?", "source_chunk_id": "another-course"},

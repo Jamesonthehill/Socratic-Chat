@@ -64,6 +64,7 @@ export function SocraticConfig({
   onGenerateSetup,
   onGenerateOpening,
   publishIssue,
+  setupError = "",
   generatingSetup = false,
   canGenerateSetup = false,
 }) {
@@ -132,6 +133,7 @@ export function SocraticConfig({
           <p className="help">
             AI drafts a beginning-to-end learning path, opening question, student/submission instructions, and a completion-message count from the selected indexed documents. Review and edit these before publishing.
           </p>
+          {setupError && <p className="publish-inline-error" role="alert">{setupError}</p>}
           {publishIssue?.target === "learning-path" && <p className="publish-inline-error">{publishIssue.message}</p>}
         </div>
       )}

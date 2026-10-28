@@ -330,7 +330,7 @@ test("guided Socratic opening shows a source-backed menu table without a passage
     },
     "/api/platform/assignments/assignment-1/attempt": {
       ...attempt, engine_state: { socratic: { phase: "teaching", learning_step_index: 0 } },
-      messages: [{ role: "assistant", content: "The machine shows its menu. Which option would you choose?" }],
+      messages: [{ role: "assistant", content: "The machine shows its menu. Which option would you choose?", step_source: source }],
     },
   });
   open("/student/assignments/assignment-1");
@@ -339,6 +339,37 @@ test("guided Socratic opening shows a source-backed menu table without a passage
   expect(within(table).getByRole("cell", { name: "small" })).toBeInTheDocument();
   expect(within(table).getByRole("cell", { name: "report" })).toBeInTheDocument();
   expect(within(table).queryByRole("button", { name: "View passage" })).not.toBeInTheDocument();
+});
+
+test("a source visual stays with its step opening instead of carrying into the next tutor reply", async () => {
+  const source = {
+    chunk_id: "menu-1", title: "Sandwich assignment.pdf", page_number: 3,
+    evidence_quote: "What would you like? (small/ medium/ large/ off/ report)",
+    text: "What would you like? (small/ medium/ large/ off/ report): small Please insert coins.",
+  };
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1": {
+      ...assignment, student_config: { minimum_messages: 1, guidance_mode: "guided",
+        learning_steps: [{ title: "Choose a size", goal: "Read the menu", source }] },
+    },
+    "/api/platform/assignments/assignment-1/attempt": {
+      ...attempt,
+      engine_state: { socratic: { phase: "teaching", learning_step_index: 0 }, sources: [source] },
+      messages: [
+        { role: "assistant", content: "The machine shows its menu. Which option would you choose?", step_source: source },
+        { role: "user", content: "small" },
+        { role: "assistant", content: "What ingredients should the machine check before accepting payment?", sources: [source] },
+      ],
+    },
+  });
+  open("/student/assignments/assignment-1");
+  const tutorCards = await screen.findAllByText("Socratic tutor");
+  const opening = tutorCards[0].closest(".socratic-message-card");
+  const nextReply = tutorCards[1].closest(".socratic-message-card");
+  expect(within(opening).getByText("Choices shown in the source")).toBeInTheDocument();
+  expect(within(nextReply).queryByText("Choices shown in the source")).not.toBeInTheDocument();
+  await userEvent.setup().click(within(nextReply).getByRole("button", { name: "View supporting sources" }));
+  expect(within(nextReply).getByText("Choices shown in the source")).toBeInTheDocument();
 });
 
 test("Socratic source cards remain with the reply that produced them", async () => {

@@ -1496,8 +1496,7 @@ export default function StudentWorkspace({ user }) {
                       thinkingStep={thinkingStep}
                       keywords={keywords}
                       sources={m.sources ?? (i === latestAssistantIndex ? state.sources : [])}
-                      stepSource={m.step_source ?? (i === latestAssistantIndex
-                        ? assignment.student_config?.learning_steps?.[activeLearningStep]?.source : null)}
+                      stepSource={m.step_source || null}
                       responseSeconds={lastGenerationSeconds}
                       selectedEvidence={selectedEvidence}
                       setSelectedEvidence={setSelectedEvidence}

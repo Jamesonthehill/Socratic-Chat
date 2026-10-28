@@ -2,6 +2,8 @@
 import asyncio
 from uuid import uuid4
 
+import pytest
+from fastapi import HTTPException
 from app.schemas import ChatMessage, Source
 from app.answer_evaluation import QualitativeFeedback
 from app.classifier import MessageClassification, _classification_from_observation
@@ -151,6 +153,80 @@ def test_scope_confirmation_pauses_then_resumes_with_selected_meaning(monkeypatc
     assert calls[0][3] == "prompt"
     assert "pending_clarification" not in second["socratic"]
     assert second["socratic"]["classification"]["target_concepts"] == ["prompt"]
+
+
+@pytest.mark.parametrize("tutor_message", [
+    "Why review an empty list?",
+    "**Your next thinking step**\nWhy review an empty list?\n\nSee the selected source above.",
+    "Let's review the selected source above.",
+])
+def test_acknowledgement_after_unanswered_question_clarifies_without_generating(monkeypatch, tutor_message):
+    assignment = {"id": uuid4(), "tool": "socratic", "title": "Code review",
+                  "snapshot": {"config": {}, "chunks": []}}
+    attempt = {"id": uuid4(), "messages": [{"role": "assistant", "content": tutor_message}],
+               "engine_state": {"socratic": {"phase": "teaching", "learning_topic": "Code review",
+                                              "next_thinking_step": "Why review an empty list?" if "?" not in tutor_message else ""}}}
+    generated = []
+
+    async def classify(*_args, **_kwargs):
+        return _classification_from_observation(message_role="acknowledgement")
+
+    async def generate(*_args, **_kwargs):
+        generated.append(True)
+        return "This must not be generated."
+
+    monkeypatch.setattr(engines, "classify_message", classify)
+    monkeypatch.setattr(engines.rag, "generate_answer", generate)
+    result = asyncio.run(engines._socratic_message(assignment, attempt, "ok"))
+    assert result["clarification_only"]
+    assert "reply" not in result
+    assert not generated
+    assert result["socratic"]["conversation_action"] == "clarify"
+    assert "When you say “ok,”" in result["socratic"]["pending_clarification"]["question"]
+    assert "ready to answer the question I just asked" in result["socratic"]["pending_clarification"]["question"]
+    assert [option["label"] for option in result["socratic"]["pending_clarification"]["options"]] == [
+        "Repeat the question", "Give me a hint",
+    ]
+
+
+def test_typed_clarification_resumes_the_pending_question(monkeypatch):
+    pdf = _chunk("pdf", "Sandwich.pdf", "The prompt asks the customer to choose a sandwich size.", "Menu")
+    assignment = {"id": uuid4(), "tool": "socratic", "title": "Sandwich Maker",
+                  "snapshot": {"config": {}, "chunks": [pdf]}}
+    attempt = {"id": uuid4(), "messages": [
+        {"role": "assistant", "content": "What does the prompt ask?"},
+        {"role": "user", "content": "What is the prompt?"},
+    ], "engine_state": {"socratic": {"learning_topic": "Sandwich Maker", "pending_clarification": {
+        "original_question": "What is the prompt?", "inline": True, "options": [], "concepts": ["prompt"],
+    }}}}
+    observed = []
+
+    async def classify(_message, _history, **_kwargs):
+        return _classification_from_observation(message_role="support_request", concepts=("prompt",))
+
+    async def answer(message, _history, _sources, **_kwargs):
+        observed.append(message)
+        return "A prompt asks the customer for a choice."
+
+    async def resolve(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(engines, "classify_message", classify)
+    monkeypatch.setattr(engines, "resolve_term", resolve)
+    monkeypatch.setattr(engines, "_retrieve_assignment_sources", lambda *_args: [
+        Source(document_id="pdf", chunk_id=pdf["chunk_id"], title=pdf["title"], text=pdf["text"], score=1),
+    ])
+    monkeypatch.setattr(engines.rag, "generate_answer", answer)
+    result = asyncio.run(engines._socratic_message(
+        assignment, attempt, "I mean the word used in this assignment", clarification_text=True,
+    ))
+    assert result["reply"] == "A prompt asks the customer for a choice."
+    assert "What is the prompt?" in observed[0]
+    assert "pending_clarification" not in result["socratic"]
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(engines._socratic_message(assignment, {**attempt, "engine_state": {"socratic": {}}},
+                                              "No pending question", clarification_text=True))
+    assert exc.value.status_code == 422
 
 
 def test_uncertain_subtopic_offers_a_choice_without_forcing_the_old_focus():

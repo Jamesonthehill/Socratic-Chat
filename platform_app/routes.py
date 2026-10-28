@@ -94,12 +94,30 @@ def public_assignment(item, manage=False):
             result["student_config"] = {k: cfg[k] for k in ("scenario", "minimum_messages")}
         elif item["tool"] == "socratic":
             guided = cfg.get("guidance_mode", "guided" if cfg.get("learning_steps") else "basic") == "guided"
+            snapshot = item.get("snapshot") or {}
+            selected_ids = set(cfg.get("document_ids") or [])
+            step_sources = {
+                str(chunk.get("chunk_id")): chunk
+                for chunk in snapshot.get("chunks") or []
+                if str(chunk.get("document_id")) in selected_ids
+            }
             result["student_config"] = {
                 "minimum_messages": cfg["minimum_messages"],
                 "keyword_glossary": [],
                 "guidance_mode": "guided" if guided else "basic",
+                "learning_path_time_limit_seconds": cfg.get("learning_path_minutes", 7) * 60 if guided else None,
                 "learning_steps": [
-                    {"title": step["title"], "goal": step["goal"], "source_file": step.get("source_file", "")}
+                    {
+                        "title": step["title"], "goal": step["goal"],
+                        "source_file": step.get("source_file", ""),
+                        "source": {
+                            "chunk_id": str(source["chunk_id"]),
+                            "title": source.get("title") or step.get("source_file") or "Course material",
+                            "page_number": source.get("page_number"),
+                            "text": source["text"],
+                            "evidence_quote": step.get("evidence_quote", ""),
+                        } if (source := step_sources.get(str(step.get("source_chunk_id")))) else None,
+                    }
                     for step in (cfg.get("learning_steps") or []) if guided
                 ],
             }
@@ -461,9 +479,11 @@ def duplicate(assignment_id: UUID, account=Depends(professor)):
 
 @router.get("/assignments/{assignment_id}/attempt")
 def attempt_detail(assignment_id: UUID, account=Depends(user)):
-    with store.connection() as conn:
-        get_assignment(conn, assignment_id, account)
-        return public_attempt(conn.execute("SELECT * FROM assignment_attempts_platform WHERE assignment_id=%s AND student_id=%s", (assignment_id, account["user_id"])).fetchone())
+    with store.locked_attempt(assignment_id, account["user_id"]) as (conn, attempt):
+        assignment = get_assignment(conn, assignment_id, account)
+        if engines.repair_legacy_socratic_opening(assignment, attempt):
+            store.save_attempt(conn, attempt)
+        return public_attempt(attempt)
 
 
 @router.post("/assignments/{assignment_id}/start")
@@ -471,12 +491,21 @@ def start(assignment_id: UUID, account=Depends(user)):
     with store.locked_attempt(assignment_id, account["user_id"]) as (conn, attempt):
         assignment = get_assignment(conn, assignment_id, account)
         if attempt:
+            if engines.repair_legacy_socratic_opening(assignment, attempt):
+                store.save_attempt(conn, attempt)
             return public_attempt(attempt)
         # Deterministic identity lets engine starts recover from a lost gateway response.
         aid = uuid5(NAMESPACE_URL, f"cluball:{assignment_id}:{account['user_id']}")
         attempt = conn.execute("INSERT INTO assignment_attempts_platform(id,assignment_id,student_id) VALUES (%s,%s,%s) RETURNING *", (aid, assignment_id, account["user_id"])).fetchone()
         state = engines.start(assignment, attempt)
         attempt["messages"] = state.pop("messages", [])
+        if assignment["tool"] == "socratic" and attempt["messages"]:
+            first_step = ((assignment.get("snapshot") or {}).get("config") or {}).get("learning_steps") or []
+            if first_step and first_step[0].get("source"):
+                attempt["messages"][0]["step_source"] = first_step[0]["source"]
+            opening_question = state.get("socratic", {}).get("next_thinking_step")
+            if opening_question:
+                attempt["messages"][0]["next_thinking_step"] = opening_question
         attempt["engine_state"] = state
         store.save_attempt(conn, attempt)
         return public_attempt(attempt)
@@ -524,6 +553,8 @@ def next_socratic_step(assignment_id: UUID, account=Depends(user)):
         attempt["messages"].append({
             "role": "assistant",
             "content": "\n\n".join(part for part in (f"Step {index + 1}: {step['title']}", scenario, question) if part),
+            "next_thinking_step": question,
+            **({"step_source": step["source"]} if step.get("source") else {}),
         })
         store.save_attempt(conn, attempt)
         return public_attempt(attempt)
@@ -536,7 +567,12 @@ def apply_state(attempt, state, content=None):
         if content:
             attempt["messages"].append({"role": "user", "content": content})
         if state.get("reply"):
-            attempt["messages"].append({"role": "assistant", "content": state["reply"]})
+            next_question = (state.get("socratic") or {}).get("next_thinking_step")
+            attempt["messages"].append({
+                "role": "assistant", "content": state["reply"],
+                **({"next_thinking_step": next_question} if next_question else {}),
+                **({"sources": state["sources"]} if state.get("sources") else {}),
+            })
     if state.pop("completed", False) or state.get("ended"):
         attempt["status"] = "completed"
         attempt["result"] = state.get("result", {"phase": state.get("phase")})
@@ -554,13 +590,17 @@ def message(assignment_id: UUID, body: MessageInput, account=Depends(user)):
             return public_attempt(attempt)
         if attempt["status"] == "completed":
             raise HTTPException(409, "This assignment is already completed.")
-        if body.clarification_index is not None and assignment["tool"] != "socratic":
+        if (body.clarification_index is not None or body.clarification_text) and assignment["tool"] != "socratic":
             raise HTTPException(422, "Clarification choices are only available in Socratic Chat.")
+        if body.clarification_index is not None and body.clarification_text:
+            raise HTTPException(422, "Choose an option or write a clarification, not both.")
         if body.concept_check_option is not None and assignment["tool"] != "socratic":
             raise HTTPException(422, "Concept checks are only available in Socratic Chat.")
         message_options = {}
         if body.clarification_index is not None:
             message_options["clarification_index"] = body.clarification_index
+        if body.clarification_text:
+            message_options["clarification_text"] = True
         if body.concept_check_option is not None:
             message_options["concept_check_option"] = body.concept_check_option
         inline_clarification_choice = (

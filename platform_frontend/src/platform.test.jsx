@@ -293,9 +293,147 @@ test("Socratic tutorial highlights the instructor's learning path when one exist
   open("/student/assignments/assignment-1");
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Tutorial" }));
+  expect(screen.getByRole("button", { name: "Tutorial" })).not.toHaveClass("secondary");
   expect(screen.getByText("Tutorial · 1 of 9")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Next" }));
   expect(screen.getByRole("heading", { name: "Review the learning path" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Next" }));
+  expect(screen.getByRole("heading", { name: "Read the course materials" })).toBeInTheDocument();
+});
+
+test("guided Socratic chat opens with its scenario and first question", async () => {
+  const scenario = "A customer reaches the sandwich machine and sees the size menu.";
+  const question = "How should the program handle the customer's first choice?";
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1/start": {
+      ...attempt,
+      engine_state: { socratic: { phase: "teaching", learning_step_index: 0, next_thinking_step: question } },
+      messages: [{ role: "assistant", content: `Step 1: Choose size\n\n${scenario}\n\n${question}` }],
+    },
+  });
+  open("/student/assignments/assignment-1");
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Start assignment" }));
+  expect(await screen.findByText(scenario)).toBeInTheDocument();
+  expect(within(screen.getByRole("region", { name: "Your next thinking step" })).getByText(question)).toBeInTheDocument();
+});
+
+test("guided Socratic opening shows a source-backed menu table without a passage button", async () => {
+  const source = {
+    chunk_id: "menu-1", title: "Sandwich assignment.pdf", page_number: 3,
+    evidence_quote: "What would you like? (small/ medium/ large/ off/ report)",
+    text: "What would you like? (small/ medium/ large/ off/ report): small Please insert coins.",
+  };
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1": {
+      ...assignment, student_config: { minimum_messages: 1, guidance_mode: "guided",
+        learning_steps: [{ title: "Choose a size", goal: "Read the menu", source }] },
+    },
+    "/api/platform/assignments/assignment-1/attempt": {
+      ...attempt, engine_state: { socratic: { phase: "teaching", learning_step_index: 0 } },
+      messages: [{ role: "assistant", content: "The machine shows its menu. Which option would you choose?" }],
+    },
+  });
+  open("/student/assignments/assignment-1");
+  const table = await screen.findByRole("region", { name: "Visible course source" });
+  expect(within(table).getByText("Sandwich assignment.pdf · page 3")).toBeInTheDocument();
+  expect(within(table).getByRole("cell", { name: "small" })).toBeInTheDocument();
+  expect(within(table).getByRole("cell", { name: "report" })).toBeInTheDocument();
+  expect(within(table).queryByRole("button", { name: "View passage" })).not.toBeInTheDocument();
+});
+
+test("Socratic source cards remain with the reply that produced them", async () => {
+  const firstSource = {
+    document_id: "doc", chunk_id: "menu-1", title: "Menu.pdf", page_number: 1,
+    evidence_quote: "What would you like? (small/ medium/ off)",
+    text: "What would you like? (small/ medium/ off)",
+  };
+  const secondSource = {
+    document_id: "doc", chunk_id: "payment-1", title: "Payment.pdf", page_number: 2,
+    text: "Payment must be checked before the sandwich is served.",
+  };
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1/attempt": {
+      ...attempt,
+      engine_state: { sources: [secondSource] },
+      messages: [
+        { role: "assistant", content: "Which menu option would you choose?", sources: [firstSource] },
+        { role: "user", content: "small" },
+        { role: "assistant", content: "How should payment be checked?", sources: [secondSource] },
+      ],
+    },
+  });
+  open("/student/assignments/assignment-1");
+  const tutorCards = await screen.findAllByText("Socratic tutor");
+  const firstCard = tutorCards[0].closest(".socratic-message-card");
+  const secondCard = tutorCards[1].closest(".socratic-message-card");
+  await userEvent.setup().click(within(firstCard).getByRole("button", { name: "View supporting sources" }));
+  expect(firstCard).toHaveTextContent("Menu.pdf");
+  expect(firstCard).not.toHaveTextContent("Payment.pdf");
+  expect(within(firstCard).getByText("Choices shown in the source")).toBeInTheDocument();
+  expect(within(secondCard).queryByText("Choices shown in the source")).not.toBeInTheDocument();
+  await userEvent.setup().click(within(secondCard).getByRole("button", { name: "View supporting sources" }));
+  expect(secondCard).toHaveTextContent("Payment.pdf");
+  expect(secondCard).not.toHaveTextContent("Menu.pdf");
+});
+
+test("Socratic reply keeps its next-thinking-step box when the explanation has no final question", async () => {
+  const question = "What exact prompt should show all five choices?";
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1/attempt": {
+      ...attempt,
+      engine_state: { socratic: { next_thinking_step: question } },
+      messages: [{
+        role: "assistant",
+        content: "Include small, medium, large, off, and report. For example, `print(What would you like? (small/ medium/ large/ off/ report))`.",
+        next_thinking_step: question,
+      }],
+    },
+  });
+  open("/student/assignments/assignment-1");
+  expect(await screen.findByRole("region", { name: "Your next thinking step" })).toHaveTextContent(question);
+  expect(screen.getByText(/Include small, medium, large, off, and report/)).toBeInTheDocument();
+});
+
+test("older reply without a question keeps the prior prompt visible after reload", async () => {
+  const question = "What exact prompt should show all five choices?";
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1/attempt": {
+      ...attempt,
+      engine_state: { socratic: { phase: "teaching", next_thinking_step: "" } },
+      messages: [
+        { role: "assistant", content: question },
+        { role: "user", content: "Please choose the option" },
+        { role: "assistant", content: "Include all five choices. For example, `print(What would you like? (small/ medium/ large/ off/ report))`." },
+      ],
+    },
+  });
+  open("/student/assignments/assignment-1");
+  const cards = await screen.findAllByText("Socratic tutor");
+  const latestCard = cards[1].closest(".socratic-message-card");
+  expect(within(latestCard).getByRole("region", { name: "Your next thinking step" })).toHaveTextContent(question);
+});
+
+test("paused acknowledgement shows no next-thinking-step box", async () => {
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1/attempt": {
+      ...attempt,
+      engine_state: { socratic: {
+        phase: "teaching", conversation_status: "paused",
+        next_thinking_step: "How would you apply this to the assignment?",
+      } },
+      messages: [
+        { role: "assistant", content: "What are the five choices?" },
+        { role: "user", content: "ok" },
+        { role: "assistant", content: "Take your time. I'm here when you're ready.",
+          next_thinking_step: "How would you apply this to the assignment?" },
+      ],
+    },
+  });
+  open("/student/assignments/assignment-1");
+  const cards = await screen.findAllByText("Socratic tutor");
+  const latestCard = cards[1].closest(".socratic-message-card");
+  expect(within(latestCard).queryByRole("region", { name: "Your next thinking step" })).not.toBeInTheDocument();
+  expect(latestCard).toHaveTextContent("Take your time. I'm here when you're ready.");
 });
 
 test("dashboard link shows the student's finished and remaining assignments", async () => {
@@ -388,24 +526,87 @@ test("student follows a generated Socratic path one step at a time", async () =>
   });
   open("/student/assignments/assignment-1");
   expect(await screen.findByRole("heading", { name: "Your learning path" })).toBeInTheDocument();
+  expect(document.querySelector(".assignment-info")).toHaveClass("socratic-assignment-info");
+  expect(document.querySelector(".student-assignment-intro")).toBeInTheDocument();
+  expect(document.querySelector(".student-course-materials")).toBeInTheDocument();
+  expect(document.querySelector(".student-learning-path").compareDocumentPosition(document.querySelector(".student-course-materials")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByText("2 steps")).toBeInTheDocument();
+  expect(screen.getByText("0%")).toBeInTheDocument();
   expect(screen.getByRole("list", { name: "Learning path steps" })).toHaveAttribute("tabindex", "0");
   expect(screen.getByText("Choose a size")).toBeInTheDocument();
   expect(screen.getByText("Check ingredients")).toBeInTheDocument();
+  expect([...document.querySelectorAll(".student-learning-path .student-step-number")].map((badge) => badge.textContent)).toEqual(["1", "2"]);
   expect(screen.getByText("Choose a size").closest("li")).toHaveAttribute("aria-current", "step");
   expect(screen.getByText("Current step")).toBeInTheDocument();
+  expect(screen.queryByRole("separator", { name: /Step 2 of 2/ })).not.toBeInTheDocument();
   expect(screen.getByRole("progressbar", { name: "Learning path progress" })).toHaveAttribute("aria-valuenow", "0");
   const nextStep = screen.getByRole("button", { name: "Continue to next step" });
   expect(nextStep).toHaveClass("next-learning-step");
   expect(nextStep).toBeEnabled();
   await userEvent.setup().click(nextStep);
   expect(await screen.findByText(/same machine checks its ingredients/)).toBeInTheDocument();
-  expect(screen.getByText("Check ingredients").closest("li")).toHaveAttribute("aria-current", "step");
+  expect(screen.getByRole("separator", { name: "Step 2 of 2: Check ingredients" })).toBeInTheDocument();
+  expect(screen.getByRole("separator", { name: "Step 2 of 2: Check ingredients" })).toHaveClass("is-new-step");
+  expect(document.querySelector(".socratic-step-divider + .socratic-message-card.assistant")).not.toHaveTextContent("Step 2: Check ingredients");
+  expect(document.querySelector(".socratic-message-card.assistant.is-new-reply .message-avatar")).toHaveTextContent("S");
+  expect(document.querySelectorAll(".socratic-message-card.assistant.is-current-reply")).toHaveLength(1);
+  expect(within(screen.getByRole("list", { name: "Learning path steps" })).getByText("Check ingredients").closest("li")).toHaveAttribute("aria-current", "step");
+  expect(screen.getByText("Choose a size").closest("li")).toHaveClass("is-completed");
+  expect(within(screen.getByRole("list", { name: "Learning path steps" })).getByText("Check ingredients").closest("li")).toHaveClass("is-current");
   expect(within(screen.getByText("Choose a size").closest("li")).getByRole("img", { name: "Completed step" })).toHaveTextContent("✓");
-  expect(within(screen.getByText("Check ingredients").closest("li")).queryByRole("img", { name: "Completed step" })).not.toBeInTheDocument();
+  expect(within(within(screen.getByRole("list", { name: "Learning path steps" })).getByText("Check ingredients").closest("li")).queryByRole("img", { name: "Completed step" })).not.toBeInTheDocument();
   expect(screen.getByRole("progressbar", { name: "Learning path progress" })).toHaveAttribute("aria-valuenow", "1");
+  expect(screen.getByText("50%")).toBeInTheDocument();
   expect(screen.getByText("1 of 2 steps complete · Stage 2 of 2")).toBeInTheDocument();
   expect(screen.getAllByRole("region", { name: "Your next thinking step" }).at(-1)).toHaveTextContent("What should it check before asking for coins?");
   expect(fetch.mock.calls.some(([url]) => url.endsWith("/next-step"))).toBe(true);
+});
+
+test("guided Socratic path hides legacy timer data without affecting step progression", async () => {
+  const learning_steps = [
+    { title: "Choose a size", goal: "Choose a size." },
+    { title: "Check ingredients", goal: "Check ingredients." },
+  ];
+  const startedAt = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  const started = {
+    ...attempt,
+    created_at: startedAt,
+    messages: [...attempt.messages, { role: "user", content: "Small." }],
+    engine_state: { socratic: { phase: "teaching", learning_step_index: 0, step_started_at_message_count: 1 } },
+  };
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1": { ...assignment, student_config: { minimum_messages: 1, learning_steps, learning_path_time_limit_seconds: 420 } },
+    "/api/platform/assignments/assignment-1/attempt": started,
+    "POST /api/platform/assignments/assignment-1/next-step": {
+      ...started,
+      engine_state: { socratic: { phase: "teaching", learning_step_index: 1, step_started_at_message_count: 2 } },
+    },
+  });
+  open("/student/assignments/assignment-1");
+  expect(await screen.findByRole("heading", { name: "Socratic Chat" })).toBeInTheDocument();
+  expect(screen.queryByRole("timer", { name: "Total learning path time" })).not.toBeInTheDocument();
+  await userEvent.setup().click(screen.getByRole("button", { name: "Continue to next step" }));
+  expect(within(screen.getByRole("list", { name: "Learning path steps" })).getByText("Check ingredients").closest("li")).toHaveAttribute("aria-current", "step");
+  expect(screen.queryByRole("timer", { name: "Total learning path time" })).not.toBeInTheDocument();
+});
+
+test("legacy elapsed time does not block a student from finishing the guided path", async () => {
+  const learning_steps = [{ title: "Choose a size", goal: "Choose a size." }];
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1": { ...assignment, student_config: { minimum_messages: 1, learning_steps, learning_path_time_limit_seconds: 420 } },
+    "/api/platform/assignments/assignment-1/attempt": {
+      ...attempt,
+      created_at: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
+      messages: [...attempt.messages, { role: "user", content: "Small." }],
+      engine_state: { socratic: { phase: "teaching", learning_step_index: 0, step_started_at_message_count: 1 } },
+    },
+  });
+  open("/student/assignments/assignment-1");
+  expect(await screen.findByRole("heading", { name: "Socratic Chat" })).toBeInTheDocument();
+  expect(screen.queryByRole("timer", { name: "Total learning path time" })).not.toBeInTheDocument();
+  await userEvent.setup().type(screen.getByLabelText("Your message"), "Can we revisit this?");
+  expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Finish conversation and summarize" })).toBeEnabled();
 });
 
 test("last guided step offers the summary action in the learning path", async () => {
@@ -464,8 +665,10 @@ test("student downloads the original selected material instead of opening extrac
   const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
   open("/student/assignments/assignment-1");
   expect(await screen.findByRole("heading", { name: "Course materials" })).toBeInTheDocument();
-  const availableRow = screen.getByText("Sandwich Maker.pdf").closest("li");
+  const availableRow = (await screen.findByText("Sandwich Maker.pdf")).closest("li");
+  expect(within(availableRow).getByRole("button", { name: "View Sandwich Maker.pdf" })).toHaveTextContent("View");
   expect(within(availableRow).getByRole("button", { name: "Download Sandwich Maker.pdf" })).toHaveTextContent("Download");
+  expect(within(availableRow).getByRole("button", { name: "Download Sandwich Maker.pdf" })).not.toHaveClass("secondary");
   const unavailableRow = screen.getByText("Starter code.py").closest("li");
   expect(within(unavailableRow).getByText("Original file unavailable")).toBeInTheDocument();
   expect(within(unavailableRow).queryByRole("button")).not.toBeInTheDocument();
@@ -477,6 +680,51 @@ test("student downloads the original selected material instead of opening extrac
   click.mockRestore();
   URL.createObjectURL = originalCreateObjectURL;
   URL.revokeObjectURL = originalRevokeObjectURL;
+});
+
+test("student opens the original PDF beside the chat and can return to the learning path", async () => {
+  const documentId = "selected-pdf";
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1/materials": { materials: [
+      { document_id: documentId, title: "Sandwich Maker.pdf", original_available: true, page_count: 2 },
+    ] },
+    [`/api/platform/assignments/assignment-1/materials/${documentId}/download`]:
+      new Blob(["%PDF-1.4"], { type: "application/pdf" }),
+  });
+  const originalCreateObjectURL = URL.createObjectURL;
+  const originalRevokeObjectURL = URL.revokeObjectURL;
+  URL.createObjectURL = vi.fn(() => "blob:original-course-pdf");
+  URL.revokeObjectURL = vi.fn();
+  try {
+    open("/student/assignments/assignment-1");
+    await userEvent.setup().click(await screen.findByRole("button", { name: "View Sandwich Maker.pdf" }));
+    const preview = await screen.findByRole("complementary", { name: "Course material preview: Sandwich Maker.pdf" });
+    expect(within(preview).getByTitle("Sandwich Maker.pdf")).toHaveAttribute("src", "blob:original-course-pdf");
+    expect(within(preview).getByRole("button", { name: "Download" })).toBeInTheDocument();
+    expect(document.querySelector(".workspace-grid")).toHaveClass("material-preview-open");
+    await userEvent.setup().click(within(preview).getByRole("button", { name: "Close document" }));
+    expect(screen.queryByRole("complementary", { name: /Course material preview/ })).not.toBeInTheDocument();
+    await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:original-course-pdf"));
+    expect(screen.getByRole("heading", { name: "Course materials" })).toBeInTheDocument();
+  } finally {
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+  }
+});
+
+test("student sees a download-only message for Office materials", async () => {
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1/materials": { materials: [
+      { document_id: "slides", title: "Lecture.pptx", original_available: true },
+    ] },
+    "/api/platform/assignments/assignment-1/materials/slides/download":
+      new Blob(["office document"], { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" }),
+  });
+  open("/student/assignments/assignment-1");
+  await userEvent.setup().click(await screen.findByRole("button", { name: "View Lecture.pptx" }));
+  const preview = await screen.findByRole("complementary", { name: "Course material preview: Lecture.pptx" });
+  expect(within(preview).getByText(/cannot be displayed in the browser/)).toBeInTheDocument();
+  expect(within(preview).getByRole("button", { name: "Download" })).toBeInTheDocument();
 });
 
 test("Debate shows the instructor scenario once when the student starts", async () => {
@@ -685,19 +933,24 @@ test("Socratic response shows a generation timer, thinking step, and clickable e
     screen.getByText("version control", { selector: "strong" }),
   ).toBeInTheDocument();
   expect(screen.getByText(/^Generated in \d+s$/)).toBeInTheDocument();
+  expect(document.querySelector(".socratic-message-card.assistant.is-new-reply")).toHaveTextContent(
+    "How does version control help two developers collaborate?",
+  );
+  expect(document.querySelectorAll(".socratic-message-card.assistant.is-current-reply")).toHaveLength(1);
+  expect(document.querySelector(".socratic-message-card.assistant.is-current-reply")).toHaveTextContent(
+    "How does version control help two developers collaborate?",
+  );
+  expect(screen.queryByText("New reply")).not.toBeInTheDocument();
   expect(screen.queryByText(/Score 76\/100/)).not.toBeInTheDocument();
   expect(
     document.querySelector(".socratic-message-card.user.is-pending"),
   ).not.toBeInTheDocument();
   expect(within(document.querySelector(".messages")).getAllByText("My answer")).toHaveLength(1);
   expect(screen.queryByText("Why am I being asked this?")).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Version Control Notes · page 2" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "View passage" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "View supporting sources" }));
-  await user.click(
-    screen.getByRole("button", {
-      name: "Version Control Notes · page 2",
-    }),
-  );
+  expect(screen.getByRole("region", { name: "Visible course source" })).toHaveTextContent("Version control preserves revision history for a team.");
+  await user.click(screen.getByRole("button", { name: "View passage" }));
   const drawer = screen.getByRole("dialog", {
     name: "Evidence document: Version Control Notes",
   });
@@ -716,30 +969,22 @@ test("Socratic response shows a generation timer, thinking step, and clickable e
   await user.keyboard("{ArrowLeft}");
   expect(resizer).toHaveAttribute("aria-valuenow", "444");
   expect(
-    screen.getByText(/preserves revision history for a team/),
+    within(drawer).getByText(/preserves revision history for a team/),
   ).toBeInTheDocument();
   expect(screen.getByText("Page 2")).toBeInTheDocument();
   expect(screen.getByText("Passage chunk-2")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Make visual steps" }));
   expect(await screen.findByRole("region", { name: "Visual steps from this passage" })).toBeInTheDocument();
   expect(screen.getByText("Step 1")).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "Show original text" }));
-  expect(screen.getByText("Original selected passage")).toBeInTheDocument();
-  await user.click(
-    screen.getByRole("button", {
-      name: "Version Control Notes · page 2",
-    }),
-  );
+  expect(screen.queryByRole("button", { name: "Regenerate visual steps" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Show original text" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Close passage" }));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(document.querySelector(".workspace-grid")).not.toHaveClass(
     "evidence-open",
   );
   expect(document.body).not.toHaveClass("evidence-workspace-open");
-  await user.click(
-    screen.getByRole("button", {
-      name: "Version Control Notes · page 2",
-    }),
-  );
+  await user.click(screen.getByRole("button", { name: "View passage" }));
   await user.click(
     screen.getByRole("button", { name: "Close evidence document" }),
   );
@@ -770,10 +1015,15 @@ test("Socratic chat shows a relevant table excerpt but keeps other sources tucke
   });
 
   open("/student/assignments/assignment-1");
-  expect(await screen.findByRole("region", { name: "Relevant source excerpt" })).toHaveTextContent("Small | 2");
-  expect(screen.queryByRole("button", { name: "Sandwich requirements · page 3" })).not.toBeInTheDocument();
+  expect(await screen.findByRole("region", { name: "Relevant source excerpt" })).toBeInTheDocument();
+  expect(document.querySelectorAll(".socratic-message-card.assistant.is-current-reply")).toHaveLength(1);
+  expect(document.querySelector(".socratic-message-card.assistant.is-current-reply .message-avatar")).toHaveTextContent("S");
+  const excerpt = await screen.findByRole("region", { name: "Relevant source excerpt" });
+  expect(within(excerpt).getByRole("row", { name: "Small 2" })).toBeInTheDocument();
+  expect(screen.queryByText("Original selected passage")).not.toBeInTheDocument();
   await userEvent.setup().click(screen.getByRole("button", { name: "View supporting sources" }));
-  expect(screen.getByRole("button", { name: "Sandwich requirements · page 3" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Visible course source" })).toHaveTextContent("Sandwich requirements · page 3");
+  expect(screen.getByRole("button", { name: "View passage" })).toBeInTheDocument();
 });
 
 test("console-style source evidence opens as choices and outcomes instead of a raw script", async () => {
@@ -789,14 +1039,15 @@ test("console-style source evidence opens as choices and outcomes instead of a r
   });
   open("/student/assignments/assignment-1");
   await userEvent.setup().click(await screen.findByRole("button", { name: "View supporting sources" }));
-  await userEvent.setup().click(screen.getByRole("button", { name: "Machine example · page 3" }));
+  const inlineTable = within(screen.getByRole("region", { name: "Visible course source" })).getByRole("table");
+  expect(within(inlineTable).getByRole("row", { name: /1 small large dollars: 1 · quarters: 2 Sorry, that's not enough money/ })).toBeInTheDocument();
+  await userEvent.setup().click(screen.getByRole("button", { name: "View passage" }));
   const drawer = screen.getByRole("dialog", { name: "Evidence document: Machine example" });
   const table = within(drawer).getByRole("table");
   expect(within(table).getByRole("row", { name: /1 small large dollars: 1 · quarters: 2 Sorry, that's not enough money/ })).toBeInTheDocument();
   expect(within(table).getByRole("row", { name: /2 report — Bread: 6 slices Ham: 8 slices/ })).toBeInTheDocument();
   expect(within(drawer).queryByText("Original selected passage")).not.toBeInTheDocument();
-  await userEvent.setup().click(within(drawer).getByRole("button", { name: "Show original text" }));
-  expect(within(drawer).getByText("Original selected passage")).toBeInTheDocument();
+  expect(within(drawer).queryByRole("button", { name: "Show original text" })).not.toBeInTheDocument();
 });
 
 test("Socratic money question provides a table without solving the exercise", async () => {
@@ -851,7 +1102,7 @@ test("Socratic scope confirmation offers choices before generating an explanatio
   const user = userEvent.setup();
   await user.type(await screen.findByLabelText("Your message"), "what is the prompt?");
   await user.click(screen.getByRole("button", { name: "Send message" }));
-  expect(await screen.findByRole("group", { name: "Clarify your question" })).toBeInTheDocument();
+  expect(await screen.findByRole("group", { name: "Clarify your intent" })).toBeInTheDocument();
   expect(screen.getByText("Quick check before I answer")).toBeInTheDocument();
   expect(screen.getByText("Do you mean 'prompt' in this assignment, or would a general explanation help?")).toBeInTheDocument();
   expect(screen.getByText("what is the prompt?")).toBeInTheDocument();
@@ -862,7 +1113,43 @@ test("Socratic scope confirmation offers choices before generating an explanatio
   expect(requests).toHaveLength(2);
   expect(requests[1].clarification_index).toBe(1);
   expect(await screen.findByText("A prompt is a question asking the user for input.")).toBeInTheDocument();
-  expect(screen.queryByRole("group", { name: "Clarify your question" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("group", { name: "Clarify your intent" })).not.toBeInTheDocument();
+});
+
+test("Socratic clarification accepts typed intent before the tutor answers", async () => {
+  let replyCount = 0;
+  const fetch = mockApi("student", {
+    "/api/platform/assignments/assignment-1/attempt": attempt,
+    "/api/platform/assignments/assignment-1/messages": () => {
+      replyCount += 1;
+      return {
+        ...attempt,
+        engine_state: { socratic: replyCount === 1 ? {
+          pending_clarification: { inline: true, question: "Would a hint help, or did you mean something else?" },
+          clarification_options: [{ label: "Give me a hint", message_role: "support_request", resolved_message: "Please give me a hint." }],
+        } : { clarification_options: [] } },
+        messages: [...attempt.messages, { role: "user", content: "ok" },
+          ...(replyCount === 1 ? [] : [
+            { role: "user", content: "I meant I need help with the question." },
+            { role: "assistant", content: "Let's break the question down." },
+          ])],
+      };
+    },
+  });
+  open("/student/assignments/assignment-1");
+  const user = userEvent.setup();
+  await user.type(await screen.findByLabelText("Your message"), "ok");
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  expect(await screen.findByRole("group", { name: "Clarify your intent" })).toBeInTheDocument();
+  expect(screen.queryByText("Let's break the question down.")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Your message")).not.toBeInTheDocument();
+  await user.type(screen.getByLabelText("Type your answer or tell me what you meant"), "I meant I need help with the question.");
+  await user.click(screen.getByRole("button", { name: "Continue" }));
+  const requests = fetch.mock.calls.filter(([url]) => url.endsWith("/messages"))
+    .map(([, options]) => JSON.parse(options.body));
+  expect(requests[1]).toMatchObject({ message: "I meant I need help with the question.", clarification_text: true });
+  expect(await screen.findByText("Let's break the question down.")).toBeInTheDocument();
+  expect(screen.queryByRole("group", { name: "Clarify your intent" })).not.toBeInTheDocument();
 });
 
 test("Socratic students choose when to summarize without seeing old scores", async () => {

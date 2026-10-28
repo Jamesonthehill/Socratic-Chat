@@ -417,7 +417,7 @@ def _rule_classification(message: str, history: list[ChatMessage]) -> MessageCla
     # the same single observation used by the model-backed path, then applies
     # the shared policy mapper instead of constructing controller labels one by one.
     clean = " ".join(message.strip().split())
-    lowered = clean.lower()
+    lowered = clean.lower().strip("\"'”’")
     concepts = _extract_concepts(clean)
 
     if SESSION_CONTROL_PATTERN.match(clean):
@@ -673,6 +673,9 @@ async def _classify_with_llm(
         "without demonstrating it), acknowledgement, closing, topic_change, administrative, or ambiguous. "
         "Use ambiguous only when the recent conversation leaves at least two reasonable meanings that require different "
         "responses. A mixed message may be ambiguous when it contains both a tentative answer and a request for help. "
+        "A brief acknowledgement after an unanswered tutor question is not an answer or a request to end. "
+        "If it is unclear whether the student wants to try answering, needs help, or means something else, "
+        "use ambiguous and propose context-specific interpretations without supplying the answer. "
         "Return target_concepts as concise noun phrases inferred from the latest message and conversation, not a "
         "fixed topic list. Return missing_context as a short noun phrase only for ambiguous; "
         "otherwise null. For ambiguous, return one natural clarification_question and two or three short "
@@ -819,7 +822,7 @@ async def classify_message(
     # normalization of the single observation, not a second intent system.
     protected_roles = {
         "support_request", "direct_answer_request", "confirmation_request",
-        "understanding_claim", "acknowledgement",
+        "understanding_claim",
     }
     normalized_role = result.message_role
     actionable_mixed_ambiguity = bool(
@@ -830,6 +833,11 @@ async def classify_message(
     )
     if fallback.message_role in protected_roles and not actionable_mixed_ambiguity:
         normalized_role = fallback.message_role
+    elif fallback.message_role == "acknowledgement" and not (
+        result.message_role == "ambiguous" and len(result.clarification_options) >= 2
+    ):
+        # Acknowledging an unanswered question is not a substantive answer or a close.
+        normalized_role = "acknowledgement"
     elif fallback.message_role == "student_answer" and result.message_role in {
         "ambiguous", "support_request", "confirmation_request", "learning_question", "follow_up",
     }:

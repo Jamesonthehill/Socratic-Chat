@@ -210,6 +210,42 @@ def _clarify_term_scope(message, history, classification):
     ), keyword_scope_match=classification.keyword_scope_match)
 
 
+def _clarify_unanswered_acknowledgement(message, history, state, classification):
+    """An acknowledgement is not an answer to an open tutor question."""
+    if classification.message_role != "acknowledgement":
+        return classification
+    latest_tutor = next((item.content for item in reversed(history) if item.role == "assistant"), "")
+    # A paused conversation's saved question may be stale; an active tutor
+    # question can also live in state when the reply ends with source notes.
+    current_question = _next_thinking_step(latest_tutor)
+    if not current_question and state.get("conversation_status") != "paused":
+        saved_question = str(state.get("next_thinking_step") or "").strip()
+        current_question = saved_question if saved_question.endswith("?") else ""
+    if not current_question:
+        return classification
+    question = current_question.rsplit("?", 1)[0].rsplit("\n", 1)[-1].strip()[-300:] + "?"
+    acknowledgement = " ".join(message.strip().strip("\"'“”‘’").split())[:24] or "that"
+    options = (
+        ClarificationOption(
+            label="Repeat the question", message_role="support_request",
+            resolved_message=f"Please restate the current question in simpler words and wait for my answer: {question}"[:500],
+        ),
+        ClarificationOption(
+            label="Give me a hint", message_role="support_request",
+            resolved_message=f"Please give one small hint about the current question, then wait for my answer: {question}"[:500],
+        ),
+    )
+    return replace(_classification_from_observation(
+        message_role="ambiguous", concepts=classification.target_concepts,
+        clarification_question=(
+            f"When you say “{acknowledgement},” do you mean you're ready to answer the question I just asked, "
+            "would you like a hint, or did you mean something else?"
+        ),
+        clarification_options=options, rewritten_query=classification.rewritten_query,
+        source="unanswered_question_confirmation",
+    ), keyword_scope_match=classification.keyword_scope_match)
+
+
 def _clarify_uncertain_topic_shift(message, current_focus, classification):
     """Offer a choice only when the classifier cannot tell which topic is intended."""
     proposed = (classification.target or next(iter(classification.target_concepts), "") or "").strip()
@@ -452,8 +488,24 @@ def start(assignment, attempt):
     if assignment["tool"] == "socratic":
         prompt = config.get("prompt", "").strip()
         state = {"pipeline_version": "local-socratic-v1", "phase": "teaching", "learning_topic": prompt or None}
-        if config.get("guidance_mode", "guided" if config.get("learning_steps") else "basic") == "guided" and config.get("learning_steps"):
+        guided = config.get("guidance_mode", "guided" if config.get("learning_steps") else "basic") == "guided"
+        if guided and config.get("learning_steps"):
             state.update({"learning_step_index": 0, "step_started_at_message_count": 1})
+            first_step = config["learning_steps"][0]
+            scenario = str(first_step.get("scenario") or "").strip()
+            question = str(first_step.get("question") or "").strip()
+            if not scenario:
+                quote = str(first_step.get("evidence_quote") or "").strip()
+                scenario = f"From the assignment: “{quote}”" if quote else ""
+            if not scenario:
+                scenario = prompt if prompt and not prompt.endswith("?") else f"Let's work through {assignment['title']}."
+            if not question:
+                question = prompt if prompt.endswith("?") else f"How would you approach {first_step['title'].lower()} in this assignment?"
+            elif not question.endswith("?"):
+                question = f"{question.rstrip('.!')}?"
+            state["next_thinking_step"] = question
+            state["learning_topic"] = first_step["title"]
+            return {"messages": [{"role": "assistant", "content": f"Step 1: {first_step['title']}\n\n{scenario}\n\n{question}"}], "socratic": state}
         focus = next((str(chunk.get("text") or "").split("\n", 1)[0].strip()
                       for chunk in snapshot.get("chunks") or []
                       if 35 <= len(str(chunk.get("text") or "").split("\n", 1)[0].strip()) <= 220), "")
@@ -474,6 +526,33 @@ def start(assignment, attempt):
             "student_id": str(attempt["student_id"]), "course_id": str(assignment["course_id"])})
         return {"messages": [{"role": "assistant", "content": result["greeting"]}], "total_questions": result["total_questions"], "question_index": 0}
     raise HTTPException(404, "Unknown assignment tool.")
+
+
+def repair_legacy_socratic_opening(assignment, attempt):
+    """Add the first question to an untouched, story-only guided attempt."""
+    if not attempt or assignment["tool"] != "socratic" or attempt.get("status") != "in_progress":
+        return False
+    messages = attempt.get("messages") or []
+    if len(messages) != 1 or messages[0].get("role") != "assistant":
+        return False
+    config = (assignment.get("snapshot") or {}).get("config") or {}
+    steps = config.get("learning_steps") or []
+    guided = config.get("guidance_mode", "guided" if steps else "basic") == "guided"
+    if not guided or not steps:
+        return False
+    current = str(messages[0].get("content") or "").strip()
+    legacy_openings = {str(config.get("prompt") or "").strip(), str(steps[0].get("scenario") or "").strip()}
+    if not current or current not in legacy_openings:
+        return False
+    opening = start(assignment, attempt)
+    updated = opening["messages"][0]["content"]
+    if updated == current:
+        return False
+    attempt["messages"] = [{**messages[0], "content": updated}]
+    state = attempt.setdefault("engine_state", {}).setdefault("socratic", {})
+    state["next_thinking_step"] = opening["socratic"]["next_thinking_step"]
+    state["learning_topic"] = opening["socratic"]["learning_topic"]
+    return True
 
 
 def _snapshot_titles(chunks):
@@ -529,15 +608,20 @@ def _update_snapshot_progress(state, evaluation):
 
 
 def _next_thinking_step(answer: str) -> str:
+    labeled_question = re.search(
+        r"(?i)\*{0,2}Your next thinking step\*{0,2}\s*\n+([^\n]*\?)",
+        answer,
+    )
+    if labeled_question:
+        return labeled_question.group(1).strip()
+    if not answer.strip().rstrip("*_`'\" ").endswith("?"):
+        return ""
     sentences = [
         sentence.strip()
         for sentence in re.split(r"(?<=[.!?])\s+", answer.strip())
         if sentence.strip()
     ]
-    return next(
-        (sentence for sentence in reversed(sentences) if sentence.endswith("?")),
-        answer.strip(),
-    )
+    return next((sentence for sentence in reversed(sentences) if sentence.endswith("?")), "")
 
 
 def _socratic_result(answer, sources, state, classification, score=None):
@@ -546,7 +630,12 @@ def _socratic_result(answer, sources, state, classification, score=None):
         for concept in (*classification.target_concepts, classification.target or "")
         if str(concept).strip()
     ]
-    state["next_thinking_step"] = _next_thinking_step(answer) if "?" in answer else ""
+    next_question = _next_thinking_step(answer)
+    previous_question = str(state.get("next_thinking_step") or "").strip()
+    state["next_thinking_step"] = (
+        "" if classification.conversation_action in {"soft_close", "complete"}
+        else next_question or (previous_question if previous_question.endswith("?") else "")
+    )
     state["keywords"] = list(state["objective_keywords"]) if state.get("objective_keywords") else list(dict.fromkeys([state["stable_concept"]] + concepts if state.get("stable_concept") else concepts))[:5]
     if score is None:
         state.pop("last_score", None)
@@ -650,6 +739,7 @@ async def _socratic_message(
     content,
     clarification_index=None,
     concept_check_option=None,
+    clarification_text=False,
 ):
     """Adapt local-socratic-chat's teaching sequence to a frozen assignment."""
     snapshot = assignment["snapshot"]
@@ -713,6 +803,8 @@ async def _socratic_message(
         if not topic:
             topic = next((m.content for m in history if m.role == "user"), None)
         pending = state.get("pending_clarification")
+        if clarification_text and not pending:
+            raise HTTPException(422, "This clarification is no longer available.")
         interpreted = content
         general_example_choice = False
         if clarification_index is not None:
@@ -728,6 +820,7 @@ async def _socratic_message(
         log_event(1, "assignment_chat_received", assignment_id=assignment["id"], message_chars=len(content), pipeline_version="local-socratic-v1")
         classification = await classify_message(interpreted, history, learning_topic=topic, **scope_options)
         if assignment_scope and clarification_index is None:
+            classification = _clarify_unanswered_acknowledgement(content, history, state, classification)
             classification = _clarify_term_scope(interpreted, history, classification)
             classification, topic_choices = _clarify_uncertain_topic_shift(
                 interpreted, state.get("learning_topic"), classification,
@@ -825,7 +918,7 @@ async def _socratic_message(
                 [], state, classification,
             )
         # Selecting an interpretation is not evidence of subject understanding.
-        evaluation = None if pending else await assess_student_answer_qualitatively(
+        evaluation = None if pending and not clarification_text else await assess_student_answer_qualitatively(
             content, history, sources, classification, **scope_options,
         )
         if evaluation:
@@ -949,6 +1042,7 @@ def message(
     request_id,
     clarification_index=None,
     concept_check_option=None,
+    clarification_text=False,
 ):
     tool = assignment["tool"]
     cfg = assignment["snapshot"]["config"]
@@ -962,6 +1056,7 @@ def message(
                 content,
                 clarification_index,
                 concept_check_option,
+                clarification_text,
             )
         )
     if tool == "debate":

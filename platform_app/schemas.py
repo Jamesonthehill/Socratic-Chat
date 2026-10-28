@@ -64,6 +64,7 @@ class SocraticConfig(StrictModel):
     learning_objective_id: UUID | None = None
     document_ids: list[str] = Field(default_factory=list, max_length=100)
     learning_steps: list[SocraticLearningStep] = Field(default_factory=list, max_length=10)
+    learning_path_minutes: int = Field(default=7, ge=1, le=180)
     prompt: str = Field(default="", max_length=10000)
     minimum_messages: int = Field(default=1, ge=1, le=100)
 
@@ -211,6 +212,7 @@ class MessageInput(StrictModel):
     message: str = Field(min_length=1, max_length=20000)
     request_id: UUID
     clarification_index: int | None = Field(default=None, ge=0, le=2)
+    clarification_text: bool = False
     concept_check_option: int | None = Field(default=None, ge=0, le=2)
 
 

@@ -34,8 +34,14 @@ beforeEach(() => {
   api.mockReset();
   api.mockImplementation(async (path, options) => {
     if (path.startsWith("/platform/context")) return course;
+    if (path === "/courses") return { courses: [
+      { ...course, membership_status: "approved" },
+      { course_id: "course-2", course_code: "DS202", title: "Data Science", membership_role: "instructor", membership_status: "approved" },
+    ] };
     if (path === "/platform/courses/course-1/documents")
       return { files: courseFiles };
+    if (path === "/platform/courses/course-2/documents")
+      return { files: [{ file_id: "f3", document_id: "d3", filename: "Data methods.pdf", file_size: 500 }] };
     if (
       path === "/platform/courses/course-1/documents/upload" &&
       options?.method === "POST"
@@ -132,7 +138,9 @@ test("assignment material picker offers Python, Word and PowerPoint files", asyn
 test("activity details offer an optional field-by-field tutorial", async () => {
   const user = await open();
   expect(screen.queryByRole("dialog", { name: "Assignment tutorial" })).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "Open assignment tutorial" }));
+  const tutorialButton = screen.getByRole("button", { name: "Open assignment tutorial" });
+  expect(tutorialButton).not.toHaveClass("secondary");
+  await user.click(tutorialButton);
   const tutorial = screen.getByRole("dialog", { name: "Assignment tutorial" });
   expect(tutorial).toHaveTextContent("Step 1 of 6");
   expect(screen.getByLabelText("Assignment title").closest("label")).toHaveClass("activity-tutorial-highlight");
@@ -146,6 +154,29 @@ test("activity details offer an optional field-by-field tutorial", async () => {
   expect(screen.queryByRole("dialog", { name: "Assignment tutorial" })).not.toBeInTheDocument();
   expect(screen.getByLabelText("Description").closest("label")).not.toHaveClass("activity-tutorial-highlight");
   await waitFor(() => expect(screen.getByRole("button", { name: "Open assignment tutorial" })).toHaveFocus());
+});
+test("instructors can choose an existing course and selected materials reset", async () => {
+  const user = await open();
+  await user.click(await screen.findByRole("checkbox", { name: /Requirements.pdf/ }));
+  expect(screen.getByRole("heading", { name: "Selected documents (1)" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Change course" }));
+  await user.selectOptions(screen.getByLabelText("Choose an existing course"), "course-2");
+  expect(screen.getByText("DS202 — Data Science")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Selected documents (0)" })).toBeInTheDocument();
+  expect(await screen.findByRole("checkbox", { name: /Data methods.pdf/ })).toBeInTheDocument();
+  expect(screen.queryByRole("checkbox", { name: /Requirements.pdf/ })).not.toBeInTheDocument();
+});
+test("direct assignment creation allows course selection without Canvas context", async () => {
+  const originalApi = api.getMockImplementation();
+  api.mockImplementation((path, options) => path.startsWith("/platform/context")
+    ? Promise.reject(new Error("No Canvas context")) : originalApi(path, options));
+  const user = userEvent.setup();
+  render(<MemoryRouter><CreateActivity /></MemoryRouter>);
+  expect(await screen.findByText("No course selected")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Choose course" }));
+  await user.selectOptions(screen.getByLabelText("Choose an existing course"), "course-2");
+  expect(screen.getByText("DS202 — Data Science")).toBeInTheDocument();
+  expect(await screen.findByRole("checkbox", { name: /Data methods.pdf/ })).toBeInTheDocument();
 });
 test("tutorial explains the selected activity settings and closes with Escape", async () => {
   const user = await open();
@@ -451,6 +482,10 @@ test("source generation drafts editable opening, submission and completion setti
   );
   expect(screen.getByRole("region", { name: "Learning steps" })).toHaveTextContent("Understand the design");
   const steps = screen.getByRole("region", { name: "Learning steps" });
+  expect(within(steps).getByLabelText("First example students will see")).toHaveValue(
+    "A team begins by reviewing its design requirements.",
+  );
+  expect(within(steps).getByText(/enough context to picture the situation/)).toBeInTheDocument();
   expect(within(steps).getAllByText("Requirements.pdf")).toHaveLength(2);
   expect(within(steps).getAllByLabelText("Step title")).toHaveLength(1);
   const secondStep = within(steps).getByRole("button", { name: /Step 2.*Submit your design.*What should the team include/ });
@@ -468,6 +503,22 @@ test("source generation drafts editable opening, submission and completion setti
   expect(within(steps).getAllByText("Submit your design")[0]).toBeInTheDocument();
   expect(within(steps).getByLabelText("Step title")).toHaveValue("Submit your design");
   expect(screen.getByRole("button", { name: "Publish activity" })).toBeEnabled();
+});
+
+test("guided Socratic setup has no timer setting or duration in review", async () => {
+  const user = await open();
+  await user.click(await screen.findByRole("checkbox", { name: /Requirements.pdf/ }));
+  await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
+  await user.click(screen.getByRole("radio", { name: /Guided learning path/ }));
+  expect(screen.queryByRole("spinbutton", { name: "Total learning-path time (minutes)" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Generate setup from selected sources" }));
+  expect(screen.queryByRole("spinbutton", { name: "Total learning-path time (minutes)" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Publish activity" }));
+  expect(screen.queryByText("Total learning-path time")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Publish activity" }));
+  await waitFor(() => expect(api).toHaveBeenCalledWith("/platform/assignments", expect.objectContaining({
+    body: expect.objectContaining({ config: expect.not.objectContaining({ learning_path_minutes: expect.anything() }) }),
+  })));
 });
 
 test("generated steps can be dragged, moved with buttons, and removed", async () => {

@@ -69,6 +69,7 @@ export default function CreateActivity({
   const [notice, setNotice] = useState("");
   const [publishIssue, setPublishIssue] = useState(null);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [coursePickerOpen, setCoursePickerOpen] = useState(false);
   const fileInput = useRef(null);
   const tutorialButton = useRef(null);
   const chatConfigs = useRef({});
@@ -83,13 +84,22 @@ export default function CreateActivity({
     setInitializing(true);
     const load = async () => {
       const item = id ? await api(`/platform/assignments/${id}`) : null;
-      const context = await loadCourseContext(item?.course_id);
+      const requestedCourse = new URLSearchParams(window.location.search).get("course");
+      const context = item || requestedCourse
+        ? await loadCourseContext(item?.course_id || requestedCourse)
+        : initialContext || await loadCourseContext().catch(() => null);
+      const available = item ? [context] : (await api("/courses")).courses.filter(
+        (course) => course.membership_role === "instructor" && course.membership_status === "approved",
+      );
       if (!active) return;
       if (item && String(item.course_id) !== String(context.course_id))
         throw Error("Open this activity from its Canvas course.");
-      setCourses([context]);
+      setCourses(available);
       if (!item) {
-        setDraft((d) => ({ ...d, course_id: context.course_id }));
+        const selectedCourse = context?.course_id || (available.length === 1 ? available[0].course_id : "");
+        if (selectedCourse && !available.some((course) => String(course.course_id) === String(selectedCourse)))
+          throw Error("You do not manage the selected course.");
+        setDraft((d) => ({ ...d, course_id: selectedCourse }));
         return;
       }
       const d = item.due_at ? new Date(item.due_at) : null;
@@ -134,6 +144,21 @@ export default function CreateActivity({
     setStage(1);
     setPublishIssue(null);
     setError("");
+  };
+  const chooseCourse = (courseId) => {
+    if (!courses.some((course) => String(course.course_id) === courseId)) return;
+    if (String(draft.course_id) !== courseId) {
+      chatConfigs.current = {};
+      setSelected([]);
+      setFiles([]);
+      setSearch("");
+      setDraft((current) => ({ ...current, course_id: courseId, config: current.tool ? configFor(current.tool) : {} }));
+      setStage(1);
+      setPublishIssue(null);
+      setError("");
+      setNotice("Course changed. Select materials from this course before publishing.");
+    }
+    setCoursePickerOpen(false);
   };
   const setConfig = (value) => {
     setDraft((d) => ({ ...d, config: value }));
@@ -274,7 +299,7 @@ export default function CreateActivity({
       }));
       setStage(2);
       setPublishIssue(null);
-      setNotice(`AI drafted ${(generated.learning_steps || []).length} learning steps from ${(generated.source_files || []).join(", ")}. Review the path before publishing.`);
+      setNotice(`AI drafted ${(generated.learning_steps || []).length} learning steps from ${(generated.source_files || []).join(", ")}. ${generated.first_example_needs_review ? "The first example is brief; expand it for students before publishing." : "Review the path before publishing."}`);
     }, "Generating setup from selected documents");
   const generateSocraticOpening = () =>
     run(async () => {
@@ -377,6 +402,7 @@ export default function CreateActivity({
     setPublishIssue(issue);
     requestAnimationFrame(() => {
       const selectors = {
+        course: '[data-publish-target="course"]',
         title: '[data-publish-target="title"]',
         activity: '[data-activity-tutorial="activity"] .activity-choice',
         "learning-path": '[data-publish-target="learning-path"] .socratic-generate-setup',
@@ -412,7 +438,7 @@ export default function CreateActivity({
     const missing = [];
     if (!draft.title.trim()) missing.push({ target: "title", message: "Enter an activity title." });
     if (!draft.course_id)
-      missing.push({ target: "course", message: "The Canvas course context is missing. Reopen the tool from your course." });
+      missing.push({ target: "course", message: "Choose a course for this assignment." });
     if (!draft.tool) missing.push({ target: "activity", message: "Select an activity type." });
     if (
       ["socratic", "self-directed-learning"].includes(draft.tool) &&
@@ -466,7 +492,7 @@ export default function CreateActivity({
           <p className="context">Professor studio</p>
           <h1>Assignment Configuration</h1>
           <p>
-            Confirm the Canvas assignment details, add materials, choose an
+            Confirm the assignment details, add materials, choose an
             activity, then review and publish.
           </p>
         </div>
@@ -481,8 +507,31 @@ export default function CreateActivity({
         <section className="panel">
           <div className="activity-details-heading">
             <h2>Activity details</h2>
-            <button ref={tutorialButton} type="button" className="secondary compact" aria-label="Open assignment tutorial" onClick={() => setShowTutorial(true)}>Tutorial</button>
+            <button ref={tutorialButton} type="button" className="compact" aria-label="Open assignment tutorial" onClick={() => setShowTutorial(true)}>Tutorial</button>
           </div>
+          {!id && !draft.id && <div className="activity-course-choice">
+            <div>
+              <strong>Course</strong>
+              <p>{course ? `${course.course_code} — ${course.title}` : "No course selected"}</p>
+              <small>Students and course materials will come from the selected course.</small>
+            </div>
+            {!new URLSearchParams(window.location.search).has("course") && <button type="button" className="secondary compact" data-publish-target="course"
+              aria-expanded={coursePickerOpen} aria-controls="activity-course-picker"
+              onClick={() => setCoursePickerOpen((open) => !open)}>
+              {draft.course_id ? "Change course" : "Choose course"}
+            </button>}
+            {coursePickerOpen && <div id="activity-course-picker" className="activity-course-picker">
+              <label>Choose an existing course
+                <select value={draft.course_id} onChange={(event) => chooseCourse(event.target.value)}>
+                  <option value="">Select a course</option>
+                  {courses.map((item) => <option key={item.course_id} value={item.course_id}>
+                    {item.course_code} — {item.title}
+                  </option>)}
+                </select>
+              </label>
+              {!courses.length && <p className="help">No courses you teach are available yet.</p>}
+            </div>}
+          </div>}
           <div className="activity-title-date-row">
             <div>
               <label data-activity-tutorial="title">

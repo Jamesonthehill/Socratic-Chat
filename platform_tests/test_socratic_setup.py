@@ -20,6 +20,39 @@ from platform_app.schemas import SocraticConfig
 
 
 class SocraticSetupTests(unittest.TestCase):
+    def test_guided_learning_path_duration_is_instructor_configurable(self):
+        self.assertEqual(SocraticConfig().learning_path_minutes, 7)
+        config = {"minimum_messages": 1, "guidance_mode": "guided", "learning_path_minutes": 20,
+                  "learning_steps": [{"title": "Choose size", "goal": "Read the menu"}]}
+        assignment = {"tool": "socratic", "status": "published", "config": config,
+                      "snapshot": {"config": config, "chunks": []}}
+        self.assertEqual(routes.public_assignment(assignment)["student_config"]["learning_path_time_limit_seconds"], 1200)
+        for invalid in (0, 181):
+            with self.assertRaises(ValueError):
+                SocraticConfig.model_validate({"learning_path_minutes": invalid})
+
+    def test_student_step_visual_uses_only_selected_published_source(self):
+        config = {"minimum_messages": 1, "guidance_mode": "guided", "document_ids": ["selected"],
+                  "learning_steps": [
+                      {"title": "Choose size", "goal": "Read the menu", "source_chunk_id": "chunk-1",
+                       "evidence_quote": "What would you like? (small/ medium/ large/ off/ report)"},
+                      {"title": "Other", "goal": "Private", "source_chunk_id": "chunk-2",
+                       "evidence_quote": "Private course text."},
+                  ]}
+        assignment = {"tool": "socratic", "status": "published", "config": config,
+                      "snapshot": {"config": config, "chunks": [
+                          {"document_id": "selected", "chunk_id": "chunk-1", "title": "menu.pdf",
+                           "page_number": 3, "text": config["learning_steps"][0]["evidence_quote"]},
+                          {"document_id": "other", "chunk_id": "chunk-2", "title": "private.pdf",
+                           "text": "Private course text."},
+                      ]}}
+        student_config = routes.public_assignment(assignment)["student_config"]
+        steps = student_config["learning_steps"]
+        self.assertEqual(student_config["learning_path_time_limit_seconds"], 420)
+        self.assertEqual(steps[0]["source"]["title"], "menu.pdf")
+        self.assertEqual(steps[0]["source"]["page_number"], 3)
+        self.assertIsNone(steps[1]["source"])
+
     def test_student_material_reader_exposes_only_published_selection(self):
         assignment = {"tool": "socratic", "status": "published", "course_id": uuid4(),
                       "snapshot": {"config": {"document_ids": ["selected"]}, "chunks": [
@@ -129,6 +162,9 @@ class SocraticSetupTests(unittest.TestCase):
         async def fake_completion(_key, _url, request):
             self.assertIn("[chunk_id=chunk-1]", request["messages"][1]["content"])
             self.assertIn("Canvas description: Submit the code through Canvas", request["messages"][1]["content"])
+            self.assertIn("FIRST step's scenario a concrete", request["messages"][0]["content"])
+            self.assertIn("Do not invent quantities", request["messages"][0]["content"])
+            self.assertNotIn("max_tokens", request)
             return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload)))])
         with patch.object(socratic_setup.db, "get_document_chunks_for_objectives", return_value=[
             {"chunk_id": "chunk-1", "text": "Choose a sandwich size. Submit the code through Canvas.", "title": "Assignment"}
@@ -168,7 +204,56 @@ class SocraticSetupTests(unittest.TestCase):
             ))
         self.assertEqual(prompt, "The machine checks its supplies before taking coins. What should it check first?")
         self.assertIn("[chunk_id=chunk-1]", requests[0]["messages"][1]["content"])
+        self.assertIn("50 to 90 words", requests[0]["messages"][0]["content"])
         self.assertNotIn("learning_steps", requests[0]["response_format"]["json_schema"]["schema"]["properties"])
+
+    def test_rich_source_retries_a_brief_first_example_without_losing_valid_draft(self):
+        source = ("A teammate reviews the code before merging and notices that an empty list crashes the function. "
+                  "The developer needs to decide how to respond and what to test next. ") * 12
+        payload = {
+            "opening_prompt": "A teammate reviews your change. What would you check first?",
+            "student_instructions": "You will discuss the review and plan a response.",
+            "minimum_messages": 2,
+            "learning_steps": [
+                {"title": "Review feedback", "goal": "Explain what the reviewer found.",
+                 "scenario": "A teammate notices an empty-list crash.",
+                 "question": "How should you respond to this review?",
+                 "evidence_quote": "A teammate reviews the code before merging", "source_chunk_id": "chunk-1"},
+                {"title": "Plan a test", "goal": "Choose an edge-case test.",
+                 "scenario": "The same team prepares another test.",
+                 "question": "Which input should the team test next?",
+                 "evidence_quote": "an empty list crashes the function", "source_chunk_id": "chunk-1"},
+            ],
+            "source_chunk_ids": ["chunk-1"],
+        }
+        longer = dict(payload)
+        longer["learning_steps"] = [
+            {**payload["learning_steps"][0], "scenario": (
+                "You are the developer who has just opened a change for review. A teammate tries the function "
+                "with an empty list and sees it crash, even though ordinary lists worked. The change is not "
+                "merged yet, so you can investigate the problem and discuss it with your teammate. You need "
+                "to decide what to check before changing the code."
+            )},
+            payload["learning_steps"][1],
+        ]
+        responses = [payload, longer]
+        requests = []
+
+        async def fake_completion(_key, _url, request):
+            requests.append(len(request["messages"]))
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(responses.pop(0))))])
+
+        with patch.object(socratic_setup.db, "get_document_chunks_for_objectives", return_value=[
+            {"chunk_id": "chunk-1", "text": source, "title": "Code review"}
+        ]), patch.object(socratic_setup.settings, "llm_client_config", return_value=("Ollama", "test", "http://localhost", "model")), patch.object(
+            socratic_setup, "chat_completion", side_effect=fake_completion,
+        ):
+            result = asyncio.run(socratic_setup.generate_setup(
+                [{"id": "file-1", "filename": "review.pdf"}], "Code review", "Discuss the review."
+            ))
+        self.assertEqual(requests, [2, 3])
+        self.assertTrue(result["learning_steps"][0]["scenario"].startswith("You are the developer"))
+        self.assertNotIn("first_example_needs_review", result)
 
     def test_student_as_tutor_is_rejected(self):
         payload = {
@@ -205,12 +290,58 @@ class SocraticSetupTests(unittest.TestCase):
         started = engines.start({
             "tool": "socratic", "title": "Sandwich Maker",
             "snapshot": {"config": {"prompt": "How would you begin?", "learning_steps": [
-                {"title": "Choose size", "goal": "Choose a sandwich size."},
+                {"title": "Choose size", "goal": "Choose a sandwich size.",
+                 "scenario": "A customer arrives at the sandwich machine and sees the size menu.",
+                 "question": "How should the program handle the customer's first choice?"},
                 {"title": "Check bread", "goal": "Check available bread."},
             ]}, "chunks": []},
         }, {})
         self.assertEqual(started["socratic"]["learning_step_index"], 0)
         self.assertEqual(started["socratic"]["step_started_at_message_count"], 1)
+        self.assertEqual(started["socratic"]["next_thinking_step"], "How should the program handle the customer's first choice?")
+        self.assertIn("A customer arrives at the sandwich machine", started["messages"][0]["content"])
+        self.assertTrue(started["messages"][0]["content"].endswith("How should the program handle the customer's first choice?"))
+        self.assertNotIn("How would you begin?", started["messages"][0]["content"])
+
+    def test_student_start_adds_question_when_first_step_has_only_scenario(self):
+        started = engines.start({
+            "tool": "socratic", "title": "Sandwich Maker",
+            "snapshot": {"config": {"prompt": "Which choice should the program handle first?", "learning_steps": [
+                {"title": "Choose size", "goal": "Choose a sandwich size.",
+                 "scenario": "A customer arrives at the sandwich machine and sees the size menu."},
+            ]}, "chunks": []},
+        }, {})
+        self.assertIn("A customer arrives", started["messages"][0]["content"])
+        self.assertTrue(started["messages"][0]["content"].endswith("Which choice should the program handle first?"))
+
+    def test_guided_start_adds_story_and_question_when_step_has_no_scenario(self):
+        started = engines.start({
+            "tool": "socratic", "title": "Code Review",
+            "snapshot": {"config": {"prompt": "You have opened a pull request for review.", "learning_steps": [
+                {"title": "Acknowledge the observation", "goal": "Recognize useful peer feedback.",
+                 "question": "How would you thank your teammate for noticing the empty-list bug?"},
+            ]}, "chunks": []},
+        }, {})
+        self.assertIn("You have opened a pull request for review.", started["messages"][0]["content"])
+        self.assertTrue(started["messages"][0]["content"].endswith("How would you thank your teammate for noticing the empty-list bug?"))
+
+    def test_untouched_story_only_attempt_receives_first_question(self):
+        story = "Your teammate notices the function crashes on an empty list."
+        question = "How would you respond to your teammate's observation?"
+        assignment = {"tool": "socratic", "title": "Code Review", "snapshot": {"config": {
+            "prompt": story, "learning_steps": [{"title": "Acknowledge the observation",
+                "goal": "Recognize useful feedback.", "scenario": story, "question": question}],
+        }, "chunks": []}}
+        attempt = {"status": "in_progress", "messages": [{"role": "assistant", "content": story}],
+                   "engine_state": {"socratic": {"phase": "teaching", "learning_step_index": 0}}}
+        self.assertTrue(engines.repair_legacy_socratic_opening(assignment, attempt))
+        self.assertIn(story, attempt["messages"][0]["content"])
+        self.assertTrue(attempt["messages"][0]["content"].endswith(question))
+        self.assertEqual(attempt["engine_state"]["socratic"]["next_thinking_step"], question)
+        self.assertFalse(engines.repair_legacy_socratic_opening(assignment, attempt))
+        answered = {"status": "in_progress", "messages": [{"role": "assistant", "content": story},
+                    {"role": "user", "content": "I would thank them."}], "engine_state": {"socratic": {}}}
+        self.assertFalse(engines.repair_legacy_socratic_opening(assignment, answered))
 
     def test_basic_mode_uses_professor_question_without_exposing_steps(self):
         config = {"guidance_mode": "basic", "prompt": "What would you try first?", "minimum_messages": 1,
@@ -221,6 +352,7 @@ class SocraticSetupTests(unittest.TestCase):
         self.assertEqual(started["messages"][0]["content"], config["prompt"])
         self.assertNotIn("learning_step_index", started["socratic"])
         self.assertEqual(routes.public_assignment(assignment)["student_config"]["learning_steps"], [])
+        self.assertIsNone(routes.public_assignment(assignment)["student_config"]["learning_path_time_limit_seconds"])
         self.assertEqual(SocraticConfig.model_validate({"learning_steps": []}).guidance_mode, "basic")
         self.assertEqual(SocraticConfig.model_validate({"learning_steps": [{
             "title": "Choose size", "goal": "Explain the first choice.",

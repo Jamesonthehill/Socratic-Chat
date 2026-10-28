@@ -17,7 +17,6 @@ const SOCRATIC_TOUR_STEPS = [
   { demo: "summary", title: "Summarize and review feedback", detail: "Explain what you learned, get final feedback, and read it before submitting." },
   { demo: "submit", title: "Submit the assignment", detail: "Submit only after you have reviewed your final feedback." },
 ];
-
 function SocraticTourPreview({ kind, onAdvance }) {
   return (
     <div className="socratic-tour-preview" aria-label="Example of the student experience">
@@ -137,12 +136,20 @@ function nextQuestion(messages) {
     .reverse()
     .find((item) => item.role === "assistant")?.content;
   if (!answer) return "";
+  const labeled = answer.match(/\*{0,2}Your next thinking step\*{0,2}\s*\n+([^\n]*\?)/i);
+  if (labeled) return labeled[1].trim();
+  if (!answer.trim().replace(/[\s*_`'\"]+$/, "").endsWith("?")) return "";
   const sentences = answer.split(/(?<=[.!?])\s+/).filter(Boolean);
-  return (
-    [...sentences]
-      .reverse()
-      .find((sentence) => sentence.trim().endsWith("?")) || answer
-  ).trim();
+  return [...sentences].reverse().find((sentence) => sentence.trim().endsWith("?"))?.trim() || "";
+}
+
+function learningStepBoundary(message, steps) {
+  if (message?.role !== "assistant" || !steps?.length) return null;
+  const opening = String(message.content || "").match(/^Step (\d+): ([^\r\n]+)\r?\n+/);
+  if (!opening) return null;
+  const index = Number(opening[1]);
+  if (index < 2 || index > steps.length || opening[2].trim() !== steps[index - 1].title?.trim()) return null;
+  return { index, title: steps[index - 1].title, body: message.content.slice(opening[0].length).trim() };
 }
 
 function moneyBreakdownFromQuestion(text) {
@@ -207,6 +214,66 @@ function transcriptEvidence(text) {
     return { choice: match[1], coins, outcome: outcome || "—" };
   });
   return { initial: source.slice(0, matches[0].index).trim(), rows };
+}
+
+function sourceVisual(source) {
+  if (!source?.text) return null;
+  const original = String(source.text);
+  const text = original.replace(/\s+/g, " ");
+  const quote = String(source.evidence_quote || "").replace(/\s+/g, " ").trim();
+  const menu = text.match(/(What would you like\?)\s*\(([^)]{3,100})\)/i);
+  if (menu && (quote.toLowerCase().includes(menu[1].toLowerCase()) ||
+    /(?:menu|choice|choose|size|order|option|prompt)/i.test(quote))) {
+    const choices = menu[2].split(/[\/|,]/).map((choice) => choice.trim()).filter(Boolean);
+    if (choices.length >= 2 && choices.length <= 10) {
+      return { heading: "Choices shown in the source", columns: ["Source type", "Document text"],
+        rows: choices.map((choice) => ["Menu choice", choice]),
+        caption: `${menu[1]} (${menu[2].trim()})` };
+    }
+  }
+  const transcript = transcriptEvidence(original);
+  if (transcript) return {
+    heading: "Choices and outcomes in the source",
+    columns: ["Turn", "Choice", "Coins entered", "Recorded outcome"],
+    rows: transcript.rows.slice(0, 8).map((row, index) => [String(index + 1), row.choice, row.coins.join(" · ") || "—", row.outcome]),
+    note: transcript.rows.length > 8 ? `Showing 8 of ${transcript.rows.length} turns. Open the passage for the rest.` : "",
+  };
+  const lines = original.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const tableLines = lines.filter((line) => line.includes("|"));
+  if (tableLines.length >= 2) {
+    const cells = tableLines.map((line) => line.replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim()));
+    const width = cells[0].length;
+    const rows = cells.slice(1).filter((row) => row.length === width && !row.every((cell) => /^:?-{2,}:?$/.test(cell)));
+    if (width >= 2 && width <= 6 && rows.length) return {
+      heading: "Table from the course material", columns: cells[0], rows: rows.slice(0, 10),
+      note: rows.length > 10 ? `Showing 10 of ${rows.length} rows. Open the passage for the rest.` : "",
+    };
+  }
+  const details = structuredEvidence(quote || text).slice(0, 4);
+  return details.length ? { heading: "Source details at a glance", columns: ["Source type", "Document text"],
+    rows: details.map((detail) => [detail.kind, detail.excerpt]) } : null;
+}
+
+function StepSourceVisual({ source, selectedEvidence, setSelectedEvidence }) {
+  const visual = sourceVisual(source);
+  if (!visual) return null;
+  return <section className="message-step-source" aria-label="Visible course source">
+    <div className="message-step-source-heading">
+      <div><strong>{visual.heading}</strong><span>{source.title}{source.page_number ? ` · page ${source.page_number}` : ""}</span></div>
+      {visual.heading !== "Choices shown in the source" && <button type="button" className="quiet compact" aria-controls="evidence-document-drawer"
+        aria-expanded={selectedEvidence?.chunk_id === source.chunk_id}
+        onClick={() => setSelectedEvidence((current) => current?.chunk_id === source.chunk_id ? null : source)}>
+        {selectedEvidence?.chunk_id === source.chunk_id ? "Close passage" : "View passage"}
+      </button>}
+    </div>
+    {visual.caption && <p>{visual.caption}</p>}
+    <div className="message-step-source-table"><table><thead><tr>{visual.columns.map((column) => <th key={column} scope="col">{column}</th>)}</tr></thead>
+      <tbody>{visual.rows.map((row, index) => <tr key={index}>{row.map((cell, cellIndex) =>
+        cellIndex === 0 ? <th key={cellIndex} scope="row">{cell}</th> : <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody>
+    </table></div>
+    {visual.note && <small>{visual.note}</small>}
+    <small>Copied from the instructor-selected material. Use it as a reference while you reason through the question.</small>
+  </section>;
 }
 
 function EmphasizedText({ text, keywords = [] }) {
@@ -311,7 +378,6 @@ function ConceptCheck({
 function EvidenceDrawer({
   assignmentId,
   evidence,
-  keywords,
   width,
   onClose,
   onResizeStart,
@@ -322,12 +388,10 @@ function EvidenceDrawer({
   const [diagram, setDiagram] = useState(null);
   const [diagramBusy, setDiagramBusy] = useState(false);
   const [diagramError, setDiagramError] = useState("");
-  const [showOriginal, setShowOriginal] = useState(false);
   useEffect(() => {
     setDiagram(null);
     setDiagramBusy(false);
     setDiagramError("");
-    setShowOriginal(false);
   }, [evidence?.chunk_id]);
   async function createDiagram() {
     if (!assignmentId || !evidence?.chunk_id) return;
@@ -338,10 +402,9 @@ function EvidenceDrawer({
         method: "POST", body: { chunk_id: evidence.chunk_id },
       });
       if (!result.steps?.length) {
-        setDiagramError("This passage does not have a clear sequence to diagram. You can open the original text below.");
+        setDiagramError("This passage does not have a clear sequence to diagram. The organized source details remain below.");
       } else {
         setDiagram(result.steps);
-        setShowOriginal(false);
       }
     } catch (error) {
       setDiagramError(error.message);
@@ -407,14 +470,11 @@ function EvidenceDrawer({
         {evidence.chunk_id && <span>Passage {evidence.chunk_id}</span>}
         <span>Published assignment snapshot</span>
       </div>
-      <div className="evidence-diagram-actions">
+      {!diagram && <div className="evidence-diagram-actions">
         <button type="button" className="secondary compact" onClick={createDiagram} disabled={diagramBusy}>
-          {diagramBusy ? "Making visual steps…" : diagram ? "Regenerate visual steps" : "Make visual steps"}
+          {diagramBusy ? "Making visual steps…" : "Make visual steps"}
         </button>
-        <button type="button" className="quiet compact" aria-expanded={showOriginal} onClick={() => setShowOriginal((value) => !value)}>
-          {showOriginal ? "Hide original text" : "Show original text"}
-        </button>
-      </div>
+      </div>}
       {diagramError && <p className="help" role="status">{diagramError}</p>}
       {!diagram && <section className="evidence-structured" aria-label="Structured source evidence">
         <h3>Evidence at a glance</h3>
@@ -430,17 +490,13 @@ function EvidenceDrawer({
         </> : details.length ? <ol>{details.slice(0, 12).map((detail, index) => <li key={`${index}-${detail.excerpt}`}>
           <span>{detail.kind}</span><p>{detail.excerpt}</p>
         </li>)}</ol> : <p className="help">No readable details were extracted from this passage.</p>}
-        {!transcript && details.length > 12 && <p className="help">Showing 12 of {details.length} details. Open the original text to see the whole passage.</p>}
+        {!transcript && details.length > 12 && <p className="help">Showing 12 of {details.length} organized source details.</p>}
       </section>}
       {diagram && <section className="evidence-flow" aria-label="Visual steps from this passage">
         <h3>Passage flow</h3>
         <p className="help">Each step is quoted from this passage, in source order.</p>
         <ol>{diagram.map((step, index) => <li key={`${index}-${step}`}><span>Step {index + 1}</span><p>{step}</p></li>)}</ol>
       </section>}
-      {showOriginal && <article className="evidence-drawer-passage">
-        <span>Original selected passage</span>
-        <p><EmphasizedText text={evidence.text} keywords={keywords} /></p>
-      </article>}
       <p className="evidence-drawer-note">
         This passage comes from the frozen document version attached when the
         assignment was published.
@@ -453,16 +509,20 @@ function SocraticMessage({
   message,
   studentName,
   isPending = false,
+  isNewReply = false,
+  currentReply = false,
   latest,
+  paused,
   thinkingStep,
   keywords,
   sources,
+  stepSource,
   responseSeconds,
   selectedEvidence,
   setSelectedEvidence,
 }) {
   const [showSources, setShowSources] = useState(false);
-  const visualCue = latest && message.role === "assistant"
+  const visualCue = message.role === "assistant"
     ? message.content.match(/\b(table|equation|formula|figure|chart|graph|matrix)\b/i)?.[1]
     : null;
   const visualSource = visualCue && sources?.find((source) => {
@@ -470,27 +530,21 @@ function SocraticMessage({
     return new RegExp(`\\b${visualCue}\\b`, "i").test(content) ||
       (["equation", "formula"].includes(visualCue.toLowerCase()) && /[=∑∫]/.test(content));
   });
-  const visualText = visualSource?.text || "";
-  const visualStart = Math.max(0, visualText.search(/\b(?:table|equation|formula|figure|chart|graph|matrix)\b|[=∑∫]/i) - 100);
-  const visualExcerpt = visualText.slice(visualStart, visualStart + 650).trim();
   const moneyBreakdown = message.role === "assistant"
     ? moneyBreakdownFromQuestion(message.content) || (latest ? moneyBreakdownFromQuestion(thinkingStep) : null)
     : null;
   const question =
     message.role === "assistant"
-      ? latest
-        ? thinkingStep
-        : nextQuestion([message])
+      ? message.next_thinking_step || (latest ? thinkingStep : nextQuestion([message]))
       : "";
-  const showQuestion =
-    question.endsWith("?") && message.content.trim().endsWith(question);
+  const showQuestion = !paused && question.endsWith("?");
   const lead =
-    showQuestion
+    showQuestion && message.content.trim().endsWith(question)
       ? message.content.trim().slice(0, -question.length).trim()
       : message.content;
   return (
     <article
-      className={`message socratic-message-card ${message.role}${isPending ? " is-pending" : ""}`}
+      className={`message socratic-message-card ${message.role}${isPending ? " is-pending" : ""}${currentReply ? " is-current-reply" : ""}${isNewReply ? " is-new-reply" : ""}`}
     >
       <header className="message-card-header">
         <div className="message-card-identity">
@@ -548,34 +602,21 @@ function SocraticMessage({
             <tr><th scope="row" colSpan="3">Change</th><td>?</td></tr></tfoot>
         </table>
       </section>}
-      {latest && sources?.length > 0 && (
+      {message.role === "assistant" && stepSource && <StepSourceVisual
+        source={stepSource} selectedEvidence={selectedEvidence} setSelectedEvidence={setSelectedEvidence}
+      />}
+      {message.role === "assistant" && sources?.length > 0 && (
         <div className="message-evidence">
-          {visualSource && <section className="message-visual-reference" aria-label="Relevant source excerpt">
-            <strong>Relevant {visualCue.toLowerCase()} from your course material</strong>
-            <p className="help">Text extracted from {visualSource.title}{visualSource.page_number ? `, page ${visualSource.page_number}` : ""}.</p>
-            <pre>{visualExcerpt}</pre>
-          </section>}
+          {visualSource && !showSources && <div className="message-visual-reference" role="region" aria-label="Relevant source excerpt">
+            <StepSourceVisual source={visualSource} selectedEvidence={selectedEvidence} setSelectedEvidence={setSelectedEvidence} />
+          </div>}
           <button type="button" className="quiet compact" aria-expanded={showSources} onClick={() => setShowSources((current) => !current)}>
             {showSources ? "Hide supporting sources" : "View supporting sources"}
           </button>
-          {showSources && <div>
+          {showSources && <div className="message-supporting-sources">
             {sources.map((source, index) => (
-              <button
-                type="button"
-                className="evidence-chip"
-                key={source.chunk_id || index}
-                aria-pressed={selectedEvidence?.chunk_id === source.chunk_id}
-                aria-controls="evidence-document-drawer"
-                aria-expanded={selectedEvidence?.chunk_id === source.chunk_id}
-                onClick={() =>
-                  setSelectedEvidence((current) =>
-                    current?.chunk_id === source.chunk_id ? null : source,
-                  )
-                }
-              >
-                {source.title}
-                {source.page_number ? ` · page ${source.page_number}` : ""}
-              </button>
+              <StepSourceVisual key={source.chunk_id || index} source={source}
+                selectedEvidence={selectedEvidence} setSelectedEvidence={setSelectedEvidence} />
             ))}
           </div>}
         </div>
@@ -648,6 +689,7 @@ export default function StudentWorkspace({ user }) {
   const [assignment, setAssignment] = useState(null),
     [attempt, setAttempt] = useState(null),
     [message, setMessage] = useState(""),
+    [clarificationDraft, setClarificationDraft] = useState(""),
     [studentReflection, setStudentReflection] = useState("");
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -656,12 +698,15 @@ export default function StudentWorkspace({ user }) {
     [generationStartedAt, setGenerationStartedAt] = useState(null),
     [generationSeconds, setGenerationSeconds] = useState(0),
     [lastGenerationSeconds, setLastGenerationSeconds] = useState(null),
+    [newReplyIndex, setNewReplyIndex] = useState(null),
     [finalFeedbackBusy, setFinalFeedbackBusy] = useState(false),
     [selectedEvidence, setSelectedEvidence] = useState(null),
     [materials, setMaterials] = useState([]),
     [materialsLoading, setMaterialsLoading] = useState(false),
     [materialBusy, setMaterialBusy] = useState(null),
+    [materialBusyAction, setMaterialBusyAction] = useState(null),
     [materialError, setMaterialError] = useState(""),
+    [materialPreview, setMaterialPreview] = useState(null),
     [evidenceWidth, setEvidenceWidth] = useState(420),
     [chatExpanded, setChatExpanded] = useState(false),
     [socraticGuideOpen, setSocraticGuideOpen] = useState(false),
@@ -690,6 +735,7 @@ export default function StudentWorkspace({ user }) {
     setLoaded(false);
     setAssignment(null);
     setAttempt(null);
+    setNewReplyIndex(null);
     setMaterials([]);
     setMaterialError("");
     setSelectedEvidence(null);
@@ -724,6 +770,9 @@ export default function StudentWorkspace({ user }) {
       .finally(() => { if (active) setMaterialsLoading(false); });
     return () => { active = false; };
   }, [id, assignment?.tool]);
+  useEffect(() => () => {
+    if (materialPreview?.url) URL.revokeObjectURL(materialPreview.url);
+  }, [materialPreview?.url]);
   useEffect(() => {
     if (attempt)
       endRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -750,10 +799,16 @@ export default function StudentWorkspace({ user }) {
     return () => window.clearInterval(timer);
   }, [generationStartedAt]);
   useEffect(() => {
+    if (newReplyIndex === null) return undefined;
+    const timer = window.setTimeout(() => setNewReplyIndex(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [newReplyIndex]);
+  useEffect(() => {
     setSelectedEvidence(null);
   }, [attempt?.engine_state?.sources]);
   async function downloadMaterial(material) {
     setMaterialBusy(material.document_id);
+    setMaterialBusyAction("download");
     setMaterialError("");
     try {
       const response = await fetch(`/api/platform/assignments/${id}/materials/${encodeURIComponent(material.document_id)}/download`, {
@@ -772,6 +827,41 @@ export default function StudentWorkspace({ user }) {
       setMaterialError(failure.message);
     } finally {
       setMaterialBusy(null);
+      setMaterialBusyAction(null);
+    }
+  }
+  async function previewMaterial(material) {
+    if (!material.original_available || materialBusy) return;
+    setMaterialBusy(material.document_id);
+    setMaterialBusyAction("view");
+    setMaterialError("");
+    try {
+      const response = await fetch(`/api/platform/assignments/${id}/materials/${encodeURIComponent(material.document_id)}/download`, {
+        headers: { Authorization: `Bearer ${session()?.access_token || ""}` },
+      });
+      if (!response.ok) throw new Error("The original file is unavailable. Please ask your instructor to upload it again.");
+      const blob = await response.blob();
+      const type = blob.type.toLowerCase();
+      const name = material.title.toLowerCase();
+      let previewType = "unavailable";
+      if (type === "application/pdf" && name.endsWith(".pdf") && (await blob.slice(0, 5).text()) === "%PDF-") {
+        previewType = "pdf";
+      } else if (type === "text/html" && [".html", ".htm"].some((extension) => name.endsWith(extension))) {
+        previewType = "html";
+      } else if (type.startsWith("image/") && !type.includes("svg")) {
+        previewType = "image";
+      } else if (type === "text/plain") {
+        previewType = "text";
+      }
+      setMaterialPreview({ document_id: material.document_id, title: material.title, type: previewType,
+        url: previewType === "unavailable" ? null : URL.createObjectURL(blob) });
+      setSelectedEvidence(null);
+      setChatExpanded(false);
+    } catch (failure) {
+      setMaterialError(failure.message);
+    } finally {
+      setMaterialBusy(null);
+      setMaterialBusyAction(null);
     }
   }
   const conceptCheckId =
@@ -835,6 +925,16 @@ export default function StudentWorkspace({ user }) {
   async function startAssignment() {
     await perform("start");
   }
+  async function advanceLearningStep() {
+    const previousMessageCount = attempt?.messages?.length || 0;
+    setNewReplyIndex(null);
+    await perform("next-step", {}, (result) => {
+      const replyIndex = (result.messages?.length || 0) - 1;
+      if (replyIndex >= previousMessageCount && result.messages[replyIndex]?.role === "assistant") {
+        setNewReplyIndex(replyIndex);
+      }
+    });
+  }
   async function send(e) {
     e.preventDefault();
     await sendMessage(message.trim());
@@ -843,16 +943,19 @@ export default function StudentWorkspace({ user }) {
     text,
     clarificationIndex = null,
     conceptCheckOption = null,
+    clarificationText = false,
   ) {
     if (!text || busy) return;
     const fromComposer =
       clarificationIndex === null &&
       conceptCheckOption === null &&
+      !clarificationText &&
       message.trim() === text;
     if (
       !pending.current ||
       pending.current.message !== text ||
       (pending.current.clarification_index ?? null) !== clarificationIndex ||
+      Boolean(pending.current.clarification_text) !== clarificationText ||
       (pending.current.concept_check_option ?? null) !== conceptCheckOption
     )
       pending.current = {
@@ -861,6 +964,7 @@ export default function StudentWorkspace({ user }) {
         ...(clarificationIndex !== null
           ? { clarification_index: clarificationIndex }
           : {}),
+        ...(clarificationText ? { clarification_text: true } : {}),
         ...(conceptCheckOption !== null
           ? { concept_check_option: conceptCheckOption }
           : {}),
@@ -875,6 +979,7 @@ export default function StudentWorkspace({ user }) {
     }
     if (fromComposer) setMessage("");
     focusComposerAfterReply.current = true;
+    setNewReplyIndex(null);
     setGenerationStartedAt(startedAt);
     setGenerationSeconds(0);
     setLastGenerationSeconds(null);
@@ -883,12 +988,17 @@ export default function StudentWorkspace({ user }) {
       awaitingClarification = Boolean(
         result.engine_state?.socratic?.pending_clarification?.inline,
       );
+      const replyIndex = (result.messages?.length || 0) - 1;
+      if (!awaitingClarification && result.messages?.[replyIndex]?.role === "assistant") {
+        setNewReplyIndex(replyIndex);
+      }
     });
     setOutgoingMessage(null);
     setLastGenerationSeconds(sent && !awaitingClarification ? (Date.now() - startedAt) / 1000 : null);
     setGenerationStartedAt(null);
     if (sent) {
       setMessage("");
+      if (clarificationText) setClarificationDraft("");
       pending.current = null;
     } else if (fromComposer) {
       setMessage(text);
@@ -986,8 +1096,10 @@ export default function StudentWorkspace({ user }) {
     : null;
   const conceptCheck = socratic.concept_check || null;
   const thinkingStep =
-    assignment.tool === "socratic"
-      ? socratic.next_thinking_step || nextQuestion(attempt?.messages)
+    assignment.tool === "socratic" && socratic.conversation_status !== "paused"
+      ? socratic.next_thinking_step || nextQuestion(attempt?.messages) || (
+        socratic.phase === "teaching" ? nextQuestion(attempt?.messages?.slice(0, -1)) : ""
+      )
       : "";
   const keywords = socratic.keywords?.length
     ? socratic.keywords
@@ -997,6 +1109,9 @@ export default function StudentWorkspace({ user }) {
   const latestAssistantIndex = attempt?.messages
     ? attempt.messages.findLastIndex((item) => item.role === "assistant")
     : -1;
+  const stepBoundaries = assignment.tool === "socratic" && attempt?.messages
+    ? attempt.messages.map((item) => learningStepBoundary(item, assignment.student_config?.learning_steps))
+    : [];
   const hasDiscussedCurrentStep = attempt?.messages?.slice(socratic.step_started_at_message_count || 0)
     .some((item) => item.role === "user");
   const stepActionDisabled = busy || socratic.phase !== "teaching" ||
@@ -1035,39 +1150,49 @@ export default function StudentWorkspace({ user }) {
       </div>
       <Notice error={error} />
       <div
-        className={`workspace-grid${assignment.tool === "socratic" ? " socratic-workspace" : ""}${selectedEvidence ? " evidence-open" : ""}${chatExpanded ? " chat-expanded" : ""}${conceptCheck ? " concept-check-active" : ""}`}
+        className={`workspace-grid${assignment.tool === "socratic" ? " socratic-workspace" : ""}${materialPreview ? " material-preview-open" : ""}${selectedEvidence ? " evidence-open" : ""}${chatExpanded ? " chat-expanded" : ""}${conceptCheck ? " concept-check-active" : ""}`}
         style={
           selectedEvidence
             ? { "--evidence-drawer-width": `${evidenceWidth}px` }
             : undefined
         }
       >
-        <aside className="assignment-info">
-          <h2>Your assignment</h2>
-          <div className="prose" data-socratic-tour="assignment">
-            <Markdown>
-              {assignment.instructions ||
-                "Follow the prompts in this learning activity."}
-            </Markdown>
+        <aside className={`assignment-info${assignment.tool === "socratic" ? " socratic-assignment-info" : ""}`}>
+          <div className={assignment.tool === "socratic" ? "student-assignment-intro" : undefined}>
+            {assignment.tool === "socratic" && <span className="student-panel-kicker">Start here</span>}
+            <h2>Your assignment</h2>
+            <div className="prose" data-socratic-tour="assignment">
+              <Markdown>
+                {assignment.instructions ||
+                  "Follow the prompts in this learning activity."}
+              </Markdown>
+            </div>
           </div>
           {assignment.tool === "socratic" && (
             <>
               {assignment.student_config?.learning_steps?.length > 0 && (
                 <section className="student-learning-path" data-socratic-tour="learning-path" aria-labelledby="student-learning-path-title">
-                  <h3 id="student-learning-path-title">Your learning path</h3>
+                  <div className="student-section-heading">
+                    <div><span className="student-panel-kicker">Step by step</span><h3 id="student-learning-path-title">Your learning path</h3></div>
+                    <span className="student-section-count">{learningStepCount} steps</span>
+                  </div>
                   <p className="help">Follow these steps from beginning to end. You can ask the tutor questions about any step.</p>
                   <div className="student-learning-progress">
-                    <p>{completedLearningSteps} of {learningStepCount} steps complete{attempt && completedLearningSteps < learningStepCount ? ` · Stage ${activeLearningStep + 1} of ${learningStepCount}` : ""}</p>
+                    <div className="student-learning-progress-heading">
+                      <p>{completedLearningSteps} of {learningStepCount} steps complete{attempt && completedLearningSteps < learningStepCount ? ` · Stage ${activeLearningStep + 1} of ${learningStepCount}` : ""}</p>
+                      <strong>{Math.round(completedLearningSteps / learningStepCount * 100)}%</strong>
+                    </div>
                     <div role="progressbar" aria-label="Learning path progress" aria-valuemin={0} aria-valuemax={learningStepCount} aria-valuenow={completedLearningSteps}>
                       <span style={{ width: `${Math.round(completedLearningSteps / learningStepCount * 100)}%` }} />
                     </div>
                   </div>
-                  <ol ref={learningPathRef} aria-label="Learning path steps" tabIndex={0}>
+                  <ol ref={learningPathRef} role="list" aria-label="Learning path steps" tabIndex={0}>
                     {assignment.student_config.learning_steps.map((step, index) => {
                       const completed = attempt && (index < activeLearningStep || (finalLearningStepFinished && index === activeLearningStep));
                       const current = attempt && attempt.status !== "completed" && !finalLearningStepFinished && index === activeLearningStep;
                       return (
-                        <li key={`${index}-${step.title}`} className={current ? "is-current" : ""} aria-current={current ? "step" : undefined}>
+                        <li key={`${index}-${step.title}`} className={current ? "is-current" : completed ? "is-completed" : ""} aria-current={current ? "step" : undefined}>
+                          <span className="student-step-number" aria-hidden="true">{index + 1}</span>
                           {current && <span className="student-step-active-label">Current step</span>}
                           <div className="student-step-title">
                             <strong>{step.title}</strong>
@@ -1081,7 +1206,7 @@ export default function StudentWorkspace({ user }) {
                   {attempt && attempt.status !== "completed" && !showLearningSummary &&
                     (activeLearningStep < learningStepCount - 1 ? (
                       <div>
-                        <button type="button" className="compact next-learning-step" disabled={stepActionDisabled} onClick={() => perform("next-step", {})}>
+                        <button type="button" className="compact next-learning-step" disabled={stepActionDisabled} onClick={advanceLearningStep}>
                           Continue to next step
                         </button>
                       </div>
@@ -1095,19 +1220,28 @@ export default function StudentWorkspace({ user }) {
                 </section>
               )}
               <section className="student-course-materials" data-socratic-tour="materials" aria-labelledby="student-course-materials-title">
-                <h3 id="student-course-materials-title">Course materials</h3>
-                <p className="help">Download the original documents your instructor selected for this assignment.</p>
+                <div className="student-section-heading">
+                  <div><span className="student-panel-kicker">Your reference shelf</span><h3 id="student-course-materials-title">Course materials</h3></div>
+                  {materials.length > 0 && <span className="student-section-count">{materials.length} {materials.length === 1 ? "file" : "files"}</span>}
+                </div>
+                <p className="help">View or download the original documents your instructor selected for this assignment.</p>
                 {materialError && <p className="help" role="alert">{materialError}</p>}
                 {materialsLoading ? <p className="help" role="status">Loading course materials…</p> : materials.length ? <ul>
                   {materials.map((material) => <li key={material.document_id}>
+                    <span className="student-material-icon" aria-hidden="true">▤</span>
                     <span className="student-material-name" title={material.title}>{material.title}</span>
+                    {material.original_available && <button type="button" className="compact student-material-view"
+                      aria-label={`View ${material.title}`}
+                      onClick={() => previewMaterial(material)} disabled={materialBusy === material.document_id}>
+                      {materialBusy === material.document_id && materialBusyAction === "view" ? "Opening…" : "View"}
+                    </button>}
                     {material.original_available ? <button
                       type="button"
-                      className="secondary compact student-material-download"
-                      aria-label={`${materialBusy === material.document_id ? "Downloading" : "Download"} ${material.title}`}
+                      className="compact student-material-download"
+                      aria-label={`${materialBusy === material.document_id && materialBusyAction === "download" ? "Downloading" : "Download"} ${material.title}`}
                       onClick={() => downloadMaterial(material)}
                       disabled={materialBusy === material.document_id}
-                    >{materialBusy === material.document_id ? "Downloading…" : "↓ Download"}</button>
+                    >{materialBusy === material.document_id && materialBusyAction === "download" ? "Downloading…" : "↓ Download"}</button>
                       : <span className="student-material-unavailable">Original file unavailable</span>}
                   </li>)}
                 </ul> : !materialError && <p className="help">No published documents are available.</p>}
@@ -1131,10 +1265,9 @@ export default function StudentWorkspace({ user }) {
                   </dl>
                 </section>
               )}
-              <p className="help">
-                Work through the tutor's questions, then summarize what you
-                learned in your own words. Review the final feedback before
-                submitting.
+              <p className="student-process-note">
+                <span aria-hidden="true">✦</span>
+                Discuss each step with your tutor, then summarize what you learned before submitting.
               </p>
             </>
           )}
@@ -1182,7 +1315,7 @@ export default function StudentWorkspace({ user }) {
             </>
           )}
           {attempt && !completed && assignment.tool !== "reflections" && (
-            <>
+            <div className={assignment.tool === "socratic" ? `student-finish-card${socratic.phase === "ready_to_submit" ? " is-ready" : ""}` : undefined}>
               <p className="saved-note">
                 Progress is saved after each response. You can return to your
                 dashboard at any time.
@@ -1208,16 +1341,34 @@ export default function StudentWorkspace({ user }) {
                 </button>
                 </div>
               )}
-            </>
+            </div>
           )}
         </aside>
+        {materialPreview && <aside className="material-preview" aria-label={`Course material preview: ${materialPreview.title}`}>
+          <header className="material-preview-header">
+            <div><span>Original course document</span><h2>{materialPreview.title}</h2></div>
+            <div className="material-preview-actions">
+              <button type="button" className="secondary compact" disabled={materialBusy === materialPreview.document_id}
+                onClick={() => downloadMaterial(materialPreview)}>Download</button>
+              <button type="button" className="quiet compact" onClick={() => setMaterialPreview(null)}>Close document</button>
+            </div>
+          </header>
+          {materialPreview.type === "pdf" && <iframe title={materialPreview.title} src={materialPreview.url} />}
+          {materialPreview.type === "html" && <iframe title={materialPreview.title} src={materialPreview.url} sandbox="" />}
+          {materialPreview.type === "text" && <iframe title={materialPreview.title} src={materialPreview.url} sandbox="" />}
+          {materialPreview.type === "image" && <div className="material-preview-image"><img src={materialPreview.url} alt={materialPreview.title} /></div>}
+          {materialPreview.type === "unavailable" && <p className="material-preview-unavailable">This file cannot be displayed in the browser. Use Download to open the original document in a compatible app.</p>}
+          <p className="material-preview-note">This is the instructor's original uploaded file, not extracted text.</p>
+        </aside>}
         <section className="chat-panel" aria-label={`${tool.name} assignment`}>
           <div className="chat-heading">
             <span className="tool-mark" style={{ "--tool-color": tool.color }}>
               {tool.short}
             </span>
-            <div>
-              <h2>{tool.name}</h2>
+            <div className="chat-heading-copy">
+              <div className="chat-heading-title">
+                <h2>{tool.name}</h2>
+              </div>
               <p>
                 {state.phase_label ||
                   (state.total_questions
@@ -1229,7 +1380,7 @@ export default function StudentWorkspace({ user }) {
               <div className="chat-heading-actions">
                 <button
                   type="button"
-                  className="secondary compact socratic-guide-toggle"
+                  className="compact socratic-guide-toggle"
                   aria-pressed={socraticGuideOpen}
                   onClick={() => {
                     if (socraticGuideOpen) closeSocraticGuide();
@@ -1326,20 +1477,32 @@ export default function StudentWorkspace({ user }) {
             <>
               <div className="messages" aria-live="polite" aria-busy={busy}>
                 {attempt.messages.map((m, i) =>
-                  assignment.tool === "socratic" ? (
+                  assignment.tool === "socratic" ? [
+                    stepBoundaries[i] && (
+                      <div key={`step-divider-${i}`} className={`socratic-step-divider${i === newReplyIndex ? " is-new-step" : ""}`}
+                        role="separator" aria-label={`Step ${stepBoundaries[i].index} of ${learningStepCount}: ${stepBoundaries[i].title}`}>
+                        <span>Step {stepBoundaries[i].index} of {learningStepCount}</span>
+                        <strong>{stepBoundaries[i].title}</strong>
+                      </div>
+                    ),
                     <SocraticMessage
                       key={i}
                       studentName={studentName}
-                      message={m}
+                      message={stepBoundaries[i] ? { ...m, content: stepBoundaries[i].body } : m}
                       latest={i === latestAssistantIndex && !inlineClarification}
+                      paused={i === latestAssistantIndex && socratic.conversation_status === "paused"}
+                      currentReply={i === latestAssistantIndex && m.role === "assistant"}
+                      isNewReply={i === newReplyIndex && m.role === "assistant"}
                       thinkingStep={thinkingStep}
                       keywords={keywords}
-                      sources={state.sources}
+                      sources={m.sources ?? (i === latestAssistantIndex ? state.sources : [])}
+                      stepSource={m.step_source ?? (i === latestAssistantIndex
+                        ? assignment.student_config?.learning_steps?.[activeLearningStep]?.source : null)}
                       responseSeconds={lastGenerationSeconds}
                       selectedEvidence={selectedEvidence}
                       setSelectedEvidence={setSelectedEvidence}
                     />
-                  ) : (
+                  ] : (
                     <article className={`message ${m.role}`} key={i}>
                       <span className="message-author">
                         {m.role === "user" ? studentName : tool.name}
@@ -1420,7 +1583,7 @@ export default function StudentWorkspace({ user }) {
                   inlineClarification &&
                   !completed &&
                   !busy && (
-                    <div className="intent-confirmation" role="group" aria-label="Clarify your question">
+                    <div className="intent-confirmation" role="group" aria-label="Clarify your intent">
                       <span className="intent-confirmation-label">Quick check before I answer</span>
                       <p>{inlineClarification.question}</p>
                       <div className="intent-confirmation-options">
@@ -1435,6 +1598,18 @@ export default function StudentWorkspace({ user }) {
                           </button>
                         ))}
                       </div>
+                      <form className="intent-confirmation-form" onSubmit={(event) => {
+                        event.preventDefault();
+                        sendMessage(clarificationDraft.trim(), null, null, true);
+                      }}>
+                        <label htmlFor="clarification-response">Type your answer or tell me what you meant</label>
+                        <div>
+                          <input id="clarification-response" value={clarificationDraft} maxLength={2000}
+                            onChange={(event) => setClarificationDraft(event.target.value)}
+                            placeholder="Answer the question or clarify your intent…" />
+                          <button type="submit" className="compact" disabled={!clarificationDraft.trim()}>Continue</button>
+                        </div>
+                      </form>
                     </div>
                   )}
                 <div ref={endRef} />
@@ -1594,7 +1769,7 @@ export default function StudentWorkspace({ user }) {
                 <p className="notice">
                   Review your learning summary, then select Submit assignment.
                 </p>
-              ) : conceptCheck ? null : (
+              ) : conceptCheck || inlineClarification ? null : (
                 <form className="composer" onSubmit={send}>
                   <label className="sr-only" htmlFor="reply">
                     Your {milestone ? "reflection" : "message"}
@@ -1642,7 +1817,6 @@ export default function StudentWorkspace({ user }) {
       <EvidenceDrawer
         assignmentId={id}
         evidence={selectedEvidence}
-        keywords={keywords}
         width={evidenceWidth}
         onClose={() => setSelectedEvidence(null)}
         onResizeStart={startEvidenceResize}

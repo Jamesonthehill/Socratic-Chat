@@ -126,7 +126,7 @@ export const TOOLS = {
     short: "AI",
     mode: "Create",
     step: "06",
-    description: "Configure an AIducate learning activity.",
+    description: "Analyze saved Reflection responses in the instructor workspace.",
     color: "#b34e80",
   },
 };

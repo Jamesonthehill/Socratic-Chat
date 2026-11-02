@@ -297,7 +297,7 @@ test("new Socratic activities use selected assignment materials without requirin
     ),
   );
 });
-test("student activity choices exclude AIducate analysis; settings follow Next and review invalidates after edits", async () => {
+test("activity choices include AIducate; Socratic settings follow Next and review invalidates after edits", async () => {
   const user = await open();
   for (const name of [
     "Socratic Chat",
@@ -309,7 +309,7 @@ test("student activity choices exclude AIducate analysis; settings follow Next a
       screen.getByRole("button", { name: new RegExp(name) }),
     ).toBeInTheDocument();
   expect(screen.queryByText("Student Agent Bot")).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /AIducate/ })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /AIducate/ })).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
   expect(screen.getByText(/Teaching scope:/).closest("p")).toHaveTextContent("Selected assignment materials");
   expect(
@@ -334,6 +334,15 @@ test("student activity choices exclude AIducate analysis; settings follow Next a
   expect(
     screen.queryByRole("combobox", { name: "Course" }),
   ).not.toBeInTheDocument();
+});
+test("AIducate can be selected and directs instructors to its analysis workspace", async () => {
+  const user = await open();
+  const aiducate = screen.getByRole("button", { name: /AIducate/ });
+  await user.click(aiducate);
+  expect(aiducate).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("heading", { name: "AIducate settings" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Open AIducate analysis" }))
+    .toHaveAttribute("href", "/professor/analytics");
 });
 test("selected materials and description persist when a new chat is saved as a draft", async () => {
   const user = await open();

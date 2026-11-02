@@ -24,6 +24,7 @@ const ACTIVITY_TYPES = [
   "reflections",
   "self-directed-learning",
   "debate",
+  "aiducate",
 ];
 const configFor = (tool) =>
   structuredClone(

@@ -155,38 +155,39 @@ def test_scope_confirmation_pauses_then_resumes_with_selected_meaning(monkeypatc
     assert second["socratic"]["classification"]["target_concepts"] == ["prompt"]
 
 
-@pytest.mark.parametrize("tutor_message", [
-    "Why review an empty list?",
-    "**Your next thinking step**\nWhy review an empty list?\n\nSee the selected source above.",
-    "Let's review the selected source above.",
-])
-def test_acknowledgement_after_unanswered_question_clarifies_without_generating(monkeypatch, tutor_message):
+def test_short_reply_is_not_forced_into_clarification_by_backend(monkeypatch):
+    source = Source(document_id="pdf", chunk_id="chunk-1", title="Review.pdf",
+                    text="The reviewer checks the change before merging.", score=1.0)
+    active_step = {"title": "Review feedback", "goal": "Understand the review comment.",
+                   "scenario": "A teammate reviews an empty-list failure.", "question": "What should you check first?"}
     assignment = {"id": uuid4(), "tool": "socratic", "title": "Code review",
-                  "snapshot": {"config": {}, "chunks": []}}
-    attempt = {"id": uuid4(), "messages": [{"role": "assistant", "content": tutor_message}],
+                  "snapshot": {"config": {"learning_steps": [active_step]},
+                               "chunks": [_chunk("pdf", "Review.pdf", source.text, "Review")]}}
+    attempt = {"id": uuid4(), "messages": [{"role": "assistant", "content": "Does that clarify how it works?"}],
                "engine_state": {"socratic": {"phase": "teaching", "learning_topic": "Code review",
-                                              "next_thinking_step": "Why review an empty list?" if "?" not in tutor_message else ""}}}
+                                              "learning_step_index": 0}}}
     generated = []
 
     async def classify(*_args, **_kwargs):
         return _classification_from_observation(message_role="acknowledgement")
 
-    async def generate(*_args, **_kwargs):
-        generated.append(True)
-        return "This must not be generated."
+    async def generate(*_args, **kwargs):
+        generated.append(kwargs)
+        return "Glad that helped."
+
+    async def nothing(*_args, **_kwargs):
+        return None
 
     monkeypatch.setattr(engines, "classify_message", classify)
+    monkeypatch.setattr(engines, "_retrieve_assignment_sources", lambda *_args: [source])
+    monkeypatch.setattr(engines, "resolve_term", nothing)
+    monkeypatch.setattr(engines, "assess_student_answer_qualitatively", nothing)
     monkeypatch.setattr(engines.rag, "generate_answer", generate)
-    result = asyncio.run(engines._socratic_message(assignment, attempt, "ok"))
-    assert result["clarification_only"]
-    assert "reply" not in result
-    assert not generated
-    assert result["socratic"]["conversation_action"] == "clarify"
-    assert "When you say “ok,”" in result["socratic"]["pending_clarification"]["question"]
-    assert "ready to answer the question I just asked" in result["socratic"]["pending_clarification"]["question"]
-    assert [option["label"] for option in result["socratic"]["pending_clarification"]["options"]] == [
-        "Repeat the question", "Give me a hint",
-    ]
+    result = asyncio.run(engines._socratic_message(assignment, attempt, "yes it is"))
+    assert result["reply"] == "Glad that helped."
+    assert "clarification_only" not in result
+    assert generated
+    assert generated[0]["active_learning_step"] == active_step
 
 
 def test_typed_clarification_resumes_the_pending_question(monkeypatch):

@@ -138,12 +138,12 @@ test("professor opens activity creation from assignments rather than the teachin
   expect(screen.queryByRole("link", { name: "Courses & access" })).not.toBeInTheDocument();
   expect(screen.queryByText("Your teaching toolkit")).not.toBeInTheDocument();
   await user.click(
-    screen.getByRole("link", { name: "Analytics", exact: true }),
+    screen.getByRole("link", { name: "AIducate", exact: true }),
   );
   expect(
-    screen.getByRole("link", { name: "Analytics", exact: true }),
+    screen.getByRole("link", { name: "AIducate", exact: true }),
   ).toHaveAttribute("aria-current", "page");
-  expect(screen.getByText("Analytics will come here.")).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "AIducate dashboard" })).toBeInTheDocument();
   await user.click(
     screen.getByRole("link", { name: "Professor dashboard", exact: true }),
   );
@@ -374,6 +374,7 @@ test("a reference link stays with the tutor reply that mentions it", async () =>
     },
   });
   open("/student/assignments/assignment-1");
+  await screen.findByRole("button", { name: "sample output" });
   const tutorCards = await screen.findAllByText("Socratic tutor");
   const opening = tutorCards[0].closest(".socratic-message-card");
   const nextReply = tutorCards[1].closest(".socratic-message-card");
@@ -438,7 +439,7 @@ test("Socratic reply keeps its next-thinking-step box when the explanation has n
   expect(screen.getByText(/Include small, medium, large, off, and report/)).toBeInTheDocument();
 });
 
-test("older reply without a question keeps the prior prompt visible after reload", async () => {
+test("new reply without a question does not repeat the prior prompt after reload", async () => {
   const question = "What exact prompt should show all five choices?";
   mockApi("student", {
     "/api/platform/assignments/assignment-1/attempt": {
@@ -454,7 +455,7 @@ test("older reply without a question keeps the prior prompt visible after reload
   open("/student/assignments/assignment-1");
   const cards = await screen.findAllByText("Socratic tutor");
   const latestCard = cards[1].closest(".socratic-message-card");
-  expect(within(latestCard).getByRole("region", { name: "Your next thinking step" })).toHaveTextContent(question);
+  expect(within(latestCard).queryByRole("region", { name: "Your next thinking step" })).not.toBeInTheDocument();
 });
 
 test("paused acknowledgement shows no next-thinking-step box", async () => {
@@ -624,6 +625,96 @@ test("student follows a generated Socratic path one step at a time", async () =>
   expect(screen.getByText("1 of 2 steps complete · Stage 2 of 2")).toBeInTheDocument();
   expect(screen.getAllByRole("region", { name: "Your next thinking step" }).at(-1)).toHaveTextContent("What should it check before asking for coins?");
   expect(fetch.mock.calls.some(([url]) => url.endsWith("/next-step"))).toBe(true);
+});
+
+test("two unsuccessful step checks offer another example or supported continuation", async () => {
+  const checks = [
+    { scenario: "A customer orders a small sandwich but bread is missing.", question: "Which action is incorrect?", options: ["Check supplies", "Take coins anyway", "Explain the shortage"] },
+    { scenario: "A customer orders a medium sandwich but cheese is missing.", question: "Which action is incorrect now?", options: ["Check cheese", "Take coins anyway", "Explain the shortage"] },
+  ];
+  const learning_steps = [
+    { title: "Check supplies", goal: "Explain when the machine checks supplies.", checks },
+    { title: "Payment", goal: "Explain how payment works." },
+  ];
+  const first = { ...attempt,
+    messages: [...attempt.messages, { role: "user", content: "It must check ingredients first." }],
+    engine_state: { socratic: { phase: "teaching", learning_step_index: 0, step_started_at_message_count: 1,
+      step_check: { step_index: 0, variant: 0, attempts: 2, status: "choice", feedback: "The incorrect choice is to take coins anyway.", correct_option_index: 1 } } },
+  };
+  const another = { ...first, engine_state: { socratic: { ...first.engine_state.socratic,
+    step_check: { step_index: 0, variant: 1, attempts: 0, status: "active", feedback: "" } } } };
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1": { ...assignment, student_config: { minimum_messages: 1, learning_steps } },
+    "/api/platform/assignments/assignment-1/attempt": first,
+    "POST /api/platform/assignments/assignment-1/step-check": another,
+  });
+  open("/student/assignments/assignment-1");
+  const continueButton = await screen.findByRole("button", { name: "Take step quiz" });
+  expect(within(screen.getByRole("region", { name: "Your learning path" })).getByRole("button", { name: "Take step quiz" })).toBe(continueButton);
+  expect(continueButton).toBeEnabled();
+  await userEvent.setup().click(continueButton);
+  const dialog = screen.getByRole("dialog", { name: "Check this step" });
+  expect(within(dialog).getByText(/Learning takes practice/)).toBeInTheDocument();
+  expect(within(dialog).getByText("Take coins anyway").closest(".socratic-step-check-result")).toBeInTheDocument();
+  await userEvent.setup().click(within(dialog).getByRole("button", { name: "Try another example" }));
+  expect(await screen.findByText(/medium sandwich but cheese is missing/)).toBeInTheDocument();
+  expect(within(dialog).getByRole("textbox", { name: "Why did you choose it?" })).toBeInTheDocument();
+});
+
+test("Continue opens the step check before advancing a guided assignment", async () => {
+  const checks = [
+    { scenario: "A customer orders a small sandwich but bread is missing.", question: "Which action is incorrect?", options: ["Check supplies", "Take coins anyway", "Explain the shortage"] },
+    { scenario: "A customer orders a medium sandwich but cheese is missing.", question: "Which action is incorrect now?", options: ["Check cheese", "Take coins anyway", "Explain the shortage"] },
+  ];
+  const learning_steps = [
+    { title: "Check supplies", goal: "Explain when the machine checks supplies.", checks },
+    { title: "Payment", goal: "Explain how payment works." },
+  ];
+  const discussed = { ...attempt,
+    messages: [...attempt.messages, { role: "user", content: "It must check ingredients first." }],
+    engine_state: { socratic: { phase: "teaching", learning_step_index: 0, step_started_at_message_count: 1 } },
+  };
+  const fetch = mockApi("student", {
+    "/api/platform/assignments/assignment-1": { ...assignment, student_config: { minimum_messages: 1, learning_steps } },
+    "/api/platform/assignments/assignment-1/attempt": discussed,
+  });
+  open("/student/assignments/assignment-1");
+  expect(screen.queryByRole("dialog", { name: "Check this step" })).not.toBeInTheDocument();
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Take step quiz" }));
+  const dialog = screen.getByRole("dialog", { name: "Check this step" });
+  expect(within(screen.getByRole("region", { name: "Socratic Chat assignment" })).getByRole("dialog", { name: "Check this step" })).toBe(dialog);
+  expect(document.querySelector(".messages")).toContainElement(dialog);
+  expect(screen.getByRole("textbox", { name: "Your message" })).toBeEnabled();
+  expect(document.querySelector(".socratic-step-check-overlay")).not.toBeInTheDocument();
+  expect(within(dialog).getByText("Which action is incorrect?")).toBeInTheDocument();
+  expect(within(dialog).getByRole("textbox", { name: "Why did you choose it?" })).toBeInTheDocument();
+  expect(fetch.mock.calls.some(([url]) => url.endsWith("/next-step"))).toBe(false);
+});
+
+test("instructor question minimum keeps the step check locked until enough distinct questions appear", async () => {
+  const checks = [
+    { scenario: "A customer orders a small sandwich but bread is missing.", question: "Which action is incorrect?", options: ["Check supplies", "Take coins anyway", "Explain the shortage"] },
+    { scenario: "A customer orders a medium sandwich but cheese is missing.", question: "Which action is incorrect now?", options: ["Check cheese", "Take coins anyway", "Explain the shortage"] },
+  ];
+  const learning_steps = [
+    { title: "Check supplies", goal: "Explain the resource check.", checks },
+    { title: "Payment", goal: "Explain payment." },
+  ];
+  const discussed = { ...attempt,
+    messages: [
+      { role: "assistant", content: "What happens first?", next_thinking_step: "What happens first?" },
+      { role: "user", content: "Check the ingredients." },
+    ],
+    engine_state: { socratic: { phase: "teaching", learning_step_index: 0, step_started_at_message_count: 1 } },
+  };
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1": { ...assignment, student_config: { minimum_messages: 1, minimum_step_questions: 2, learning_steps } },
+    "/api/platform/assignments/assignment-1/attempt": discussed,
+  });
+  open("/student/assignments/assignment-1");
+  expect(await screen.findByText("Tutor questions in this step: 1 of 2 required before the check.")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Take step quiz" })).toBeDisabled();
+  expect(screen.queryByRole("dialog", { name: "Check this step" })).not.toBeInTheDocument();
 });
 
 test("guided Socratic path hides legacy timer data without affecting step progression", async () => {
@@ -1492,4 +1583,28 @@ test("professor catalog loads all courses without requiring Canvas context", asy
   expect(screen.queryByRole("link", { name: "Another instructor's activity" })).not.toBeInTheDocument();
   expect(fetch.mock.calls.some(([url]) => url === "/api/platform/assignments")).toBe(true);
   expect(fetch.mock.calls.some(([url]) => url.startsWith("/api/platform/assignments?"))).toBe(false);
+});
+
+test("professor dashboard opens published Socratic settings beside View", async () => {
+  const published = {
+    ...assignment,
+    can_manage: true,
+    config: {
+      prompt: "How would you begin?",
+      minimum_messages: 1,
+      minimum_step_questions: 2,
+      learning_steps: [{ title: "Review the example", goal: "Explain the example in context", scenario: "A change needs review.", question: "What would you check?" }],
+    },
+  };
+  mockApi("instructor", {
+    "/api/platform/assignments": [published, { ...published, id: "other-activity", title: "Another instructor's activity", can_manage: false }],
+    "/api/platform/assignments/assignment-1": published,
+  });
+  open("/professor");
+  const edit = await screen.findByRole("link", { name: "Edit settings" });
+  expect(edit).toHaveAttribute("href", "/professor/activities/assignment-1/settings");
+  expect(screen.getAllByRole("link", { name: "View" })).toHaveLength(1);
+  await userEvent.setup().click(edit);
+  expect(await screen.findByRole("heading", { name: "Edit published Socratic settings" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Tutor questions before each step quiz")).toHaveValue(2);
 });

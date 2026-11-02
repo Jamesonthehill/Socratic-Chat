@@ -38,6 +38,7 @@ from app.pipeline_logging import (
     log_event,
     log_exception,
     recent_traces,
+    full_model_snapshots,
     delete_recent_traces,
     reset_event_sink,
     set_event_sink,
@@ -192,6 +193,20 @@ async def pipeline_traces(request: Request, response: Response, limit: int = 25)
         return {"traces": recent_traces(limit)}
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.get("/api/debug/pipeline/traces/{trace_id}/snapshots")
+async def pipeline_trace_snapshots(trace_id: str, request: Request, response: Response) -> dict[str, object]:
+    """Show exact local model inputs and outputs only when full logging is enabled."""
+    if not settings.DEBUG_PIPELINE_LOGS or not settings.LOG_FULL_PROMPTS:
+        raise HTTPException(status_code=404, detail="Full prompt diagnostics are disabled.")
+    if settings.RESTRICTED_SCHOOL_AUTH_ENABLED:
+        _current_user_id(request)
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return {"snapshots": full_model_snapshots(trace_id)}
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @app.delete("/api/debug/pipeline/traces")

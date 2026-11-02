@@ -45,6 +45,22 @@ class Topic(StrictModel):
     number: int = 100
 
 
+class SocraticStepCheck(StrictModel):
+    scenario: str = Field(min_length=12, max_length=700)
+    question: str = Field(min_length=10, max_length=500)
+    options: list[str] = Field(min_length=3, max_length=4)
+    incorrect_option_index: int = Field(ge=0, le=3)
+    expected_reason: str = Field(min_length=12, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_options(self):
+        if self.incorrect_option_index >= len(self.options) or any(not option.strip() for option in self.options):
+            raise ValueError("Choose one incorrect option among the available answers.")
+        if len({option.strip().casefold() for option in self.options}) != len(self.options):
+            raise ValueError("Check options must be distinct.")
+        return self
+
+
 class SocraticLearningStep(StrictModel):
     title: str = Field(min_length=3, max_length=120)
     goal: str = Field(min_length=8, max_length=500)
@@ -53,6 +69,13 @@ class SocraticLearningStep(StrictModel):
     evidence_quote: str = Field(min_length=12, max_length=350)
     source_chunk_id: str = Field(min_length=1, max_length=150)
     source_file: str = Field(default="", max_length=255)
+    checks: list[SocraticStepCheck] = Field(default_factory=list, max_length=2)
+
+    @model_validator(mode="after")
+    def validate_checks(self):
+        if len(self.checks) == 1:
+            raise ValueError("Provide both an initial and an alternate step check.")
+        return self
 
 
 class SocraticConfig(StrictModel):
@@ -66,13 +89,15 @@ class SocraticConfig(StrictModel):
     learning_steps: list[SocraticLearningStep] = Field(default_factory=list, max_length=10)
     learning_path_minutes: int = Field(default=7, ge=1, le=180)
     prompt: str = Field(default="", max_length=10000)
-    minimum_messages: int = Field(default=1, ge=1, le=100)
+    minimum_step_questions: int = Field(default=2, ge=1, le=10)
 
     @model_validator(mode="before")
     @classmethod
     def infer_legacy_guidance_mode(cls, data):
-        if isinstance(data, dict) and "guidance_mode" not in data:
-            return {**data, "guidance_mode": "guided" if data.get("learning_steps") else "basic"}
+        if isinstance(data, dict):
+            data = {key: value for key, value in data.items() if key != "minimum_messages"}
+            if "guidance_mode" not in data:
+                data["guidance_mode"] = "guided" if data.get("learning_steps") else "basic"
         return data
 
 

@@ -200,7 +200,7 @@ export function App() {
                   pathname === "/professor/analytics" ? "page" : undefined
                 }
               >
-                Analytics
+                AIducate
               </Link>
             </>
           ) : (
@@ -248,6 +248,12 @@ export function App() {
               ) : (
                 <Navigate to={home} replace />
               )
+            }
+          />
+          <Route
+            path="/professor/activities/:id/settings"
+            element={
+              isProfessor ? <CreateActivity /> : <Navigate to={home} replace />
             }
           />
           <Route
@@ -475,20 +481,16 @@ function AssignmentList({ items, professor, view = "list" }) {
                   </small>
                 )}
               </div>
-              {!canOpen ? <span className="subtle">Course instructor access required to open</span> : <Link
-                className="button secondary compact"
-                to={
-                  professor ? professorPath : `/student/assignments/${item.id}`
-                }
-              >
-                {professor
-                  ? "View"
-                  : item.progress === "completed"
-                    ? "View result"
-                    : item.progress === "in_progress"
-                      ? "Resume"
-                      : "Open assignment"}
-              </Link>}
+              {!canOpen ? <span className="subtle">Course instructor access required to open</span> : (
+                <div className="assignment-row-actions">
+                  <Link className="button secondary compact" to={professor ? professorPath : `/student/assignments/${item.id}`}>
+                    {professor ? "View" : item.progress === "completed" ? "View result" : item.progress === "in_progress" ? "Resume" : "Open assignment"}
+                  </Link>
+                  {professor && item.tool === "socratic" && item.status === "published" && item.config?.learning_steps?.length > 0 && (
+                    <Link className="button compact" to={`/professor/activities/${item.id}/settings`}>Edit settings</Link>
+                  )}
+                </div>
+              )}
             </article>
           );
         })}

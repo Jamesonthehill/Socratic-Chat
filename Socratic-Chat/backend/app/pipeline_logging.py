@@ -238,6 +238,14 @@ def delete_recent_traces() -> int:
             except OSError as error:
                 LOGGER.warning("Unable to delete pipeline trace file %s: %s", trace_file, error)
                 errors.append(error)
+        prompt_dir = settings.PIPELINE_PROMPT_DIR
+        if prompt_dir and prompt_dir.is_dir():
+            for snapshot_file in prompt_dir.glob("*.json"):
+                try:
+                    snapshot_file.unlink()
+                except OSError as error:
+                    LOGGER.warning("Unable to delete model snapshot %s: %s", snapshot_file, error)
+                    errors.append(error)
         _recent_traces.clear()
         _trace_records.clear()
         if errors:
@@ -381,3 +389,18 @@ def update_llm_request_snapshot(phase: str, **result: Any) -> str | None:
     destination.chmod(0o600)
     log_event("debug", "full_model_result_saved", phase=phase, path=str(destination))
     return str(destination)
+
+
+def full_model_snapshots(trace_id: str) -> list[dict[str, Any]]:
+    """Read exact local model requests and results for one diagnostic trace."""
+    if not re.fullmatch(r"[a-f0-9]{32}", trace_id):
+        raise ValueError("Invalid trace ID.")
+    directory = settings.PIPELINE_PROMPT_DIR
+    if not settings.LOG_FULL_PROMPTS or directory is None or not directory.is_dir():
+        return []
+    snapshots = []
+    for path in sorted(directory.glob(f"{trace_id}-*.json")):
+        snapshot = json.loads(path.read_text(encoding="utf-8"))
+        if snapshot.get("trace_id") == trace_id:
+            snapshots.append(snapshot)
+    return snapshots

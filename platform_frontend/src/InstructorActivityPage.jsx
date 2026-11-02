@@ -5,6 +5,7 @@ import { Notice, Badge } from "./ui";
 import { loadCourseContext, cachedCourseContext } from "./courseContext";
 import CreateActivity from "./CreateActivity";
 import { StudentActivityPreview } from "./StudentActivityPreview";
+import AiducateWorkspace from "./AiducateWorkspace";
 
 export function progressMetrics(students = []) {
   const assigned = students.length;
@@ -73,5 +74,5 @@ export default function InstructorActivityPage() {
 }
 
 export function AnalyticsPage() {
-  return <><div className="page-heading"><div><p className="context">Professor studio</p><h1>Analytics</h1></div></div><section className="panel"><p>Analytics will come here.</p></section></>;
+  return <AiducateWorkspace/>;
 }

@@ -65,6 +65,8 @@ def publish_snapshot(assignment):
     if not assignment["tool"]:
         raise HTTPException(422, "Choose an assigned chatbot before publishing.")
     config = assignment["config"]
+    if assignment["tool"] == "socratic":
+        config = {key: value for key, value in config.items() if key != "minimum_messages"}
     if assignment["tool"] == "aiducate":
         raise HTTPException(503, "AIducate has no connected backend yet. Save a draft for now.")
     if assignment["tool"] == "self-directed-learning":
@@ -207,42 +209,6 @@ def _clarify_term_scope(message, history, classification):
         clarification_options=options,
         rewritten_query=classification.rewritten_query,
         source="scope_confirmation",
-    ), keyword_scope_match=classification.keyword_scope_match)
-
-
-def _clarify_unanswered_acknowledgement(message, history, state, classification):
-    """An acknowledgement is not an answer to an open tutor question."""
-    if classification.message_role != "acknowledgement":
-        return classification
-    latest_tutor = next((item.content for item in reversed(history) if item.role == "assistant"), "")
-    # A paused conversation's saved question may be stale; an active tutor
-    # question can also live in state when the reply ends with source notes.
-    current_question = _next_thinking_step(latest_tutor)
-    if not current_question and state.get("conversation_status") != "paused":
-        saved_question = str(state.get("next_thinking_step") or "").strip()
-        current_question = saved_question if saved_question.endswith("?") else ""
-    if not current_question:
-        return classification
-    question = current_question.rsplit("?", 1)[0].rsplit("\n", 1)[-1].strip()[-300:] + "?"
-    acknowledgement = " ".join(message.strip().strip("\"'“”‘’").split())[:24] or "that"
-    options = (
-        ClarificationOption(
-            label="Repeat the question", message_role="support_request",
-            resolved_message=f"Please restate the current question in simpler words and wait for my answer: {question}"[:500],
-        ),
-        ClarificationOption(
-            label="Give me a hint", message_role="support_request",
-            resolved_message=f"Please give one small hint about the current question, then wait for my answer: {question}"[:500],
-        ),
-    )
-    return replace(_classification_from_observation(
-        message_role="ambiguous", concepts=classification.target_concepts,
-        clarification_question=(
-            f"When you say “{acknowledgement},” do you mean you're ready to answer the question I just asked, "
-            "would you like a hint, or did you mean something else?"
-        ),
-        clarification_options=options, rewritten_query=classification.rewritten_query,
-        source="unanswered_question_confirmation",
     ), keyword_scope_match=classification.keyword_scope_match)
 
 
@@ -631,15 +597,10 @@ def _socratic_result(answer, sources, state, classification, score=None):
         if str(concept).strip()
     ]
     next_question = _next_thinking_step(answer)
-    previous_question = str(state.get("next_thinking_step") or "").strip()
     state["next_thinking_step"] = (
         "" if classification.conversation_action in {"soft_close", "complete"}
-        else next_question or (previous_question if previous_question.endswith("?") else "")
+        else next_question
     )
-    if classification.message_role == "support_request" and not next_question:
-        # A direct explanation must clear the old question. Keeping it here
-        # makes the UI show the same prompt even when the tutor has moved on.
-        state["next_thinking_step"] = ""
     state["keywords"] = list(state["objective_keywords"]) if state.get("objective_keywords") else list(dict.fromkeys([state["stable_concept"]] + concepts if state.get("stable_concept") else concepts))[:5]
     if score is None:
         state.pop("last_score", None)
@@ -824,7 +785,6 @@ async def _socratic_message(
         log_event(1, "assignment_chat_received", assignment_id=assignment["id"], message_chars=len(content), pipeline_version="local-socratic-v1")
         classification = await classify_message(interpreted, history, learning_topic=topic, **scope_options)
         if assignment_scope and clarification_index is None:
-            classification = _clarify_unanswered_acknowledgement(content, history, state, classification)
             classification = _clarify_term_scope(interpreted, history, classification)
             classification, topic_choices = _clarify_uncertain_topic_shift(
                 interpreted, state.get("learning_topic"), classification,
@@ -955,12 +915,10 @@ async def _socratic_message(
             f"Regarding my earlier message ({pending['original_question']}): {interpreted}"
             if pending and not pending.get("topic_choices") else interpreted
         )
-        generation_history = (
-            [] if general_example_choice or (
-                assignment_scope and classification.message_role in {"learning_question", "topic_change"}
-            )
-            else history
-        )
+        generation_history = [] if general_example_choice else history
+        guided_steps = (snapshot.get("config") or {}).get("learning_steps") or []
+        step_index = int(state.get("learning_step_index") or 0)
+        active_step = guided_steps[step_index] if 0 <= step_index < len(guided_steps) else None
         answer = await rag.generate_answer(generation_message, generation_history, sources, classification=classification,
             evaluation=evaluation,
             learning_topic=classification.target if general_example_choice else topic,
@@ -971,7 +929,7 @@ async def _socratic_message(
                 else stable
             ),
             term_resolution=(resolution.original_term, resolution.selected_term) if resolution else None,
-            assignment_scope=assignment_scope, **scope_options)
+            assignment_scope=assignment_scope, active_learning_step=active_step, **scope_options)
         result = _socratic_result(answer, sources, state, classification)
         if should_show_concept_check:
             state["concept_check"] = _concept_check(snapshot, answer_count)
@@ -989,14 +947,34 @@ async def _socratic_message(
 def _retrieve_assignment_sources(query, chunks, extra_queries=()):
     queries = list(dict.fromkeys([query, *(str(q) for q in extra_queries if q)]))[:4]
     # All searches remain inside the instructor-published assignment snapshot.
-    ranked = [rag.retrieve_snapshot(q, chunks, top_k=4) for q in queries]
-    result, seen = [], set()
-    for rank in range(4):
-        for matches in ranked:
-            if rank < len(matches) and matches[rank].chunk_id not in seen:
-                result.append(matches[rank]); seen.add(matches[rank].chunk_id)
-                if len(result) == 4:
-                    return result
+    ranked = [rag.retrieve_snapshot(q, chunks, top_k=8) for q in queries]
+    candidates = {}
+    rank_evidence = {}
+    for query_index, matches in enumerate(ranked):
+        for rank, source in enumerate(matches, start=1):
+            candidates.setdefault(source.chunk_id, source)
+            rank_evidence.setdefault(source.chunk_id, []).append((query_index, rank))
+
+    # Rerank the merged pool against the student's primary question. Extra
+    # searches improve coverage but cannot crowd out an exact match to it.
+    primary_terms = set(rag.tokenize(query))
+
+    def relevance(source):
+        source_terms = set(rag.tokenize(source.text))
+        word_overlap = len(primary_terms & source_terms) / max(1, len(primary_terms))
+        query_support = sum(
+            (1.0 if query_index == 0 else 0.45) / (rank + 2)
+            for query_index, rank in rank_evidence[source.chunk_id]
+        )
+        primary_match = any(query_index == 0 for query_index, _ in rank_evidence[source.chunk_id])
+        # The snapshot's original score already fuses semantic and lexical
+        # rankings for each query. Keep it as a tie-breaker after direct fit.
+        return (0.3 * word_overlap + 0.65 * query_support
+                + (0.1 if primary_match else 0.0) + 0.05 * source.score)
+
+    result = sorted(candidates.values(), key=relevance, reverse=True)[:4]
+    log_event(5, "assignment_sources_merged_and_reranked",
+              queries=len(queries), candidates=len(candidates), selected=len(result))
     return result
 
 

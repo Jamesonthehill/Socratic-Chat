@@ -11,6 +11,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import CreateActivity from "./CreateActivity";
+import PublishedSocraticSettings from "./PublishedSocraticSettings";
 import { tutorialPopoverPosition } from "./ActivityTutorial";
 import { resetCourseContext } from "./courseContext";
 import { api } from "./api";
@@ -24,6 +25,30 @@ test("tutorial explanation stays clear of a wide highlighted field", () => {
   expect(position.top).toBeGreaterThanOrEqual(field.bottom);
   expect(position.left).toBeGreaterThanOrEqual(16);
   expect(position.left + card.width).toBeLessThanOrEqual(viewport.width - 16);
+});
+
+test("professor can save edited settings on a published Socratic assignment", async () => {
+  const published = {
+    id: "published-1", status: "published", tool: "socratic", instructions: "Read the source first.",
+    config: { prompt: "What would you check?", minimum_messages: 1, minimum_step_questions: 1,
+      learning_steps: [{ title: "Check the example", goal: "Explain the example in context.",
+        scenario: "A team reviews a change.", question: "What should it check?" }] },
+  };
+  const saved = vi.fn();
+  api.mockResolvedValueOnce({ ...published, instructions: "Read and discuss the source." });
+  render(<PublishedSocraticSettings assignment={published} onSaved={saved} />);
+  expect(screen.getByText(/no saved quiz yet/)).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "generate and save the step checks below" })).toHaveAttribute("href", "#learning-step-checks");
+  await userEvent.setup().clear(screen.getByRole("textbox", { name: "Student instructions" }));
+  await userEvent.setup().type(screen.getByRole("textbox", { name: "Student instructions" }), "Read and discuss the source.");
+  await userEvent.setup().clear(screen.getByRole("spinbutton", { name: "Tutor questions before each step quiz" }));
+  await userEvent.setup().type(screen.getByRole("spinbutton", { name: "Tutor questions before each step quiz" }), "3");
+  await userEvent.setup().click(screen.getByRole("button", { name: "Save published settings" }));
+  await waitFor(() => expect(saved).toHaveBeenCalled());
+  expect(screen.getByRole("status")).toHaveTextContent("Published settings saved");
+  expect(api).toHaveBeenCalledWith("/platform/assignments/published-1/socratic-settings", expect.objectContaining({
+    method: "PATCH", body: expect.objectContaining({ instructions: "Read and discuss the source.", minimum_step_questions: 3 }),
+  }));
 });
 
 const course = {
@@ -81,7 +106,6 @@ beforeEach(() => {
       return {
         keywords: ["design choices"],
         prompt: "Imagine a team choosing a design. Which choice would you test first?",
-        minimum_messages: 4,
         instructions: "Discuss design choices, then submit your design through Canvas.",
         source_files: ["Requirements.pdf"],
         source_chunk_ids: ["chunk-1"],
@@ -273,19 +297,19 @@ test("new Socratic activities use selected assignment materials without requirin
     ),
   );
 });
-test("five choices replace Student Agent; settings follow Next and review invalidates after edits", async () => {
+test("student activity choices exclude AIducate analysis; settings follow Next and review invalidates after edits", async () => {
   const user = await open();
   for (const name of [
     "Socratic Chat",
     "Reflections",
     "Self Directed Learning",
     "Debate",
-    "AIducate",
   ])
     expect(
       screen.getByRole("button", { name: new RegExp(name) }),
     ).toBeInTheDocument();
   expect(screen.queryByText("Student Agent Bot")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /AIducate/ })).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
   expect(screen.getByText(/Teaching scope:/).closest("p")).toHaveTextContent("Selected assignment materials");
   expect(
@@ -296,9 +320,7 @@ test("five choices replace Student Agent; settings follow Next and review invali
   ).toBeInTheDocument();
   expect(screen.getByRole("radio", { name: /Basic conversation/ })).toBeChecked();
   expect(screen.queryByRole("button", { name: "Generate setup from selected sources" })).not.toBeInTheDocument();
-  expect(
-    screen.getByLabelText("Messages required before completion"),
-  ).toBeInTheDocument();
+  expect(screen.queryByLabelText("Messages required before completion")).not.toBeInTheDocument();
   expect(screen.queryByRole("region", { name: "Optional keywords" })).not.toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Course documents" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Review activity" }));
@@ -488,7 +510,7 @@ test("source generation drafts editable opening, submission and completion setti
   expect(screen.getByLabelText("Opening question or prompt")).toHaveValue(
     "Imagine a team choosing a design. Which choice would you test first?",
   );
-  expect(screen.getByLabelText("Messages required before completion")).toHaveValue(4);
+  expect(screen.queryByLabelText("Messages required before completion")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Student instructions and submission")).toHaveValue(
     "Discuss design choices, then submit your design through Canvas.",
   );
@@ -618,7 +640,7 @@ test("basic conversation generates only the opening question", async () => {
     expect.objectContaining({ method: "POST", body: expect.objectContaining({ document_ids: ["d1"] }) }),
   );
   expect(api).not.toHaveBeenCalledWith("/courses/course-1/socratic-setup/generate", expect.anything());
-  expect(screen.getByLabelText("Messages required before completion")).toHaveValue(1);
+  expect(screen.queryByLabelText("Messages required before completion")).not.toBeInTheDocument();
   expect(screen.queryByRole("region", { name: "Learning steps" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("radio", { name: /Guided learning path/ }));
   expect(screen.queryByRole("button", { name: "Generate opening question" })).not.toBeInTheDocument();
@@ -642,7 +664,7 @@ test("source generation shows animated progress until the model finishes", async
   expect(progress.querySelector(".generation-status-fullscreen")).toBeInTheDocument();
   expect(progress.querySelector(".thinking-orbit-particles")).toBeInTheDocument();
   await act(async () => finishGeneration({
-    keywords: ["design choices"], prompt: "What would you try?", minimum_messages: 3,
+    keywords: ["design choices"], prompt: "What would you try?",
     instructions: "Discuss design choices.", source_files: ["Requirements.pdf"],
   }));
   await waitFor(() => expect(screen.queryByRole("status", { name: "BrainTutor: Generating setup from selected documents" })).not.toBeInTheDocument());
@@ -695,14 +717,9 @@ test("SDL review prepares a lesson before showing publish", async () => {
     screen.getByRole("button", { name: "Publish activity" }),
   ).toBeEnabled();
 });
-test("Debate can proceed to publish while AIducate stays a draft", async () => {
+test("Debate can proceed to publish", async () => {
   const user = await open();
   await user.click(screen.getByRole("button", { name: /Debate/ }));
-  await user.click(screen.getByRole("button", { name: "Review activity" }));
-  expect(
-    screen.getByRole("button", { name: "Publish activity" }),
-  ).toBeEnabled();
-  await user.click(screen.getByRole("button", { name: /AIducate/ }));
   await user.click(screen.getByRole("button", { name: "Review activity" }));
   expect(
     screen.getByRole("button", { name: "Publish activity" }),

@@ -3,6 +3,7 @@ import hashlib
 import re
 import secrets
 from urllib.parse import quote
+from typing import Literal
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -10,7 +11,7 @@ from pydantic import BaseModel, Field
 from psycopg.types.json import Jsonb
 
 from app import auth, db, settings
-from platform_app import canvas_lms, engines, store, evidence_diagram
+from platform_app import canvas_lms, engines, store, evidence_diagram, step_check
 from platform_app.schemas import (
     ActionInput,
     SelfDirectedStudyInput, SelfDirectedQuizInput, SelfDirectedMessageInput, SelfDirectedTaskInput, SelfDirectedLearningTurn,
@@ -22,6 +23,7 @@ from platform_app.schemas import (
     GenerateTopicInput,
     MessageInput,
     SocraticReflectionInput,
+    SocraticStepCheck,
 )
 
 router = APIRouter(prefix="/api/platform", tags=["platform"])
@@ -29,6 +31,32 @@ router = APIRouter(prefix="/api/platform", tags=["platform"])
 
 class EvidenceDiagramInput(BaseModel):
     chunk_id: str = Field(min_length=1, max_length=150)
+
+
+class SocraticStepCheckInput(BaseModel):
+    request_id: UUID
+    action: Literal["submit", "try_another", "continue_with_support"]
+    option_index: int | None = Field(default=None, ge=0, le=3)
+    reason: str = Field(default="", max_length=1200)
+
+
+class PublishedStepChecksInput(BaseModel):
+    checks: list[list[SocraticStepCheck]] = Field(min_length=1, max_length=10)
+    minimum_step_questions: int | None = Field(default=None, ge=1, le=10)
+
+
+class PublishedStepSettings(BaseModel):
+    title: str = Field(min_length=3, max_length=120)
+    goal: str = Field(min_length=8, max_length=500)
+    scenario: str = Field(default="", max_length=700)
+    question: str = Field(default="", max_length=500)
+
+
+class PublishedSocraticSettingsInput(BaseModel):
+    instructions: str = Field(max_length=10000)
+    prompt: str = Field(max_length=10000)
+    minimum_step_questions: int = Field(ge=1, le=10)
+    learning_steps: list[PublishedStepSettings] = Field(min_length=1, max_length=10)
 
 
 def user(request: Request):
@@ -95,14 +123,30 @@ def socratic_step_source(item, step):
     }
 
 
+def step_question_count(messages, step_started_at_message_count):
+    """Count distinct tutor questions shown in the current guided step."""
+    start = max(0, int(step_started_at_message_count or 1) - 1)
+    questions = set()
+    for message in messages[start:]:
+        if message.get("role") != "assistant":
+            continue
+        question = str(message.get("next_thinking_step") or "").strip()
+        if not question:
+            matches = re.findall(r"[^\n.!?]*\?", str(message.get("content") or ""))
+            question = matches[-1].strip() if matches else ""
+        if question:
+            questions.add(question.casefold())
+    return len(questions)
+
+
 def public_assignment(item, manage=False):
     result = {k: v for k, v in item.items() if k not in ("snapshot", "config")}
     if manage:
-        result["config"] = item["config"]
+        result["config"] = {k: v for k, v in item["config"].items() if item["tool"] != "socratic" or k != "minimum_messages"}
         if item["tool"] == "socratic" and item.get("snapshot"):
             result["concept_map"] = item["snapshot"].get("concept_map") or []
         if item["tool"] == "socratic" and item["status"] != "draft":
-            result["config"] = {**item["config"],
+            result["config"] = {**result["config"],
                 "scope_mode": "assignment", "keywords": [],
                 "learning_objective_id": None}
     else:
@@ -115,7 +159,7 @@ def public_assignment(item, manage=False):
         elif item["tool"] == "socratic":
             guided = cfg.get("guidance_mode", "guided" if cfg.get("learning_steps") else "basic") == "guided"
             result["student_config"] = {
-                "minimum_messages": cfg["minimum_messages"],
+                "minimum_step_questions": cfg.get("minimum_step_questions", 1),
                 "keyword_glossary": [],
                 "guidance_mode": "guided" if guided else "basic",
                 "learning_path_time_limit_seconds": cfg.get("learning_path_minutes", 7) * 60 if guided else None,
@@ -124,6 +168,7 @@ def public_assignment(item, manage=False):
                         "title": step["title"], "goal": step["goal"],
                         "source_file": step.get("source_file", ""),
                         "source": socratic_step_source(item, step),
+                        "checks": [step_check.public_check(check) for check in (step.get("checks") or [])],
                     }
                     for step in (cfg.get("learning_steps") or []) if guided
                 ],
@@ -285,7 +330,6 @@ def import_canvas_assignment(body: CanvasImportRequest, account=Depends(professo
                 "Help the learner reason through this Canvas assignment using only the "
                 f"published course materials: {canvas_assignment['name']}"
             ),
-            "minimum_messages": 1,
         }
     elif body.tool == "debate":
         config = {
@@ -356,6 +400,45 @@ def assignments(course_id: UUID | None = None, account=Depends(user)):
             if item["tool"] == "self-directed-learning" and str(item["id"]) in by_id:
                 item["progress"] = by_id[str(item["id"])].get("attempt_status") or "not_started"
     return result
+
+
+@router.get("/assignments/{assignment_id}/reflection-analysis")
+def reflection_analysis(assignment_id: UUID, account=Depends(professor)):
+    """A course instructor's read-only view of saved Reflection attempts."""
+    with store.connection() as conn:
+        assignment = get_assignment(conn, assignment_id, account, manage=True)
+        if assignment["tool"] != "reflections":
+            raise HTTPException(422, "Choose a Reflection assignment to analyze.")
+        rows = conn.execute("""SELECT u.id AS student_id, u.display_name, u.username,
+                t.status, t.messages, t.result, t.completed_at
+            FROM assignment_recipients_platform r
+            JOIN users_platform u ON u.id = r.student_id
+            LEFT JOIN assignment_attempts_platform t
+                ON t.assignment_id = r.assignment_id AND t.student_id = r.student_id
+            WHERE r.assignment_id = %s ORDER BY u.display_name, u.username""",
+            (assignment_id,)).fetchall()
+    students = []
+    for row in rows:
+        responses = [str(message.get("content") or "").strip()
+                     for message in (row["messages"] or [])
+                     if message.get("role") == "user" and str(message.get("content") or "").strip()]
+        students.append({
+            "student_id": row["student_id"],
+            "name": row["display_name"] or row["username"],
+            "status": row["status"] or "not_started",
+            "response_count": len(responses),
+            "responses": responses,
+            "completed_at": row["completed_at"],
+        })
+    return {
+        "assignment": {"id": assignment["id"], "title": assignment["title"],
+                       "course_id": assignment["course_id"]},
+        "summary": {"assigned": len(students),
+                    "started": sum(student["status"] != "not_started" for student in students),
+                    "completed": sum(student["status"] == "completed" for student in students),
+                    "responses": sum(student["response_count"] for student in students)},
+        "students": students,
+    }
 
 
 def validate_activity_documents(body):
@@ -449,6 +532,87 @@ def assignment_detail(assignment_id: UUID, account=Depends(user)):
             except HTTPException:
                 result['progress_unavailable'] = True
         return result
+
+
+@router.post("/assignments/{assignment_id}/step-checks/draft")
+async def draft_published_step_checks(assignment_id: UUID, account=Depends(professor)):
+    """Prepare checks for a legacy published path without changing student data."""
+    from platform_app.socratic_setup import generate_checks_for_step
+
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account, manage=True)
+    snapshot = item.get("snapshot") or {}
+    steps = (snapshot.get("config") or {}).get("learning_steps") or []
+    if item["status"] != "published" or item["tool"] != "socratic" or not steps:
+        raise HTTPException(409, "This assignment has no published Socratic learning path.")
+    config = settings.llm_client_config("generation")
+    if config is None:
+        raise HTTPException(503, "Configure a generation model before drafting step checks.")
+    provider, api_key, base_url, model = config
+    checks = []
+    for step in steps:
+        if len(step.get("checks") or []) == 2:
+            checks.append(step["checks"])
+            continue
+        source = socratic_step_source(item, step)
+        if not source:
+            raise HTTPException(422, f"The selected source for {step['title']} is unavailable.")
+        try:
+            checks.append(await generate_checks_for_step(step, source["text"], provider, api_key, base_url, model))
+        except Exception as exc:
+            raise HTTPException(503, f"Could not draft checks for {step['title']}. Try again.") from exc
+    return {"steps": [{"title": step["title"], "checks": pair} for step, pair in zip(steps, checks)]}
+
+
+@router.put("/assignments/{assignment_id}/step-checks")
+def save_published_step_checks(assignment_id: UUID, body: PublishedStepChecksInput, account=Depends(professor)):
+    """Update only instructor-reviewed checks in both published config copies."""
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account, manage=True, lock=True)
+        snapshot = item.get("snapshot") or {}
+        snapshot_config = snapshot.get("config") or {}
+        published_steps = snapshot_config.get("learning_steps") or []
+        if item["status"] != "published" or item["tool"] != "socratic" or not published_steps:
+            raise HTTPException(409, "This assignment has no published Socratic learning path.")
+        if len(body.checks) != len(published_steps) or any(len(pair) != 2 for pair in body.checks):
+            raise HTTPException(422, "Review two checks for every learning step.")
+        if any(pair[0].scenario.casefold() == pair[1].scenario.casefold() for pair in body.checks):
+            raise HTTPException(422, "Use a different situation for the second check in each step.")
+        checked_steps = [{**step, "checks": [check.model_dump() for check in pair]}
+                         for step, pair in zip(published_steps, body.checks)]
+        minimum_questions = body.minimum_step_questions or snapshot_config.get("minimum_step_questions", 1)
+        updated_snapshot = {**snapshot, "config": {**{k: v for k, v in snapshot_config.items() if k != "minimum_messages"}, "learning_steps": checked_steps,
+                                                   "minimum_step_questions": minimum_questions}}
+        updated_config = {**{k: v for k, v in item["config"].items() if k != "minimum_messages"}, "learning_steps": checked_steps,
+                          "minimum_step_questions": minimum_questions}
+        row = conn.execute("""UPDATE assignments_platform SET config=%s, snapshot=%s, updated_at=now()
+            WHERE id=%s RETURNING *""", (Jsonb(updated_config), Jsonb(updated_snapshot), assignment_id)).fetchone()
+        return public_assignment(row, True)
+
+
+@router.patch("/assignments/{assignment_id}/socratic-settings")
+def update_published_socratic_settings(assignment_id: UUID, body: PublishedSocraticSettingsInput,
+                                       account=Depends(professor)):
+    """Let instructors refine a published path without replacing its cited sources or student history."""
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account, manage=True, lock=True)
+        snapshot = item.get("snapshot") or {}
+        snapshot_config = snapshot.get("config") or {}
+        saved_steps = snapshot_config.get("learning_steps") or []
+        if item["status"] != "published" or item["tool"] != "socratic" or not saved_steps:
+            raise HTTPException(409, "This assignment has no published Socratic learning path.")
+        if len(body.learning_steps) != len(saved_steps):
+            raise HTTPException(422, "Keep the published learning path's step count and sources.")
+        edited_steps = [{**saved, **edited.model_dump()} for saved, edited in zip(saved_steps, body.learning_steps)]
+        updates = {"prompt": body.prompt,
+                   "minimum_step_questions": body.minimum_step_questions,
+                   "learning_steps": edited_steps}
+        updated_snapshot = {**snapshot, "config": {**{k: v for k, v in snapshot_config.items() if k != "minimum_messages"}, **updates}}
+        updated_config = {**{k: v for k, v in item["config"].items() if k != "minimum_messages"}, **updates}
+        row = conn.execute("""UPDATE assignments_platform SET instructions=%s,config=%s,snapshot=%s,updated_at=now()
+            WHERE id=%s RETURNING *""", (body.instructions, Jsonb(updated_config), Jsonb(updated_snapshot),
+                                          assignment_id)).fetchone()
+        return public_assignment(row, True)
 
 
 @router.put("/assignments/{assignment_id}")
@@ -570,6 +734,11 @@ def next_socratic_step(assignment_id: UUID, account=Depends(user)):
         since = int(state.get("step_started_at_message_count") or 0)
         if not any(message.get("role") == "user" for message in attempt["messages"][since:]):
             raise HTTPException(409, "Discuss this step with the tutor before continuing.")
+        minimum_questions = int(config.get("minimum_step_questions") or 1)
+        if step_question_count(attempt["messages"], since) < minimum_questions:
+            raise HTTPException(409, f"Discuss at least {minimum_questions} tutor question(s) in this step before continuing.")
+        if steps[index].get("checks") and (state.get("step_check") or {}).get("status") not in {"passed", "continued_with_support"}:
+            raise HTTPException(409, "Complete the step check or choose Continue to next step after two attempts.")
         index += 1
         step = steps[index]
         state.update({
@@ -579,6 +748,7 @@ def next_socratic_step(assignment_id: UUID, account=Depends(user)):
         })
         state.pop("stable_concept", None)
         state.pop("active_concept", None)
+        state.pop("step_check", None)
         scenario = str(step.get("scenario") or "").strip()
         question = str(step.get("question") or "").strip()
         if not scenario:
@@ -596,6 +766,86 @@ def next_socratic_step(assignment_id: UUID, account=Depends(user)):
             "next_thinking_step": question,
             **({"step_source": source} if (source := socratic_step_source(assignment, step)) else {}),
         })
+        store.save_attempt(conn, attempt)
+        return public_attempt(attempt)
+
+
+@router.post("/assignments/{assignment_id}/step-check")
+def socratic_step_check(assignment_id: UUID, body: SocraticStepCheckInput, account=Depends(user)):
+    """Assess the current application check without putting quiz answers into the chat."""
+    with store.locked_attempt(assignment_id, account["user_id"]) as (conn, attempt):
+        assignment = get_assignment(conn, assignment_id, account)
+        if not attempt or assignment["tool"] != "socratic" or attempt["status"] == "completed":
+            raise HTTPException(409, "Start an active Socratic assignment first.")
+        rid = str(body.request_id)
+        if rid in attempt["processed_requests"]:
+            return public_attempt(attempt)
+        state = dict((attempt.get("engine_state") or {}).get("socratic") or {})
+        steps = ((assignment.get("snapshot") or {}).get("config") or {}).get("learning_steps") or []
+        index = int(state.get("learning_step_index") or 0)
+        checks = steps[index].get("checks") or [] if 0 <= index < len(steps) else []
+        if len(checks) != 2 or state.get("phase") != "teaching" or state.get("pending_clarification") or state.get("concept_check"):
+            raise HTTPException(409, "This learning step has no application check.")
+        since = int(state.get("step_started_at_message_count") or 0)
+        if not any(message.get("role") == "user" for message in attempt["messages"][since:]):
+            raise HTTPException(409, "Discuss this step with the tutor before taking its check.")
+        minimum_questions = int(((assignment.get("snapshot") or {}).get("config") or {}).get("minimum_step_questions") or 1)
+        if step_question_count(attempt["messages"], since) < minimum_questions:
+            raise HTTPException(409, f"Discuss at least {minimum_questions} tutor question(s) in this step before taking its check.")
+        progress = dict(state.get("step_check") or {})
+        if progress.get("step_index") != index:
+            progress = {"step_index": index, "variant": 0, "attempts": 0, "status": "active"}
+        status = progress.get("status")
+        if body.action == "try_another":
+            if status != "choice":
+                raise HTTPException(409, "Try the current check first.")
+            progress.update({"variant": 1, "attempts": 0, "status": "active", "feedback": ""})
+            progress.pop("correct_option_index", None)
+        elif body.action == "continue_with_support":
+            if status not in {"choice", "continued_with_support"}:
+                raise HTTPException(409, "The continue option appears after two unsuccessful attempts.")
+            progress["status"] = "continued_with_support"
+        else:
+            if status in {"passed", "choice", "continued_with_support"}:
+                raise HTTPException(409, "Choose one of the available step-check actions.")
+            variant = min(int(progress.get("variant") or 0), 1)
+            check = checks[variant]
+            if body.option_index is None or body.option_index >= len(check["options"]):
+                raise HTTPException(422, "Choose an answer option.")
+            reason = body.reason.strip()
+            if len(reason) < 5:
+                raise HTTPException(422, "Explain why you chose that answer.")
+            selected_correctly = body.option_index == check["incorrect_option_index"]
+            if selected_correctly:
+                try:
+                    sufficient, feedback = step_check.assess_reason_sync(check, check["options"][body.option_index], reason)
+                except Exception as error:
+                    raise HTTPException(503, "The step check could not review your reason. Please retry.") from error
+            else:
+                sufficient, feedback = False, "That choice follows the requirement. Look for the option that would cause a problem in this situation."
+            progress["attempts"] = int(progress.get("attempts") or 0) + 1
+            if selected_correctly and sufficient:
+                progress.update({
+                    "status": "passed",
+                    "feedback": feedback or "You found the mistake and explained why it matters. Ready for the next step.",
+                    "correct_option_index": check["incorrect_option_index"],
+                })
+            elif progress["attempts"] >= 2:
+                progress.update({
+                    "status": "choice",
+                    "feedback": f"{feedback} The incorrect choice is: {check['options'][check['incorrect_option_index']]}. {check['expected_reason']}",
+                    "correct_option_index": check["incorrect_option_index"],
+                })
+            else:
+                progress.update({"status": "active", "feedback": feedback})
+        state["step_check"] = progress
+        if progress["status"] in {"passed", "continued_with_support"}:
+            outcomes = list(state.get("step_check_results") or [])
+            outcomes = [item for item in outcomes if item.get("step_index") != index]
+            outcomes.append({"step_index": index, "status": progress["status"]})
+            state["step_check_results"] = outcomes
+        attempt["engine_state"]["socratic"] = state
+        attempt["processed_requests"].append(rid)
         store.save_attempt(conn, attempt)
         return public_attempt(attempt)
 
@@ -669,6 +919,15 @@ def socratic_reflection(assignment_id: UUID, body: SocraticReflectionInput, acco
             raise HTTPException(409, "Start an unfinished Socratic assignment first.")
         if assignment["tool"] != "socratic":
             raise HTTPException(422, "This assignment does not use a Socratic learning summary.")
+        config = ((assignment.get("snapshot") or {}).get("config") or {})
+        steps = config.get("learning_steps") or []
+        state = (attempt.get("engine_state") or {}).get("socratic") or {}
+        if steps and int(state.get("learning_step_index") or 0) == len(steps) - 1:
+            minimum_questions = int(config.get("minimum_step_questions") or 1)
+            if step_question_count(attempt["messages"], state.get("step_started_at_message_count")) < minimum_questions:
+                raise HTTPException(409, f"Discuss at least {minimum_questions} tutor question(s) in the final step before summarizing.")
+            if steps[-1].get("checks") and (state.get("step_check") or {}).get("status") not in {"passed", "continued_with_support"}:
+                raise HTTPException(409, "Finish the final step check before summarizing.")
         rid = str(body.request_id)
         if rid in attempt["processed_requests"] or (attempt["engine_state"].get("socratic") or {}).get("completion_summary"):
             return public_attempt(attempt)

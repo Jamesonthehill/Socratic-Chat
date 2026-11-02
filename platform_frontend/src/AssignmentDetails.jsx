@@ -117,10 +117,9 @@ export default function AssignmentDetails({ item, onClose }) {
                     ? "The debate starts with the scenario above."
                     : "No custom opening question set.")}
               </p>
-              <p>
-                Messages required:{" "}
-                {config.minimum_messages ?? (item.tool === "debate" ? 3 : 1)}
-              </p>
+              {item.tool === "debate" && <p>
+                Messages required: {config.minimum_messages ?? 3}
+              </p>}
               <p>
                 {config.document_ids?.length
                   ? `${config.document_ids.length} document(s) selected.`

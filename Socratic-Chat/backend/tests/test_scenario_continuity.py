@@ -213,8 +213,7 @@ class ScenarioContinuityTests(unittest.TestCase):
         with patch("app.rag.generation_client_config", return_value=(
             "Ollama", "ollama", "http://127.0.0.1:11434/v1", "test-model"
         )), patch("openai.AsyncOpenAI", return_value=client):
-            answer = asyncio.run(rag.generate_answer("I don't know", history, [SOURCE], classification,
-                                                       assignment_scope=True))
+            answer = asyncio.run(rag.generate_answer("I don't know", history, [SOURCE], classification))
         self.assertEqual(answer, json.loads(model_reply)["lead_in"])
         prompt = create.call_args.kwargs["messages"]
         self.assertIn("a response with no new question is valid", prompt[1]["content"])
@@ -237,8 +236,7 @@ class ScenarioContinuityTests(unittest.TestCase):
         with patch("app.rag.generation_client_config", return_value=(
             "Ollama", "ollama", "http://127.0.0.1:11434/v1", "test-model"
         )), patch("openai.AsyncOpenAI", return_value=client):
-            answer = asyncio.run(rag.generate_answer("I don't know", history, [SOURCE], classification,
-                                                       assignment_scope=True))
+            answer = asyncio.run(rag.generate_answer("I don't know", history, [SOURCE], classification))
         self.assertEqual(create.await_count, 2)
         self.assertIn("What should the machine do", answer)
         self.assertNotIn(previous, answer)

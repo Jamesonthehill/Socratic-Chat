@@ -135,7 +135,8 @@ CONFIRMATION_REQUEST_PATTERN = re.compile(
 )
 # Self-reported confusion raises support; it is not graded as an answer.
 UNCERTAIN_PATTERN = re.compile(
-    r"\b(?:i (?:still )?(?:do not|don't) know|not sure|unsure|confused|no idea|stuck)\b", re.IGNORECASE,
+    r"\b(?:i (?:still )?(?:(?:do not|don't|dont) know|(?:do not|don't|dont) (?:get|understand) (?:it|this|the assignment))|"
+    r"not sure|unsure|confused|no idea|stuck)\b", re.IGNORECASE,
 )
 TENTATIVE_ANSWER_PATTERN = re.compile(
     r"\b(?:perhaps|maybe|i (?:think|guess|suppose)|it (?:could|might) be)\b", re.IGNORECASE,
@@ -282,7 +283,7 @@ ROLE_POLICY: dict[str, tuple[str, str, str, bool]] = {
     "follow_up": ("learning", "requesting_support", "continue", True),
     "confirmation_request": ("learning", "requesting_confirmation", "continue", True),
     "understanding_claim": ("learning", "claiming_understanding", "verify_understanding", True),
-    "acknowledgement": ("learning", "acknowledgement", "soft_close", False),
+    "acknowledgement": ("learning", "acknowledgement", "continue", True),
     "closing": ("session_control", "closing", "complete", False),
     "topic_change": ("learning", "changing_topic", "continue", True),
     "administrative": ("administrative", "administrative_request", "direct", True),
@@ -515,14 +516,6 @@ def _validated_clarification_options(payload: dict[str, Any]) -> tuple[Clarifica
     # Two plausible meanings are required before the UI interrupts the lesson.
     if len(options) < 2:
         return ()
-    # Always leave the learner a low-pressure way to say neither interpretation
-    # is clear. This selection requests support and never becomes mastery evidence.
-    if len(options) < 3 and not any(option.message_role == "support_request" for option in options):
-        options.append(ClarificationOption(
-            label="I'm still not sure",
-            message_role="support_request",
-            resolved_message="I am still unsure and need a simpler explanation of the current question.",
-        ))
     return tuple(options[:3])
 
 
@@ -673,15 +666,16 @@ async def _classify_with_llm(
         "without demonstrating it), acknowledgement, closing, topic_change, administrative, or ambiguous. "
         "Use ambiguous only when the recent conversation leaves at least two reasonable meanings that require different "
         "responses. A mixed message may be ambiguous when it contains both a tentative answer and a request for help. "
-        "A brief acknowledgement after an unanswered tutor question is not an answer or a request to end. "
-        "If it is unclear whether the student wants to try answering, needs help, or means something else, "
-        "use ambiguous and propose context-specific interpretations without supplying the answer. "
+        "Interpret short replies using the tutor's actual preceding question. A brief reply may answer a "
+        "yes/no question, acknowledge an explanation, or leave intent unclear; do not infer the same meaning "
+        "for every short reply. If two plausible meanings would require different responses, use ambiguous "
+        "and propose context-specific interpretations without supplying the answer. "
         "Return target_concepts as concise noun phrases inferred from the latest message and conversation, not a "
         "fixed topic list. Return missing_context as a short noun phrase only for ambiguous; "
         "otherwise null. For ambiguous, return one natural clarification_question and two or three short "
         "clarification_options. Each option must state a complete student-facing meaning, use one allowed message_role, "
-        "and provide resolved_message as the standalone meaning to resume with. Include an 'I'm still not sure' "
-        "support_request when space permits. Options clarify intent and must not reveal the course answer. For every "
+        "and provide resolved_message as the standalone meaning to resume with. Options clarify intent and "
+        "must not reveal the course answer. For every "
         "non-ambiguous message, return clarification_question=null and clarification_options=[]. Return retrieval_query "
         "as one standalone search that resolves pronouns from history, plus "
         "zero to three retrieval_subqueries only for genuinely separate information needs. Return operational_request "
@@ -833,14 +827,9 @@ async def classify_message(
     )
     if fallback.message_role in protected_roles and not actionable_mixed_ambiguity:
         normalized_role = fallback.message_role
-    elif fallback.message_role == "acknowledgement" and not (
-        result.message_role == "ambiguous" and len(result.clarification_options) >= 2
-    ):
-        # Acknowledging an unanswered question is not a substantive answer or a close.
-        normalized_role = "acknowledgement"
-    elif fallback.message_role == "student_answer" and result.message_role in {
-        "ambiguous", "support_request", "confirmation_request", "learning_question", "follow_up",
-    }:
+    elif fallback.message_role == "student_answer" and result.needs_clarification and len(result.clarification_options) < 2:
+        # Do not interrupt a declarative answer with an unusable clarification.
+        # A genuine ambiguity with concrete choices still reaches the student.
         normalized_role = "student_answer"
     if normalized_role != result.message_role:
         return replace(_classification_from_observation(

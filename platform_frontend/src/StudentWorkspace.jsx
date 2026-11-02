@@ -13,7 +13,8 @@ const SOCRATIC_TOUR_STEPS = [
   { selector: '[data-socratic-tour="materials"]', title: "Read the course materials", detail: "Download the instructor-selected documents so you can refer to them during the chat." },
   { demo: "start", title: "Start with the first example", detail: "Start assignment opens the tutor’s first example and question." },
   { demo: "chat", title: "Discuss the example", detail: "Share your reasoning or ask a question. The tutor responds in the conversation." },
-  { demo: "continue", title: "Continue when ready", detail: "When you have discussed a topic enough, use Continue to next step." },
+  { demo: "check", title: "Check what you learned", detail: "For guided steps with a check, find the incorrect action and briefly explain why." },
+  { demo: "continue", title: "Continue when ready", detail: "After the step check, use Continue to next step. If you struggle twice, you can try another example or continue with support." },
   { demo: "finish", title: "Finish the last topic", detail: "After the final topic, finish the conversation to open your summary." },
   { demo: "summary", title: "Summarize and review feedback", detail: "Explain what you learned, get final feedback, and read it before submitting." },
   { demo: "submit", title: "Submit the assignment", detail: "Submit only after you have reviewed your final feedback." },
@@ -32,6 +33,12 @@ function SocraticTourPreview({ kind, onAdvance }) {
         <div className="socratic-tour-preview-message is-student">You: I think the first condition matters because…</div>
         <div className="socratic-tour-preview-message">Tutor: Good observation. What might happen if that condition changes?</div>
         <div className="socratic-tour-preview-composer is-highlighted">Write your answer or ask a question… <button type="button" onClick={onAdvance}>Send message</button></div>
+      </>}
+      {kind === "check" && <>
+        <div className="socratic-tour-preview-heading">Apply what you learned</div>
+        <div className="socratic-tour-preview-message">A new situation tests the same idea. Which action is incorrect?</div>
+        <div className="socratic-tour-preview-message is-student">Choose an option, then explain why it would cause a problem.</div>
+        <button type="button" className="socratic-tour-preview-action is-highlighted" onClick={onAdvance}>Check my reasoning</button>
       </>}
       {kind === "continue" && <>
         <div className="socratic-tour-preview-heading">Your learning path · Topic 1</div>
@@ -142,6 +149,14 @@ function nextQuestion(messages) {
   if (!answer.trim().replace(/[\s*_`'\"]+$/, "").endsWith("?")) return "";
   const sentences = answer.split(/(?<=[.!?])\s+/).filter(Boolean);
   return [...sentences].reverse().find((sentence) => sentence.trim().endsWith("?"))?.trim() || "";
+}
+
+function currentStepQuestionCount(messages, stepStartedAtMessageCount) {
+  const start = Math.max(0, Number(stepStartedAtMessageCount || 1) - 1);
+  return new Set((messages || []).slice(start)
+    .filter((item) => item.role === "assistant")
+    .map((item) => (item.next_thinking_step || item.content?.match(/[^\n.!?]*\?/g)?.at(-1) || "").trim().toLocaleLowerCase())
+    .filter(Boolean)).size;
 }
 
 function learningStepBoundary(message, steps) {
@@ -739,6 +754,9 @@ export default function StudentWorkspace({ user }) {
     [socraticTourStep, setSocraticTourStep] = useState(0);
   const [selectedConceptOption, setSelectedConceptOption] = useState(null),
     [conceptCheckHintVisible, setConceptCheckHintVisible] = useState(false),
+    [stepCheckOption, setStepCheckOption] = useState(null),
+    [stepCheckReason, setStepCheckReason] = useState(""),
+    [stepCheckOpen, setStepCheckOpen] = useState(false),
     [showLearningSummary, setShowLearningSummary] = useState(false);
   const endRef = useRef(null),
     messagesRef = useRef(null),
@@ -748,9 +766,28 @@ export default function StudentWorkspace({ user }) {
     inputRef = useRef(null),
     summaryFormRef = useRef(null),
     summaryInputRef = useRef(null),
+    stepCheckDialogRef = useRef(null),
     focusComposerAfterReply = useRef(false),
     evidenceResize = useRef(null);
   const currentLearningStep = attempt?.engine_state?.socratic?.learning_step_index ?? 0;
+  useEffect(() => {
+    setStepCheckOption(null);
+    setStepCheckReason("");
+    setStepCheckOpen(false);
+  }, [currentLearningStep, assignment?.id]);
+  useEffect(() => {
+    if (!stepCheckOpen) return;
+    if (messagesRef.current && stepCheckDialogRef.current) {
+      const messages = messagesRef.current;
+      messages.scrollTop += stepCheckDialogRef.current.getBoundingClientRect().top - messages.getBoundingClientRect().top - 12;
+    }
+    stepCheckDialogRef.current?.focus({ preventScroll: true });
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setStepCheckOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [stepCheckOpen]);
   useEffect(() => {
     const list = learningPathRef.current;
     const current = list?.querySelector('[aria-current="step"]');
@@ -993,6 +1030,47 @@ export default function StudentWorkspace({ user }) {
       }
     });
   }
+  async function submitStepCheck(event) {
+    event.preventDefault();
+    const sent = await perform("step-check", {
+      request_id: crypto.randomUUID(), action: "submit",
+      option_index: stepCheckOption, reason: stepCheckReason.trim(),
+    });
+    if (sent) {
+      setStepCheckOption(null);
+      setStepCheckReason("");
+    }
+  }
+  async function tryAnotherStepCheck() {
+    const sent = await perform("step-check", { request_id: crypto.randomUUID(), action: "try_another" });
+    if (sent) {
+      setStepCheckOption(null);
+      setStepCheckReason("");
+    }
+  }
+  async function continueWithSupport() {
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/platform/assignments/${id}/step-check`, {
+        method: "POST", body: { request_id: crypto.randomUUID(), action: "continue_with_support" },
+      });
+      if (activeLearningStep < learningStepCount - 1) {
+        const result = await api(`/platform/assignments/${id}/next-step`, { method: "POST", body: {} });
+        setAttempt(result);
+        setNewReplyIndex((result.messages?.length || 1) - 1);
+      } else {
+        const result = await api(`/platform/assignments/${id}/attempt`);
+        setAttempt(result);
+        setShowLearningSummary(true);
+      }
+      setStepCheckOpen(false);
+    } catch (failure) {
+      setError(failure.message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function send(e) {
     e.preventDefault();
     await sendMessage(message.trim());
@@ -1009,6 +1087,7 @@ export default function StudentWorkspace({ user }) {
       conceptCheckOption === null &&
       !clarificationText &&
       message.trim() === text;
+    if (fromComposer && stepCheckOpen) setStepCheckOpen(false);
     if (
       !pending.current ||
       pending.current.message !== text ||
@@ -1155,9 +1234,7 @@ export default function StudentWorkspace({ user }) {
   const conceptCheck = socratic.concept_check || null;
   const thinkingStep =
     assignment.tool === "socratic" && socratic.conversation_status !== "paused"
-      ? socratic.next_thinking_step || nextQuestion(attempt?.messages) || (
-        socratic.phase === "teaching" ? nextQuestion(attempt?.messages?.slice(0, -1)) : ""
-      )
+      ? socratic.next_thinking_step || nextQuestion(attempt?.messages)
       : "";
   const keywords = socratic.keywords?.length
     ? socratic.keywords
@@ -1172,16 +1249,41 @@ export default function StudentWorkspace({ user }) {
     : [];
   const hasDiscussedCurrentStep = attempt?.messages?.slice(socratic.step_started_at_message_count || 0)
     .some((item) => item.role === "user");
-  const stepActionDisabled = busy || socratic.phase !== "teaching" ||
-    Boolean(socratic.pending_clarification || socratic.concept_check) || !hasDiscussedCurrentStep;
   const learningStepCount = assignment.student_config?.learning_steps?.length || 0;
   const activeLearningStep = Math.min(Math.max(Number(socratic.learning_step_index) || 0, 0), Math.max(learningStepCount - 1, 0));
+  const stepChecks = assignment.student_config?.learning_steps?.[activeLearningStep]?.checks || [];
+  const checkProgress = socratic.step_check?.step_index === activeLearningStep ? socratic.step_check : null;
+  const checkStatus = checkProgress?.status || "active";
+  const activeCheck = stepChecks[Math.min(Number(checkProgress?.variant) || 0, stepChecks.length - 1)];
+  const revealedIncorrectAnswer = ["passed", "choice", "continued_with_support"].includes(checkStatus)
+    ? activeCheck?.options?.[checkProgress?.correct_option_index]
+    : null;
+  const checkFeedback = checkProgress?.feedback || "";
+  const displayedCheckFeedback = revealedIncorrectAnswer
+    ? checkFeedback.replace(`The incorrect choice is: ${revealedIncorrectAnswer}. `, "").trim()
+    : checkFeedback;
+  const needsStepCheck = stepChecks.length > 0 && !["passed", "continued_with_support"].includes(checkStatus);
+  const minimumStepQuestions = assignment.student_config?.minimum_step_questions ?? 1;
+  const stepQuestionCount = currentStepQuestionCount(attempt?.messages, socratic.step_started_at_message_count);
+  const stepActionDisabled = busy || socratic.phase !== "teaching" ||
+    Boolean(socratic.pending_clarification || socratic.concept_check) || !hasDiscussedCurrentStep ||
+    stepQuestionCount < minimumStepQuestions;
+  const continueFromStep = () => {
+    if (needsStepCheck) {
+      setStepCheckOpen(true);
+    } else if (activeLearningStep < learningStepCount - 1) {
+      advanceLearningStep();
+    } else {
+      setShowLearningSummary(true);
+    }
+  };
   const finalLearningStepFinished = Boolean(attempt && learningStepCount && activeLearningStep === learningStepCount - 1 && (
     showLearningSummary || attempt.status === "completed" || ["awaiting_reflection", "ready_to_submit"].includes(socratic.phase)
   ));
   const completedLearningSteps = attempt ? Math.min(learningStepCount, activeLearningStep + Number(finalLearningStepFinished)) : 0;
   const socraticTourSteps = SOCRATIC_TOUR_STEPS.filter((step) =>
     (!conceptCheck || step.demo) &&
+    (step.demo !== "check" || assignment.student_config?.learning_steps?.some((item) => item.checks?.length)) &&
     (learningStepCount || step.selector !== '[data-socratic-tour="learning-path"]')
   );
   const milestone =
@@ -1234,7 +1336,8 @@ export default function StudentWorkspace({ user }) {
                     <div><span className="student-panel-kicker">Step by step</span><h3 id="student-learning-path-title">Your learning path</h3></div>
                     <span className="student-section-count">{learningStepCount} steps</span>
                   </div>
-                  <p className="help">Follow these steps from beginning to end. You can ask the tutor questions about any step.</p>
+                  <p className="help">Discuss each step, then use its application check before continuing. You can ask the tutor questions about any step.</p>
+                  {attempt && !showLearningSummary && <p className="help" role="status">Tutor questions in this step: {stepQuestionCount} of {minimumStepQuestions} required before the check.</p>}
                   <div className="student-learning-progress">
                     <div className="student-learning-progress-heading">
                       <p>{completedLearningSteps} of {learningStepCount} steps complete{attempt && completedLearningSteps < learningStepCount ? ` · Stage ${activeLearningStep + 1} of ${learningStepCount}` : ""}</p>
@@ -1248,33 +1351,27 @@ export default function StudentWorkspace({ user }) {
                     {assignment.student_config.learning_steps.map((step, index) => {
                       const completed = attempt && (index < activeLearningStep || (finalLearningStepFinished && index === activeLearningStep));
                       const current = attempt && attempt.status !== "completed" && !finalLearningStepFinished && index === activeLearningStep;
+                      const completedWithSupport = socratic.step_check_results?.some((result) => result.step_index === index && result.status === "continued_with_support");
                       return (
                         <li key={`${index}-${step.title}`} className={current ? "is-current" : completed ? "is-completed" : ""} aria-current={current ? "step" : undefined}>
                           <span className="student-step-number" aria-hidden="true">{index + 1}</span>
                           {current && <span className="student-step-active-label">Current step</span>}
                           <div className="student-step-title">
                             <strong>{step.title}</strong>
-                            {completed && <span className="student-step-complete-icon" role="img" aria-label="Completed step">✓</span>}
+                            {completed && <span className="student-step-complete-icon" role="img" aria-label={completedWithSupport ? "Continued with support" : "Completed step"}>{completedWithSupport ? "↗" : "✓"}</span>}
                           </div>
                           <span>{step.goal}</span>
+                          {completedWithSupport && <small className="student-step-support-note">Continued with support</small>}
                         </li>
                       );
                     })}
                   </ol>
                   {attempt && attempt.status !== "completed" && !showLearningSummary &&
-                    (activeLearningStep < learningStepCount - 1 ? (
-                      <div>
-                        <button type="button" className="compact next-learning-step" disabled={stepActionDisabled} onClick={advanceLearningStep}>
-                          Continue to next step
-                        </button>
-                      </div>
-                    ) : socratic.phase !== "ready_to_submit" && (
-                      <div>
-                        <button type="button" className="compact next-learning-step" disabled={stepActionDisabled} onClick={() => setShowLearningSummary(true)}>
-                          Finish conversation and summarize
-                        </button>
-                      </div>
-                    ))}
+                    (activeLearningStep < learningStepCount - 1 || socratic.phase !== "ready_to_submit") && (
+                      <button type="button" className="compact next-learning-step" disabled={stepActionDisabled || stepCheckOpen} onClick={continueFromStep}>
+                        {needsStepCheck ? "Take step quiz" : activeLearningStep < learningStepCount - 1 ? "Continue to next step" : "Finish conversation and summarize"}
+                      </button>
+                    )}
                 </section>
               )}
               <section className="student-course-materials" data-socratic-tour="materials" aria-labelledby="student-course-materials-title">
@@ -1676,7 +1773,7 @@ export default function StudentWorkspace({ user }) {
                       </div>
                     </article>
                   ))}
-                {busy && !finalFeedbackBusy &&
+                {busy && !finalFeedbackBusy && !stepCheckOpen &&
                   (assignment.tool === "socratic" ? (
                     <SocraticThinkingMessage
                       elapsedSeconds={
@@ -1723,6 +1820,39 @@ export default function StudentWorkspace({ user }) {
                       </form>
                     </div>
                   )}
+                {assignment.tool === "socratic" && learningStepCount > 0 && !completed && !showLearningSummary && socratic.phase === "teaching" && stepCheckOpen && activeCheck && (
+                  <div className="socratic-step-inline" aria-label="Current learning step quiz">
+                    <section className="socratic-step-check" role="dialog" aria-label="Check this step" ref={stepCheckDialogRef} tabIndex={-1}>
+                      <div className="socratic-step-check-heading">
+                        <div><span className="student-panel-kicker">STEP {activeLearningStep + 1} OF {learningStepCount} · APPLICATION CHECK</span><h4>Find the incorrect answer</h4></div>
+                        <button type="button" className="socratic-step-check-close" aria-label="Close step check" onClick={() => setStepCheckOpen(false)}>×</button>
+                      </div>
+                      {checkStatus === "passed" || checkStatus === "continued_with_support" ? (
+                        <>{revealedIncorrectAnswer && <div className="socratic-step-check-result"><span>Incorrect action in this example</span><strong>{revealedIncorrectAnswer}</strong></div>}
+                        <p role="status" className="socratic-step-check-ready">{checkStatus === "passed" ? displayedCheckFeedback || "You explained the mistake. Ready to continue." : "You can continue and return to this idea later."}</p>
+                        <button type="button" className="next-learning-step" disabled={busy} onClick={continueFromStep}>{activeLearningStep < learningStepCount - 1 ? "Continue to next step" : "Continue to summary"}</button></>
+                      ) : checkStatus === "choice" ? (
+                        <div role="status">{revealedIncorrectAnswer && <div className="socratic-step-check-result"><span>Incorrect action in this example</span><strong>{revealedIncorrectAnswer}</strong></div>}
+                          {displayedCheckFeedback && <p>{displayedCheckFeedback}</p>}
+                          <p>Learning takes practice. You can try a new example, or continue and return to this idea later.</p>
+                          <div className="socratic-step-check-actions"><button type="button" className="secondary" disabled={busy} onClick={tryAnotherStepCheck}>{checkProgress.variant ? "Try this example again" : "Try another example"}</button><button type="button" className="next-learning-step" disabled={busy} onClick={continueWithSupport}>{activeLearningStep < learningStepCount - 1 ? "Continue to next step" : "Continue to summary"}</button></div>
+                        </div>
+                      ) : (
+                        <form onSubmit={submitStepCheck}>
+                          <div className="socratic-step-check-content">
+                            <div className="socratic-step-check-prompt"><span className="socratic-step-check-eyebrow">Scenario</span><p>{activeCheck.scenario}</p><strong>{activeCheck.question}</strong></div>
+                            <div className="socratic-step-check-response">
+                              <div className="socratic-step-check-options">{activeCheck.options.map((option, index) => <label key={`${index}-${option}`}><input type="radio" name="step-check-option" checked={stepCheckOption === index} onChange={() => setStepCheckOption(index)} /><span className="socratic-step-check-choice-letter" aria-hidden="true">{String.fromCharCode(65 + index)}</span><span>{option}</span></label>)}</div>
+                              <label className="socratic-step-check-reason">Why did you choose it?<textarea rows={2} maxLength={1200} value={stepCheckReason} onChange={(event) => setStepCheckReason(event.target.value)} placeholder="Explain what would go wrong in this situation." /></label>
+                            </div>
+                          </div>
+                          {checkProgress?.feedback && <p role="status" className="socratic-step-check-feedback">{checkProgress.feedback}</p>}
+                          <button type="submit" disabled={busy || stepCheckOption === null || stepCheckReason.trim().length < 5}>{busy ? "Checking…" : "Check my reasoning"}</button>
+                        </form>
+                      )}
+                    </section>
+                  </div>
+                )}
                 <div ref={endRef} />
               </div>
               {!completed && assignment.tool === "student-agent" && (

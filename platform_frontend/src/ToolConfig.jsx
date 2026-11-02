@@ -13,7 +13,7 @@ export const defaults = {
     document_ids: [],
     learning_steps: [],
     prompt: "",
-    minimum_messages: 1,
+    minimum_step_questions: 2,
   },
   debate: {
     document_ids: [],
@@ -131,7 +131,7 @@ export function SocraticConfig({
             {generatingSetup ? "Generating setup…" : "Generate setup from selected sources"}
           </button>
           <p className="help">
-            AI drafts a beginning-to-end learning path, opening question, student/submission instructions, and a completion-message count from the selected indexed documents. Review and edit these before publishing.
+            AI drafts a beginning-to-end learning path, two application checks per step, an opening question, student/submission instructions, and a completion-message count from the selected indexed documents. Review and edit these before publishing.
           </p>
           {setupError && <p className="publish-inline-error" role="alert">{setupError}</p>}
           {publishIssue?.target === "learning-path" && <p className="publish-inline-error">{publishIssue.message}</p>}
@@ -244,28 +244,38 @@ export function SocraticConfig({
                 </label>
                 <p className="help">Give students enough context to picture this step before its question. Continue the same example, use only details supported by this step’s selected material, and leave the answer open.</p>
                 <label>Question for this step<textarea rows={2} maxLength={500} value={step.question || ""} disabled={frozen} onChange={(event) => updateStep("question", event.target.value)} placeholder="What should the student reason about next?" /></label>
+                {step.checks?.length === 2 ? <div className="socratic-step-check-editor">
+                  <h4>End-of-step application checks</h4>
+                  <p className="help">Students find the incorrect answer and explain why. The second check uses another example if they choose to try again.</p>
+                  {step.checks.map((check, checkIndex) => {
+                    const updateCheck = (field, next) => updateStep("checks", step.checks.map((item, position) => position === checkIndex ? { ...item, [field]: next } : item));
+                    return <fieldset key={checkIndex}>
+                      <legend>{checkIndex === 0 ? "First check" : "Another example"}</legend>
+                      <label>Situation<textarea rows={3} value={check.scenario} disabled={frozen} onChange={(event) => updateCheck("scenario", event.target.value)} /></label>
+                      <label>Question<textarea rows={2} value={check.question} disabled={frozen} onChange={(event) => updateCheck("question", event.target.value)} /></label>
+                      <label>Answer options, one per line<textarea rows={4} value={check.options.join("\n")} disabled={frozen} onChange={(event) => updateCheck("options", event.target.value.split("\n"))} /></label>
+                      <label>Incorrect option
+                        <select value={check.incorrect_option_index} disabled={frozen} onChange={(event) => updateCheck("incorrect_option_index", Number(event.target.value))}>
+                          {check.options.map((option, optionIndex) => <option key={optionIndex} value={optionIndex}>{optionIndex + 1}. {option || "Empty option"}</option>)}
+                        </select>
+                      </label>
+                      <label>Why this option is incorrect<textarea rows={2} value={check.expected_reason} disabled={frozen} onChange={(event) => updateCheck("expected_reason", event.target.value)} /></label>
+                    </fieldset>;
+                  })}
+                </div> : <p className="help">This step was created before application checks were added. Regenerate the setup to include them.</p>}
                 <details className="socratic-step-evidence"><summary>View supporting passage</summary><p>{step.evidence_quote}</p></details>
               </div>}
             </li>;
           })}
           </ol>
         </section>}
-        <label>
-          Messages required before completion
-          <input
-            type="number"
-            min={1}
-            max={100}
-            value={value.minimum_messages ?? 1}
-            onChange={(e) =>
-              change("minimum_messages", Number(e.target.value))
-            }
-          />
-        </label>
-        <p className="help">
-          Students mark the assignment complete after the minimum number of
-          messages.
-        </p>
+        {guidanceMode === "guided" && <label>
+          Tutor questions before each step check
+          <input type="number" min={1} max={10}
+            value={value.minimum_step_questions ?? 2}
+            onChange={(event) => change("minimum_step_questions", Number(event.target.value))} />
+          <small className="help">The first question in each step counts. Repeating the same question does not. Students can take the check after discussing this many questions.</small>
+        </label>}
         </section>
       )}
       {!hideMaterials &&

@@ -7,6 +7,8 @@ import LessonPreview from "./LessonPreview";
 import ActivityRail from "./ActivityRail";
 import ActivityIcon from "./ActivityIcon";
 import ActivityTutorial from "./ActivityTutorial";
+import PublishedStepChecks from "./PublishedStepChecks";
+import PublishedSocraticSettings from "./PublishedSocraticSettings";
 import { loadCourseContext } from "./courseContext";
 
 const initial = {
@@ -22,7 +24,6 @@ const ACTIVITY_TYPES = [
   "reflections",
   "self-directed-learning",
   "debate",
-  "aiducate",
 ];
 const configFor = (tool) =>
   structuredClone(
@@ -301,7 +302,6 @@ export default function CreateActivity({
           keywords: [],
           optional_keywords: [],
           prompt: generated.prompt,
-          minimum_messages: generated.minimum_messages,
           learning_steps: generated.learning_steps || [],
         },
       }));
@@ -512,6 +512,8 @@ export default function CreateActivity({
       </div>
       {busy && <GenerationStatus message={busyLabel || "Working on your activity"} fullScreen />}
       {showTutorial && <ActivityTutorial tool={draft.tool} onClose={closeTutorial} />}
+      {frozen && <PublishedSocraticSettings assignment={draft} onSaved={(updated) => setDraft((current) => ({ ...current, ...updated }))} />}
+      {frozen && <PublishedStepChecks assignment={draft} onSaved={(updated) => setDraft((current) => ({ ...current, ...updated }))} />}
       <fieldset className="editor-fieldset" disabled={busy || frozen}>
         <section className="panel">
           <div className="activity-details-heading">
@@ -847,7 +849,7 @@ export default function CreateActivity({
                 {publishIssue?.target === "debate-scenario" && <p className="publish-inline-error">{publishIssue.message}</p>}
                 <p className="help">
                   {draft.tool === "aiducate"
-                    ? "AIducate has no backend yet. You can save a draft."
+                    ? "AIducate now analyzes saved Reflection responses in the instructor workspace. It is not a student activity."
                     : draft.tool === "self-directed-learning"
                       ? "Select course materials above. Review activity generates the adaptive lesson for you to check before publishing."
                       : "Students discuss this scenario with the Debate chatbot."}
@@ -878,8 +880,7 @@ export default function CreateActivity({
         </div>
         {!connected && (
           <p className="help">
-            AIducate is available for draft testing; publishing needs its
-            backend connection.
+            <Link to="/professor/analytics">Open AIducate analysis</Link> to choose a course and published Reflection assignment.
           </p>
         )}
         {draft.tool === "self-directed-learning" && !selected.length && (
@@ -910,8 +911,7 @@ export default function CreateActivity({
                   <dt>Opening question</dt>
                   <dd>{draft.config.prompt || "Generated from course materials"}</dd>
                   {(draft.config.guidance_mode || (draft.config.learning_steps?.length ? "guided" : "basic")) === "guided" && <><dt>Learning path</dt><dd>{draft.config.learning_steps?.length ? draft.config.learning_steps.map((step, index) => `${index + 1}. ${step.title}`).join(" → ") : "No generated steps"}</dd></>}
-                  <dt>Messages before completion</dt>
-                  <dd>{draft.config.minimum_messages ?? 1}</dd>
+                  {(draft.config.guidance_mode || (draft.config.learning_steps?.length ? "guided" : "basic")) === "guided" && <><dt>Tutor questions before each check</dt><dd>{draft.config.minimum_step_questions ?? 2}</dd></>}
                 </>
               )}
               <dt>Chat</dt>

@@ -8,10 +8,12 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 from fastapi import HTTPException
+from httpx2 import Request
+from openai import APITimeoutError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "Socratic-Chat/backend"))
 
@@ -20,6 +22,43 @@ from platform_app.schemas import SocraticConfig, SocraticSetupInput
 
 
 class SocraticSetupTests(unittest.TestCase):
+    def test_legacy_message_count_is_ignored_in_socratic_config(self):
+        config = SocraticConfig.model_validate({"minimum_messages": 5})
+        self.assertNotIn("minimum_messages", config.model_dump())
+
+    def setUp(self):
+        # Lesson-plan tests isolate the per-step quiz call; its schema and
+        # student-facing behavior are covered by platform_unit_tests.
+        checks = [
+            {"scenario": f"A learner faces example {number} and must choose an action.",
+             "question": "Which action is incorrect in this situation?",
+             "options": ["Review the requirement", "Ignore the requirement", "Ask for clarification"],
+             "incorrect_option_index": 1,
+             "expected_reason": "Ignoring the stated requirement would make the result incorrect."}
+            for number in (1, 2)
+        ]
+        patcher = patch.object(socratic_setup, "generate_checks_for_step",
+                               new_callable=AsyncMock, return_value=checks)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_local_setup_timeout_reports_model_delay(self):
+        course_id = uuid4()
+        file_id = uuid4()
+
+        @contextmanager
+        def connection():
+            yield SimpleNamespace(execute=lambda *_args: SimpleNamespace(fetchall=lambda: [
+                {"id": file_id, "filename": "Assignment.pdf", "document_id": "selected"}
+            ]))
+
+        body = SocraticSetupInput(document_ids=["selected"], title="Assignment")
+        with patch.object(objectives, "manage_course"), patch.object(objectives.store, "connection", side_effect=connection), patch.object(objectives, "generate_setup", side_effect=APITimeoutError(Request("POST", "http://localhost:11434/v1/chat/completions"))):
+            with self.assertRaises(HTTPException) as raised:
+                asyncio.run(objectives.generate_socratic_setup(course_id, body, account={}))
+        self.assertEqual(raised.exception.status_code, 504)
+        self.assertIn("model took too long", raised.exception.detail)
+
     def test_hosted_setup_reports_provider_quota_and_retry_time(self):
         course_id = uuid4()
         file_id = uuid4()
@@ -205,7 +244,6 @@ class SocraticSetupTests(unittest.TestCase):
         payload = {
             "opening_prompt": "Imagine the sandwich machine asks for a size. What would you choose?",
             "student_instructions": "Discuss the menu choices and submit the code through Canvas.",
-            "minimum_messages": 4,
             "learning_steps": [
                 {"title": "Choose a size", "goal": "Explain how the user selects a size.", "scenario": "The machine asks a customer to choose a sandwich size.", "question": "Which size would you choose, and why?", "evidence_quote": "Choose a sandwich size.", "source_chunk_id": "chunk-1"},
                 {"title": "Submit the code", "goal": "Explain what code you will submit.", "scenario": "After working through the machine, you prepare its code for submission.", "question": "How would you prepare the code for submission?", "evidence_quote": "Submit the code through Canvas.", "source_chunk_id": "chunk-1"},
@@ -213,11 +251,13 @@ class SocraticSetupTests(unittest.TestCase):
             "source_chunk_ids": ["chunk-1"],
         }
         async def fake_completion(_key, _url, request):
+            self.assertNotIn("minimum_messages", request["response_format"]["json_schema"]["schema"]["properties"])
             self.assertIn("[chunk_id=chunk-1]", request["messages"][1]["content"])
             self.assertIn("Canvas description: Submit the code through Canvas", request["messages"][1]["content"])
             self.assertIn("EVERY step its own concrete", request["messages"][0]["content"])
             self.assertIn("Do not invent quantities", request["messages"][0]["content"])
             self.assertNotIn("max_tokens", request)
+            self.assertEqual(request["timeout"], 1200.0)
             return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload)))])
         with patch.object(socratic_setup.db, "get_document_chunks_for_objectives", return_value=[
             {"chunk_id": "chunk-1", "text": "Choose a sandwich size. Submit the code through Canvas.", "title": "Assignment"}
@@ -228,7 +268,7 @@ class SocraticSetupTests(unittest.TestCase):
                 [{"id": "file-1", "filename": "assignment.pdf"}],
                 "Sandwich Maker", "Submit the code through Canvas",
             ))
-        self.assertEqual(result["minimum_messages"], 4)
+        self.assertNotIn("minimum_messages", result)
         self.assertEqual(result["prompt"], payload["opening_prompt"])
         self.assertEqual(result["instructions"], payload["student_instructions"])
         self.assertEqual([step["title"] for step in result["learning_steps"]], ["Choose a size", "Submit the code"])

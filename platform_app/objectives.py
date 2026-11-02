@@ -6,6 +6,7 @@ from threading import Lock
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from openai import APITimeoutError
 
 from app import db
 from app.objective_extraction import extract_and_save_learning_objectives, suggest_keywords
@@ -57,6 +58,9 @@ async def generate_socratic_setup(course_id: UUID, body: SocraticSetupInput, acc
         if getattr(exc, "status_code", None) == 429:
             logging.getLogger(__name__).warning("Socratic setup provider rate limited for course %s", course_id)
             raise HTTPException(429, _provider_rate_limit_detail(exc)) from exc
+        if isinstance(exc, APITimeoutError):
+            logging.getLogger(__name__).exception("Socratic setup model request timed out for course %s", course_id)
+            raise HTTPException(504, "The local AI model took too long to generate the setup. Please retry or select shorter materials.") from exc
         logging.getLogger(__name__).exception("Could not draft Socratic setup for course %s", course_id)
         raise HTTPException(503, "The AI could not generate a setup from these materials. Check the model service and retry.") from exc
     return {**draft, "source_files": [by_document[item]["filename"] for item in selected]}

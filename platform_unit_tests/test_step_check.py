@@ -6,6 +6,8 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from httpx import Request, Response
+from openai import BadRequestError
 
 from platform_app import routes, socratic_setup, step_check
 from platform_app.schemas import SocraticLearningStep
@@ -121,6 +123,57 @@ def test_checks_are_drafted_in_a_small_separate_request(monkeypatch):
     assert calls[0]["reasoning_effort"] == "none"
     assert calls[0]["max_tokens"] == 1600
     assert "step_scene" in calls[0]["messages"][1]["content"]
+
+
+def test_groq_schema_rejection_recovers_trailing_empty_quiz_options(monkeypatch):
+    checks = [_check("first"), _check("second")]
+    for check in checks:
+        check["options"] = [*check["options"], "Valid fourth option", ""]
+    raw = json.dumps({"checks": checks})
+    response = Response(400, request=Request("POST", "https://api.groq.com/openai/v1/chat/completions"))
+    error = BadRequestError("Generated JSON does not match the expected schema", response=response,
+                            body={"error": {"code": "json_validate_failed", "failed_generation": raw}})
+    calls = []
+
+    async def complete(_key, _url, request):
+        calls.append(request)
+        raise error
+
+    monkeypatch.setattr(socratic_setup, "chat_completion", complete)
+    result = asyncio.run(socratic_setup.generate_checks_for_step({
+        "title": "Check supplies", "goal": "Explain why supplies are checked before payment.",
+        "scenario": "A customer selects a sandwich.", "question": "What should happen first?",
+    }, "Check supplies before taking coins.", "Groq", "key", "url", "openai/gpt-oss-20b"))
+    assert len(calls) == 1
+    assert len(result) == 2
+    assert all(len(check["options"]) == 4 for check in result)
+
+
+def test_schema_rejection_with_real_fifth_option_retries_instead_of_dropping_it(monkeypatch):
+    checks = [_check("first"), _check("second")]
+    checks[0]["options"] = [*checks[0]["options"], "Fourth choice", "Fifth choice"]
+    raw = json.dumps({"checks": checks})
+    response = Response(400, request=Request("POST", "https://api.groq.com/openai/v1/chat/completions"))
+    error = BadRequestError("Generated JSON does not match the expected schema", response=response,
+                            body={"error": {"code": "json_validate_failed", "failed_generation": raw}})
+    calls = []
+
+    async def complete(_key, _url, request):
+        calls.append(request)
+        if len(calls) == 1:
+            raise error
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps({
+            "checks": [_check("first"), _check("second")],
+        })))])
+
+    monkeypatch.setattr(socratic_setup, "chat_completion", complete)
+    result = asyncio.run(socratic_setup.generate_checks_for_step({
+        "title": "Check supplies", "goal": "Explain why supplies are checked before payment.",
+        "scenario": "A customer selects a sandwich.", "question": "What should happen first?",
+    }, "Check supplies before taking coins.", "Groq", "key", "url", "openai/gpt-oss-20b"))
+    assert len(calls) == 2
+    assert "blank fifth option" in calls[1]["messages"][-1]["content"]
+    assert len(result) == 2
 
 
 def test_student_config_hides_answer_key_and_expected_reason():

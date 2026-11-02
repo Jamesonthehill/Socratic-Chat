@@ -7,9 +7,9 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 from httpx import Request, Response
-from openai import BadRequestError
+from openai import BadRequestError, RateLimitError
 
-from platform_app import routes, socratic_setup, step_check
+from platform_app import objectives, routes, socratic_setup, step_check
 from platform_app.schemas import SocraticLearningStep
 
 
@@ -147,6 +147,48 @@ def test_groq_schema_rejection_recovers_trailing_empty_quiz_options(monkeypatch)
     assert len(calls) == 1
     assert len(result) == 2
     assert all(len(check["options"]) == 4 for check in result)
+
+
+def test_setup_retries_a_subsecond_provider_limit(monkeypatch):
+    response = Response(429, request=Request("POST", "https://api.groq.com/openai/v1/chat/completions"))
+    error = RateLimitError("Please try again in 674.999999ms.", response=response, body={})
+    calls = []
+    waits = []
+
+    async def complete(*_args):
+        calls.append(1)
+        if len(calls) == 1:
+            raise error
+        return "finished"
+
+    async def wait(seconds):
+        waits.append(seconds)
+
+    monkeypatch.setattr(socratic_setup, "chat_completion", complete)
+    monkeypatch.setattr(socratic_setup.asyncio, "sleep", wait)
+    assert asyncio.run(socratic_setup.setup_completion("key", "url", {})) == "finished"
+    assert len(calls) == 2
+    assert waits == [pytest.approx(0.825)]
+
+
+def test_setup_does_not_retry_a_long_provider_quota_limit(monkeypatch):
+    response = Response(429, request=Request("POST", "https://api.groq.com/openai/v1/chat/completions"))
+    error = RateLimitError("Please try again in 34m34.896s.", response=response, body={})
+    calls = []
+
+    async def complete(*_args):
+        calls.append(1)
+        raise error
+
+    monkeypatch.setattr(socratic_setup, "chat_completion", complete)
+    with pytest.raises(RateLimitError):
+        asyncio.run(socratic_setup.setup_completion("key", "url", {}))
+    assert len(calls) == 1
+
+
+def test_short_provider_limit_is_shown_as_a_readable_wait():
+    detail = objectives._provider_rate_limit_detail(Exception("Please try again in 674.999999ms."))
+    assert detail == "The AI provider is rate limiting requests. Try again in about 1 second."
 
 
 def test_schema_rejection_with_real_fifth_option_retries_instead_of_dropping_it(monkeypatch):

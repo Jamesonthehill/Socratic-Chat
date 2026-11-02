@@ -1,13 +1,14 @@
 """Draft editable Socratic activity settings from instructor-selected course files."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 from difflib import SequenceMatcher
 from typing import Any
 
-from openai import BadRequestError
+from openai import BadRequestError, RateLimitError
 
 from app import db, settings
 from app.llm_client import chat_completion
@@ -17,6 +18,25 @@ from platform_app.schemas import SocraticStepCheck
 MAX_SOURCE_CHARS = 16000
 MAX_FILES = 12
 SUBMISSION_TERMS = re.compile(r"\b(?:submit|submission|turn\s+in|deliverable|upload|due\s+date|rubric)\b", re.I)
+SHORT_RETRY_LIMIT_SECONDS = 2.0
+
+
+async def setup_completion(api_key: str, base_url: str, request: dict[str, Any]) -> Any:
+    """Wait briefly for provider limits that reset within a couple of seconds."""
+    for attempt in range(3):
+        try:
+            return await chat_completion(api_key, base_url, request)
+        except RateLimitError as error:
+            retry = re.search(r"Please try again in\s+([0-9]+(?:\.[0-9]+)?)(ms|s|m|h)\b", str(error), re.I)
+            if not retry or attempt == 2:
+                raise
+            amount = float(retry.group(1))
+            unit = retry.group(2).lower()
+            seconds = amount / 1000 if unit == "ms" else amount * {"s": 1, "m": 60, "h": 3600}[unit]
+            if seconds > SHORT_RETRY_LIMIT_SECONDS:
+                raise
+            logging.getLogger(__name__).info("Socratic setup provider asked for a short retry: %.2fs", seconds)
+            await asyncio.sleep(seconds + 0.15)
 
 
 def brief_opening(example: str, source: str, minimum_words: int = 50) -> bool:
@@ -250,7 +270,7 @@ async def generate_checks_for_step(step: dict[str, Any], passage: str, provider:
     last_error = None
     for attempt in range(2):
         try:
-            response = await chat_completion(api_key, base_url, request)
+            response = await setup_completion(api_key, base_url, request)
             return validated_step_checks(response.choices[0].message.content or "{}")
         except BadRequestError as error:
             raw = schema_failed_generation(error)
@@ -365,7 +385,7 @@ async def generate_setup(files: list[dict[str, Any]], title: str, canvas_instruc
     last_error = None
     brief_valid_draft = None
     for attempt in range(2):
-        response = await chat_completion(api_key, base_url, request)
+        response = await setup_completion(api_key, base_url, request)
         raw = response.choices[0].message.content or ""
         try:
             draft = validate_draft(raw, chunk_ids, evidence, source_files_by_chunk)
@@ -453,7 +473,7 @@ async def generate_opening_prompt(files: list[dict[str, Any]], title: str, canva
         request["reasoning_effort"] = "low"
     brief_valid_prompt = None
     for attempt in range(2):
-        response = await chat_completion(api_key, base_url, request)
+        response = await setup_completion(api_key, base_url, request)
         raw = response.choices[0].message.content or ""
         try:
             cleaned = raw.strip()

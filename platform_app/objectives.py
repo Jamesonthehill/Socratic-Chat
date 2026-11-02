@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import re
+from math import ceil
 from threading import Lock
 from uuid import UUID, uuid4
 
@@ -26,6 +27,11 @@ def _provider_rate_limit_detail(exc: Exception) -> str:
     daily = "tokens per day" in str(exc).lower()
     detail = ("The AI provider's daily token quota has been reached."
               if daily else "The AI provider is rate limiting requests.")
+    milliseconds = re.search(r"Please try again in ([0-9]+(?:\.[0-9]+)?)ms\b", str(exc), re.I)
+    if milliseconds:
+        seconds = max(1, ceil(float(milliseconds.group(1)) / 1000))
+        unit = "second" if seconds == 1 else "seconds"
+        return f"{detail} Try again in about {seconds} {unit}."
     retry = re.search(r"Please try again in ([0-9hms.]+)", str(exc), re.I)
     return f"{detail} Try again in {retry.group(1).rstrip('.')}." if retry else f"{detail} Please try again later."
 

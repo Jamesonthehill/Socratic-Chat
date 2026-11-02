@@ -160,6 +160,23 @@ test("professor opens activity creation from assignments rather than the teachin
   expect(screen.queryByText("Student Agent Bot")).not.toBeInTheDocument();
 });
 
+test("professor dashboard highlights a freshly published assignment and offers its preview", async () => {
+  mockApi();
+  render(
+    <MemoryRouter initialEntries={[{ pathname: "/professor", state: { notice: "Activity published.", highlightAssignmentId: assignment.id } }]}>
+      <App />
+    </MemoryRouter>,
+  );
+
+  const title = await screen.findByRole("link", { name: assignment.title });
+  const row = title.closest(".assignment-row");
+  expect(row).toHaveClass("is-just-published");
+  expect(within(row).getByText("Just published")).toBeInTheDocument();
+  expect(within(row).getByRole("link", { name: "Preview as student" }))
+    .toHaveAttribute("href", `/professor/activities/${assignment.id}`);
+  expect(screen.getByText("Activity published.")).toBeInTheDocument();
+});
+
 test("professor dashboard lists managed courses and opens each activity in its own course", async () => {
   const otherCourse = "9db10962-81ad-4fe1-bd37-701f263720e8";
   const other = {

@@ -241,7 +241,9 @@ export default function CreateActivity({
       await api(`/platform/assignments/${saved.id}/publish`, {
         method: "POST",
       });
-      navigate(`/professor/activities/${saved.id}`, { state: { showStudentPreview: true } });
+      navigate("/professor", {
+        state: { notice: "Activity published.", highlightAssignmentId: saved.id },
+      });
     } else if (!quiet) {
       navigate("/professor", { state: { notice: "Draft saved." } });
     }

@@ -253,20 +253,20 @@ test("clicking outside the activity cards keeps the selected activity and its se
   await user.click(screen.getByRole("heading", { name: "Course materials" }));
   expect(socratic).toHaveAttribute("aria-pressed", "true");
 });
-test("publishing opens the new assignment with its student preview requested", async () => {
+test("publishing returns to the dashboard with the new assignment highlighted", async () => {
   const original = api.getMockImplementation();
   api.mockImplementation((path, options) =>
     path === "/platform/assignments/a1/publish" && options?.method === "POST"
       ? Promise.resolve({ status: "published" })
       : original(path, options),
   );
-  function PublishedRoute() {
+  function DashboardRoute() {
     const location = useLocation();
-    return <p>{location.state?.showStudentPreview ? "Student preview requested" : "Preview missing"}</p>;
+    return <p>{location.state?.highlightAssignmentId === "a1" ? "New assignment highlighted" : "Highlight missing"}</p>;
   }
   render(<MemoryRouter initialEntries={["/professor/activities/new"]}><Routes>
     <Route path="/professor/activities/new" element={<CreateActivity />} />
-    <Route path="/professor/activities/:id" element={<PublishedRoute />} />
+    <Route path="/professor" element={<DashboardRoute />} />
   </Routes></MemoryRouter>);
   const user = userEvent.setup();
   await user.type(await screen.findByLabelText("Assignment title"), "Compare design choices");
@@ -275,7 +275,7 @@ test("publishing opens the new assignment with its student preview requested", a
   await user.click(screen.getByRole("button", { name: "Publish activity" }));
   await screen.findByRole("heading", { name: "Review and publish" });
   await user.click(screen.getByRole("button", { name: "Publish activity" }));
-  expect(await screen.findByText("Student preview requested")).toBeInTheDocument();
+  expect(await screen.findByText("New assignment highlighted")).toBeInTheDocument();
 });
 test("new Socratic activities use selected assignment materials without requiring keywords", async () => {
   const user = await open();

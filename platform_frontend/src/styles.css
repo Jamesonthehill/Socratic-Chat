@@ -709,6 +709,27 @@ small,
 .assignment-row:hover {
   background: color-mix(in srgb, var(--surface) 95%, var(--brand-indigo));
 }
+.assignment-row.is-just-published {
+  background: color-mix(in srgb, var(--surface) 88%, var(--brand-indigo));
+  box-shadow: inset 5px 0 var(--brand-indigo);
+  animation: assignment-published-highlight 1.2s ease-out 2;
+}
+.assignment-new-badge {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: var(--brand-indigo);
+  background: color-mix(in srgb, var(--surface) 78%, var(--brand-indigo));
+  font-size: 11px;
+  font-weight: 800;
+}
+@keyframes assignment-published-highlight {
+  50% { box-shadow: inset 5px 0 var(--brand-indigo), 0 0 0 3px color-mix(in srgb, var(--brand-indigo) 20%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .assignment-row.is-just-published { animation: none; }
+}
 .assignment-row:last-child {
   border: 0;
 }

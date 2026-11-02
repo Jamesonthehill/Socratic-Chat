@@ -1,6 +1,6 @@
 import StudentAssignmentBrowser from "./StudentAssignmentBrowser";
 import SDLWorkspace from "./SDLWorkspace";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -397,7 +397,7 @@ function useCourses() {
   return { courses, error, reload };
 }
 
-function AssignmentList({ items, professor, view = "list" }) {
+function AssignmentList({ items, professor, view = "list", highlightId = null, highlightRef = null }) {
   if (!items.length)
     return (
       <div className="empty">
@@ -422,6 +422,7 @@ function AssignmentList({ items, professor, view = "list" }) {
         .map((item) => {
           const tool = TOOLS[item.tool];
           const canOpen = !professor || item.can_manage !== false;
+          const justPublished = professor && item.id === highlightId;
           const professorPath = !tool
             ? `/professor/assignments/${item.id}`
             : item.status === "draft" || item.tool === "self-directed-learning"
@@ -429,9 +430,10 @@ function AssignmentList({ items, professor, view = "list" }) {
               : `/professor/tools/${item.tool}/assignments/${item.id}`;
           return (
             <article
-              className="assignment-row"
+              className={`assignment-row${justPublished ? " is-just-published" : ""}`}
               style={{ "--tool-color": tool?.color || "#65708a" }}
               key={item.id}
+              ref={justPublished ? highlightRef : null}
               onPointerEnter={() => professor && canOpen && preloadAssignment(item.id)}
               onFocus={() => professor && canOpen && preloadAssignment(item.id)}
             >
@@ -452,6 +454,7 @@ function AssignmentList({ items, professor, view = "list" }) {
                   {tool?.name || "Choose an activity"}
                   {!professor && item.canvas_linked ? " · Canvas" : ""}
                 </span>
+                {justPublished && <span className="assignment-new-badge">Just published</span>}
                 <h3>
                   {!canOpen ? item.title : <Link
                     className="button secondary compact"
@@ -488,6 +491,11 @@ function AssignmentList({ items, professor, view = "list" }) {
                   </Link>
                   {professor && item.tool === "socratic" && item.status === "published" && item.config?.learning_steps?.length > 0 && (
                     <Link className="button compact" to={`/professor/activities/${item.id}/settings`}>Edit settings</Link>
+                  )}
+                  {justPublished && (
+                    <Link className="button secondary compact" to={`/professor/activities/${item.id}`} state={{ showStudentPreview: true }}>
+                      Preview as student
+                    </Link>
                   )}
                 </div>
               )}
@@ -671,7 +679,16 @@ function StudentDashboard() {
 function Dashboard({ professor = false }) {
   const { state: navigationState } = useLocation();
   const { items, error, reload } = useAssignments({ allCourses: true });
+  const highlightedRowRef = useRef(null);
+  const highlightId = professor ? navigationState?.highlightAssignmentId : null;
   const [status, setStatus] = useState("");
+  useEffect(() => {
+    if (!highlightId || !items?.some((item) => item.id === highlightId)) return undefined;
+    const frame = requestAnimationFrame(() =>
+      highlightedRowRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [highlightId, items]);
   const filtered = (items || []).filter(
     (a) => !status || (professor ? a.status : a.progress) === status,
   );
@@ -747,7 +764,7 @@ function Dashboard({ professor = false }) {
         <Notice>{navigationState?.notice}</Notice>
         <Notice error={error} />
         {items ? (
-          <AssignmentList items={filtered} professor={professor} />
+          <AssignmentList items={filtered} professor={professor} highlightId={highlightId} highlightRef={highlightedRowRef} />
         ) : (
           !error && <p role="status">Loading assignments…</p>
         )}

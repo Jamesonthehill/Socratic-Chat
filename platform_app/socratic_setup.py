@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from difflib import SequenceMatcher
 from typing import Any
@@ -371,32 +372,37 @@ async def generate_setup(files: list[dict[str, Any]], title: str, canvas_instruc
             if any(len(step["scenario"]) < 12 or len(step["question"]) < 10 for step in draft["learning_steps"]):
                 raise ValueError("Every generated step needs a scenario continuation and a specific question.")
             brief_steps = brief_step_indices(draft["learning_steps"], evidence)
-            if brief_steps:
-                draft["brief_steps_needing_review"] = brief_steps
-                draft["first_example_needs_review"] = 1 in brief_steps
-                brief_valid_draft = draft
-                if attempt == 0:
-                    request["messages"].append({"role": "system", "content": (
-                        f"Scenes for steps {', '.join(map(str, brief_steps))} are too brief for a new student. "
-                        "Regenerate the full source-grounded draft. Give each of those steps its own concrete "
-                        "scene of 3 to 5 short sentences before its question. Continue the same example, use only "
-                        "details supported by each cited passage, and do not reveal the answer."
-                    )})
-                    continue
-            else:
-                draft.pop("brief_steps_needing_review", None)
-                draft.pop("first_example_needs_review", None)
-            return await add_step_checks(draft, evidence, provider, api_key, base_url, model)
         except (ValueError, json.JSONDecodeError) as exc:
             last_error = exc
+            logging.getLogger(__name__).warning(
+                "Socratic setup draft failed validation on attempt %s: %s", attempt + 1, exc,
+            )
             if attempt == 0:
                 request["messages"].append({"role": "system", "content": (
                     "The draft did not pass source-grounding or student-role checks. Regenerate it using "
                     "only the selected passages; copy every step's evidence quote exactly from its cited chunk."
                 )})
+            continue
+        if brief_steps:
+            draft["brief_steps_needing_review"] = brief_steps
+            draft["first_example_needs_review"] = 1 in brief_steps
+            brief_valid_draft = draft
+            if attempt == 0:
+                request["messages"].append({"role": "system", "content": (
+                    f"Scenes for steps {', '.join(map(str, brief_steps))} are too brief for a new student. "
+                    "Regenerate the full source-grounded draft. Give each of those steps its own concrete "
+                    "scene of 3 to 5 short sentences before its question. Continue the same example, use only "
+                    "details supported by each cited passage, and do not reveal the answer."
+                )})
+                continue
+        else:
+            draft.pop("brief_steps_needing_review", None)
+            draft.pop("first_example_needs_review", None)
+        return await add_step_checks(draft, evidence, provider, api_key, base_url, model)
     if brief_valid_draft is not None:
         return await add_step_checks(brief_valid_draft, evidence, provider, api_key, base_url, model)
-    raise ValueError("The model could not produce a source-grounded, student-facing setup. Try again or configure the fields manually.") from last_error
+    reason = str(last_error) if last_error else "No usable draft was returned."
+    raise ValueError(f"The generated setup did not pass review: {reason} Try again or configure the fields manually.") from last_error
 
 
 async def generate_opening_prompt(files: list[dict[str, Any]], title: str, canvas_instructions: str) -> str:

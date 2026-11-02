@@ -51,6 +51,7 @@ async def generate_socratic_setup(course_id: UUID, body: SocraticSetupInput, acc
             body.assignment_instructions,
         )
     except ValueError as exc:
+        logging.getLogger(__name__).warning("Socratic setup rejected for course %s: %s", course_id, exc)
         raise HTTPException(422, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(503, str(exc)) from exc

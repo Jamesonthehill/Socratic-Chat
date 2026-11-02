@@ -176,6 +176,50 @@ def test_schema_rejection_with_real_fifth_option_retries_instead_of_dropping_it(
     assert len(result) == 2
 
 
+def test_setup_reports_its_validation_failure_after_retry(monkeypatch, caplog):
+    monkeypatch.setattr(socratic_setup.settings, "llm_client_config", lambda *_args: ("Groq", "key", "url", "model"))
+    monkeypatch.setattr(socratic_setup, "selected_evidence", lambda *_args: (
+        "[chunk_id=source] A documented example.", {"source"}, {"source": "lesson.pdf"},
+    ))
+    calls = []
+
+    async def complete(_key, _url, request):
+        calls.append(request)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))])
+
+    monkeypatch.setattr(socratic_setup, "chat_completion", complete)
+    with pytest.raises(ValueError, match="incomplete or ungrounded setup"):
+        asyncio.run(socratic_setup.generate_setup([{"id": "file", "filename": "lesson.pdf"}], "Lesson", ""))
+    assert len(calls) == 2
+    assert "Socratic setup draft failed validation on attempt 2" in caplog.text
+
+
+def test_setup_does_not_mask_step_quiz_failure_as_lesson_validation(monkeypatch):
+    monkeypatch.setattr(socratic_setup.settings, "llm_client_config", lambda *_args: ("Groq", "key", "url", "model"))
+    monkeypatch.setattr(socratic_setup, "selected_evidence", lambda *_args: (
+        "[chunk_id=source] A documented example.", {"source"}, {"source": "lesson.pdf"},
+    ))
+    monkeypatch.setattr(socratic_setup, "validate_draft", lambda *_args: {
+        "learning_steps": [{"title": "First step", "scenario": "A detailed example introduces the step.",
+                            "question": "What should happen next?"}],
+    })
+    monkeypatch.setattr(socratic_setup, "brief_step_indices", lambda *_args: [])
+    calls = []
+
+    async def complete(_key, _url, request):
+        calls.append(request)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))])
+
+    async def failed_checks(*_args):
+        raise ValueError("Could not draft two application checks for First step.")
+
+    monkeypatch.setattr(socratic_setup, "chat_completion", complete)
+    monkeypatch.setattr(socratic_setup, "add_step_checks", failed_checks)
+    with pytest.raises(ValueError, match="Could not draft two application checks for First step"):
+        asyncio.run(socratic_setup.generate_setup([{"id": "file", "filename": "lesson.pdf"}], "Lesson", ""))
+    assert len(calls) == 1
+
+
 def test_student_config_hides_answer_key_and_expected_reason():
     checks = [_check("first"), _check("second")]
     assignment = {

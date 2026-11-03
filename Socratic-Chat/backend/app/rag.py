@@ -50,6 +50,61 @@ STOP_WORDS = {
 RAG_DOCUMENT_SUFFIXES = {".txt", ".md", ".pdf", ".tex", ".html", ".htm"} | OFFICE_SUFFIXES
 
 
+def one_question_socratic_turn(turn: dict[str, str]) -> dict[str, str]:
+    """Keep extra questions and their supplied answers out of a tutor turn."""
+    if turn["lead_in"].count("?") + turn["next_question"].count("?") > 1:
+        lead_before_question, _ = turn["lead_in"].split("?", 1)
+        next_question = turn["next_question"].strip()
+        if not next_question:
+            # The model sometimes writes its follow-up inside lead_in, then
+            # answers it and asks another. Keep only the first question.
+            line_boundary = lead_before_question.rfind("\n")
+            boundary = (line_boundary if re.match(r"\s*\d+[.)]\s+", lead_before_question[line_boundary + 1:])
+                        else max(line_boundary, lead_before_question.rfind(". ")))
+            next_question = lead_before_question[boundary + 1:].strip() + "?"
+            lead_before_question = lead_before_question[:boundary + 1]
+        return {
+            "lead_in": lead_before_question.strip(),
+            "next_question": re.sub(r"^\d+[.)]\s*", "", next_question.split("?", 1)[0].strip()) + "?",
+        }
+    lead_lines = turn["lead_in"].splitlines()
+    question_lines = [line for line in lead_lines if line.strip().endswith("?")]
+    if not question_lines and turn["next_question"].count("?") <= 1:
+        return turn
+    lead_in = "\n".join(line for line in lead_lines if line not in question_lines).strip()
+    next_question = (turn["next_question"].strip() or (question_lines[0].strip() if question_lines else ""))
+    next_question = re.sub(r"^\d+[.)]\s*", "", next_question)
+    if "?" in next_question:
+        next_question = next_question.split("?", 1)[0].strip() + "?"
+    return {"lead_in": lead_in, "next_question": next_question}
+
+
+def keep_quoted_answer_together(turn: dict[str, str]) -> dict[str, str]:
+    """Rejoin a quoted source message split across the model's two fields."""
+    lead_in, next_question = turn["lead_in"], turn["next_question"]
+    # Apostrophes inside contractions are not quote delimiters. Markdown bold
+    # can interrupt a contraction, so remove it only for the delimiter check.
+    quote_pattern = r"(?<![A-Za-z])'|'(?![A-Za-z])"
+    if len(re.findall(quote_pattern, lead_in.replace("**", ""))) % 2 == 0:
+        return turn
+    closing_quote = re.search(quote_pattern, next_question)
+    if not closing_quote or "?" in next_question[:closing_quote.end()]:
+        return turn
+    return {
+        "lead_in": (lead_in + " " + next_question[:closing_quote.end()]).replace("**", "").strip(),
+        "next_question": next_question[closing_quote.end():].strip(),
+    }
+
+
+def confirms_answer_just_supplied(question: str) -> bool:
+    """An exact-text confirmation adds no reasoning after giving the answer."""
+    return bool(re.search(
+        r"^(?:does|did|is|are)\b.{0,100}\b(?:your answer|that (?:exact )?(?:text|phrase)|"
+        r"this (?:exact )?(?:text|phrase|explanation))\b.{0,100}\b(?:match|correct|right|clear)\b",
+        question.strip(), re.IGNORECASE | re.DOTALL,
+    ))
+
+
 def tokenize(text: str) -> list[str]:
     return [
         token
@@ -729,7 +784,7 @@ def answer_format_instruction(question: str) -> str:
 
 
 def repeated_tutor_question(candidate: str, history: list[ChatMessage]) -> bool:
-    """Catch near-identical follow-ups after a student asks for help."""
+    """Catch near-identical follow-ups, including questions with decimal numbers."""
     if not candidate.strip():
         return False
     normalized = lambda text: " ".join(re.findall(r"[a-z0-9]+", text.casefold()))
@@ -737,10 +792,25 @@ def repeated_tutor_question(candidate: str, history: list[ChatMessage]) -> bool:
     for item in history[-8:]:
         if item.role != "assistant":
             continue
-        previous = re.search(r"([^.!?]*\?)\s*$", item.content.strip())
-        if previous and SequenceMatcher(None, current, normalized(previous.group(1))).ratio() >= 0.78:
+        # Split only after sentence punctuation followed by whitespace. A period
+        # inside $1.75 is part of the number, not the start of a new sentence.
+        parts = re.split(r"(?<=[.!?])\s+|\n{2,}", item.content.strip())
+        previous = next((part for part in reversed(parts) if "?" in part), "")
+        previous = re.sub(r"(?im)^\s*\*{0,2}Your next thinking step\*{0,2}\s*$", "", previous).strip()
+        previous = previous.split("?", 1)[0] + "?" if "?" in previous else ""
+        if previous and SequenceMatcher(None, current, normalized(previous)).ratio() >= 0.78:
             return True
     return False
+
+
+def repeats_identity_question(candidate: str, history: list[ChatMessage]) -> bool:
+    """A new 'who' setting is still the same task if the learner was stuck on 'who'."""
+    if not re.search(r"\bwho\b", candidate, re.I):
+        return False
+    return any(
+        item.role == "assistant" and re.search(r"\bwho\b[^?]*\?", item.content, re.I)
+        for item in history[-4:]
+    )
 
 
 
@@ -838,6 +908,7 @@ async def generate_answer(
             question, history, sources, classification, evaluation, stable_concept=stable_concept,
         )
     )
+    structured_turn = assignment_scope or socratic_decision.mode == "socratic"
     log_event(
         6,
         "socratic_strategy_selected",
@@ -854,13 +925,51 @@ async def generate_answer(
         "The student's latest message decides what help is useful now. Read it in the context of the recent "
         "conversation; do not use a classifier label as a teaching command. If the student asks for an overview "
         "of the assignment, explain its main tasks and their order from the selected material in plain language. "
-        "Use a short list when that makes a multi-part task easier to understand; do not squeeze a requested "
-        "overview into one sentence. If they ask what a term means, why a requirement matters, or how to code "
-        "a part, answer that request directly before considering another question. If they attempt an answer, "
-        "respond to their actual idea and use the sources to correct only a real mistake. If their meaning is "
-        "genuinely unclear, ask what they mean instead of guessing. An explanation may end without a new question. "
+        "Use a short list when that makes a multi-part task easier to understand. "
+        "If they ask what a term means, why a requirement matters, or how to code a part, answer that exact "
+        "request in plain language first. When it helps, add one small example using the assignment's current "
+        "situation, unless the student asks for a different example or analogy. In that case, switch to a "
+        "different everyday setting, including one the student suggests. Explain only the concept they asked "
+        "about; map several concepts only if they request a broader explanation. Keep the comparison accurate "
+        "to the retrieved material and label invented details as hypothetical. Do not turn a narrow explanation "
+        "into a long story or several examples. Then ask a follow-up only if it gives the student a specific "
+        "choice or application to reason through; otherwise end the explanation without a question. Never end "
+        "with a generic comprehension check such as 'Does that help?' or 'Does that make sense?'. "
+        "If they attempt an answer, "
+        "respond to their actual idea and use the sources to correct only a real mistake. If their amount, "
+        "concept, or action is right but their wording differs from the document, acknowledge the correct "
+        "substance and give the documented wording once. Do not ask them to repeat that wording or confirm "
+        "whether it matches. If they miss the substance, explain the missing idea rather than repeating the "
+        "same question. If their meaning is "
+        "genuinely unclear, ask what they mean instead of guessing. "
         "Ask at most one question only when it would help them reason further; never ask them to repeat a fact "
-        "you just supplied. Do not invent requirements, quantities, methods, or other course facts."
+        "you just supplied. Use a friendly, informal tone without slang. For an ordinary tutor turn, aim for "
+        "two or three short sentences: briefly respond to one useful part of the student's reasoning, add only "
+        "the context needed, then ask one natural question if it helps. Avoid superlatives and canned praise "
+        "such as 'excellent analysis' or 'perfectly'; do not restate the student's full answer. When it helps "
+        "students scan the reply, use Markdown bold for one short key concept in the explanation and at most "
+        "one decisive phrase in the question. Keep the "
+        "question open enough for reasoning rather than embedding its answer in the wording. Stay with the "
+        "current example unless the student asks for a different one; do not add another scenario just to "
+        "extend the exchange. When a new example "
+        "is needed, make it a brief, familiar student situation with a clear choice or obstacle, connected "
+        "to the current learning goal. Present any invented everyday details as hypothetical, not as facts "
+        "from the course document. If the student says the current example is hard to picture or asks for a "
+        "simpler example, use one short everyday analogy they can see in their head, such as planning what "
+        "to bake for a class sale. Explain which part matches the course concept in one plain sentence; do "
+        "not transfer invented details into the assignment requirements. If the student instead says they "
+        "do not know or the reply is too much to read, give the missing idea or answer in one or two plain "
+        "sentences. If the current scene depends on unexplained specialist terms, translate just that idea "
+        "into one tiny everyday analogy before returning to the student's question; otherwise stay with the "
+        "current example. Then ask one brief question "
+        "that checks whether they can apply the idea to the example. Write that question for this conversation; "
+        "do not use a fixed template, ask for a yes/no confirmation, or ask them to name or repeat the "
+        "answer you just gave. Do not imply that one option is correct or invent a dependency between choices. "
+        "Do not introduce another cast of characters, "
+        "give a long role-matching exercise, list every answer, or ask several numbered questions. Leave the "
+        "answer to the next question for the student to work out. If the student asks "
+        "for an overview, explanation, or worked example, use enough words to answer clearly. Do not invent "
+        "requirements, quantities, methods, or other course facts."
         if assignment_scope else socratic_system_instruction(socratic_decision)
     )
     if assignment_scope:
@@ -895,8 +1004,10 @@ async def generate_answer(
         if re.search(r"\bdifferent, simple hypothetical example\b", question, re.I):
             teaching_instruction += (
                 " The learner explicitly chose a general explanation with a different example. "
+                "This request overrides the usual preference to stay with the current example. "
                 "Define the term first, then give one short, clearly hypothetical example from a "
-                "different everyday setting; do not reuse the assignment's scenario as that example. "
+                "different everyday setting a student can easily picture; do not reuse the assignment's "
+                "scenario as that example. "
                 "Do not present hypothetical details as claims about the course material."
             )
     if learning_topic and assignment_scope:
@@ -932,6 +1043,10 @@ async def generate_answer(
     recent_history = history[-8:]
     recent_tutor_turns = [item for item in recent_history if item.role == "assistant" and "?" in item.content]
     support_request = bool(not assignment_scope and classification and classification.message_role == "support_request")
+    assignment_support_request = bool(
+        assignment_scope and recent_tutor_turns and classification
+        and classification.message_role == "support_request"
+    )
     if recent_tutor_turns and socratic_decision.mode == "socratic" and not assignment_scope:
         if support_request:
             teaching_instruction += (
@@ -1010,12 +1125,14 @@ async def generate_answer(
             "You are a public Socratic tutor. Use established general knowledge and the learner's reasoning. "
             "Do not claim access to private course documents or personal records."
         )
-    if socratic_decision.mode == "socratic":
+    if structured_turn:
         messages.insert(3, {
             "role": "system",
             "content": (
                 "For this Socratic turn, put any brief feedback or scenario explanation in lead_in "
-                "(an empty string is fine). Put at most one new, specific question for the learner "
+                "(an empty string is fine). Lead_in must not contain questions, including numbered questions. "
+                "Keep any quoted source message complete in lead_in; never split a quote across the fields. "
+                "Put at most one new, specific question for the learner "
                 "in next_question; use an empty string when the learner needs a direct explanation before another question. "
                 "Never rephrase a question that already received a support request without adding a new idea. "
                 "Both fields are your own words. Keep any question connected "
@@ -1047,7 +1164,7 @@ async def generate_answer(
             "messages": messages,
             "temperature": settings.RAG_TEMPERATURE,
         }
-        if socratic_decision.mode == "socratic":
+        if structured_turn:
             # Have the model supply the next question as a separate field. Its
             # wording remains model-generated; no canned question is inserted.
             request["response_format"] = {
@@ -1058,7 +1175,7 @@ async def generate_answer(
                     "schema": {
                         "type": "object",
                         "properties": {
-                            "lead_in": {"type": "string", "minLength": 1},
+                            "lead_in": {"type": "string"},
                             "next_question": {"type": "string"},
                         },
                         "required": ["lead_in", "next_question"],
@@ -1081,9 +1198,40 @@ async def generate_answer(
         )
         log_event(9, "candidate_response_generated", source="llm", response_chars=len(raw_answer))
         debug_preview("candidate_answer", raw_answer)
-        if socratic_decision.mode == "socratic" and raw_answer.strip() not in {fallback_answer(question, []), "That topic is outside the currently published course documentation.", "That topic has not been approved by your instructor for tutoring."}:
+        if structured_turn and raw_answer.strip() not in {fallback_answer(question, []), "That topic is outside the currently published course documentation.", "That topic has not been approved by your instructor for tutoring."}:
             turn = json.loads(raw_answer)
-            if (support_request or assignment_scope) and repeated_tutor_question(turn["next_question"], recent_history):
+            if assignment_support_request and (
+                turn["lead_in"].count("?") + turn["next_question"].count("?") > 1
+                or len(turn["lead_in"]) > 350
+                or repeated_tutor_question(turn["next_question"], recent_history)
+                or repeats_identity_question(turn["next_question"], recent_history)
+            ):
+                log_event(10, "assignment_support_reply_needs_repair")
+                repair_request = {**request, "messages": [
+                    *messages,
+                    {"role": "assistant", "content": raw_answer},
+                    {"role": "system", "content": (
+                        "The student asked for simpler help with the previous tutor question. "
+                        "The draft is too long, repeats the old question, or asks several questions. "
+                        "Return a new JSON turn: "
+                        "answer that question directly from the retrieved material in one or two plain "
+                        "sentences in lead_in. Write exactly one brief next_question that checks application "
+                        "in the current example without giving away its answer. Make it specific to this "
+                        "exchange; do not use a stock confirmation question, add a new analogy, list every "
+                        "related concept, or ask them to repeat the answer. Do not imply one option is "
+                        "correct or invent a dependency between choices."
+                        " If the old question asked who is responsible, name that role first and ask about "
+                        "the reason or criterion for its choice, not who it is again."
+                    )},
+                ]}
+                try:
+                    repaired = await chat_completion(api_key, base_url, repair_request)
+                    repaired_turn = json.loads(repaired.choices[0].message.content or "")
+                    if isinstance(repaired_turn.get("lead_in"), str) and repaired_turn["lead_in"].strip():
+                        turn = repaired_turn
+                except Exception as repair_error:
+                    log_exception(10, "assignment_support_reply_repair_failed", repair_error)
+            if (support_request or (assignment_scope and not assignment_support_request)) and repeated_tutor_question(turn["next_question"], recent_history):
                 log_event(10, "repeated_support_question_detected")
                 repair_messages = [*messages, {"role": "assistant", "content": raw_answer}, {
                     "role": "system", "content": (
@@ -1103,6 +1251,18 @@ async def generate_answer(
                     log_exception(10, "repeated_support_question_repair_failed", repair_error)
                 if repeated_tutor_question(turn["next_question"], recent_history):
                     turn["next_question"] = ""
+            turn = one_question_socratic_turn(keep_quoted_answer_together(turn))
+            if assignment_scope and confirms_answer_just_supplied(turn["next_question"]):
+                log_event(10, "redundant_answer_confirmation_removed")
+                turn["next_question"] = ""
+            if assignment_scope and repeated_tutor_question(turn["next_question"], recent_history):
+                log_event(10, "repeated_assignment_question_removed")
+                turn["next_question"] = ""
+            if assignment_support_request and (
+                repeated_tutor_question(turn["next_question"], recent_history)
+                or repeats_identity_question(turn["next_question"], recent_history)
+            ):
+                turn["next_question"] = ""
             answer = "\n\n".join(
                 part.strip() for part in (turn["lead_in"], turn["next_question"]) if part.strip()
             )

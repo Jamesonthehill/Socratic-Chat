@@ -1,4 +1,5 @@
 import asyncio
+import json
 from types import SimpleNamespace
 
 from app import rag
@@ -11,10 +12,10 @@ def test_guided_confirmation_prompt_continues_current_scenario(monkeypatch):
 
     async def complete(_key, _url, request):
         captured["request"] = request
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=(
-            "Glad that helped. In the event-registration example, what acceptance criterion would help the team "
-            "test the empty-results page?"
-        )))])
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps({
+            "lead_in": "Glad that helped.",
+            "next_question": "In the event-registration example, what acceptance criterion would help the team test the empty-results page?",
+        })))])
 
     monkeypatch.setattr(rag, "generation_client_config", lambda: ("Ollama", "key", "url", "model"))
     monkeypatch.setattr(rag, "chat_completion", complete)

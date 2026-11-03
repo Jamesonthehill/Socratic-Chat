@@ -311,7 +311,12 @@ export default function CreateActivity({
       setStage(2);
       setPublishIssue(null);
       const briefSteps = generated.brief_steps_needing_review || (generated.first_example_needs_review ? [1] : []);
-      setNotice(`AI drafted ${(generated.learning_steps || []).length} learning steps from ${(generated.source_files || []).join(", ")}. ${briefSteps.length ? `Steps ${briefSteps.join(", ")} need a more detailed scene before publishing.` : "Review each scene and question before publishing."}`);
+      const explanatorySteps = generated.explanatory_steps_needing_review || [];
+      const reviewNotes = [
+        briefSteps.length ? `Steps ${briefSteps.join(", ")} need a more detailed scene.` : "",
+        explanatorySteps.length ? `Steps ${explanatorySteps.join(", ")} explain the answer too early or need a more concrete decision; edit them before publishing.` : "",
+      ].filter(Boolean);
+      setNotice(`AI drafted ${(generated.learning_steps || []).length} learning steps from ${(generated.source_files || []).join(", ")}. ${reviewNotes.length ? reviewNotes.join(" ") : "Review each scene and question before publishing."}`);
     }, "Generating setup from selected documents");
   const generateSocraticOpening = () =>
     run(async () => {
@@ -862,6 +867,11 @@ export default function CreateActivity({
           </section>
         )}
         <div className="editor-actions" data-activity-tutorial="publish">
+          {draft.tool === "aiducate" && (
+            <Link className="button" to={`/professor/analytics${draft.course_id ? `?course=${encodeURIComponent(draft.course_id)}` : ""}`}>
+              Open AIducate for this course
+            </Link>
+          )}
           <button
             className="secondary"
             disabled={!ready}
@@ -883,7 +893,7 @@ export default function CreateActivity({
         </div>
         {!connected && (
           <p className="help">
-            <Link to="/professor/analytics">Open AIducate analysis</Link> to choose a course and published Reflection assignment.
+            AIducate analyzes saved responses from a published Reflection assignment. Choose that assignment in the instructor workspace.
           </p>
         )}
         {draft.tool === "self-directed-learning" && !selected.length && (

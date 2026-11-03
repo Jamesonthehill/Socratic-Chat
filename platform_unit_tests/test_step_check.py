@@ -377,7 +377,7 @@ def test_published_socratic_settings_preserve_sources_and_existing_checks(monkey
     assert written["snapshot"]["chunks"] == item["snapshot"]["chunks"]
 
 
-def test_two_unsuccessful_checks_offer_retry_or_continue_then_record_support(monkeypatch):
+def test_wrong_check_reveals_answer_then_requires_a_different_example(monkeypatch):
     assignment_id = uuid4()
     checks = [_check("first"), _check("second")]
     assignment = {"tool": "socratic", "status": "published", "snapshot": {"config": {
@@ -402,24 +402,31 @@ def test_two_unsuccessful_checks_offer_retry_or_continue_then_record_support(mon
     monkeypatch.setattr(routes.store, "save_attempt", lambda *_args: None)
     account = {"user_id": uuid4()}
 
-    for _ in range(2):
-        result = routes.socratic_step_check(assignment_id, routes.SocraticStepCheckInput(
-            request_id=uuid4(), action="submit", option_index=0, reason="I think this is wrong because supplies matter."), account)
+    result = routes.socratic_step_check(assignment_id, routes.SocraticStepCheckInput(
+        request_id=uuid4(), action="submit", option_index=0, reason="I think this is wrong because supplies matter."), account)
     progress = result["engine_state"]["socratic"]["step_check"]
+    assert progress["status"] == "active"
+    assert progress["variant"] == 1
+    assert progress["previous_answer"] == "Take coins despite missing supplies"
+    assert "should not take coins" in progress["previous_explanation"]
+    with pytest.raises(HTTPException, match="second example"):
+        routes.socratic_step_check(assignment_id, routes.SocraticStepCheckInput(
+            request_id=uuid4(), action="continue_with_support"), account)
+    result = routes.socratic_step_check(assignment_id, routes.SocraticStepCheckInput(
+        request_id=uuid4(), action="submit", option_index=2, reason="I think this is wrong because supplies matter."), account)
+    progress = result["engine_state"]["socratic"]["step_check"]
+    assert progress["last_option_index"] == 2
+    assert progress["last_option_correct"] is False
     assert progress["status"] == "choice"
-    assert "Take coins despite missing supplies" in progress["feedback"]
+    assert progress["correct_option_index"] == 1
+    assert "should not take coins" in progress["feedback"]
     with pytest.raises(HTTPException) as error:
         routes.next_socratic_step(assignment_id, account)
     assert error.value.status_code == 409
 
-    result = routes.socratic_step_check(assignment_id, routes.SocraticStepCheckInput(
-        request_id=uuid4(), action="try_another"), account)
-    assert result["engine_state"]["socratic"]["step_check"]["variant"] == 1
-    monkeypatch.setattr(step_check, "assess_reason_sync", lambda *_args: (True, "That explains the problem."))
-    result = routes.socratic_step_check(assignment_id, routes.SocraticStepCheckInput(
-        request_id=uuid4(), action="submit", option_index=1,
-        reason="The machine cannot make the sandwich, so it should not take payment."), account)
-    assert result["engine_state"]["socratic"]["step_check"]["status"] == "passed"
+    with pytest.raises(HTTPException):
+        routes.socratic_step_check(assignment_id, routes.SocraticStepCheckInput(
+            request_id=uuid4(), action="try_another"), account)
 
 
 def test_continue_with_support_is_recorded_and_advances_without_mastery(monkeypatch):
@@ -433,7 +440,7 @@ def test_continue_with_support_is_recorded_and_advances_without_mastery(monkeypa
         {"role": "user", "content": "Check ingredients."},
     ], "engine_state": {"socratic": {"phase": "teaching", "learning_step_index": 0,
         "step_started_at_message_count": 1, "step_check": {
-            "step_index": 0, "variant": 0, "attempts": 2, "status": "choice",
+            "step_index": 0, "variant": 1, "attempts": 2, "status": "choice",
         }}}, "processed_requests": []}
 
     @contextmanager

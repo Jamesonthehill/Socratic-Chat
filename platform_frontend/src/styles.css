@@ -1256,25 +1256,6 @@ summary {
   font-weight: 650;
   margin: 0 0 7px;
 }
-.student-learning-progress [role="progressbar"] {
-  background: var(--surface-subtle);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  height: 10px;
-  overflow: hidden;
-}
-.student-learning-progress [role="progressbar"] span {
-  background: #15803d;
-  border-radius: inherit;
-  display: block;
-  height: 100%;
-  transition: width 300ms ease;
-}
-@media (prefers-reduced-motion: reduce) {
-  .student-learning-progress [role="progressbar"] span {
-    transition: none;
-  }
-}
 .student-course-materials {
   border-top: 1px solid var(--line);
   margin-top: 20px;
@@ -1377,20 +1358,6 @@ summary {
   display: flex;
   gap: 8px;
 }
-.student-learning-path .student-step-complete-icon {
-  align-items: center;
-  background: #15803d;
-  border-radius: 50%;
-  color: #fff;
-  display: inline-flex;
-  flex: none;
-  font-size: 12px;
-  font-weight: 800;
-  height: 20px;
-  justify-content: center;
-  margin-top: 0;
-  width: 20px;
-}
 .student-learning-path li.is-current {
   background: linear-gradient(110deg,
     color-mix(in srgb, var(--surface) 76%, var(--brand-indigo)),
@@ -1474,7 +1441,8 @@ summary {
   min-width: 0;
   padding: 20px;
 }
-.socratic-assignment-info > .student-assignment-intro {
+.socratic-assignment-info > .student-assignment-intro,
+.socratic-assignment-info > .student-materials-intro {
   background: radial-gradient(circle at 100% 0%,
       color-mix(in srgb, var(--brand-indigo) 13%, var(--surface)),
       transparent 56%),
@@ -1483,7 +1451,8 @@ summary {
   overflow: hidden;
   position: relative;
 }
-.socratic-assignment-info > .student-assignment-intro::before {
+.socratic-assignment-info > .student-assignment-intro::before,
+.socratic-assignment-info > .student-materials-intro::before {
   background: linear-gradient(90deg, var(--brand-indigo), #32b99e);
   content: "";
   height: 4px;
@@ -1509,6 +1478,11 @@ summary {
   line-height: 1.6;
 }
 .socratic-assignment-info .student-assignment-intro .prose > :last-child { margin-bottom: 0; }
+.socratic-assignment-info .student-materials-intro .student-section-heading h2 {
+  font-size: 21px;
+  letter-spacing: -.02em;
+  margin: 7px 0 0;
+}
 .socratic-assignment-info .student-section-heading {
   align-items: flex-end;
   display: flex;
@@ -1553,11 +1527,20 @@ summary {
   margin: 0 0 14px;
 }
 .socratic-assignment-info .student-learning-progress {
-  background: color-mix(in srgb, var(--brand-indigo) 6%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--brand-indigo) 15%, var(--line));
+  background: color-mix(in srgb, var(--surface) 74%, #ffe591);
+  border: 1px solid color-mix(in srgb, var(--line) 48%, #e2b64f);
   border-radius: 12px;
   margin: 0 0 14px;
   padding: 12px;
+  position: relative;
+  transition: border-color 300ms ease, box-shadow 300ms ease;
+}
+html[data-theme="dark"] .socratic-assignment-info .student-learning-progress {
+  background: color-mix(in srgb, var(--surface) 88%, #e4b94c);
+}
+.socratic-assignment-info .student-learning-progress.is-advancing {
+  border-color: color-mix(in srgb, #19a66a 68%, var(--line));
+  box-shadow: 0 0 0 4px color-mix(in srgb, #19a66a 13%, transparent);
 }
 .student-learning-progress-heading {
   align-items: center;
@@ -1568,47 +1551,305 @@ summary {
 .socratic-assignment-info .student-learning-progress-heading p { margin: 0 0 8px; }
 .student-learning-progress-heading strong {
   color: var(--brand-indigo);
-  font-size: 15px;
+  background: color-mix(in srgb, var(--brand-indigo) 9%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--brand-indigo) 18%, var(--line));
+  border-radius: 999px;
+  font-size: 18px;
   font-variant-numeric: tabular-nums;
+  font-weight: 850;
+  line-height: 1;
   margin-bottom: 8px;
+  min-width: 70px;
+  padding: 7px 10px;
+  text-align: center;
 }
-.socratic-assignment-info .student-learning-progress [role="progressbar"] {
-  background: var(--surface);
-  height: 11px;
+.socratic-assignment-info .student-learning-progress.is-advancing .student-learning-progress-heading strong {
+  animation: learning-percentage-focus 900ms ease-out;
+}
+.student-learning-stars {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(var(--star-columns), minmax(0, 1fr));
+  min-height: 26px;
+}
+.student-learning-star {
+  align-items: center;
+  aspect-ratio: 1;
+  background: color-mix(in srgb, var(--surface) 90%, var(--brand-indigo));
+  border: 1px solid color-mix(in srgb, var(--brand-indigo) 17%, var(--line));
+  border-radius: 11px;
+  display: inline-flex;
+  justify-content: center;
+  justify-self: center;
+  max-width: 72px;
+  min-width: 0;
+  position: relative;
+  transition: background 180ms ease, box-shadow 180ms ease, color 180ms ease, transform 180ms ease;
+  width: 100%;
+}
+.student-star-medal {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+.student-learning-star .student-star-medal {
+  height: auto;
+  width: calc(100% - 4px);
+}
+.student-learning-star:not(.is-earned) .student-star-medal {
+  filter: grayscale(1);
+  opacity: .28;
+}
+.student-learning-star.is-earned {
+  background: color-mix(in srgb, var(--surface) 78%, #ffda73);
+  border-color: #e6a22c;
+  box-shadow: 0 3px 9px #e6a22c45;
+  animation: student-earned-star-glow 5.4s ease-in-out var(--star-shine-delay) infinite;
+}
+.student-learning-star.is-earned .student-star-medal {
+  animation: student-earned-star-twinkle 5.4s ease-in-out var(--star-shine-delay) infinite;
+}
+.student-learning-star.is-earned::after {
+  content: "✦";
+  color: #ffdb55;
+  font-size: 17px;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  right: -5px;
+  top: -8px;
+  text-shadow: 0 0 9px #ffb72a;
+  animation: student-earned-star-sparkle 5.4s ease-in-out var(--star-shine-delay) infinite;
+}
+.student-learning-star.is-arriving {
+  border-color: #e6a22c;
+  box-shadow: 0 0 0 4px #ffcd5b40;
+  transform: scale(.88);
+}
+.student-star-celebration {
+  --star-celebration-duration: 2400ms;
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: #090913;
+  color: #fff4ca;
+  pointer-events: none;
+  animation: student-star-backdrop var(--star-celebration-duration) ease both;
+}
+.student-star-celebration::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 230px;
+  height: 230px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffe97b91 0%, #ffbd3040 28%, transparent 70%);
+  transform: translate(-50%, -50%);
+  animation: student-star-glow var(--star-celebration-duration) ease-out both;
+}
+.student-star-celebration-sparkles {
+  position: absolute;
+  top: calc(50% - 104px);
+  left: 50%;
+  width: 200px;
+  color: #ffe478;
+  font-size: 24px;
+  letter-spacing: 24px;
+  text-align: center;
+  transform: translateX(-50%);
+  animation: student-star-sparkle var(--star-celebration-duration) ease-out both;
+}
+.student-learning-flying-star {
+  animation: student-star-flight var(--star-celebration-duration) cubic-bezier(.2, .72, .2, 1) forwards;
+  filter: drop-shadow(0 0 24px #ffe684) drop-shadow(0 0 48px #ffa62d);
+  height: 100px;
+  left: calc(50% - 50px);
+  pointer-events: none;
+  position: fixed;
+  top: calc(50% - 50px);
+  width: 100px;
+  z-index: 1;
+}
+.student-star-celebration-label {
+  position: absolute;
+  top: calc(50% + 82px);
+  left: 50%;
+  color: #fff4ca;
+  font-size: clamp(22px, 4vw, 34px);
+  letter-spacing: .03em;
+  text-shadow: 0 0 20px #ffb732;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  animation: student-star-label var(--star-celebration-duration) ease-out both;
+}
+@keyframes student-star-flight {
+  0% { opacity: 0; transform: scale(.15) rotate(-35deg); }
+  18% { opacity: 1; transform: scale(1.5) rotate(15deg); }
+  38%, 54% { opacity: 1; transform: scale(1.12) rotate(-8deg); }
+  94% { opacity: 1; transform: translate(var(--star-dx), var(--star-dy)) scale(.32) rotate(360deg); }
+  100% { opacity: 0; transform: translate(var(--star-dx), var(--star-dy)) scale(.28) rotate(375deg); }
+}
+@keyframes student-star-backdrop {
+  0% { opacity: 0; }
+  12%, 82% { opacity: .94; }
+  100% { opacity: 0; }
+}
+@keyframes student-star-glow {
+  0% { opacity: 0; scale: .3; }
+  20%, 58% { opacity: 1; scale: 1.4; }
+  100% { opacity: 0; scale: 2; }
+}
+@keyframes student-star-sparkle {
+  0% { opacity: 0; translate: 0 18px; }
+  22%, 58% { opacity: 1; translate: 0 0; }
+  100% { opacity: 0; translate: 0 -26px; }
+}
+@keyframes student-star-label {
+  0%, 12% { opacity: 0; translate: 0 12px; }
+  25%, 72% { opacity: 1; translate: 0 0; }
+  100% { opacity: 0; translate: 0 -12px; }
+}
+@keyframes student-earned-star-glow {
+  0%, 13%, 28%, 100% { box-shadow: 0 3px 9px #e6a22c45; }
+  19% { box-shadow: 0 0 0 3px #ffe8996b, 0 0 19px #ffc43d9e; }
+}
+@keyframes student-earned-star-twinkle {
+  0%, 13%, 28%, 100% { filter: brightness(1); transform: scale(1); }
+  19% { filter: brightness(1.3) drop-shadow(0 0 6px #ffdf69); transform: scale(1.13); }
+}
+@keyframes student-earned-star-sparkle {
+  0%, 12%, 28%, 100% { opacity: 0; transform: scale(.5) rotate(-20deg); }
+  18% { opacity: 1; transform: scale(1.2) rotate(15deg); }
+}
+@keyframes learning-percentage-focus {
+  35% { background: #15803d; border-color: #15803d; box-shadow: 0 0 0 6px color-mix(in srgb, #19a66a 22%, transparent); color: white; transform: scale(1.12); }
+  to { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .socratic-assignment-info .student-learning-progress,
+  .student-learning-star { transition: none; }
+  .socratic-assignment-info .student-learning-progress.is-advancing .student-learning-progress-heading strong { animation: none; }
+  .student-star-celebration { display: none; }
+  .student-learning-star.is-earned,
+  .student-learning-star.is-earned .student-star-medal,
+  .student-learning-star.is-earned::after { animation: none; }
 }
 .socratic-assignment-info .student-learning-path ol {
-  gap: 8px;
+  gap: 10px;
   margin: 0 0 14px;
   max-height: clamp(240px, 42vh, 420px);
-  padding: 2px 5px 4px 2px;
+  padding: 3px 5px 5px 2px;
+  position: relative;
+}
+.socratic-assignment-info .student-learning-path ol::before {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, #15803d 60%, var(--line)),
+    color-mix(in srgb, var(--brand-indigo) 58%, var(--line)) 55%,
+    var(--line));
+  border-radius: 999px;
+  content: "";
+  left: 28px;
+  position: absolute;
+  top: 20px;
+  bottom: 22px;
+  width: 3px;
 }
 .socratic-assignment-info .student-learning-path li {
-  background: color-mix(in srgb, var(--surface) 96%, var(--brand-indigo));
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 15px;
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--ink) 5%, transparent);
   margin: 0;
-  padding: 12px 12px 12px 55px;
+  padding: 12px 12px 12px 60px;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+  z-index: 1;
+}
+.socratic-assignment-info .student-learning-path li:hover {
+  transform: translateX(2px);
+  box-shadow: 0 5px 15px color-mix(in srgb, var(--ink) 9%, transparent);
 }
 .socratic-assignment-info .student-learning-path li.is-completed {
-  background: color-mix(in srgb, var(--surface) 92%, #22a756);
+  background: color-mix(in srgb, var(--surface) 95%, #22a756);
   border-color: color-mix(in srgb, #15803d 25%, var(--line));
 }
 .socratic-assignment-info .student-learning-path li.is-current {
-  background: linear-gradient(110deg,
-    color-mix(in srgb, var(--surface) 72%, var(--brand-indigo)),
-    color-mix(in srgb, var(--surface) 87%, var(--brand-indigo)),
-    color-mix(in srgb, var(--surface) 72%, var(--brand-indigo)));
-  background-size: 200% 100%;
-  border: 2px solid var(--brand-indigo);
-  border-left-width: 5px;
-  padding: 14px 12px 14px 54px;
+  animation: none;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--surface) 91%, var(--brand-indigo)),
+    var(--surface) 80%);
+  border: 2px solid color-mix(in srgb, var(--brand-indigo) 75%, var(--line));
+  box-shadow: 0 7px 20px color-mix(in srgb, var(--brand-indigo) 15%, transparent);
+  padding: 13px 11px 13px 59px;
 }
 .socratic-assignment-info .student-learning-path .student-step-number,
 .socratic-assignment-info .student-learning-path li.is-current .student-step-number {
-  left: 12px;
-  top: 12px;
+  border-radius: 50%;
+  height: 34px;
+  left: 11px;
+  top: 16px;
+  width: 34px;
 }
-.socratic-assignment-info .student-learning-path li.is-current .student-step-number { left: 11px; top: 14px; }
+.socratic-assignment-info .student-learning-path li.is-current .student-step-number {
+  left: 10px;
+  top: 15px;
+}
+.student-learning-path .student-step-topline {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+.student-learning-path .student-step-chapter,
+.student-learning-path .student-step-state {
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .08em;
+  margin: 0;
+  text-transform: uppercase;
+}
+.student-learning-path .student-step-chapter { color: var(--brand-indigo); }
+.student-learning-path li.is-completed .student-step-chapter,
+.student-learning-path li.is-completed .student-step-state { color: #15803d; }
+.student-learning-path .student-step-star {
+  animation: student-step-star-pop 500ms cubic-bezier(.2, 1.4, .35, 1) both;
+  display: grid;
+  flex: none;
+  height: 42px;
+  margin: -3px 0 -5px;
+  place-items: center;
+  width: 42px;
+}
+@keyframes student-step-star-pop {
+  from { opacity: 0; transform: scale(.55) rotate(-25deg); }
+  to { opacity: 1; transform: scale(1) rotate(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .student-learning-path .student-step-star { animation: none; }
+}
+.student-learning-path .student-step-active-label {
+  font-size: 10px;
+  letter-spacing: .08em;
+  margin: 0;
+}
+.student-learning-path .student-step-goal {
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 5px;
+}
+.student-learning-path .student-step-objective {
+  background: color-mix(in srgb, var(--brand-indigo) 7%, var(--surface));
+  border-left: 3px solid var(--brand-indigo);
+  border-radius: 6px;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.45;
+  margin-top: 10px;
+  padding: 7px 9px;
+}
 .socratic-assignment-info .student-learning-path li > span:last-child { line-height: 1.42; }
 .socratic-assignment-info button.next-learning-step { width: 100%; }
 .socratic-step-check {
@@ -1663,11 +1904,24 @@ summary {
 .socratic-step-inline .socratic-step-check-content {
   display: block;
 }
-.socratic-step-inline .socratic-step-check-prompt {
+.socratic-step-check-incorrect { color: #b42332; font-weight: 800; }
+html[data-theme="dark"] .socratic-step-check-incorrect { color: #ff9ba5; }
+.socratic-step-inline .socratic-step-check-prompts {
+  display: grid;
+  gap: 10px;
+}
+.socratic-step-inline .socratic-step-check-scenario {
   padding: 13px 15px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface) 91%, var(--brand-indigo));
 }
+.socratic-step-inline .socratic-step-check-question {
+  align-items: flex-start;
+  display: flex;
+  gap: 7px;
+  padding: 2px 3px;
+}
+.socratic-step-check-q { color: var(--brand-indigo); font-size: 14px; font-weight: 850; line-height: 1.4; }
 .socratic-step-check-eyebrow {
   display: block;
   margin-bottom: 5px;
@@ -1677,16 +1931,12 @@ summary {
   letter-spacing: .08em;
   text-transform: uppercase;
 }
-.socratic-step-inline .socratic-step-check-prompt p {
-  margin: 0 0 7px;
+.socratic-step-inline .socratic-step-check-prompts p {
+  margin: 0;
   font-size: 14px;
   line-height: 1.4;
 }
-.socratic-step-inline .socratic-step-check-prompt strong {
-  display: block;
-  font-size: 14px;
-  line-height: 1.4;
-}
+.socratic-step-inline .socratic-step-check-question p { font-weight: 700; }
 .socratic-step-inline .socratic-step-check-options {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   align-items: stretch;
@@ -1705,6 +1955,46 @@ summary {
   line-height: 1.3;
   transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
 }
+.socratic-step-check-review-option {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  min-width: 0;
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.socratic-step-check-review-option > span:nth-child(2) { flex: 1 1 180px; }
+.socratic-step-check-review-option small {
+  flex: 1 0 100%;
+  font-size: 11px;
+  font-weight: 800;
+  margin-left: 33px;
+}
+.socratic-step-check-review-option.is-answer {
+  background: color-mix(in srgb, var(--surface) 90%, #16803c);
+  border-color: #16803c;
+}
+.socratic-step-check-review-option.is-answer small { color: #137138; }
+.socratic-step-check-review-option.is-missed {
+  background: color-mix(in srgb, var(--surface) 86%, #e6505a);
+  border-color: #d43c4a;
+}
+.socratic-step-check-review-option.is-missed small { color: #a3212f; }
+html[data-theme="dark"] .socratic-step-check-review-option.is-answer small { color: #8be5a4; }
+html[data-theme="dark"] .socratic-step-check-review-option.is-missed small { color: #ff9ba5; }
+.socratic-step-check-inline-feedback {
+  border-left: 3px solid var(--brand-indigo);
+  margin: 10px 0 14px;
+  padding: 2px 0 2px 12px;
+}
+.socratic-step-check-inline-feedback strong { color: var(--ink); font-size: 13px; }
+.socratic-step-check-inline-feedback p { margin: 5px 0 0; font-size: 13px; }
 .socratic-step-inline .socratic-step-check-options label:hover,
 .socratic-step-inline .socratic-step-check-options label:focus-within {
   border-color: var(--brand-indigo);
@@ -1754,6 +2044,59 @@ summary {
   color: white;
   background: var(--brand-indigo);
 }
+.socratic-step-inline .socratic-step-check-options label.is-incorrect-selection,
+.socratic-step-inline .socratic-step-check-options label.is-incorrect-selection:hover,
+.socratic-step-inline .socratic-step-check-options label.is-incorrect-selection:focus-within {
+  background: color-mix(in srgb, var(--surface) 85%, #e6505a);
+  border-color: #d43c4a;
+  box-shadow: inset 0 0 0 1px #d43c4a;
+  cursor: not-allowed;
+}
+.socratic-step-inline .socratic-step-check-options label.is-incorrect-selection .socratic-step-check-choice-letter {
+  background: #b42332;
+  color: white;
+}
+.socratic-step-inline .socratic-step-check-options label.is-incorrect-selection::after {
+  background: #b42332;
+  content: "×";
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  color: white;
+  font-size: 12px;
+  font-weight: 800;
+}
+.socratic-step-check-options label.is-incorrect-selection { flex-wrap: wrap; }
+.socratic-step-check-wrong-tag {
+  color: #a3212f;
+  display: block;
+  flex-basis: 100%;
+  font-size: 11px;
+  font-weight: 800;
+  margin-left: 33px;
+}
+.socratic-step-check-wrong-choice {
+  background: color-mix(in srgb, var(--surface) 85%, #e6505a);
+  border: 1px solid #d43c4a;
+  border-radius: 12px;
+  display: grid;
+  gap: 4px;
+  margin: 10px 0;
+  padding: 10px 12px;
+}
+.socratic-step-check-wrong-choice span {
+  color: #a3212f;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+html[data-theme="dark"] .socratic-step-check-wrong-tag,
+html[data-theme="dark"] .socratic-step-check-wrong-choice span { color: #ff9ba5; }
 .socratic-step-inline .socratic-step-check-reason {
   margin: 0;
   font-size: 13px;
@@ -1789,6 +2132,23 @@ summary {
   font-size: 15px;
   line-height: 1.4;
 }
+.socratic-step-check-previous {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 16px;
+  padding: 14px 16px;
+  border-left: 5px solid #16803c;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 91%, #16803c);
+}
+.socratic-step-check-previous span:first-child {
+  color: #137138;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.socratic-step-check-previous p { margin: 0; }
 @media (max-width: 720px) {
   .workspace-grid.socratic-workspace .chat-panel { height: max(500px, 75dvh); }
 }
@@ -1863,7 +2223,6 @@ summary {
   border-radius: 12px;
 }
 .socratic-step-check-editor label { display: grid; gap: 5px; }
-.student-step-support-note { color: var(--muted); font-weight: 600; }
 .socratic-assignment-info .student-course-materials ul { margin-top: 0; }
 .socratic-assignment-info .student-course-materials li {
   background: color-mix(in srgb, var(--surface) 96%, var(--brand-indigo));
@@ -1937,6 +2296,21 @@ summary {
 }
 .material-preview-header h2 { font-size: 16px; margin: 4px 0 0; overflow-wrap: anywhere; }
 .material-preview-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.material-preview-actions .material-preview-download {
+  background: #5549e8;
+  color: #fff;
+}
+.material-preview-actions .material-preview-close {
+  background: color-mix(in srgb, #e34455 12%, var(--surface));
+  border-color: color-mix(in srgb, #e34455 42%, var(--line));
+  box-shadow: none;
+  color: color-mix(in srgb, #d62439 82%, var(--ink));
+}
+.material-preview-actions .material-preview-close:hover,
+.material-preview-actions .material-preview-close:focus-visible {
+  background: color-mix(in srgb, #e34455 21%, var(--surface));
+  border-color: #e34455;
+}
 .material-preview-zoom {
   align-items: center;
   border-bottom: 1px solid var(--line);
@@ -2044,7 +2418,8 @@ summary {
 }
 .socratic-assignment-info .student-finish-card button { width: 100%; }
 @media (prefers-reduced-motion: reduce) {
-  .socratic-assignment-info .student-learning-path li.is-current { animation: none; }
+  .socratic-assignment-info .student-learning-path li { transition: none; }
+  .socratic-assignment-info .student-learning-path li:hover { transform: none; }
 }
 button.next-learning-step:not(:disabled) {
   background: #15803d;
@@ -2572,6 +2947,124 @@ html[data-theme="dark"] .socratic-chat-materials .publish-inline-error { color: 
   padding: 12px 14px;
   width: fit-content;
 }
+.socratic-progress-card {
+  align-self: flex-start;
+  background:
+    radial-gradient(circle at 8% 16%, color-mix(in srgb, var(--brand-indigo) 18%, transparent), transparent 42%),
+    radial-gradient(circle at 94% 82%, color-mix(in srgb, #23b4a3 15%, transparent), transparent 48%),
+    var(--surface);
+  border: 1px solid color-mix(in srgb, var(--brand-indigo) 45%, var(--line));
+  border-radius: 22px;
+  box-shadow: 0 16px 38px color-mix(in srgb, var(--brand-indigo) 15%, transparent);
+  max-width: min(470px, 94%);
+  overflow: hidden;
+  padding: 16px 18px 14px;
+  position: relative;
+}
+.socratic-progress-card::before {
+  background: linear-gradient(90deg, var(--brand-indigo), #23b4a3, var(--brand-indigo));
+  background-size: 200% 100%;
+  content: "";
+  height: 4px;
+  inset: 0 0 auto;
+  position: absolute;
+  animation: socratic-progress-sheen 3s linear infinite;
+}
+.socratic-progress-card .generation-status {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  gap: 15px;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+.socratic-progress-card .thinking-mark {
+  background: #fff;
+  border: 1px solid #e4e2fb;
+  border-radius: 18px;
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--brand-indigo) 14%, transparent);
+  flex-basis: 64px;
+  height: 64px;
+  width: 64px;
+}
+.socratic-progress-card .thinking-mark svg { height: 48px; width: 48px; }
+.generation-status-atom .atom-orbit-plane {
+  transform-box: view-box;
+  transform-origin: 22px 22px;
+}
+.generation-status-atom .atom-orbit-plane ellipse {
+  fill: none;
+  stroke-width: 1.5;
+  opacity: .9;
+}
+.generation-status-atom .atom-orbit-one ellipse { stroke: #6557dc; }
+.generation-status-atom .atom-orbit-two ellipse { stroke: #0b948b; }
+.generation-status-atom .atom-orbit-three ellipse { stroke: #c88421; }
+html[data-theme="dark"] .generation-status-atom .atom-orbit-one ellipse { stroke: #a69cff; }
+html[data-theme="dark"] .generation-status-atom .atom-orbit-two ellipse { stroke: #61ddce; }
+html[data-theme="dark"] .generation-status-atom .atom-orbit-three ellipse { stroke: #ffc271; }
+.generation-status-atom .atom-orbit-one { animation: atom-orbit 3.2s linear infinite; }
+.generation-status-atom .atom-orbit-two { animation: atom-orbit 4.2s linear infinite reverse; }
+.generation-status-atom .atom-orbit-three { animation: atom-orbit 3.7s linear infinite; }
+.generation-status-atom .atom-electron { filter: drop-shadow(0 0 3px currentColor); }
+.generation-status-atom .atom-electron-one { fill: var(--brand-indigo); color: var(--brand-indigo); }
+.generation-status-atom .atom-electron-two { fill: #16a696; color: #16a696; }
+.generation-status-atom .atom-electron-three { fill: #e69b38; color: #e69b38; }
+.generation-status-atom .atom-core-halo { fill: color-mix(in srgb, var(--brand-indigo) 25%, transparent); }
+.generation-status-atom .atom-core {
+  fill: color-mix(in srgb, var(--ink) 84%, var(--brand-indigo));
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--brand-indigo) 55%, transparent));
+}
+.generation-status-atom .atom-core-spark { fill: #fff; opacity: .95; }
+@keyframes atom-orbit { to { transform: rotate(360deg); } }
+.socratic-progress-card .thinking-copy { gap: 5px; min-width: 0; }
+.socratic-progress-card .thinking-copy strong { font-size: 15px; letter-spacing: -.01em; }
+.socratic-progress-card .thinking-status {
+  animation: socratic-processing-text-pulse 1.8s ease-in-out infinite;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+@keyframes socratic-processing-text-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .55; }
+}
+.socratic-progress-card .thinking-elapsed {
+  color: #087c71;
+  font-size: 12px;
+  font-weight: 800;
+}
+.socratic-progress-runway {
+  background: color-mix(in srgb, var(--brand-indigo) 12%, var(--surface));
+  border-radius: 999px;
+  height: 5px;
+  margin: 14px 2px 1px;
+  overflow: hidden;
+  position: relative;
+}
+.socratic-progress-runway span {
+  animation: socratic-progress-travel 2.2s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent, var(--brand-indigo) 35%, #20b5a1 75%, transparent);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  width: 42%;
+}
+@keyframes socratic-progress-sheen {
+  to { background-position: -200% 0; }
+}
+@keyframes socratic-progress-travel {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(245%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .socratic-progress-card::before, .socratic-progress-runway span { animation: none; }
+  .generation-status-atom .atom-orbit-plane { animation: none; }
+  .socratic-progress-runway span { width: 100%; }
+}
 .generation-status:not(.message) {
   margin: 12px 0;
   max-width: 100%;
@@ -2700,7 +3193,8 @@ html[data-theme="dark"] .socratic-chat-materials .publish-inline-error { color: 
 }
 @media (prefers-reduced-motion: reduce) {
   .thinking-orbit-particles,
-  .thinking-status {
+  .thinking-status,
+  .socratic-progress-card .thinking-status {
     animation: none;
   }
 }
@@ -2825,6 +3319,14 @@ html[data-theme="dark"] .socratic-chat-materials .publish-inline-error { color: 
 .message-lead {
   margin-bottom: 16px;
 }
+.socratic-message-card.assistant .tutor-key-term {
+  background: color-mix(in srgb, var(--brand-indigo) 11%, var(--surface));
+  border-radius: 4px;
+  box-decoration-break: clone;
+  color: color-mix(in srgb, var(--brand-indigo) 82%, var(--ink));
+  font-weight: 800;
+  padding: 1px 3px;
+}
 .message-thinking-step {
   background: color-mix(in srgb, var(--brand-teal) 9%, var(--surface));
   border-left: 4px solid var(--brand-teal);
@@ -2841,12 +3343,19 @@ html[data-theme="dark"] .socratic-chat-materials .publish-inline-error { color: 
   margin-bottom: 8px;
   text-transform: uppercase;
 }
-.message-thinking-step p {
-  color: var(--ink);
+.message-thinking-question p {
+  color: color-mix(in srgb, var(--brand-teal) 24%, var(--ink));
   font-size: 16px;
+  font-weight: 700;
   line-height: 1.58;
   margin: 0;
 }
+.socratic-message-card.assistant .message-thinking-question .tutor-key-term {
+  background: color-mix(in srgb, var(--brand-teal) 16%, var(--surface));
+  color: color-mix(in srgb, #087e75 80%, var(--ink));
+}
+html[data-theme="dark"] .socratic-message-card.assistant .tutor-key-term { color: #c6c1ff; }
+html[data-theme="dark"] .socratic-message-card.assistant .message-thinking-question .tutor-key-term { color: #8ce4d7; }
 .message-evidence {
   background: #f0f2f9;
   border-radius: 10px;

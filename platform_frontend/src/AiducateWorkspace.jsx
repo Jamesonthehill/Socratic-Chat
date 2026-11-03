@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "./api";
 import { Notice } from "./ui";
 import "./aiducate.css";
@@ -11,9 +11,10 @@ function Metric({ label, value, hint }) {
 }
 
 export default function AiducateWorkspace() {
+  const [searchParams] = useSearchParams();
   const [courses, setCourses] = useState([]);
   const [assignments, setAssignments] = useState([]);
-  const [courseId, setCourseId] = useState("");
+  const [courseId, setCourseId] = useState(() => searchParams.get("course") || "");
   const [assignmentId, setAssignmentId] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [tab, setTab] = useState("overview");

@@ -4,18 +4,24 @@ import { createPortal } from "react-dom";
 import { Link, useParams } from "react-router-dom";
 import Markdown from "react-markdown";
 import PdfMaterialPreview from "./PdfMaterialPreview";
-import { api, date, session, TOOLS } from "./api";
+import { api, date, session, streamApi, TOOLS } from "./api";
 import { Badge, GenerationStatus, Notice } from "./ui";
 
+function highlightIncorrectWord(text) {
+  return text.split(/(\bincorrect\b)/gi).map((part, index) =>
+    /^incorrect$/i.test(part) ? <span className="socratic-step-check-incorrect" key={index}>{part}</span> : part
+  );
+}
+
 const SOCRATIC_TOUR_STEPS = [
-  { selector: '[data-socratic-tour="assignment"]', title: "Read the assignment", detail: "Read the instructor’s question and goals before starting." },
-  { selector: '[data-socratic-tour="learning-path"]', title: "Review the learning path", detail: "These are the topics you will work through in order." },
-  { selector: '[data-socratic-tour="materials"]', title: "Read the course materials", detail: "Download the instructor-selected documents so you can refer to them during the chat." },
-  { demo: "start", title: "Start with the first example", detail: "Start assignment opens the tutor’s first example and question." },
+  { selector: '[data-socratic-tour="materials"]', title: "Read the course materials", detail: "View or download the instructor-selected documents before you begin. You can return to them during the chat." },
+  { selector: '[data-socratic-tour="learning-path"]', title: "Review the learning path", detail: "Follow these topics in order. A step quiz opens after you discuss the step with the tutor." },
+  { demo: "start", title: "Start with the first example", detail: "Start assignment opens the tutor’s first situation and question." },
   { demo: "chat", title: "Discuss the example", detail: "Share your reasoning or ask a question. The tutor responds in the conversation." },
-  { demo: "check", title: "Check what you learned", detail: "For guided steps with a check, find the incorrect action and briefly explain why." },
-  { demo: "continue", title: "Continue when ready", detail: "After the step check, use Continue to next step. If you struggle twice, you can try another example or continue with support." },
-  { demo: "finish", title: "Finish the last topic", detail: "After the final topic, finish the conversation to open your summary." },
+  { demo: "check", title: "Take the step quiz", detail: "After discussing the step, choose the action that would cause a problem and explain why you chose it." },
+  { demo: "retry", title: "Learn from a missed answer", detail: "If you miss the first question, the answer appears and a different question opens. After a second miss, you can continue with support." },
+  { demo: "continue", title: "Continue to the next step", detail: "Complete the check, then continue. Your new star celebrates the step you finished before the next one begins." },
+  { demo: "finish", title: "Finish the last topic", detail: "When you are ready to end the conversation, open your summary." },
   { demo: "summary", title: "Summarize and review feedback", detail: "Explain what you learned, get final feedback, and read it before submitting." },
   { demo: "submit", title: "Submit the assignment", detail: "Submit only after you have reviewed your final feedback." },
 ];
@@ -35,16 +41,22 @@ function SocraticTourPreview({ kind, onAdvance }) {
         <div className="socratic-tour-preview-composer is-highlighted">Write your answer or ask a question… <button type="button" onClick={onAdvance}>Send message</button></div>
       </>}
       {kind === "check" && <>
-        <div className="socratic-tour-preview-heading">Apply what you learned</div>
+        <div className="socratic-tour-preview-heading">Step quiz · Apply what you learned</div>
         <div className="socratic-tour-preview-message">A new situation tests the same idea. Which action is incorrect?</div>
         <div className="socratic-tour-preview-message is-student">Choose an option, then explain why it would cause a problem.</div>
-        <button type="button" className="socratic-tour-preview-action is-highlighted" onClick={onAdvance}>Check my reasoning</button>
+        <button type="button" className="socratic-tour-preview-action is-highlighted" onClick={onAdvance}>Submit</button>
+      </>}
+      {kind === "retry" && <>
+        <div className="socratic-tour-preview-heading">A missed answer · A new question</div>
+        <div className="socratic-tour-preview-message">The tutor shows which action causes a problem and explains why.</div>
+        <div className="socratic-tour-preview-message is-student">Use that explanation to answer a different question about the same idea.</div>
+        <button type="button" className="socratic-tour-preview-action is-highlighted" onClick={onAdvance}>Try the new question</button>
       </>}
       {kind === "continue" && <>
-        <div className="socratic-tour-preview-heading">Your learning path · Topic 1</div>
-        <div className="socratic-tour-preview-message">You and the tutor have discussed the first example. You can keep chatting or move on.</div>
+        <div className="socratic-tour-preview-heading">Your learning path · Step 1 complete</div>
+        <div className="socratic-tour-preview-message">Continue when the step is ready. A star lights up against a dark screen and joins your learning path.</div>
         <button type="button" className="socratic-tour-preview-action is-highlighted" onClick={onAdvance}>Continue to next step</button>
-        <div className="socratic-tour-preview-next">✓ Topic 1 <span>→</span> Topic 2</div>
+        <div className="socratic-tour-preview-next">★ Step 1 <span>→</span> Step 2</div>
       </>}
       {kind === "finish" && <>
         <div className="socratic-tour-preview-heading">Your learning path · Final topic</div>
@@ -296,22 +308,28 @@ function sourcePageNumber(source) {
 
 const DOCUMENT_REFERENCE = /\b(?:sample output|page\s+\d+|section\s+\d+(?:\.\d+)*|table\s+\d+|figure\s+\d+|diagram\s+\d+)\b/gi;
 
-function ReferenceText({ text, onOpen, enabled, keywords = [] }) {
-  if (!enabled) return <EmphasizedText text={text} keywords={keywords} />;
+function ReferenceText({ text, onOpen, enabled, keywords = [], highlightQuoted = false }) {
+  if (!enabled) return <EmphasizedText text={text} keywords={keywords} highlightQuoted={highlightQuoted} />;
   const parts = [];
   let previous = 0;
   for (const match of String(text).matchAll(DOCUMENT_REFERENCE)) {
-    if (match.index > previous) parts.push(<EmphasizedText key={`text-${previous}`} text={text.slice(previous, match.index)} keywords={keywords} />);
+    if (match.index > previous) parts.push(<EmphasizedText key={`text-${previous}`} text={text.slice(previous, match.index)} keywords={keywords} highlightQuoted={highlightQuoted} />);
     parts.push(<button key={`reference-${match.index}`} type="button" className="source-reference-link"
       onClick={() => onOpen(match[0])} title={`Open ${match[0]} in course material`}>{match[0]}</button>);
     previous = match.index + match[0].length;
   }
-  if (previous < text.length) parts.push(<EmphasizedText key={`text-${previous}`} text={text.slice(previous)} keywords={keywords} />);
-  return parts.length ? parts : <EmphasizedText text={text} keywords={keywords} />;
+  if (previous < text.length) parts.push(<EmphasizedText key={`text-${previous}`} text={text.slice(previous)} keywords={keywords} highlightQuoted={highlightQuoted} />);
+  return parts.length ? parts : <EmphasizedText text={text} keywords={keywords} highlightQuoted={highlightQuoted} />;
 }
 
-function EmphasizedText({ text, keywords = [] }) {
-  const terms = keywords
+function EmphasizedText({ text, keywords = [], highlightQuoted = false }) {
+  const quotedTerms = highlightQuoted
+    ? [...String(text).matchAll(/'([^'\n]{2,32})'|“([^”\n]{2,32})”|"([^"\n]{2,32})"/g)]
+      .map((match) => match[1] || match[2] || match[3])
+      .filter((term) => term.trim().split(/\s+/).length <= 4 && !/[.!?]/.test(term))
+      .slice(0, 2)
+    : [];
+  const terms = [...keywords, ...quotedTerms]
     .map((keyword) => keyword.trim())
     .filter(Boolean)
     .sort((left, right) => right.length - left.length);
@@ -324,7 +342,7 @@ function EmphasizedText({ text, keywords = [] }) {
     .split(matcher)
     .map((part, index) =>
       terms.some((term) => term.toLowerCase() === part.toLowerCase()) ? (
-        <strong key={index}>{part}</strong>
+        <strong className="tutor-key-term" key={index}>{part}</strong>
       ) : (
         part
       ),
@@ -344,15 +362,110 @@ function maximumEvidenceWidth() {
   return Math.max(320, workspaceWidth - 444);
 }
 
-function SocraticThinkingMessage({ elapsedSeconds }) {
+function SocraticThinkingMessage({ elapsedSeconds, progressEvents }) {
+  const latest = progressEvents.at(-1);
+  const understanding = latest?.understanding?.trim();
+  const activity = ["drafting", "reviewing"].includes(latest?.stage)
+    ? "preparing a reply from the course materials"
+    : "checking the course materials";
+  const summary = understanding
+    ? `I’m reading your message as “${understanding}” and ${activity}.`
+    : latest?.stage === "understanding"
+      ? "I’m working out what you mean before checking the course materials."
+      : latest?.stage
+        ? "I’m checking your message against the course materials."
+        : "I’m reading your message to understand what help you need.";
   return (
-    <GenerationStatus
-      title="Socratic tutor"
-      message="Thinking through your response"
-      elapsedSeconds={elapsedSeconds}
-      ariaLabel="Socratic tutor is thinking through your response"
-      messageCard
-    />
+    <div className="socratic-progress-card" aria-live="polite">
+      <GenerationStatus
+        title="Socratic tutor"
+        message={summary}
+        elapsedSeconds={elapsedSeconds}
+        ariaLabel="Socratic tutor is preparing your reply"
+        messageCard
+        atomLogo
+      />
+      <div className="socratic-progress-runway" aria-hidden="true"><span /></div>
+    </div>
+  );
+}
+
+function StarMedal() {
+  return (
+    <svg className="student-star-medal" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+      <path d="M15 39 5 58l13-4 9 9 5-20z" fill="#f46c5b" stroke="#30253a" strokeWidth="3" strokeLinejoin="round" />
+      <path d="m49 39 10 19-13-4-9 9-5-20z" fill="#f46c5b" stroke="#30253a" strokeWidth="3" strokeLinejoin="round" />
+      <path d="m32 3 8 16 18 3-13 12 3 18-16-9-16 9 3-18L6 22l18-3z" fill="#ffc43d" stroke="#30253a" strokeWidth="3.5" strokeLinejoin="round" />
+      <path d="M32 7 25 21 10 23l16 5z" fill="#fff064" opacity=".9" />
+      <circle cx="32" cy="31" r="16" fill="#ffe15a" stroke="#30253a" strokeWidth="3" />
+      <path d="m32 20 3.5 7 7.5 1-5.5 5.5 1.4 7.5-6.9-4-6.9 4 1.4-7.5L21 28l7.5-1z" fill="#ffbf33" stroke="#30253a" strokeWidth="2.5" strokeLinejoin="round" />
+      <path d="M16 43q16 11 32 0l-5 11q-11 8-22 0z" fill="#6bcbd0" stroke="#30253a" strokeWidth="3" strokeLinejoin="round" />
+      <path d="M22 47q10 5 20 0" fill="none" stroke="#e8ffff" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function LearningPathProgress({ completed, total, stage, started }) {
+  const starRefs = useRef([]);
+  const [displayedCompleted, setDisplayedCompleted] = useState(completed);
+  const [flyingStar, setFlyingStar] = useState(null);
+  const [advancing, setAdvancing] = useState(false);
+  const percentage = Math.round(completed / total * 100);
+
+  useEffect(() => {
+    if (completed < displayedCompleted) {
+      setDisplayedCompleted(completed);
+      setFlyingStar(null);
+      setAdvancing(false);
+      return;
+    }
+    if (completed === displayedCompleted) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
+      setDisplayedCompleted(completed);
+      return;
+    }
+    const destination = starRefs.current[displayedCompleted]?.getBoundingClientRect();
+    if (!destination) {
+      setDisplayedCompleted(completed);
+      return;
+    }
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+    setFlyingStar({
+      dx: destination.left + destination.width / 2 - centerX,
+      dy: destination.top + destination.height / 2 - centerY,
+    });
+    setAdvancing(true);
+    const timer = window.setTimeout(() => {
+      setDisplayedCompleted((value) => value + 1);
+      setFlyingStar(null);
+      setAdvancing(false);
+    }, 2400);
+    return () => window.clearTimeout(timer);
+  }, [completed, displayedCompleted]);
+
+  return (
+    <div className={`student-learning-progress${advancing ? " is-advancing" : ""}`}>
+      <div className="student-learning-progress-heading">
+        <p>{completed} of {total} steps complete{started && completed < total ? ` · Stage ${stage} of ${total}` : ""}</p>
+        <strong aria-live="polite">{percentage}%</strong>
+      </div>
+      <div className="student-learning-stars" role="progressbar" aria-label="Learning path progress" aria-valuemin={0} aria-valuemax={total} aria-valuenow={completed} aria-valuetext={`${completed} of ${total} stars earned`} style={{ "--star-columns": Math.min(total, 10) }}>
+        {Array.from({ length: total }, (_, index) => (
+          <span ref={(element) => { starRefs.current[index] = element; }} key={index}
+            className={`student-learning-star${index < displayedCompleted ? " is-earned" : ""}${index === displayedCompleted && flyingStar ? " is-arriving" : ""}`}
+            style={{ "--star-shine-delay": `${index * 480}ms` }}
+            aria-hidden="true"><StarMedal /></span>
+        ))}
+      </div>
+      {flyingStar && createPortal(<div className="student-star-celebration" aria-label="Step complete" role="status">
+        <span className="student-star-celebration-sparkles" aria-hidden="true">✦ ✧ ✦</span>
+        <span className="student-learning-flying-star" aria-hidden="true" style={{
+          "--star-dx": `${flyingStar.dx}px`, "--star-dy": `${flyingStar.dy}px`,
+        }}><StarMedal /></span>
+        <strong className="student-star-celebration-label">Stage complete!</strong>
+      </div>, document.body)}
+    </div>
   );
 }
 
@@ -575,12 +688,14 @@ function SocraticMessage({
   const visualSource = message.role === "assistant" ? [stepSource, ...(sources || [])]
     .filter(Boolean).find((source) => sourceVisual(source, visualQuestion)) : null;
   const openReference = (phrase) => onOpenReference?.(phrase, preferredSource);
-  const renderReferences = (children) => Children.map(children, (child) => typeof child === "string"
-    ? <ReferenceText text={child} onOpen={openReference} enabled={message.role === "assistant" && canOpenReference} />
+  const renderReferences = (children, emphasize = true) => Children.map(children, (child) => typeof child === "string"
+    ? <ReferenceText text={child} onOpen={openReference} enabled={message.role === "assistant" && canOpenReference}
+        keywords={emphasize && message.role === "assistant" ? keywords : []}
+        highlightQuoted={emphasize && message.role === "assistant"} />
     : child);
   const referenceMarkdown = {
     p: ({ children }) => <p>{renderReferences(children)}</p>,
-    strong: ({ children }) => <strong>{renderReferences(children)}</strong>,
+    strong: ({ children }) => <strong className={message.role === "assistant" ? "tutor-key-term" : undefined}>{renderReferences(children, false)}</strong>,
     em: ({ children }) => <em>{renderReferences(children)}</em>,
     li: ({ children }) => <li>{renderReferences(children)}</li>,
   };
@@ -620,9 +735,9 @@ function SocraticMessage({
               aria-label="Your next thinking step"
             >
               <span>Your next thinking step</span>
-              <p>
-                <ReferenceText text={question} onOpen={openReference} enabled={canOpenReference} keywords={keywords} />
-              </p>
+              <div className="message-thinking-question">
+                <Markdown components={referenceMarkdown}>{question}</Markdown>
+              </div>
             </section>
           </>
         ) : (
@@ -737,6 +852,7 @@ export default function StudentWorkspace({ user }) {
     [loaded, setLoaded] = useState(false),
     [generationStartedAt, setGenerationStartedAt] = useState(null),
     [generationSeconds, setGenerationSeconds] = useState(0),
+    [progressEvents, setProgressEvents] = useState([]),
     [lastGenerationSeconds, setLastGenerationSeconds] = useState(null),
     [newReplyIndex, setNewReplyIndex] = useState(null),
     [finalFeedbackBusy, setFinalFeedbackBusy] = useState(false),
@@ -1000,10 +1116,12 @@ export default function StudentWorkspace({ user }) {
     setBusy(true);
     setError("");
     try {
-      const result = await api(`/platform/assignments/${id}/${path}`, {
-        method: "POST",
-        body,
-      });
+      const result = path === "messages" && assignment?.tool === "socratic"
+        ? await streamApi(`/platform/assignments/${id}/messages/stream`, body, (event) => {
+            setProgressEvents((previous) => previous.at(-1)?.stage === event.stage
+              ? previous : [...previous, event].slice(-8));
+          })
+        : await api(`/platform/assignments/${id}/${path}`, { method: "POST", body });
       setAttempt(result);
       onResult?.(result);
       return true;
@@ -1119,6 +1237,7 @@ export default function StudentWorkspace({ user }) {
     setNewReplyIndex(null);
     setGenerationStartedAt(startedAt);
     setGenerationSeconds(0);
+    setProgressEvents([]);
     setLastGenerationSeconds(null);
     let awaitingClarification = false;
     const sent = await perform("messages", pending.current, (result) => {
@@ -1255,6 +1374,8 @@ export default function StudentWorkspace({ user }) {
   const checkProgress = socratic.step_check?.step_index === activeLearningStep ? socratic.step_check : null;
   const checkStatus = checkProgress?.status || "active";
   const activeCheck = stepChecks[Math.min(Number(checkProgress?.variant) || 0, stepChecks.length - 1)];
+  const wrongStepCheckOption = checkProgress?.last_option_correct === false
+    ? checkProgress.last_option_index : null;
   const revealedIncorrectAnswer = ["passed", "choice", "continued_with_support"].includes(checkStatus)
     ? activeCheck?.options?.[checkProgress?.correct_option_index]
     : null;
@@ -1283,8 +1404,8 @@ export default function StudentWorkspace({ user }) {
   const completedLearningSteps = attempt ? Math.min(learningStepCount, activeLearningStep + Number(finalLearningStepFinished)) : 0;
   const socraticTourSteps = SOCRATIC_TOUR_STEPS.filter((step) =>
     (!conceptCheck || step.demo) &&
-    (step.demo !== "check" || assignment.student_config?.learning_steps?.some((item) => item.checks?.length)) &&
-    (learningStepCount || step.selector !== '[data-socratic-tour="learning-path"]')
+    (!["check", "retry"].includes(step.demo) || assignment.student_config?.learning_steps?.some((item) => item.checks?.length)) &&
+    (learningStepCount || (step.selector !== '[data-socratic-tour="learning-path"]' && step.demo !== "continue"))
   );
   const milestone =
     assignment.student_config?.module_type === "milestone_based";
@@ -1318,74 +1439,17 @@ export default function StudentWorkspace({ user }) {
         }
       >
         <aside className={`assignment-info${assignment.tool === "socratic" ? " socratic-assignment-info" : ""}`}>
-          <div className={assignment.tool === "socratic" ? "student-assignment-intro" : undefined}>
-            {assignment.tool === "socratic" && <span className="student-panel-kicker">Start here</span>}
-            <h2>Your assignment</h2>
-            <div className="prose" data-socratic-tour="assignment">
-              <Markdown>
-                {assignment.instructions ||
-                  "Follow the prompts in this learning activity."}
-              </Markdown>
-            </div>
-          </div>
-          {assignment.tool === "socratic" && (
-            <>
-              {assignment.student_config?.learning_steps?.length > 0 && (
-                <section className="student-learning-path" data-socratic-tour="learning-path" aria-labelledby="student-learning-path-title">
-                  <div className="student-section-heading">
-                    <div><span className="student-panel-kicker">Step by step</span><h3 id="student-learning-path-title">Your learning path</h3></div>
-                    <span className="student-section-count">{learningStepCount} steps</span>
-                  </div>
-                  <p className="help">Discuss each step, then use its application check before continuing. You can ask the tutor questions about any step.</p>
-                  {attempt && !showLearningSummary && <p className="help" role="status">Tutor questions in this step: {stepQuestionCount} of {minimumStepQuestions} required before the check.</p>}
-                  <div className="student-learning-progress">
-                    <div className="student-learning-progress-heading">
-                      <p>{completedLearningSteps} of {learningStepCount} steps complete{attempt && completedLearningSteps < learningStepCount ? ` · Stage ${activeLearningStep + 1} of ${learningStepCount}` : ""}</p>
-                      <strong>{Math.round(completedLearningSteps / learningStepCount * 100)}%</strong>
-                    </div>
-                    <div role="progressbar" aria-label="Learning path progress" aria-valuemin={0} aria-valuemax={learningStepCount} aria-valuenow={completedLearningSteps}>
-                      <span style={{ width: `${Math.round(completedLearningSteps / learningStepCount * 100)}%` }} />
-                    </div>
-                  </div>
-                  <ol ref={learningPathRef} role="list" aria-label="Learning path steps" tabIndex={0}>
-                    {assignment.student_config.learning_steps.map((step, index) => {
-                      const completed = attempt && (index < activeLearningStep || (finalLearningStepFinished && index === activeLearningStep));
-                      const current = attempt && attempt.status !== "completed" && !finalLearningStepFinished && index === activeLearningStep;
-                      const completedWithSupport = socratic.step_check_results?.some((result) => result.step_index === index && result.status === "continued_with_support");
-                      return (
-                        <li key={`${index}-${step.title}`} className={current ? "is-current" : completed ? "is-completed" : ""} aria-current={current ? "step" : undefined}>
-                          <span className="student-step-number" aria-hidden="true">{index + 1}</span>
-                          {current && <span className="student-step-active-label">Current step</span>}
-                          <div className="student-step-title">
-                            <strong>{step.title}</strong>
-                            {completed && <span className="student-step-complete-icon" role="img" aria-label={completedWithSupport ? "Continued with support" : "Completed step"}>{completedWithSupport ? "↗" : "✓"}</span>}
-                          </div>
-                          <span>{step.goal}</span>
-                          {completedWithSupport && <small className="student-step-support-note">Continued with support</small>}
-                        </li>
-                      );
-                    })}
-                  </ol>
-                  {attempt && attempt.status !== "completed" && !showLearningSummary &&
-                    (activeLearningStep < learningStepCount - 1 || socratic.phase !== "ready_to_submit") && (
-                      <button type="button" className="compact next-learning-step" disabled={stepActionDisabled || stepCheckOpen} onClick={continueFromStep}>
-                        {needsStepCheck ? "Take step quiz" : activeLearningStep < learningStepCount - 1 ? "Continue to next step" : "Finish conversation and summarize"}
-                      </button>
-                    )}
-                </section>
-              )}
-              <section className="student-course-materials" data-socratic-tour="materials" aria-labelledby="student-course-materials-title">
+          {assignment.tool === "socratic" ? (
+              <section className="student-course-materials student-materials-intro" data-socratic-tour="materials" aria-labelledby="student-course-materials-title">
                 <div className="student-section-heading">
                   <div>
-                    <span className="student-panel-kicker">Your reference shelf</span>
                     <div className="student-materials-title-row">
-                      <h3 id="student-course-materials-title">Course materials</h3>
+                      <h2 id="student-course-materials-title">Course materials</h2>
                       {materials.length > 0 && <span className="student-materials-reading-cue">Recommended: read these materials before chatting</span>}
                     </div>
                   </div>
                   {materials.length > 0 && <span className="student-section-count">{materials.length} {materials.length === 1 ? "file" : "files"}</span>}
                 </div>
-                <p className="help">View or download the original documents your instructor selected for this assignment.</p>
                 {materialError && <p className="help" role="alert">{materialError}</p>}
                 {materialsLoading ? <p className="help" role="status">Loading course materials…</p> : materials.length ? <ul>
                   {materials.map((material) => <li key={material.document_id}>
@@ -1407,6 +1471,61 @@ export default function StudentWorkspace({ user }) {
                   </li>)}
                 </ul> : !materialError && <p className="help">No published documents are available.</p>}
               </section>
+          ) : (
+            <div>
+              <h2>Your assignment</h2>
+              <div className="prose">
+                <Markdown>{assignment.instructions || "Follow the prompts in this learning activity."}</Markdown>
+              </div>
+            </div>
+          )}
+          {assignment.tool === "socratic" && (
+            <>
+              {assignment.student_config?.learning_steps?.length > 0 && (
+                <section className="student-learning-path" data-socratic-tour="learning-path" aria-labelledby="student-learning-path-title">
+                  <div className="student-section-heading">
+                    <h3 id="student-learning-path-title">Your learning path</h3>
+                    <span className="student-section-count">{learningStepCount} steps</span>
+                  </div>
+                  <LearningPathProgress completed={completedLearningSteps} total={learningStepCount} stage={activeLearningStep + 1} started={Boolean(attempt)} />
+                  <ol ref={learningPathRef} role="list" aria-label="Learning path steps" tabIndex={0}>
+                    {assignment.student_config.learning_steps.map((step, index) => {
+                      const completed = attempt && (index < activeLearningStep || (finalLearningStepFinished && index === activeLearningStep));
+                      const current = attempt && attempt.status !== "completed" && !finalLearningStepFinished && index === activeLearningStep;
+                      const completedWithSupport = socratic.step_check_results?.some((result) => result.step_index === index && result.status === "continued_with_support");
+                      return (
+                        <li key={`${index}-${step.title}`} className={current ? "is-current" : completed ? "is-completed" : ""} aria-current={current ? "step" : undefined}>
+                          <span className="student-step-number" aria-hidden="true">{index + 1}</span>
+                          <div className="student-step-topline">
+                            <span className="student-step-chapter">Mission {String(index + 1).padStart(2, "0")}</span>
+                            {current ? <span className="student-step-active-label">Current step</span>
+                              : completed ? <span className="student-step-star" role="img" aria-label={completedWithSupport ? "Completed with support" : "Completed step"}><StarMedal /></span>
+                                : <span className="student-step-state">Upcoming</span>}
+                          </div>
+                          <div className="student-step-title">
+                            <strong>{step.title}</strong>
+                          </div>
+                          <span className="student-step-goal">{step.goal}</span>
+                          {current && (!needsStepCheck || stepActionDisabled) && <span className="student-step-objective">{!hasDiscussedCurrentStep
+                            ? "Start the conversation to explore this mission."
+                            : stepActionDisabled
+                              ? "Keep discussing this example with your tutor."
+                              : activeLearningStep < learningStepCount - 1
+                                ? "Ready to continue to the next mission."
+                                : "Ready to finish and summarize."}</span>}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                  {attempt && attempt.status !== "completed" && !showLearningSummary &&
+                    (activeLearningStep < learningStepCount - 1 || socratic.phase !== "ready_to_submit") && (
+                      <button type="button" className="compact next-learning-step" disabled={stepActionDisabled || stepCheckOpen} onClick={continueFromStep}>
+                        {needsStepCheck ? "Take step quiz" : activeLearningStep < learningStepCount - 1 ? "Continue to next step" : "Finish conversation and summarize"}
+                      </button>
+                    )}
+                </section>
+              )}
+
               {assignment.student_config?.keyword_glossary?.length > 0 && (
                 <section
                   className="student-keyword-glossary"
@@ -1509,9 +1628,9 @@ export default function StudentWorkspace({ user }) {
           <header className="material-preview-header">
             <div><span>Original course document</span><h2>{materialPreview.title}</h2></div>
             <div className="material-preview-actions">
-              <button type="button" className="secondary compact" disabled={materialBusy === materialPreview.document_id}
+              <button type="button" className="compact material-preview-download" disabled={materialBusy === materialPreview.document_id}
                 onClick={() => downloadMaterial(materialPreview)}>Download</button>
-              <button type="button" className="quiet compact" onClick={() => setMaterialPreview(null)}>Close document</button>
+              <button type="button" className="compact material-preview-close" onClick={() => setMaterialPreview(null)}>Close document</button>
             </div>
           </header>
           {materialPreview.type !== "unavailable" && <div className="material-preview-zoom" role="group" aria-label="Course material zoom">
@@ -1779,6 +1898,7 @@ export default function StudentWorkspace({ user }) {
                       elapsedSeconds={
                         generationStartedAt ? generationSeconds : 0
                       }
+                      progressEvents={progressEvents}
                     />
                   ) : (
                     <GenerationStatus
@@ -1824,30 +1944,54 @@ export default function StudentWorkspace({ user }) {
                   <div className="socratic-step-inline" aria-label="Current learning step quiz">
                     <section className="socratic-step-check" role="dialog" aria-label="Check this step" ref={stepCheckDialogRef} tabIndex={-1}>
                       <div className="socratic-step-check-heading">
-                        <div><span className="student-panel-kicker">STEP {activeLearningStep + 1} OF {learningStepCount} · APPLICATION CHECK</span><h4>Find the incorrect answer</h4></div>
+                        <div><span className="student-panel-kicker">STEP {activeLearningStep + 1} OF {learningStepCount} · APPLICATION CHECK</span><h4>Find the <span className="socratic-step-check-incorrect">incorrect</span> answer</h4></div>
                         <button type="button" className="socratic-step-check-close" aria-label="Close step check" onClick={() => setStepCheckOpen(false)}>×</button>
                       </div>
                       {checkStatus === "passed" || checkStatus === "continued_with_support" ? (
-                        <>{revealedIncorrectAnswer && <div className="socratic-step-check-result"><span>Incorrect action in this example</span><strong>{revealedIncorrectAnswer}</strong></div>}
+                        <>{revealedIncorrectAnswer && <div className="socratic-step-check-result"><span>Action that would cause a problem</span><strong>{revealedIncorrectAnswer}</strong></div>}
                         <p role="status" className="socratic-step-check-ready">{checkStatus === "passed" ? displayedCheckFeedback || "You explained the mistake. Ready to continue." : "You can continue and return to this idea later."}</p>
                         <button type="button" className="next-learning-step" disabled={busy} onClick={continueFromStep}>{activeLearningStep < learningStepCount - 1 ? "Continue to next step" : "Continue to summary"}</button></>
                       ) : checkStatus === "choice" ? (
-                        <div role="status">{revealedIncorrectAnswer && <div className="socratic-step-check-result"><span>Incorrect action in this example</span><strong>{revealedIncorrectAnswer}</strong></div>}
-                          {displayedCheckFeedback && <p>{displayedCheckFeedback}</p>}
-                          <p>Learning takes practice. You can try a new example, or continue and return to this idea later.</p>
-                          <div className="socratic-step-check-actions"><button type="button" className="secondary" disabled={busy} onClick={tryAnotherStepCheck}>{checkProgress.variant ? "Try this example again" : "Try another example"}</button><button type="button" className="next-learning-step" disabled={busy} onClick={continueWithSupport}>{activeLearningStep < learningStepCount - 1 ? "Continue to next step" : "Continue to summary"}</button></div>
+                        <div className="socratic-step-check-content">
+                          <div className="socratic-step-check-prompts">
+                            <div className="socratic-step-check-scenario"><span className="socratic-step-check-eyebrow">Scenario</span><p>{activeCheck.scenario}</p></div>
+                            <div className="socratic-step-check-question"><span className="socratic-step-check-q" aria-hidden="true">Q.</span><p>{highlightIncorrectWord(activeCheck.question)}</p></div>
+                          </div>
+                          <div className="socratic-step-check-options is-review" aria-label="Reviewed answer choices">
+                            {activeCheck.options.map((option, index) => <div key={`${index}-${option}`} className={`socratic-step-check-review-option${index === checkProgress.correct_option_index ? " is-answer" : ""}${index === wrongStepCheckOption ? " is-missed" : ""}`}>
+                              <span className="socratic-step-check-choice-letter" aria-hidden="true">{String.fromCharCode(65 + index)}</span>
+                              <span>{option}</span>
+                              {index === checkProgress.correct_option_index && <small>Action that causes a problem</small>}
+                              {index === wrongStepCheckOption && <small>Your choice</small>}
+                            </div>)}
+                          </div>
+                          <div className="socratic-step-check-inline-feedback" role="status">
+                            <strong>Why this action causes a problem</strong>
+                            <p>{displayedCheckFeedback}</p>
+                            <p>{checkProgress.variant ? "You can continue with support and revisit this idea later." : "Try the idea in a different situation."}</p>
+                          </div>
+                          <div className="socratic-step-check-actions">{checkProgress.variant ? <button type="button" className="next-learning-step" disabled={busy} onClick={continueWithSupport}>{activeLearningStep < learningStepCount - 1 ? "Continue to next step with support" : "Continue to summary with support"}</button> : <button type="button" className="next-learning-step" disabled={busy} onClick={tryAnotherStepCheck}>Try a new question</button>}</div>
                         </div>
                       ) : (
                         <form onSubmit={submitStepCheck}>
+                          {checkProgress?.previous_answer && <div className="socratic-step-check-previous" role="status">
+                            <span>Previous question · action that causes a problem</span>
+                            <strong>{checkProgress.previous_answer}</strong>
+                            {checkProgress.previous_explanation && <p>{checkProgress.previous_explanation}</p>}
+                            <span>Now use that idea in a different situation.</span>
+                          </div>}
                           <div className="socratic-step-check-content">
-                            <div className="socratic-step-check-prompt"><span className="socratic-step-check-eyebrow">Scenario</span><p>{activeCheck.scenario}</p><strong>{activeCheck.question}</strong></div>
+                            <div className="socratic-step-check-prompts">
+                              <div className="socratic-step-check-scenario"><span className="socratic-step-check-eyebrow">Scenario</span><p>{activeCheck.scenario}</p></div>
+                              <div className="socratic-step-check-question"><span className="socratic-step-check-q" aria-hidden="true">Q.</span><p>{highlightIncorrectWord(activeCheck.question)}</p></div>
+                            </div>
                             <div className="socratic-step-check-response">
-                              <div className="socratic-step-check-options">{activeCheck.options.map((option, index) => <label key={`${index}-${option}`}><input type="radio" name="step-check-option" checked={stepCheckOption === index} onChange={() => setStepCheckOption(index)} /><span className="socratic-step-check-choice-letter" aria-hidden="true">{String.fromCharCode(65 + index)}</span><span>{option}</span></label>)}</div>
+                              <div className="socratic-step-check-options">{activeCheck.options.map((option, index) => <label key={`${index}-${option}`} className={wrongStepCheckOption === index ? "is-incorrect-selection" : undefined}><input type="radio" name="step-check-option" checked={stepCheckOption === index} disabled={wrongStepCheckOption === index} onChange={() => setStepCheckOption(index)} /><span className="socratic-step-check-choice-letter" aria-hidden="true">{String.fromCharCode(65 + index)}</span><span>{option}</span>{wrongStepCheckOption === index && <span className="socratic-step-check-wrong-tag">Already tried · choose another</span>}</label>)}</div>
                               <label className="socratic-step-check-reason">Why did you choose it?<textarea rows={2} maxLength={1200} value={stepCheckReason} onChange={(event) => setStepCheckReason(event.target.value)} placeholder="Explain what would go wrong in this situation." /></label>
                             </div>
                           </div>
                           {checkProgress?.feedback && <p role="status" className="socratic-step-check-feedback">{checkProgress.feedback}</p>}
-                          <button type="submit" disabled={busy || stepCheckOption === null || stepCheckReason.trim().length < 5}>{busy ? "Checking…" : "Check my reasoning"}</button>
+                          <button type="submit" disabled={busy || stepCheckOption === null || stepCheckReason.trim().length < 5}>{busy ? "Submitting…" : "Submit"}</button>
                         </form>
                       )}
                     </section>

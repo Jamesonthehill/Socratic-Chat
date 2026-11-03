@@ -1,4 +1,5 @@
 import asyncio
+import json
 from types import SimpleNamespace
 
 from app.classifier import _classification_from_observation
@@ -12,10 +13,10 @@ def test_assignment_reply_uses_student_request_not_classifier_role(monkeypatch):
 
     async def complete(_api_key, _base_url, request):
         requests.append(request)
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=(
-            'The assignment asks you to choose a size, check ingredients, '
-            'take payment, and update the inventory.'
-        )))])
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps({
+            "lead_in": "The assignment asks you to choose a size, check ingredients, take payment, and update the inventory.",
+            "next_question": "",
+        })))])
 
     monkeypatch.setattr(rag, "generation_client_config", lambda: ("Groq", "key", "url", "model"))
     monkeypatch.setattr(rag, "chat_completion", complete)
@@ -34,10 +35,10 @@ def test_assignment_reply_uses_student_request_not_classifier_role(monkeypatch):
 
     assert answers[0] == answers[1]
     assert [request["messages"] for request in requests[:2]] == [requests[0]["messages"]] * 2
-    assert all("response_format" not in request for request in requests)
+    assert all(request["response_format"]["json_schema"]["name"] == "socratic_turn" for request in requests)
     instruction = requests[0]["messages"][1]["content"]
     assert "explain its main tasks and their order" in instruction
-    assert "An explanation may end without a new question" in instruction
+    assert "otherwise end the explanation without a question" in instruction
 
 
 def test_explanation_clears_old_question_even_if_classifier_called_it_an_answer():
@@ -54,9 +55,10 @@ def test_guided_reply_prompt_keeps_current_example_without_inventing_progress(mo
 
     async def complete(_api_key, _base_url, request):
         requests.append(request)
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=(
-            "Glad that helped. In the campus event app, what should the team inspect next?"
-        )))])
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps({
+            "lead_in": "Glad that helped.",
+            "next_question": "In the campus event app, what should the team inspect next?",
+        })))])
 
     monkeypatch.setattr(rag, "generation_client_config", lambda: ("Groq", "key", "url", "model"))
     monkeypatch.setattr(rag, "chat_completion", complete)

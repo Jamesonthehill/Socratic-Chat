@@ -76,6 +76,60 @@ export async function api(path, options = {}) {
   }
   return data;
 }
+
+export async function streamApi(path, body, onStatus) {
+  if (path.startsWith("/platform/")) {
+    assignmentVersion++;
+    assignmentViews.clear();
+  }
+  const saved = session();
+  const res = await fetch(`/api${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${saved?.access_token || ""}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 401) {
+    logout();
+    throw new Error("Your session expired. Please sign in again.");
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(typeof data?.detail === "string" ? data.detail : "The request could not be completed. Please retry.");
+  }
+  // Test doubles may return an ordinary JSON response. The live route streams NDJSON.
+  if (!res.body) return res.json();
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result;
+  const accept = (line) => {
+    if (!line.trim()) return;
+    const event = JSON.parse(line);
+    if (event.type === "status") onStatus?.(event);
+    if (event.type === "error") throw new Error(event.message || "The tutor could not complete this reply. Please retry.");
+    if (event.type === "result") result = event.data;
+  };
+  try {
+    while (result === undefined) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      lines.forEach(accept);
+      if (done) {
+        accept(buffer);
+        break;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (result === undefined) throw new Error("The tutor connection ended before the reply was ready. Please retry.");
+  return result;
+}
 export const TOOLS = {
   socratic: {
     name: "Socratic Chat",

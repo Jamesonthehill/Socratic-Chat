@@ -1,3 +1,4 @@
+import asyncio
 import json
 import hashlib
 import re
@@ -7,10 +8,13 @@ from typing import Literal
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from psycopg.types.json import Jsonb
 
 from app import auth, db, settings
+from app.pipeline_logging import reset_event_sink, set_event_sink
 from platform_app import canvas_lms, engines, store, evidence_diagram, step_check
 from platform_app.schemas import (
     ActionInput,
@@ -797,13 +801,15 @@ def socratic_step_check(assignment_id: UUID, body: SocraticStepCheckInput, accou
             progress = {"step_index": index, "variant": 0, "attempts": 0, "status": "active"}
         status = progress.get("status")
         if body.action == "try_another":
-            if status != "choice":
+            if status != "choice" or int(progress.get("variant") or 0) != 0:
                 raise HTTPException(409, "Try the current check first.")
-            progress.update({"variant": 1, "attempts": 0, "status": "active", "feedback": ""})
+            progress.update({"variant": 1, "status": "active", "feedback": ""})
             progress.pop("correct_option_index", None)
+            progress.pop("last_option_index", None)
+            progress.pop("last_option_correct", None)
         elif body.action == "continue_with_support":
-            if status not in {"choice", "continued_with_support"}:
-                raise HTTPException(409, "The continue option appears after two unsuccessful attempts.")
+            if status not in {"choice", "continued_with_support"} or int(progress.get("variant") or 0) != 1:
+                raise HTTPException(409, "Try the second example before continuing with support.")
             progress["status"] = "continued_with_support"
         else:
             if status in {"passed", "choice", "continued_with_support"}:
@@ -816,13 +822,15 @@ def socratic_step_check(assignment_id: UUID, body: SocraticStepCheckInput, accou
             if len(reason) < 5:
                 raise HTTPException(422, "Explain why you chose that answer.")
             selected_correctly = body.option_index == check["incorrect_option_index"]
+            progress["last_option_index"] = body.option_index
+            progress["last_option_correct"] = selected_correctly
             if selected_correctly:
                 try:
                     sufficient, feedback = step_check.assess_reason_sync(check, check["options"][body.option_index], reason)
                 except Exception as error:
                     raise HTTPException(503, "The step check could not review your reason. Please retry.") from error
             else:
-                sufficient, feedback = False, "That choice follows the requirement. Look for the option that would cause a problem in this situation."
+                sufficient, feedback = False, "That choice fits this situation."
             progress["attempts"] = int(progress.get("attempts") or 0) + 1
             if selected_correctly and sufficient:
                 progress.update({
@@ -830,14 +838,23 @@ def socratic_step_check(assignment_id: UUID, body: SocraticStepCheckInput, accou
                     "feedback": feedback or "You found the mistake and explained why it matters. Ready for the next step.",
                     "correct_option_index": check["incorrect_option_index"],
                 })
-            elif progress["attempts"] >= 2:
+            elif variant == 0:
+                progress.update({
+                    "variant": 1,
+                    "status": "active",
+                    "feedback": "",
+                    "previous_answer": check["options"][check["incorrect_option_index"]],
+                    "previous_explanation": f"{feedback} {check['expected_reason']}".strip(),
+                    "previous_choice": check["options"][body.option_index] if not selected_correctly else None,
+                })
+                progress.pop("last_option_index", None)
+                progress.pop("last_option_correct", None)
+            else:
                 progress.update({
                     "status": "choice",
-                    "feedback": f"{feedback} The incorrect choice is: {check['options'][check['incorrect_option_index']]}. {check['expected_reason']}",
+                    "feedback": f"{feedback} {check['expected_reason']}",
                     "correct_option_index": check["incorrect_option_index"],
                 })
-            else:
-                progress.update({"status": "active", "feedback": feedback})
         state["step_check"] = progress
         if progress["status"] in {"passed", "continued_with_support"}:
             outcomes = list(state.get("step_check_results") or [])
@@ -906,6 +923,83 @@ def message(assignment_id: UUID, body: MessageInput, account=Depends(user)):
         attempt["processed_requests"].append(rid)
         store.save_attempt(conn, attempt)
         return public_attempt(attempt)
+
+
+def _student_chat_status(event: str) -> tuple[str, str] | None:
+    """Expose completed pipeline stages without revealing internal prompts or labels."""
+    return {
+        "assignment_chat_received": ("received", "Reading your message"),
+        "classifier_llm_started": ("understanding", "Understanding your question"),
+        "message_classification_completed": ("understood", "Question understood"),
+        "retrieval_started": ("searching", "Finding course material"),
+        "assignment_sources_merged_and_reranked": ("evidence", "Relevant passages found"),
+        "answer_evaluation_started": ("checking", "Checking your reasoning"),
+        "socratic_strategy_selected": ("planning", "Planning the reply"),
+        "llm_request_started": ("drafting", "Writing your reply"),
+        "structured_socratic_response": ("reviewing", "Checking the reply"),
+    }.get(event)
+
+
+@router.post("/assignments/{assignment_id}/messages/stream")
+async def message_stream(assignment_id: UUID, body: MessageInput, account=Depends(user)):
+    """Stream actual Socratic pipeline stages and the normal saved attempt."""
+
+    async def events():
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+        last_stage = None
+        current_understanding = ""
+
+        def on_event(event, fields):
+            nonlocal last_stage, current_understanding
+            if event == "message_classification_completed":
+                query = fields.get("retrieval_query")
+                if isinstance(query, str):
+                    current_understanding = " ".join(query.split())[:180]
+            status = _student_chat_status(event)
+            if status and status[0] != last_stage:
+                last_stage = status[0]
+                update = {
+                    "type": "status", "stage": status[0], "label": status[1],
+                }
+                if current_understanding:
+                    update["understanding"] = current_understanding
+                loop.call_soon_threadsafe(queue.put_nowait, update)
+
+        def execute():
+            token = set_event_sink(on_event)
+            try:
+                return message(assignment_id, body, account)
+            finally:
+                reset_event_sink(token)
+
+        async def run():
+            try:
+                result = await asyncio.to_thread(execute)
+                queue.put_nowait({"type": "result", "data": jsonable_encoder(result)})
+            except HTTPException as error:
+                queue.put_nowait({"type": "error", "message": str(error.detail)})
+            except Exception:
+                queue.put_nowait({"type": "error", "message": "The tutor could not complete this reply. Please retry."})
+
+        task = asyncio.create_task(run())
+        try:
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield json.dumps({"type": "heartbeat"}) + "\n"
+                    continue
+                yield json.dumps(item, ensure_ascii=False) + "\n"
+                if item["type"] in {"result", "error"}:
+                    break
+        finally:
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(events(), media_type="application/x-ndjson", headers={
+        "Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+    })
 
 
 @router.post("/assignments/{assignment_id}/reflection")

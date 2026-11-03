@@ -341,8 +341,8 @@ test("AIducate can be selected and directs instructors to its analysis workspace
   await user.click(aiducate);
   expect(aiducate).toHaveAttribute("aria-pressed", "true");
   expect(screen.getByRole("heading", { name: "AIducate settings" })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Open AIducate analysis" }))
-    .toHaveAttribute("href", "/professor/analytics");
+  expect(screen.getByRole("link", { name: "Open AIducate for this course" }))
+    .toHaveAttribute("href", `/professor/analytics?course=${course.course_id}`);
 });
 test("selected materials and description persist when a new chat is saved as a draft", async () => {
   const user = await open();
@@ -562,6 +562,21 @@ test("source generation shows a failed request beside its button", async () => {
   expect(await within(generator).findByRole("alert")).toHaveTextContent("The model could not finish the setup.");
 });
 
+test("source generation identifies a scene that explains its answer", async () => {
+  const original = api.getMockImplementation();
+  api.mockImplementation(async (path, options) => {
+    const result = await original(path, options);
+    return path === "/courses/course-1/socratic-setup/generate"
+      ? { ...result, explanatory_steps_needing_review: [1] } : result;
+  });
+  const user = await open();
+  await user.click(await screen.findByRole("checkbox", { name: /Requirements.pdf/ }));
+  await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
+  await user.click(screen.getByRole("radio", { name: /Guided learning path/ }));
+  await user.click(screen.getByRole("button", { name: "Generate setup from selected sources" }));
+  expect(await screen.findByText(/Steps 1 explain the answer too early or need a more concrete decision; edit them before publishing/)).toBeInTheDocument();
+});
+
 test("guided Socratic setup has no timer setting or duration in review", async () => {
   const user = await open();
   await user.click(await screen.findByRole("checkbox", { name: /Requirements.pdf/ }));
@@ -671,6 +686,9 @@ test("source generation shows animated progress until the model finishes", async
   const progress = screen.getByRole("status", { name: "BrainTutor: Generating setup from selected documents" });
   expect(progress).toHaveClass("generation-overlay");
   expect(progress.querySelector(".generation-status-fullscreen")).toBeInTheDocument();
+  expect(within(progress).getByText("Generating setup from selected documents")).toBeInTheDocument();
+  expect(within(progress).getByText("Please keep this page open. Your result will appear when it’s ready.")).toBeInTheDocument();
+  expect(progress.querySelector(".generation-workflow")).not.toBeInTheDocument();
   expect(progress.querySelector(".thinking-orbit-particles")).toBeInTheDocument();
   await act(async () => finishGeneration({
     keywords: ["design choices"], prompt: "What would you try?",

@@ -53,7 +53,7 @@ export default function PublishedStepChecks({ assignment, onSaved }) {
 
   return <section id="learning-step-checks" className="panel published-step-checks" aria-label="Learning step checks">
     <h2>Learning step checks</h2>
-    <p className="help">Students identify the incorrect choice in a new example and explain why. After two unsuccessful attempts, they can try another example or continue with support.</p>
+    <p className="help">Students find the action that causes a problem and explain why. If they miss the first check, they see its answer and get a different question. After a second miss, they can continue with support.</p>
     <Notice error={error} />
     <Notice>{notice}</Notice>
     {busy && <GenerationStatus message={busy} fullScreen />}

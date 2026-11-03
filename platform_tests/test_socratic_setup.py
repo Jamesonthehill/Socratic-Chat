@@ -255,6 +255,8 @@ class SocraticSetupTests(unittest.TestCase):
             self.assertIn("[chunk_id=chunk-1]", request["messages"][1]["content"])
             self.assertIn("Canvas description: Submit the code through Canvas", request["messages"][1]["content"])
             self.assertIn("EVERY step its own concrete", request["messages"][0]["content"])
+            self.assertIn("situation students can readily picture", request["messages"][0]["content"])
+            self.assertIn("prefer that example", request["messages"][0]["content"])
             self.assertIn("Do not invent quantities", request["messages"][0]["content"])
             self.assertNotIn("max_tokens", request)
             self.assertEqual(request["timeout"], 1200.0)
@@ -318,6 +320,7 @@ class SocraticSetupTests(unittest.TestCase):
         self.assertEqual(prompt, "The machine checks its supplies before taking coins. What should it check first?")
         self.assertIn("[chunk_id=chunk-1]", requests[0]["messages"][1]["content"])
         self.assertIn("50 to 90 words", requests[0]["messages"][0]["content"])
+        self.assertIn("familiar student situation", requests[0]["messages"][0]["content"])
         self.assertNotIn("learning_steps", requests[0]["response_format"]["json_schema"]["schema"]["properties"])
 
     def test_rich_source_retries_a_brief_first_example_without_losing_valid_draft(self):

@@ -1841,20 +1841,24 @@ html[data-theme="dark"] .socratic-assignment-info .student-learning-progress {
 .student-learning-path li .student-step-chain {
   pointer-events: none;
   display: inline-block;
-  flex: 1;
   margin: 0;
-  min-width: 0;
   width: 100%;
 }
-.student-step-chain svg { display: block; height: 54px; width: 100%; }
-.student-learning-path li .student-step-lock-status { align-items: center; display: inline-flex; flex: 1; margin: 0; min-width: 0; }
-.student-chain-arm rect { fill: #dbe6ee; stroke: #587491; stroke-width: 5; }
+.student-step-chain svg { display: block; height: auto; width: 100%; }
+.student-learning-path li .student-step-lock-status {
+  align-items: center;
+  display: inline-flex;
+  flex: none;
+  height: 48px;
+  margin: -5px 0 -5px auto;
+  opacity: .8;
+  width: 100px;
+}
+.student-chain-arm rect { fill: #dbe6ee; stroke: #587491; stroke-width: 3; }
 .student-chain-arm,
 .student-chain-padlock { transform-box: fill-box; transform-origin: center; }
-.student-chain-top-left { --chain-x: -38px; --chain-y: -18px; --chain-rotate: -13deg; }
-.student-chain-top-right { --chain-x: 38px; --chain-y: -18px; --chain-rotate: 13deg; }
-.student-chain-bottom-left { --chain-x: -38px; --chain-y: 18px; --chain-rotate: 13deg; }
-.student-chain-bottom-right { --chain-x: 38px; --chain-y: 18px; --chain-rotate: -13deg; }
+.student-chain-top-left { --chain-x: -38px; --chain-y: -12px; --chain-rotate: -13deg; }
+.student-chain-top-right { --chain-x: 38px; --chain-y: -12px; --chain-rotate: 13deg; }
 .socratic-assignment-info .student-learning-path li.is-current.is-unlocking {
   animation: student-step-unlock-glow 1900ms ease-out both;
 }
@@ -1904,11 +1908,11 @@ html[data-theme="dark"] .socratic-assignment-info .student-learning-progress {
 }
 .student-unlock-celebration .student-step-chain {
   position: relative;
-  width: min(78vw, 560px);
+  width: min(72vw, 440px);
   z-index: 1;
 }
 .student-unlock-celebration .student-step-chain svg { height: auto; }
-.student-unlock-celebration .student-chain-arm rect { fill: #7e9fbd; stroke: #d8e9f8; stroke-width: 5; }
+.student-unlock-celebration .student-chain-arm rect { fill: #7e9fbd; stroke: #d8e9f8; stroke-width: 3; }
 .student-unlock-celebration .student-chain-padlock rect { fill: #526688; stroke: #f7d574; }
 .student-unlock-celebration .student-chain-padlock path { stroke: #f7d574; }
 .student-unlock-celebration .student-chain-arm { animation: student-chain-release 1800ms ease-in-out forwards; }

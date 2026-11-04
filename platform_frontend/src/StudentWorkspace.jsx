@@ -417,40 +417,20 @@ function StarMedal() {
 function StepChainLock() {
   return (
     <span className="student-step-chain" aria-hidden="true">
-      <svg viewBox="0 0 240 100" preserveAspectRatio="none" focusable="false">
+      <svg viewBox="0 0 120 58" focusable="false">
         <g className="student-chain-arm student-chain-top-left">
-          <g transform="rotate(24 60 35)">
-            <rect x="-12" y="26" width="37" height="18" rx="9" />
-            <rect x="19" y="26" width="37" height="18" rx="9" />
-            <rect x="50" y="26" width="37" height="18" rx="9" />
-          </g>
+          <rect x="5" y="26" width="23" height="11" rx="5.5" transform="rotate(-18 16 31)" />
+          <rect x="25" y="21" width="23" height="11" rx="5.5" transform="rotate(-18 36 26)" />
         </g>
         <g className="student-chain-arm student-chain-top-right">
-          <g transform="rotate(-24 180 35)">
-            <rect x="153" y="26" width="37" height="18" rx="9" />
-            <rect x="184" y="26" width="37" height="18" rx="9" />
-            <rect x="215" y="26" width="37" height="18" rx="9" />
-          </g>
-        </g>
-        <g className="student-chain-arm student-chain-bottom-left">
-          <g transform="rotate(-24 60 65)">
-            <rect x="-12" y="56" width="37" height="18" rx="9" />
-            <rect x="19" y="56" width="37" height="18" rx="9" />
-            <rect x="50" y="56" width="37" height="18" rx="9" />
-          </g>
-        </g>
-        <g className="student-chain-arm student-chain-bottom-right">
-          <g transform="rotate(24 180 65)">
-            <rect x="153" y="56" width="37" height="18" rx="9" />
-            <rect x="184" y="56" width="37" height="18" rx="9" />
-            <rect x="215" y="56" width="37" height="18" rx="9" />
-          </g>
+          <rect x="72" y="21" width="23" height="11" rx="5.5" transform="rotate(18 83 26)" />
+          <rect x="92" y="26" width="23" height="11" rx="5.5" transform="rotate(18 103 31)" />
         </g>
         <g className="student-chain-padlock">
-          <path d="M103 55V39a17 17 0 0 1 34 0v16" fill="none" stroke="#536d8b" strokeWidth="8" />
-          <rect x="94" y="52" width="52" height="37" rx="5" fill="#354260" stroke="#253650" strokeWidth="4" />
-          <circle cx="120" cy="68" r="4" fill="#b5c8dc" />
-          <path d="m120 69-3 10h6z" fill="#b5c8dc" />
+          <path d="M51 28v-8a9 9 0 0 1 18 0v8" fill="none" stroke="#536d8b" strokeWidth="5" />
+          <rect x="44" y="27" width="32" height="25" rx="5" fill="#354260" stroke="#253650" strokeWidth="3" />
+          <circle cx="60" cy="37" r="2.5" fill="#b5c8dc" />
+          <path d="m60 39-2.5 6h5z" fill="#b5c8dc" />
         </g>
       </svg>
     </span>

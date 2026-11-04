@@ -1,6 +1,6 @@
 # ClubALL learning platform
 
-A course-scoped instructor assignment studio and student workspace using the existing CourseLab design. Activity choices are **Socratic Chat**, **Reflections**, **Self Directed Learning**, **Debate**, and **AIducate** (draft only). See [UI rework and service setup](docs/platform-ui-rework.md) for the current flow, dependencies, and verification limits.
+A course-scoped instructor assignment studio and student workspace using the BrainTutor design. Activity choices are **Socratic Chat**, **Reflections**, **Self Directed Learning**, **Debate**, and **AIducate** (draft only). See [UI rework and service setup](docs/platform-ui-rework.md) for the current flow, dependencies, and verification limits.
 
 ## Run with Docker
 
@@ -122,7 +122,7 @@ workflow. LTI 1.1 requires no Canvas Developer Key or personal API token.
 Canvas assignment launches can automatically create a linked Socratic draft with
 `LTI_AUTO_CREATE_ASSIGNMENTS=true` (default). The instructor opens the External
 Tool assignment first, configures its materials, and publishes it; students then
-open the same linked CourseLab activity from Canvas. Course-navigation launches
+open the same linked BrainTutor activity from Canvas. Course-navigation launches
 only open the course. See [assignment launch setup](docs/canvas-lti11.md#automatically-link-a-canvas-assignment)
 for the assignment URL and existing-installation custom fields. This does not
 automatically copy attachments/rubrics or return grades.

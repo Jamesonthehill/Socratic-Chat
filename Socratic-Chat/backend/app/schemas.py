@@ -37,12 +37,19 @@ class ClarificationOption(BaseModel):
     resolved_message: str = Field(min_length=1, max_length=500)
 
 
+class ConceptToRevisit(BaseModel):
+    student_quote: str
+    correction: str
+    source_title: str | None = None
+
+
 class CompletionSummary(BaseModel):
     original_question: str
     student_reflection: str = ""
     demonstrated: list[str] = Field(default_factory=list)
     final_comment: str
     misconception_correction: str | None = None
+    concepts_to_revisit: list[ConceptToRevisit] = Field(default_factory=list)
     scenario_wrap_up: str
     opening_answer: str
 

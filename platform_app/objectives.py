@@ -1,21 +1,109 @@
 """Instructor review of document-grounded teaching plans from local-socratic-chat."""
 import asyncio
 import logging
+import re
+from math import ceil
 from threading import Lock
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from openai import APITimeoutError
 
 from app import db
 from app.objective_extraction import extract_and_save_learning_objectives, suggest_keywords
 from app.pipeline_logging import begin_trace, end_trace, log_event, log_exception
 from platform_app import store
 from platform_app.routes import manage_course, professor
-from platform_app.schemas import LearningObjectiveUpdate
+from platform_app.schemas import LearningObjectiveUpdate, SocraticSetupInput
+from platform_app.socratic_setup import generate_opening_prompt, generate_setup
 
 router = APIRouter(prefix="/api/courses", tags=["learning objectives"])
 _generation_jobs: dict[str, dict[str, object]] = {}
 _generation_jobs_lock = Lock()
+
+
+def _provider_rate_limit_detail(exc: Exception) -> str:
+    """Show the provider's retry window without exposing its account details."""
+    daily = "tokens per day" in str(exc).lower()
+    detail = ("The AI provider's daily token quota has been reached."
+              if daily else "The AI provider is rate limiting requests.")
+    milliseconds = re.search(r"Please try again in ([0-9]+(?:\.[0-9]+)?)ms\b", str(exc), re.I)
+    if milliseconds:
+        seconds = max(1, ceil(float(milliseconds.group(1)) / 1000))
+        unit = "second" if seconds == 1 else "seconds"
+        return f"{detail} Try again in about {seconds} {unit}."
+    retry = re.search(r"Please try again in ([0-9hms.]+)", str(exc), re.I)
+    return f"{detail} Try again in {retry.group(1).rstrip('.')}." if retry else f"{detail} Please try again later."
+
+
+@router.post("/{course_id}/socratic-setup/generate")
+async def generate_socratic_setup(course_id: UUID, body: SocraticSetupInput, account=Depends(professor)):
+    """Suggest editable settings using only the instructor's selected indexed files."""
+    manage_course(course_id, account)
+    selected = list(dict.fromkeys(body.document_ids))
+    with store.connection() as conn:
+        rows = conn.execute(
+            "SELECT id, filename, document_id FROM documents "
+            "WHERE course_id=%s AND document_id=ANY(%s::text[])",
+            (course_id, selected),
+        ).fetchall()
+    by_document = {str(row["document_id"]): row for row in rows}
+    if len(by_document) != len(selected):
+        raise HTTPException(422, "Select indexed documents from this course only.")
+    try:
+        draft = await generate_setup(
+            [by_document[document_id] for document_id in selected],
+            body.title,
+            body.assignment_instructions,
+        )
+    except ValueError as exc:
+        logging.getLogger(__name__).warning("Socratic setup rejected for course %s: %s", course_id, exc)
+        raise HTTPException(422, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except Exception as exc:
+        if getattr(exc, "status_code", None) == 429:
+            logging.getLogger(__name__).warning("Socratic setup provider rate limited for course %s", course_id)
+            raise HTTPException(429, _provider_rate_limit_detail(exc)) from exc
+        if isinstance(exc, APITimeoutError):
+            logging.getLogger(__name__).exception("Socratic setup model request timed out for course %s", course_id)
+            raise HTTPException(504, "The local AI model took too long to generate the setup. Please retry or select shorter materials.") from exc
+        logging.getLogger(__name__).exception("Could not draft Socratic setup for course %s", course_id)
+        raise HTTPException(503, "The AI could not generate a setup from these materials. Check the model service and retry.") from exc
+    return {**draft, "source_files": [by_document[item]["filename"] for item in selected]}
+
+
+@router.post("/{course_id}/socratic-opening/generate")
+async def generate_socratic_opening(course_id: UUID, body: SocraticSetupInput, account=Depends(professor)):
+    """Draft only the basic-conversation opening prompt from selected course files."""
+    manage_course(course_id, account)
+    selected = list(dict.fromkeys(body.document_ids))
+    with store.connection() as conn:
+        rows = conn.execute(
+            "SELECT id, filename, document_id FROM documents "
+            "WHERE course_id=%s AND document_id=ANY(%s::text[])",
+            (course_id, selected),
+        ).fetchall()
+    by_document = {str(row["document_id"]): row for row in rows}
+    if len(by_document) != len(selected):
+        raise HTTPException(422, "Select indexed documents from this course only.")
+    try:
+        prompt = await generate_opening_prompt(
+            [by_document[document_id] for document_id in selected],
+            body.title,
+            body.assignment_instructions,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except Exception as exc:
+        if getattr(exc, "status_code", None) == 429:
+            logging.getLogger(__name__).warning("Socratic opening provider rate limited for course %s", course_id)
+            raise HTTPException(429, _provider_rate_limit_detail(exc)) from exc
+        logging.getLogger(__name__).exception("Could not draft Socratic opening for course %s", course_id)
+        raise HTTPException(503, "The AI could not generate an opening question. Check the model service and retry.") from exc
+    return {"prompt": prompt, "source_files": [by_document[item]["filename"] for item in selected]}
 
 
 @router.get("/{course_id}/learning-objectives")

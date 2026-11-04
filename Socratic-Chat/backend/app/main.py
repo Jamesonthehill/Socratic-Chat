@@ -38,6 +38,7 @@ from app.pipeline_logging import (
     log_event,
     log_exception,
     recent_traces,
+    full_model_snapshots,
     delete_recent_traces,
     reset_event_sink,
     set_event_sink,
@@ -56,6 +57,7 @@ from app.rag import (
     retrieve_overview,
     scan_raw_docs,
 )
+from app.office_documents import OfficeParserUnavailable
 from app.schemas import (
     AuthorityUpdateRequest,
     AuthConfigResponse,
@@ -191,6 +193,20 @@ async def pipeline_traces(request: Request, response: Response, limit: int = 25)
         return {"traces": recent_traces(limit)}
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.get("/api/debug/pipeline/traces/{trace_id}/snapshots")
+async def pipeline_trace_snapshots(trace_id: str, request: Request, response: Response) -> dict[str, object]:
+    """Show exact local model inputs and outputs only when full logging is enabled."""
+    if not settings.DEBUG_PIPELINE_LOGS or not settings.LOG_FULL_PROMPTS:
+        raise HTTPException(status_code=404, detail="Full prompt diagnostics are disabled.")
+    if settings.RESTRICTED_SCHOOL_AUTH_ENABLED:
+        _current_user_id(request)
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return {"snapshots": full_model_snapshots(trace_id)}
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @app.delete("/api/debug/pipeline/traces")
@@ -881,14 +897,21 @@ async def upload_document(request: Request) -> IngestResponse:
         if suffix in rag_suffixes:
             if not file_id:
                 raise HTTPException(status_code=503, detail="PostgreSQL is required to index documents.")
-            _, added = ingest_file(
-                target, str(conversation_id) if conversation_id else None, file_id=file_id,
-            )
+            try:
+                _, added = ingest_file(
+                    target, str(conversation_id) if conversation_id else None, file_id=file_id,
+                )
+            except EmbeddingError as error:
+                raise HTTPException(status_code=503, detail=str(error)) from error
+            except DocumentTextError as error:
+                raise HTTPException(status_code=422, detail=str(error)) from error
+            except OfficeParserUnavailable as error:
+                raise HTTPException(status_code=503, detail=str(error)) from error
             documents_scanned += 1
         chunks_added += added
 
     if documents_scanned == 0:
-        message = "No supported files were uploaded. Use .txt, .md, .pdf, .tex, .html, .htm, or common image files."
+        message = "No supported files were uploaded. Use text, PDF, HTML, Word, PowerPoint, or common image files."
     elif chunks_added == 0:
         message = "Uploaded file(s) were already indexed."
     else:
@@ -956,12 +979,14 @@ async def upload_course_documents(course_id: str, request: Request) -> IngestRes
             raise HTTPException(status_code=503, detail=str(error)) from error
         except DocumentTextError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
+        except OfficeParserUnavailable as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
         chunks_added += added
         documents_scanned += 1
         files_stored += 1
 
     if documents_scanned == 0:
-        message = "No course documents were uploaded. Use .txt, .md, .pdf, .tex, .html, or .htm files."
+        message = "No course documents were uploaded. Use text, PDF, HTML, Word, or PowerPoint files."
     elif chunks_added == 0:
         message = "The course documents were stored; matching content was already indexed."
     else:

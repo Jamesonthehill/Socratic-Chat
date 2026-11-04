@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import Markdown from "react-markdown";
 import { date, TOOLS } from "./api";
 import { Badge } from "./ui";
 
@@ -73,10 +74,27 @@ export default function AssignmentDetails({ item, onClose }) {
         </dl>
         <section>
           <h3>Instructions</h3>
-          <p className="assignment-details-text">
-            {item.instructions || "No instructions provided yet."}
-          </p>
+          <div className="assignment-details-text prose">
+            <Markdown>{item.instructions || "No instructions provided yet."}</Markdown>
+          </div>
         </section>
+        {item.tool === "socratic" && (
+          <section>
+            <h3>Indexed assignment coverage</h3>
+            {item.concept_map?.length ? (
+              <ul>
+                {item.concept_map.map((document) => (
+                  <li key={document.document_id}>
+                    {document.title}: {document.passages} passage{document.passages === 1 ? "" : "s"}
+                    {document.topics?.length ? ` · ${document.topics.join(", ")}` : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>No indexed assignment materials are included yet.</p>
+            )}
+          </section>
+        )}
         <section>
           <h3>Chatbot settings</h3>
           {!item.tool ? (
@@ -95,12 +113,13 @@ export default function AssignmentDetails({ item, onClose }) {
               <p className="assignment-details-text">
                 {config.prompt ||
                   config.opening_prompt ||
-                  "No custom opening question set."}
+                  (item.tool === "debate"
+                    ? "The debate starts with the scenario above."
+                    : "No custom opening question set.")}
               </p>
-              <p>
-                Messages required:{" "}
-                {config.minimum_messages ?? (item.tool === "debate" ? 3 : 1)}
-              </p>
+              {item.tool === "debate" && <p>
+                Messages required: {config.minimum_messages ?? 3}
+              </p>}
               <p>
                 {config.document_ids?.length
                   ? `${config.document_ids.length} document(s) selected.`

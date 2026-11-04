@@ -8,7 +8,7 @@ from app.schemas import ChatMessage, Source
 from app.classifier import is_contextual_meaning_request
 
 if TYPE_CHECKING:
-    from app.answer_evaluation import AnswerEvaluation
+    from app.answer_evaluation import AnswerEvaluation, QualitativeFeedback
     from app.classifier import MessageClassification
 
 
@@ -107,7 +107,7 @@ def choose_socratic_strategy(
     history: list[ChatMessage],
     sources: list[Source],
     classification: MessageClassification | None = None,
-    evaluation: AnswerEvaluation | None = None,
+    evaluation: AnswerEvaluation | QualitativeFeedback | None = None,
     stable_concept: str | None = None,
 ) -> SocraticDecision:
     # Strategy selection is explicit code, so logs can explain why the tutor
@@ -129,7 +129,7 @@ def _choose_socratic_strategy(
     history: list[ChatMessage],
     sources: list[Source],
     classification: MessageClassification | None = None,
-    evaluation: AnswerEvaluation | None = None,
+    evaluation: AnswerEvaluation | QualitativeFeedback | None = None,
 ) -> SocraticDecision:
     """Choose one explainable teaching action after document retrieval."""
     clean_message = " ".join(message.strip().split())
@@ -153,6 +153,7 @@ def _choose_socratic_strategy(
     if classification:
         direct_request = (
             classification.route == "administrative"
+            or classification.conversation_action == "direct"
             or bool(DIRECT_REQUEST_PATTERN.search(clean_message))
         )
     else:
@@ -233,12 +234,14 @@ def _choose_socratic_strategy(
             student_state="support_requested",
             strategy="respond_to_support",
             instruction=(
-                "Respond first to the learner's exact support request. If they ask for help answering or understanding "
-                "the previous question, explain what they need for that step and ask an easier version in the same "
-                "example. If they question why a term, phrase, example, or question was introduced, explain its "
+                "Respond first to the learner's exact support request. If they say they do not know, give the "
+                "documented answer or the missing idea directly. If the tutor already stated the answer, do not "
+                "ask the learner to repeat or recall it. You may ask a different question about applying that idea, "
+                "but only if it helps; otherwise stop after the explanation. If they question why a term, phrase, "
+                "example, or question was introduced, explain its "
                 "relevance briefly; if it was an unnecessary detour, say so and return to the original learning "
                 "goal instead of retrying it. Do not interpret every support request as failure to answer. Keep the "
-                "same people, objects, and goal when the existing example remains relevant. Then ask exactly one "
+                "same people, objects, and goal when the existing example remains relevant. Ask at most one "
                 "clear, useful follow-up question when a question is appropriate. "
                 "Do not withhold the explanation again and do not repeat the previous question."
             ),
@@ -281,8 +284,11 @@ def _choose_socratic_strategy(
             "Use the answer evaluation as evidence, not as a learner level. Write one natural, non-empty response "
             "to what the learner actually said. Acknowledge only supported ideas, address any stated misconception "
             "or missing concept plainly, and keep the established people, objects, and goal when they remain useful. "
-            "Then ask exactly one question that either checks the unresolved concept or advances to the next grounded "
-            "decision when no gap remains. Do not mention a score, level, category, or tutoring stage."
+            "If a follow-up would help, ask one question about the concept raised by the learner's latest message. "
+            "It may check an unresolved idea or explore another relevant part of the current learning goal; do not "
+            "require it to advance the previous tutor question. Use the established example only when it helps. "
+            "Do not turn the follow-up into a request to quote or locate words on a document page. "
+            "Do not mention a score, level, category, or tutoring stage."
         )
         return SocraticDecision(
             mode="socratic", student_state="answer_evaluated", strategy="feedback_then_question",
@@ -389,8 +395,12 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
             f"{emphasis_instruction}"
         )
     continuity = (
-        "Scenario continuity: keep one concrete example throughout diagnosis, hints, correction, and reasoning. "
-        "Reuse its people, objects, names, and goal. Extend it one decision at a time. "
+        "Scenario continuity: when an established example remains useful, keep its people, objects, names, and goal. "
+        "After the first example is established, do not invent a fresh example or switch settings unless the learner "
+        "explicitly asks for a different example. Do not force each new question to follow the previous tutor "
+        "question or advance the example in a fixed sequence. Choose what to ask from the learner's latest message "
+        "and current learning goal. When using the example, ask what the learner would choose, predict, or explain "
+        "there, not what words appear on a page or where a fact is written. "
         "Make that continuity visible by naming concrete details from the original example rather than referring "
         "only to 'the same people', 'the same situation', or 'another complication'. "
         "Struggling students need a simpler step in that same example, not an unrelated analogy. "
@@ -412,7 +422,8 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
         )
     return (
         continuity + "The teaching objective is for the learner to understand and use the instructor-published topic. "
-        "Make the next question advance that understanding rather than prolonging the dialogue. "
+        "Ask a question only when it helps the learner understand the current goal; it need not continue the "
+        "previous question's line of reasoning. "
         f"Socratic teaching state: {decision.student_state}. Strategy: {decision.strategy}. "
         f"Target concept: {decision.target_concept or 'infer from the latest message'}. "
         f"Example pattern: {decision.example_type}. "
@@ -434,7 +445,7 @@ def socratic_system_instruction(decision: SocraticDecision) -> str:
         "on the right track,' and do not append missing course facts to the feedback; "
         "for an unsupported or incorrect response, do not praise it. Positive feedback must be specific, concise, "
         "and proportional—it must not imply complete mastery. "
-        "Put the final question in its own paragraph. Write it in plain, conversational language and name the "
+        "If you ask a final question, put it in its own paragraph. Write it in plain, conversational language and name the "
         "specific action, decision, example, or outcome the learner should examine. Do not expose internal question "
         "categories through canned stems such as 'What evidence', 'What factor', 'Which assumption', 'What "
         "implication', or 'What alternative viewpoint'. If asking the learner to choose a scenario, include the "

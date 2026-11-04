@@ -308,8 +308,8 @@ export default function LessonPreview({ plan, onChange, onSave }) {
                   enabled,
                 )}
                 {(plan.learning_assets || []).map((asset, index) => (
+                  <div key={asset.objective_id || index}>
                   <Field
-                    key={asset.objective_id}
                     name={`Additional study examples ${index + 1}`}
                     value={Object.fromEntries(
                       [
@@ -331,6 +331,8 @@ export default function LessonPreview({ plan, onChange, onSave }) {
                       )
                     }
                   />
+                  {asset.standard?.length > 0 && <Field name="Practice and rubric" value={asset.standard} editing={enabled} onChange={(next) => update("learning_assets", plan.learning_assets.map((old, i) => i === index ? {...old, standard: next} : old))} />}
+                  </div>
                 ))}
               </details>
             </>

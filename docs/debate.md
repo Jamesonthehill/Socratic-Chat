@@ -1,13 +1,13 @@
 # Debate assignments
 
-Debate is a native CourseLab assignment type for practicing argumentation. An
+Debate is a native BrainTutor assignment type for practicing argumentation. An
 instructor supplies a scenario, an optional opening prompt, and the number of
 student responses required before completion. Course documents are optional.
 When documents are available, the instructor may select specific materials or
 use all current course materials; their indexed chunks are frozen at publication
 and retrieved to ground relevant debate challenges. Without documents, Debate
 continues from the scenario and conversation alone. Students open the assignment from
-the same dashboard as other CourseLab work and use the standard persistent
+the same dashboard as other BrainTutor work and use the standard persistent
 conversation workspace.
 
 The Debate engine uses the chat provider already configured for Socratic Chat.

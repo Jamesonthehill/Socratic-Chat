@@ -1,4 +1,4 @@
-# CourseLab interface rework
+# BrainTutor interface rework
 
 This is the existing main interface, reworked around assignment creation and student learning. It does not contain the superseded standalone course dashboard or demo-role login system from PR #9.
 

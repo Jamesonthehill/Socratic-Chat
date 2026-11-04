@@ -1,7 +1,7 @@
 """Course-scoped ingestion and retrieval through the SDL document pipeline."""
 import os
 from threading import Lock
-from time import monotonic, sleep
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import uuid4
@@ -10,6 +10,7 @@ import httpx
 from fastapi import HTTPException
 from app import db, settings
 from app.chunking import CHUNKING_VERSION, chunk_document
+from app.office_documents import OFFICE_SUFFIXES, OfficeDocumentError, OfficeParserUnavailable, parse_office_document
 from app.rag import EmbeddingError, chunk_text, create_embeddings, read_pdf_pages
 
 
@@ -17,26 +18,28 @@ _readiness_lock = Lock()
 _service_ready_until = {}
 
 
-def _wait_for_service(client, base):
+def _wait_for_service(client, base, timeout=90):
     # Wake a sleeping Render instance with a read, before sending course content
     # or starting a write. Concurrent lesson/open requests share the same probe.
     with _readiness_lock:
-        if _service_ready_until.get(base, 0) > monotonic():
+        if _service_ready_until.get(base, 0) > time.monotonic():
             return
-        deadline = monotonic() + 90
-        while (remaining := deadline - monotonic()) > 0:
+        deadline = time.monotonic() + timeout
+        while (remaining := deadline - time.monotonic()) > 0:
             try:
                 health = client.get(base + "/api/health", timeout=min(10, remaining))
                 if health.status_code == 200 and health.json().get("status") == "ok":
                     if len(_service_ready_until) >= 16:
                         _service_ready_until.clear()
-                    _service_ready_until[base] = monotonic() + 60
+                    _service_ready_until[base] = time.monotonic() + 60
                     return
+                if health.status_code == 404:
+                    raise HTTPException(503, "The shared document service URL points to a service without the SDL health endpoint. Check SELF_DIRECTED_LEARNING_URL.")
             except (httpx.HTTPError, ValueError, AttributeError):
                 pass
-            remaining = deadline - monotonic()
+            remaining = deadline - time.monotonic()
             if remaining > 0:
-                sleep(min(2, remaining))
+                time.sleep(min(2, remaining))
     raise HTTPException(503, "Self-Directed Learning is still starting. Please wait a moment and try again.")
 
 
@@ -44,6 +47,7 @@ def pipeline(method, path, **kwargs):
     token = os.getenv("PLATFORM_SERVICE_TOKEN", "")
     if not token:
         raise HTTPException(503, "Configure the shared document service credentials.")
+    base_url = os.getenv("SELF_DIRECTED_LEARNING_URL", "http://127.0.0.1:8100").rstrip("/")
     try:
         base = os.getenv("SELF_DIRECTED_LEARNING_URL", "http://127.0.0.1:8100").rstrip("/")
         with httpx.Client(timeout=180, headers={"X-Platform-Service": token}) as client:
@@ -121,12 +125,52 @@ def _parse_html(filename, content):
     return chunks
 
 
+def _parse_python(filename, content):
+    """Index source as text; never execute uploaded instructor code."""
+    source = content.decode("utf-8-sig", errors="replace")
+    chunks = [
+        {"text": text, "position": position, "metadata": {"source_type": "python"}}
+        for position, text in enumerate(chunk_text(source, filename))
+    ]
+    if not chunks:
+        raise HTTPException(422, "This Python file has no readable source to index.")
+    return chunks
+
+
+def _parse_office(filename, content):
+    with TemporaryDirectory() as directory:
+        path = Path(directory) / ("document" + Path(filename).suffix.lower())
+        path.write_bytes(content)
+        try:
+            sections = parse_office_document(path)
+        except OfficeDocumentError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except OfficeParserUnavailable as exc:
+            raise HTTPException(503, str(exc)) from exc
+    chunks = []
+    for section in sections:
+        for text in chunk_text(section.text, filename):
+            chunks.append({
+                "text": f"Slide {section.slide}: {text}" if section.slide else text,
+                "position": len(chunks),
+                "metadata": {"source_type": Path(filename).suffix.lower().lstrip("."),
+                             **({"slide": section.slide} if section.slide else {})},
+            })
+    if not chunks:
+        raise HTTPException(422, "No readable text was found in this Office file.")
+    return chunks
+
+
 def ingest(course_id, account, filename, content_type, content):
     suffix = Path(filename).suffix.lower()
     if suffix == ".pdf":
         chunks = _parse_pdf(filename, content)
     elif suffix in {".html", ".htm"}:
         chunks = _parse_html(filename, content)
+    elif suffix == ".py":
+        chunks = _parse_python(filename, content)
+    elif suffix in OFFICE_SUFFIXES:
+        chunks = _parse_office(filename, content)
     else:
         chunks = pipeline("POST", "/internal/platform/rag/parse", files={"file": (filename, content, content_type)})["chunks"]
     try:

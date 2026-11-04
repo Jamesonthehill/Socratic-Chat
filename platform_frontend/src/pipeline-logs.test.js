@@ -121,6 +121,32 @@ test("newly generated traces appear without reload and preserve selection", asyn
   expect(document.querySelector("#traceDetail").textContent).toContain(trace.trace_id);
 });
 
+test("expanded classifier and tutor inputs stay open during automatic refresh", async () => {
+  const snapshots = ["classifier", "tutor-generation"].map((phase) => ({
+    phase, provider: "Ollama", request: { messages: [{ role: "system", content: "Teach from sources." }] },
+    result: { final_response: "A grounded reply." },
+  }));
+  fetch.mockImplementation((url) => Promise.resolve(response(
+    url.endsWith("/snapshots") ? { snapshots } : { traces: [trace] },
+  )));
+  openPage();
+  await settle();
+  document.querySelector("#loadSnapshots").click();
+  await settle();
+  const details = document.querySelectorAll("#snapshotPanel details");
+  expect(details).toHaveLength(2);
+  details[0].open = true;
+  details[1].open = true;
+
+  await vi.advanceTimersByTimeAsync(5000);
+  expect([...document.querySelectorAll("#snapshotPanel details")].every((item) => item.open)).toBe(true);
+
+  document.querySelector('#snapshotPanel details[data-phase="classifier"]').open = false;
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(document.querySelector('#snapshotPanel details[data-phase="classifier"]').open).toBe(false);
+  expect(document.querySelector('#snapshotPanel details[data-phase="tutor-generation"]').open).toBe(true);
+});
+
 test("polling and repeated refresh clicks do not overlap pending reads", async () => {
   let complete;
   fetch.mockReturnValueOnce(new Promise((resolve) => { complete = resolve; }));

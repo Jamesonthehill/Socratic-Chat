@@ -2163,7 +2163,7 @@ html[data-theme="dark"] .membership-badge.rejected {
   }
 }
 
-/* CourseLab course and access studio */
+/* BrainTutor course and access studio */
 #dashboardScreen {
   background:
     radial-gradient(
@@ -2222,9 +2222,6 @@ html[data-theme="dark"] .membership-badge.rejected {
   stroke-width: 2.4;
 }
 
-.cluball-brand-mark circle {
-  fill: currentColor;
-}
 
 .cluball-brand > .cluball-brand-copy {
   color: var(--ink);

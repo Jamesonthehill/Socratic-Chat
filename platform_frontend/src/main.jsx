@@ -1,6 +1,6 @@
 import StudentAssignmentBrowser from "./StudentAssignmentBrowser";
 import SDLWorkspace from "./SDLWorkspace";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -31,7 +31,7 @@ import { loadCourseContext, cachedCourseContext } from "./courseContext";
 import StudentWorkspace from "./StudentWorkspace";
 import "./styles.css";
 
-import { Notice, Badge } from "./ui";
+import { Notice, Badge, GenerationStatus } from "./ui";
 
 const THEME_KEY = "socratic_chat_theme";
 const THEME_OPTIONS = ["light", "dark", "system"];
@@ -92,14 +92,12 @@ function BrandLockup({ compact = false }) {
   return (
     <span className={`brand-lockup${compact ? " compact-brand" : ""}`}>
       <svg className="brand-mark" viewBox="0 0 44 44" aria-hidden="true">
-        <path d="M13 11.5h18a6 6 0 0 1 6 6v9a6 6 0 0 1-6 6H19l-7 6v-6a6 6 0 0 1-6-6v-9a6 6 0 0 1 6-6Z" />
-        <circle cx="16" cy="22" r="2.2" />
-        <circle cx="22" cy="22" r="2.2" />
-        <circle cx="28" cy="22" r="2.2" />
+        <path d="M22 12c-2-3-7-3-9 0-4-1-7 2-6 6-3 2-3 6 0 8-1 4 2 7 5 7 2 4 7 4 10 0m0-21c2-3 7-3 9 0 4-1 7 2 6 6 3 2 3 6 0 8 1 4-2 7-5 7-2 4-7 4-10 0M22 12v21" />
+        <path d="M13 17c3-1 5 1 5 4M9 25c3-2 6 0 6 4m16-12c-3-1-5 1-5 4m9 4c-3-2-6 0-6 4" />
       </svg>
       <span className="brand-name">
-        Course<span>Lab</span>
-        {!compact && <small>Learning design studio</small>}
+        Brain<span>Tutor</span>
+        {!compact && <small>Guide, Learn, Think!</small>}
       </span>
     </span>
   );
@@ -174,7 +172,8 @@ export function App() {
     return (
       <main className="loading">
         <BrandLockup />
-        <Notice error={error}>{!error && "Opening your workspace…"}</Notice>
+        <Notice error={error} />
+        {!error && <GenerationStatus message="Opening your workspace…" fullScreen />}
         {error && <a href="/">Return to sign in</a>}
       </main>
     );
@@ -201,9 +200,8 @@ export function App() {
                   pathname === "/professor/analytics" ? "page" : undefined
                 }
               >
-                Analytics
+                AIducate
               </Link>
-              <a href="/?manage=1">Courses &amp; access</a>
             </>
           ) : (
             <Link to={home}>Dashboard</Link>
@@ -250,6 +248,12 @@ export function App() {
               ) : (
                 <Navigate to={home} replace />
               )
+            }
+          />
+          <Route
+            path="/professor/activities/:id/settings"
+            element={
+              isProfessor ? <CreateActivity /> : <Navigate to={home} replace />
             }
           />
           <Route
@@ -347,22 +351,24 @@ function StudentAssignmentEntry({ user }) {
   );
 }
 
-function useAssignments(allInstructors = false) {
+function useAssignments({ allCourses = false } = {}) {
   const [items, setItems] = useState(() => {
-      if (allInstructors) return cachedAssignmentView("/platform/assignments");
-      const context = cachedCourseContext();
-      return context
-        ? cachedAssignmentView(
-            `/platform/assignments?course_id=${encodeURIComponent(context.course_id)}`,
-          )
-        : null;
-    }),
-    [error, setError] = useState("");
+    if (allCourses) return cachedAssignmentView("/platform/assignments");
+    const context = cachedCourseContext();
+    return context
+      ? cachedAssignmentView(
+          `/platform/assignments?course_id=${encodeURIComponent(context.course_id)}`,
+        )
+      : null;
+  });
+  const [error, setError] = useState("");
   const reload = () =>
-    (allInstructors
+    (allCourses
       ? api("/platform/assignments")
       : loadCourseContext().then((context) =>
-          api(`/platform/assignments?course_id=${encodeURIComponent(context.course_id)}`),
+          api(
+            `/platform/assignments?course_id=${encodeURIComponent(context.course_id)}`,
+          ),
         ))
       .then((data) => {
         setItems(data);
@@ -371,7 +377,7 @@ function useAssignments(allInstructors = false) {
       .catch((e) => setError(e.message));
   useEffect(() => {
     reload();
-  }, []);
+  }, [allCourses]);
   return { items, error, reload };
 }
 
@@ -391,7 +397,7 @@ function useCourses() {
   return { courses, error, reload };
 }
 
-function AssignmentList({ items, professor, view = "list" }) {
+function AssignmentList({ items, professor, view = "list", highlightId = null, highlightRef = null }) {
   if (!items.length)
     return (
       <div className="empty">
@@ -403,7 +409,7 @@ function AssignmentList({ items, professor, view = "list" }) {
         <p>
           {professor
             ? "No assignments have been created yet. Create an activity to get started."
-            : "Published assignments appear here once your professor assigns them to you. Check Courses & access to join a class."}
+            : "Published assignments appear here once your professor assigns them to you."}
         </p>
       </div>
     );
@@ -416,6 +422,7 @@ function AssignmentList({ items, professor, view = "list" }) {
         .map((item) => {
           const tool = TOOLS[item.tool];
           const canOpen = !professor || item.can_manage !== false;
+          const justPublished = professor && item.id === highlightId;
           const professorPath = !tool
             ? `/professor/assignments/${item.id}`
             : item.status === "draft" || item.tool === "self-directed-learning"
@@ -423,9 +430,10 @@ function AssignmentList({ items, professor, view = "list" }) {
               : `/professor/tools/${item.tool}/assignments/${item.id}`;
           return (
             <article
-              className="assignment-row"
+              className={`assignment-row${justPublished ? " is-just-published" : ""}`}
               style={{ "--tool-color": tool?.color || "#65708a" }}
               key={item.id}
+              ref={justPublished ? highlightRef : null}
               onPointerEnter={() => professor && canOpen && preloadAssignment(item.id)}
               onFocus={() => professor && canOpen && preloadAssignment(item.id)}
             >
@@ -438,8 +446,15 @@ function AssignmentList({ items, professor, view = "list" }) {
               </div>
               <div className="assignment-name">
                 <span className="subtle">
-                  {item.course_code} · {tool?.name || "Choose an activity"}
+                  {item.course_title || item.course_code}
+                  {item.course_title && item.course_code
+                    ? ` (${item.course_code})`
+                    : ""}
+                  {" · "}
+                  {tool?.name || "Choose an activity"}
+                  {!professor && item.canvas_linked ? " · Canvas" : ""}
                 </span>
+                {justPublished && <span className="assignment-new-badge">Just published</span>}
                 <h3>
                   {!canOpen ? item.title : <Link
                     className="button secondary compact"
@@ -469,20 +484,21 @@ function AssignmentList({ items, professor, view = "list" }) {
                   </small>
                 )}
               </div>
-              {!canOpen ? <span className="subtle">Course instructor access required to open</span> : <Link
-                className="button secondary compact"
-                to={
-                  professor ? professorPath : `/student/assignments/${item.id}`
-                }
-              >
-                {professor
-                  ? "View"
-                  : item.progress === "completed"
-                    ? "View result"
-                    : item.progress === "in_progress"
-                      ? "Resume"
-                      : "Open assignment"}
-              </Link>}
+              {!canOpen ? <span className="subtle">Course instructor access required to open</span> : (
+                <div className="assignment-row-actions">
+                  <Link className="button secondary compact" to={professor ? professorPath : `/student/assignments/${item.id}`}>
+                    {professor ? "View" : item.progress === "completed" ? "View result" : item.progress === "in_progress" ? "Resume" : "Open assignment"}
+                  </Link>
+                  {professor && item.tool === "socratic" && item.status === "published" && item.config?.learning_steps?.length > 0 && (
+                    <Link className="button compact" to={`/professor/activities/${item.id}/settings`}>Edit settings</Link>
+                  )}
+                  {justPublished && (
+                    <Link className="button secondary compact" to={`/professor/activities/${item.id}`} state={{ showStudentPreview: true }}>
+                      Preview as student
+                    </Link>
+                  )}
+                </div>
+              )}
             </article>
           );
         })}
@@ -662,8 +678,17 @@ function StudentDashboard() {
 
 function Dashboard({ professor = false }) {
   const { state: navigationState } = useLocation();
-  const { items, error, reload } = useAssignments(professor);
+  const { items, error, reload } = useAssignments({ allCourses: true });
+  const highlightedRowRef = useRef(null);
+  const highlightId = professor ? navigationState?.highlightAssignmentId : null;
   const [status, setStatus] = useState("");
+  useEffect(() => {
+    if (!highlightId || !items?.some((item) => item.id === highlightId)) return undefined;
+    const frame = requestAnimationFrame(() =>
+      highlightedRowRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [highlightId, items]);
   const filtered = (items || []).filter(
     (a) => !status || (professor ? a.status : a.progress) === status,
   );
@@ -739,7 +764,7 @@ function Dashboard({ professor = false }) {
         <Notice>{navigationState?.notice}</Notice>
         <Notice error={error} />
         {items ? (
-          <AssignmentList items={filtered} professor={professor} />
+          <AssignmentList items={filtered} professor={professor} highlightId={highlightId} highlightRef={highlightedRowRef} />
         ) : (
           !error && <p role="status">Loading assignments…</p>
         )}
@@ -801,8 +826,7 @@ function ToolDashboard() {
       <Notice error={error || courseError} />
       {!courses.length && !courseError && (
         <p className="notice">
-          Create a course and approve student enrollments in{" "}
-          <a href="/?manage=1">Courses &amp; access</a> to start assigning work.
+          Open your Canvas course as an instructor to bring its assignments into BrainTutor.
         </p>
       )}
       <p className="notice">

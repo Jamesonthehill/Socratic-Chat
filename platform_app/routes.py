@@ -1,13 +1,21 @@
+import asyncio
 import json
 import hashlib
+import re
 import secrets
+from urllib.parse import quote
+from typing import Literal
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from psycopg.types.json import Jsonb
 
 from app import auth, db, settings
-from platform_app import canvas_lms, engines, store, keyword_preparation
+from app.pipeline_logging import reset_event_sink, set_event_sink
+from platform_app import canvas_lms, engines, store, evidence_diagram, step_check
 from platform_app.schemas import (
     ActionInput,
     SelfDirectedStudyInput, SelfDirectedQuizInput, SelfDirectedMessageInput, SelfDirectedTaskInput, SelfDirectedLearningTurn,
@@ -20,9 +28,40 @@ from platform_app.schemas import (
     GenerateTopicInput,
     MessageInput,
     SocraticReflectionInput,
+    SocraticStepCheck,
 )
 
 router = APIRouter(prefix="/api/platform", tags=["platform"])
+
+
+class EvidenceDiagramInput(BaseModel):
+    chunk_id: str = Field(min_length=1, max_length=150)
+
+
+class SocraticStepCheckInput(BaseModel):
+    request_id: UUID
+    action: Literal["submit", "try_another", "continue_with_support"]
+    option_index: int | None = Field(default=None, ge=0, le=3)
+    reason: str = Field(default="", max_length=1200)
+
+
+class PublishedStepChecksInput(BaseModel):
+    checks: list[list[SocraticStepCheck]] = Field(min_length=1, max_length=10)
+    minimum_step_questions: int | None = Field(default=None, ge=1, le=10)
+
+
+class PublishedStepSettings(BaseModel):
+    title: str = Field(min_length=3, max_length=120)
+    goal: str = Field(min_length=8, max_length=500)
+    scenario: str = Field(default="", max_length=700)
+    question: str = Field(default="", max_length=500)
+
+
+class PublishedSocraticSettingsInput(BaseModel):
+    instructions: str = Field(max_length=10000)
+    prompt: str = Field(max_length=10000)
+    minimum_step_questions: int = Field(ge=1, le=10)
+    learning_steps: list[PublishedStepSettings] = Field(min_length=1, max_length=10)
 
 
 def user(request: Request):
@@ -70,14 +109,50 @@ def get_assignment(conn, assignment_id, account, manage=False, lock=False):
     return item
 
 
+def socratic_step_source(item, step):
+    """Return only the published, instructor-selected passage for a guided step."""
+    snapshot = item.get("snapshot") or {}
+    selected = {str(value) for value in (snapshot.get("config") or {}).get("document_ids") or []}
+    chunk = next((chunk for chunk in snapshot.get("chunks") or []
+                  if str(chunk.get("chunk_id")) == str(step.get("source_chunk_id"))
+                  and str(chunk.get("document_id")) in selected), None)
+    if not chunk:
+        return None
+    return {
+        "document_id": str(chunk["document_id"]),
+        "chunk_id": str(chunk["chunk_id"]),
+        "title": chunk.get("title") or step.get("source_file") or "Course material",
+        "page_number": chunk.get("page_number"),
+        "text": chunk["text"],
+        "evidence_quote": step.get("evidence_quote", ""),
+    }
+
+
+def step_question_count(messages, step_started_at_message_count):
+    """Count distinct tutor questions shown in the current guided step."""
+    start = max(0, int(step_started_at_message_count or 1) - 1)
+    questions = set()
+    for message in messages[start:]:
+        if message.get("role") != "assistant":
+            continue
+        question = str(message.get("next_thinking_step") or "").strip()
+        if not question:
+            matches = re.findall(r"[^\n.!?]*\?", str(message.get("content") or ""))
+            question = matches[-1].strip() if matches else ""
+        if question:
+            questions.add(question.casefold())
+    return len(questions)
+
+
 def public_assignment(item, manage=False):
     result = {k: v for k, v in item.items() if k not in ("snapshot", "config")}
     if manage:
-        result["config"] = item["config"]
+        result["config"] = {k: v for k, v in item["config"].items() if item["tool"] != "socratic" or k != "minimum_messages"}
+        if item["tool"] == "socratic" and item.get("snapshot"):
+            result["concept_map"] = item["snapshot"].get("concept_map") or []
         if item["tool"] == "socratic" and item["status"] != "draft":
-            # Display the published list, not later edits to a legacy objective row.
-            result["config"] = {**item["config"],
-                "keywords": list(engines._assignment_keywords(item.get("snapshot") or {})),
+            result["config"] = {**result["config"],
+                "scope_mode": "assignment", "keywords": [],
                 "learning_objective_id": None}
     else:
         cfg = (item.get("snapshot") or {}).get("config", item["config"])
@@ -87,19 +162,80 @@ def public_assignment(item, manage=False):
         elif item["tool"] == "debate":
             result["student_config"] = {k: cfg[k] for k in ("scenario", "minimum_messages")}
         elif item["tool"] == "socratic":
-            snapshot = item.get("snapshot") or {}
-            glossary = snapshot.get("keyword_glossary") or engines.keyword_glossary(
-                engines._assignment_keywords(snapshot),
-                snapshot.get("chunks") or [],
-            )
+            guided = cfg.get("guidance_mode", "guided" if cfg.get("learning_steps") else "basic") == "guided"
             result["student_config"] = {
-                "minimum_messages": cfg["minimum_messages"],
-                "keyword_glossary": glossary,
+                "minimum_step_questions": cfg.get("minimum_step_questions", 1),
+                "keyword_glossary": [],
+                "guidance_mode": "guided" if guided else "basic",
+                "learning_path_time_limit_seconds": cfg.get("learning_path_minutes", 7) * 60 if guided else None,
+                "learning_steps": [
+                    {
+                        "title": step["title"], "goal": step["goal"],
+                        "source_file": step.get("source_file", ""),
+                        "source": socratic_step_source(item, step),
+                        "checks": [step_check.public_check(check) for check in (step.get("checks") or [])],
+                    }
+                    for step in (cfg.get("learning_steps") or []) if guided
+                ],
             }
         elif item["tool"] == "student-agent":
             topic = cfg["topic"]
             result["student_config"] = {"topic_name": topic["name"], "resources": [topic["resource"], topic["alt_resource"]]}
     return result
+
+
+def published_socratic_material(assignment_id, document_id, account):
+    """Only a recipient or course instructor may read the selected published material."""
+    with store.connection() as conn:
+        assignment = get_assignment(conn, assignment_id, account, manage=int(account["authority_level"]) <= 1)
+    if assignment["tool"] != "socratic" or assignment["status"] != "published":
+        raise HTTPException(404, "Published course material was not found.")
+    snapshot = assignment.get("snapshot") or {}
+    selected = {str(value) for value in (snapshot.get("config") or {}).get("document_ids") or []}
+    chunks = [chunk for chunk in snapshot.get("chunks") or [] if str(chunk.get("document_id")) == document_id]
+    if document_id not in selected or not chunks:
+        raise HTTPException(404, "This material is not in the published assignment.")
+    return assignment, chunks
+
+
+@router.get("/assignments/{assignment_id}/materials")
+def assignment_materials(assignment_id: UUID, account=Depends(user)):
+    with store.connection() as conn:
+        assignment = get_assignment(conn, assignment_id, account, manage=int(account["authority_level"]) <= 1)
+    if assignment["tool"] != "socratic" or assignment["status"] != "published":
+        raise HTTPException(404, "Published course materials were not found.")
+    snapshot = assignment.get("snapshot") or {}
+    selected = {str(value) for value in (snapshot.get("config") or {}).get("document_ids") or []}
+    grouped = {}
+    for chunk in snapshot.get("chunks") or []:
+        document_id = str(chunk.get("document_id") or "")
+        if document_id in selected and document_id not in grouped:
+            grouped[document_id] = {"document_id": document_id, "title": str(chunk.get("title") or "Course material"),
+                                    "pages": set()}
+        if document_id in grouped and chunk.get("page_number") is not None:
+            grouped[document_id]["pages"].add(chunk["page_number"])
+    for document_id, material in grouped.items():
+        original = db.get_course_rag_file(str(assignment["course_id"]), document_id)
+        if original:
+            material["title"] = original["filename"]
+            material["original_available"] = True
+        else:
+            material["original_available"] = False
+        material["page_count"] = len(material.pop("pages"))
+    return {"materials": list(grouped.values())}
+
+
+@router.get("/assignments/{assignment_id}/materials/{document_id}/download")
+def download_assignment_material(assignment_id: UUID, document_id: str, account=Depends(user)):
+    assignment, _ = published_socratic_material(assignment_id, document_id, account)
+    original = db.get_course_rag_file(str(assignment["course_id"]), document_id, include_content=True)
+    if not original:
+        raise HTTPException(404, "The original file is no longer available. Ask your instructor to upload it again.")
+    return Response(
+        content=original["content"], media_type=original["content_type"] or "application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(str(original['filename']))}",
+                 "X-Content-Type-Options": "nosniff"},
+    )
 
 
 def public_attempt(attempt):
@@ -199,7 +335,6 @@ def import_canvas_assignment(body: CanvasImportRequest, account=Depends(professo
                 "Help the learner reason through this Canvas assignment using only the "
                 f"published course materials: {canvas_assignment['name']}"
             ),
-            "minimum_messages": 1,
         }
     elif body.tool == "debate":
         config = {
@@ -207,7 +342,6 @@ def import_canvas_assignment(body: CanvasImportRequest, account=Depends(professo
                 f"Canvas assignment: {canvas_assignment['name']}\n\n"
                 f"{canvas_assignment['description']}"
             )[:10000].strip(),
-            "opening_prompt": "Take a position on this scenario and explain your strongest reason.",
             "minimum_messages": 3,
         }
     return create_assignment(
@@ -241,12 +375,19 @@ def assignments(course_id: UUID | None = None, account=Depends(user)):
                 FROM assignments_platform a JOIN courses_platform c ON c.id=a.course_id
                 ORDER BY a.created_at DESC""", (account["user_id"],)).fetchall()
         else:
-            rows = conn.execute("""SELECT a.*, c.title AS course_title, c.course_code, coalesce(t.status, 'not_started') AS progress
+            rows = conn.execute("""SELECT a.*, c.title AS course_title, c.course_code,
+                coalesce(t.status, 'not_started') AS progress,
+                (l.assignment_id IS NOT NULL) AS canvas_linked
                 FROM assignments_platform a JOIN courses_platform c ON c.id=a.course_id
                 JOIN assignment_recipients_platform r ON r.assignment_id=a.id AND r.student_id=%s
                 JOIN course_memberships_platform m ON m.course_id=a.course_id AND m.user_id=r.student_id AND m.status='approved'
                 LEFT JOIN assignment_attempts_platform t ON t.assignment_id=a.id AND t.student_id=r.student_id
-                WHERE a.status='published' AND m.course_role='student' ORDER BY a.due_at NULLS LAST, a.created_at DESC""", (account["user_id"],)).fetchall()
+                LEFT JOIN lti_assignment_links_platform l ON l.assignment_id=a.id
+                WHERE a.status='published' AND m.course_role='student'
+                  AND (l.assignment_id IS NOT NULL OR NOT EXISTS (
+                      SELECT 1 FROM lti_course_links_platform lc WHERE lc.course_id=a.course_id
+                  ))
+                ORDER BY a.due_at NULLS LAST, a.created_at DESC""", (account["user_id"],)).fetchall()
         result = []
         for row in rows:
             if row["tool"] == "student-agent" or (course_id and str(row['course_id']) != str(course_id)):
@@ -264,6 +405,45 @@ def assignments(course_id: UUID | None = None, account=Depends(user)):
             if item["tool"] == "self-directed-learning" and str(item["id"]) in by_id:
                 item["progress"] = by_id[str(item["id"])].get("attempt_status") or "not_started"
     return result
+
+
+@router.get("/assignments/{assignment_id}/reflection-analysis")
+def reflection_analysis(assignment_id: UUID, account=Depends(professor)):
+    """A course instructor's read-only view of saved Reflection attempts."""
+    with store.connection() as conn:
+        assignment = get_assignment(conn, assignment_id, account, manage=True)
+        if assignment["tool"] != "reflections":
+            raise HTTPException(422, "Choose a Reflection assignment to analyze.")
+        rows = conn.execute("""SELECT u.id AS student_id, u.display_name, u.username,
+                t.status, t.messages, t.result, t.completed_at
+            FROM assignment_recipients_platform r
+            JOIN users_platform u ON u.id = r.student_id
+            LEFT JOIN assignment_attempts_platform t
+                ON t.assignment_id = r.assignment_id AND t.student_id = r.student_id
+            WHERE r.assignment_id = %s ORDER BY u.display_name, u.username""",
+            (assignment_id,)).fetchall()
+    students = []
+    for row in rows:
+        responses = [str(message.get("content") or "").strip()
+                     for message in (row["messages"] or [])
+                     if message.get("role") == "user" and str(message.get("content") or "").strip()]
+        students.append({
+            "student_id": row["student_id"],
+            "name": row["display_name"] or row["username"],
+            "status": row["status"] or "not_started",
+            "response_count": len(responses),
+            "responses": responses,
+            "completed_at": row["completed_at"],
+        })
+    return {
+        "assignment": {"id": assignment["id"], "title": assignment["title"],
+                       "course_id": assignment["course_id"]},
+        "summary": {"assigned": len(students),
+                    "started": sum(student["status"] != "not_started" for student in students),
+                    "completed": sum(student["status"] == "completed" for student in students),
+                    "responses": sum(student["response_count"] for student in students)},
+        "students": students,
+    }
 
 
 def validate_activity_documents(body):
@@ -287,14 +467,62 @@ def create_assignment(body: AssignmentInput, account=Depends(professor)):
     return public_assignment(row, True)
 
 
+@router.get("/assignments/{assignment_id}/material-reference")
+def assignment_material_reference(assignment_id: UUID, phrase: str, document_id: str | None = None,
+                                  account=Depends(user)):
+    """Resolve a tutor's document phrase against the selected published pages."""
+    phrase = " ".join(phrase.split())
+    if not 3 <= len(phrase) <= 80:
+        raise HTTPException(422, "Enter a short document reference.")
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account, manage=int(account["authority_level"]) <= 1)
+    if item["tool"] != "socratic" or item["status"] != "published":
+        raise HTTPException(404, "Published Socratic materials were not found.")
+    snapshot = item.get("snapshot") or {}
+    selected = {str(value) for value in (snapshot.get("config") or {}).get("document_ids") or []}
+    chunks = [chunk for chunk in snapshot.get("chunks") or []
+              if str(chunk.get("document_id")) in selected and chunk.get("page_number")]
+    preferred = [chunk for chunk in chunks if str(chunk.get("document_id")) == document_id]
+    others = [chunk for chunk in chunks if str(chunk.get("document_id")) != document_id]
+    page_match = re.fullmatch(r"page\s+(\d+)", phrase, re.I)
+    for chunk in preferred + others:
+        if page_match:
+            matches = int(chunk["page_number"]) == int(page_match.group(1))
+        else:
+            matches = phrase.casefold() in " ".join(str(chunk.get("text") or "").split()).casefold()
+        if matches:
+            return {"document_id": str(chunk["document_id"]),
+                    "page_number": int(chunk["page_number"]),
+                    "title": chunk.get("title") or "Course material"}
+    raise HTTPException(404, "That section was not found in the instructor-selected materials.")
+
+
+@router.post("/assignments/{assignment_id}/evidence-diagram")
+async def assignment_evidence_diagram(assignment_id: UUID, body: EvidenceDiagramInput, account=Depends(user)):
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account, manage=int(account["authority_level"]) <= 1)
+    if item["tool"] != "socratic" or item["status"] != "published":
+        raise HTTPException(404, "Published Socratic evidence was not found.")
+    snapshot = item.get("snapshot") or {}
+    selected = {str(value) for value in (snapshot.get("config") or {}).get("document_ids") or []}
+    passage = next((chunk for chunk in snapshot.get("chunks") or []
+                    if str(chunk.get("chunk_id")) == body.chunk_id
+                    and str(chunk.get("document_id")) in selected), None)
+    if passage is None:
+        raise HTTPException(404, "This passage is not in the published assignment.")
+    try:
+        steps = await evidence_diagram.build(str(passage.get("text") or ""))
+    except Exception as exc:
+        raise HTTPException(503, "A verified diagram is unavailable for this passage. You can still read the original text.") from exc
+    return {"steps": steps}
+
+
 @router.get("/assignments/{assignment_id}")
 def assignment_detail(assignment_id: UUID, account=Depends(user)):
     is_prof = int(account["authority_level"]) <= 1
     with store.connection() as conn:
         item = get_assignment(conn, assignment_id, account, manage=is_prof)
         result = public_assignment(item, is_prof)
-        if is_prof and item["tool"] == "socratic":
-            result["keyword_preparation"] = keyword_preparation.status(conn, item)
         if is_prof:
             result["recipient_ids"] = [r["student_id"] for r in conn.execute("SELECT student_id FROM assignment_recipients_platform WHERE assignment_id=%s", (assignment_id,))]
             result["students"] = conn.execute("""SELECT u.display_name, u.username, u.id AS student_id,
@@ -309,6 +537,85 @@ def assignment_detail(assignment_id: UUID, account=Depends(user)):
             except HTTPException:
                 result['progress_unavailable'] = True
         return result
+
+
+@router.post("/assignments/{assignment_id}/step-checks/draft")
+async def draft_published_step_checks(assignment_id: UUID, account=Depends(professor)):
+    """Prepare checks for a legacy published path without changing student data."""
+    from platform_app.socratic_setup import generate_checks_for_step
+
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account, manage=True)
+    snapshot = item.get("snapshot") or {}
+    steps = (snapshot.get("config") or {}).get("learning_steps") or []
+    if item["status"] != "published" or item["tool"] != "socratic" or not steps:
+        raise HTTPException(409, "This assignment has no published Socratic learning path.")
+    config = settings.llm_client_config("generation")
+    if config is None:
+        raise HTTPException(503, "Configure a generation model before drafting step checks.")
+    provider, api_key, base_url, model = config
+    checks = []
+    for step in steps:
+        if step.get("checks"):
+            checks.append(step["checks"][:1])
+            continue
+        source = socratic_step_source(item, step)
+        if not source:
+            raise HTTPException(422, f"The selected source for {step['title']} is unavailable.")
+        try:
+            checks.append(await generate_checks_for_step(step, source["text"], provider, api_key, base_url, model))
+        except Exception as exc:
+            raise HTTPException(503, f"Could not draft checks for {step['title']}. Try again.") from exc
+    return {"steps": [{"title": step["title"], "checks": pair} for step, pair in zip(steps, checks)]}
+
+
+@router.put("/assignments/{assignment_id}/step-checks")
+def save_published_step_checks(assignment_id: UUID, body: PublishedStepChecksInput, account=Depends(professor)):
+    """Update only instructor-reviewed checks in both published config copies."""
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account, manage=True, lock=True)
+        snapshot = item.get("snapshot") or {}
+        snapshot_config = snapshot.get("config") or {}
+        published_steps = snapshot_config.get("learning_steps") or []
+        if item["status"] != "published" or item["tool"] != "socratic" or not published_steps:
+            raise HTTPException(409, "This assignment has no published Socratic learning path.")
+        if len(body.checks) != len(published_steps) or any(len(pair) != 1 for pair in body.checks):
+            raise HTTPException(422, "Review one check for every learning step.")
+        checked_steps = [{**step, "checks": [check.model_dump() for check in pair]}
+                         for step, pair in zip(published_steps, body.checks)]
+        minimum_questions = body.minimum_step_questions or snapshot_config.get("minimum_step_questions", 1)
+        updated_snapshot = {**snapshot, "config": {**{k: v for k, v in snapshot_config.items() if k != "minimum_messages"}, "learning_steps": checked_steps,
+                                                   "minimum_step_questions": minimum_questions}}
+        updated_config = {**{k: v for k, v in item["config"].items() if k != "minimum_messages"}, "learning_steps": checked_steps,
+                          "minimum_step_questions": minimum_questions}
+        row = conn.execute("""UPDATE assignments_platform SET config=%s, snapshot=%s, updated_at=now()
+            WHERE id=%s RETURNING *""", (Jsonb(updated_config), Jsonb(updated_snapshot), assignment_id)).fetchone()
+        return public_assignment(row, True)
+
+
+@router.patch("/assignments/{assignment_id}/socratic-settings")
+def update_published_socratic_settings(assignment_id: UUID, body: PublishedSocraticSettingsInput,
+                                       account=Depends(professor)):
+    """Let instructors refine a published path without replacing its cited sources or student history."""
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account, manage=True, lock=True)
+        snapshot = item.get("snapshot") or {}
+        snapshot_config = snapshot.get("config") or {}
+        saved_steps = snapshot_config.get("learning_steps") or []
+        if item["status"] != "published" or item["tool"] != "socratic" or not saved_steps:
+            raise HTTPException(409, "This assignment has no published Socratic learning path.")
+        if len(body.learning_steps) != len(saved_steps):
+            raise HTTPException(422, "Keep the published learning path's step count and sources.")
+        edited_steps = [{**saved, **edited.model_dump()} for saved, edited in zip(saved_steps, body.learning_steps)]
+        updates = {"prompt": body.prompt,
+                   "minimum_step_questions": body.minimum_step_questions,
+                   "learning_steps": edited_steps}
+        updated_snapshot = {**snapshot, "config": {**{k: v for k, v in snapshot_config.items() if k != "minimum_messages"}, **updates}}
+        updated_config = {**{k: v for k, v in item["config"].items() if k != "minimum_messages"}, **updates}
+        row = conn.execute("""UPDATE assignments_platform SET instructions=%s,config=%s,snapshot=%s,updated_at=now()
+            WHERE id=%s RETURNING *""", (body.instructions, Jsonb(updated_config), Jsonb(updated_snapshot),
+                                          assignment_id)).fetchone()
+        return public_assignment(row, True)
 
 
 @router.put("/assignments/{assignment_id}")
@@ -327,19 +634,7 @@ def update_assignment(assignment_id: UUID, body: AssignmentInput, account=Depend
             WHERE id=%s RETURNING *""", (body.course_id, body.tool, body.title, body.instructions, body.due_at, body.audience, Jsonb(body.config), assignment_id)).fetchone()
         recipients(conn, assignment_id, body)
         result = public_assignment(row, True)
-        if row["tool"] == "socratic":
-            result["keyword_preparation"] = keyword_preparation.status(conn, row)
         return result
-
-
-@router.post("/assignments/{assignment_id}/keywords/confirm")
-def confirm_keywords(assignment_id: UUID, account=Depends(professor)):
-    with store.connection() as conn:
-        item = get_assignment(conn, assignment_id, account, manage=True, lock=True)
-        try:
-            return keyword_preparation.confirm(conn, item)
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
 
 
 @router.post("/assignments/{assignment_id}/publish")
@@ -365,9 +660,7 @@ def publish(assignment_id: UUID, account=Depends(professor)):
             if item["tool"] == "self-directed-learning":
                 from platform_app.workspace import publish_sdl
                 publish_sdl(conn, item, account)
-            snapshot = (keyword_preparation.snapshot_for_publish(conn, item)
-                        if item["tool"] == "socratic" and item["config"].get("keywords")
-                        else engines.publish_snapshot(item))
+            snapshot = engines.publish_snapshot(item)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         row = conn.execute("UPDATE assignments_platform SET status='published', snapshot=%s, published_at=now(),updated_at=now() WHERE id=%s RETURNING *",
@@ -393,9 +686,11 @@ def duplicate(assignment_id: UUID, account=Depends(professor)):
 
 @router.get("/assignments/{assignment_id}/attempt")
 def attempt_detail(assignment_id: UUID, account=Depends(user)):
-    with store.connection() as conn:
-        get_assignment(conn, assignment_id, account)
-        return public_attempt(conn.execute("SELECT * FROM assignment_attempts_platform WHERE assignment_id=%s AND student_id=%s", (assignment_id, account["user_id"])).fetchone())
+    with store.locked_attempt(assignment_id, account["user_id"]) as (conn, attempt):
+        assignment = get_assignment(conn, assignment_id, account)
+        if engines.repair_legacy_socratic_opening(assignment, attempt):
+            store.save_attempt(conn, attempt)
+        return public_attempt(attempt)
 
 
 @router.post("/assignments/{assignment_id}/start")
@@ -403,13 +698,161 @@ def start(assignment_id: UUID, account=Depends(user)):
     with store.locked_attempt(assignment_id, account["user_id"]) as (conn, attempt):
         assignment = get_assignment(conn, assignment_id, account)
         if attempt:
+            if engines.repair_legacy_socratic_opening(assignment, attempt):
+                store.save_attempt(conn, attempt)
             return public_attempt(attempt)
         # Deterministic identity lets engine starts recover from a lost gateway response.
         aid = uuid5(NAMESPACE_URL, f"cluball:{assignment_id}:{account['user_id']}")
         attempt = conn.execute("INSERT INTO assignment_attempts_platform(id,assignment_id,student_id) VALUES (%s,%s,%s) RETURNING *", (aid, assignment_id, account["user_id"])).fetchone()
         state = engines.start(assignment, attempt)
         attempt["messages"] = state.pop("messages", [])
+        if assignment["tool"] == "socratic" and attempt["messages"]:
+            first_step = ((assignment.get("snapshot") or {}).get("config") or {}).get("learning_steps") or []
+            if first_step and (source := socratic_step_source(assignment, first_step[0])):
+                attempt["messages"][0]["step_source"] = source
+            opening_question = state.get("socratic", {}).get("next_thinking_step")
+            if opening_question:
+                attempt["messages"][0]["next_thinking_step"] = opening_question
         attempt["engine_state"] = state
+        store.save_attempt(conn, attempt)
+        return public_attempt(attempt)
+
+
+@router.post("/assignments/{assignment_id}/next-step")
+def next_socratic_step(assignment_id: UUID, account=Depends(user)):
+    """Advance the learner's saved path only after they have discussed this step."""
+    with store.locked_attempt(assignment_id, account["user_id"]) as (conn, attempt):
+        assignment = get_assignment(conn, assignment_id, account)
+        if not attempt or assignment["tool"] != "socratic" or attempt["status"] == "completed":
+            raise HTTPException(409, "Start an active Socratic assignment first.")
+        config = (assignment.get("snapshot") or {}).get("config", {})
+        guided = config.get("guidance_mode", "guided" if config.get("learning_steps") else "basic") == "guided"
+        steps = (config.get("learning_steps") or []) if guided else []
+        state = dict(attempt["engine_state"].get("socratic") or {})
+        index = int(state.get("learning_step_index") or 0)
+        if not steps or index >= len(steps) - 1:
+            raise HTTPException(409, "There is no next learning step.")
+        if state.get("pending_clarification") or state.get("concept_check") or state.get("phase") != "teaching":
+            raise HTTPException(409, "Finish the current question before moving to the next step.")
+        since = int(state.get("step_started_at_message_count") or 0)
+        if not any(message.get("role") == "user" for message in attempt["messages"][since:]):
+            raise HTTPException(409, "Discuss this step with the tutor before continuing.")
+        minimum_questions = int(config.get("minimum_step_questions") or 1)
+        if step_question_count(attempt["messages"], since) < minimum_questions:
+            raise HTTPException(409, f"Discuss at least {minimum_questions} tutor question(s) in this step before continuing.")
+        if steps[index].get("checks") and (state.get("step_check") or {}).get("status") not in {"passed", "continued_with_support"}:
+            raise HTTPException(409, "Complete the step check or choose Continue to next step after two attempts.")
+        index += 1
+        step = steps[index]
+        state.update({
+            "learning_step_index": index,
+            "learning_topic": step["title"],
+            "step_started_at_message_count": len(attempt["messages"]) + 1,
+        })
+        state.pop("stable_concept", None)
+        state.pop("active_concept", None)
+        state.pop("step_check", None)
+        scenario = str(step.get("scenario") or "").strip()
+        question = str(step.get("question") or "").strip()
+        if not scenario:
+            quote = str(step.get("evidence_quote") or "").strip()
+            scenario = f"From the assignment: “{quote}”" if quote else ""
+        if not question:
+            question = f"How would you approach {step['title'].lower()} in this assignment?"
+        elif not question.endswith("?"):
+            question = f"{question.rstrip('.!')}?"
+        state["next_thinking_step"] = question
+        attempt["engine_state"]["socratic"] = state
+        attempt["messages"].append({
+            "role": "assistant",
+            "content": "\n\n".join(part for part in (f"Step {index + 1}: {step['title']}", scenario, question) if part),
+            "next_thinking_step": question,
+            **({"step_source": source} if (source := socratic_step_source(assignment, step)) else {}),
+        })
+        store.save_attempt(conn, attempt)
+        return public_attempt(attempt)
+
+
+@router.post("/assignments/{assignment_id}/step-check")
+def socratic_step_check(assignment_id: UUID, body: SocraticStepCheckInput, account=Depends(user)):
+    """Assess the current application check without putting quiz answers into the chat."""
+    with store.locked_attempt(assignment_id, account["user_id"]) as (conn, attempt):
+        assignment = get_assignment(conn, assignment_id, account)
+        if not attempt or assignment["tool"] != "socratic" or attempt["status"] == "completed":
+            raise HTTPException(409, "Start an active Socratic assignment first.")
+        rid = str(body.request_id)
+        if rid in attempt["processed_requests"]:
+            return public_attempt(attempt)
+        state = dict((attempt.get("engine_state") or {}).get("socratic") or {})
+        steps = ((assignment.get("snapshot") or {}).get("config") or {}).get("learning_steps") or []
+        index = int(state.get("learning_step_index") or 0)
+        checks = steps[index].get("checks") or [] if 0 <= index < len(steps) else []
+        if not checks or state.get("phase") != "teaching" or state.get("pending_clarification") or state.get("concept_check"):
+            raise HTTPException(409, "This learning step has no application check.")
+        since = int(state.get("step_started_at_message_count") or 0)
+        if not any(message.get("role") == "user" for message in attempt["messages"][since:]):
+            raise HTTPException(409, "Discuss this step with the tutor before taking its check.")
+        minimum_questions = int(((assignment.get("snapshot") or {}).get("config") or {}).get("minimum_step_questions") or 1)
+        if step_question_count(attempt["messages"], since) < minimum_questions:
+            raise HTTPException(409, f"Discuss at least {minimum_questions} tutor question(s) in this step before taking its check.")
+        progress = dict(state.get("step_check") or {})
+        if progress.get("step_index") != index:
+            progress = {"step_index": index, "variant": 0, "attempts": 0, "status": "active"}
+        status = progress.get("status")
+        if body.action == "try_another":
+            raise HTTPException(409, "This step has one quiz. Review your answer or continue with support.")
+        elif body.action == "continue_with_support":
+            if status not in {"choice", "continued_with_support"}:
+                raise HTTPException(409, "Try both chances before continuing with support.")
+            progress["status"] = "continued_with_support"
+        else:
+            if status in {"passed", "choice", "continued_with_support"}:
+                raise HTTPException(409, "Choose one of the available step-check actions.")
+            variant = min(int(progress.get("variant") or 0), len(checks) - 1)
+            check = checks[variant]
+            if body.option_index is None or body.option_index >= len(check["options"]):
+                raise HTTPException(422, "Choose an answer option.")
+            reason = body.reason.strip()
+            if len(reason) < 5:
+                raise HTTPException(422, "Explain why you chose that answer.")
+            if progress.get("last_option_correct") is False and body.option_index == progress.get("last_option_index"):
+                raise HTTPException(409, "Choose a different option for your second chance.")
+            selected_correctly = body.option_index == check["incorrect_option_index"]
+            progress["last_option_index"] = body.option_index
+            progress["last_option_correct"] = selected_correctly
+            if selected_correctly:
+                try:
+                    sufficient, feedback = step_check.assess_reason_sync(check, check["options"][body.option_index], reason)
+                except Exception as error:
+                    raise HTTPException(503, "The step check could not review your reason. Please retry.") from error
+            else:
+                sufficient, feedback = False, "That choice fits this situation."
+            progress["attempts"] = int(progress.get("attempts") or 0) + 1
+            if selected_correctly and sufficient:
+                progress.update({
+                    "status": "passed",
+                    "feedback": feedback or "You found the mistake and explained why it matters. Ready for the next step.",
+                    "correct_option_index": check["incorrect_option_index"],
+                })
+            elif progress["attempts"] < 2:
+                progress.update({
+                    "status": "active",
+                    "feedback": feedback,
+                })
+            else:
+                progress.update({
+                    "status": "choice",
+                    "feedback": f"{feedback} {check['expected_reason']}",
+                    "correct_option_index": check["incorrect_option_index"],
+                })
+        state["step_check"] = progress
+        if progress["status"] in {"passed", "continued_with_support"}:
+            outcomes = list(state.get("step_check_results") or [])
+            outcomes = [item for item in outcomes if item.get("step_index") != index]
+            outcomes.append({"step_index": index, "status": progress["status"]})
+            state["step_check_results"] = outcomes
+        attempt["engine_state"]["socratic"] = state
+        attempt["processed_requests"].append(rid)
         store.save_attempt(conn, attempt)
         return public_attempt(attempt)
 
@@ -421,7 +864,12 @@ def apply_state(attempt, state, content=None):
         if content:
             attempt["messages"].append({"role": "user", "content": content})
         if state.get("reply"):
-            attempt["messages"].append({"role": "assistant", "content": state["reply"]})
+            next_question = (state.get("socratic") or {}).get("next_thinking_step")
+            attempt["messages"].append({
+                "role": "assistant", "content": state["reply"],
+                **({"next_thinking_step": next_question} if next_question else {}),
+                **({"sources": state["sources"]} if state.get("sources") else {}),
+            })
     if state.pop("completed", False) or state.get("ended"):
         attempt["status"] = "completed"
         attempt["result"] = state.get("result", {"phase": state.get("phase")})
@@ -439,40 +887,109 @@ def message(assignment_id: UUID, body: MessageInput, account=Depends(user)):
             return public_attempt(attempt)
         if attempt["status"] == "completed":
             raise HTTPException(409, "This assignment is already completed.")
-        if body.clarification_index is not None and assignment["tool"] != "socratic":
+        if (body.clarification_index is not None or body.clarification_text) and assignment["tool"] != "socratic":
             raise HTTPException(422, "Clarification choices are only available in Socratic Chat.")
+        if body.clarification_index is not None and body.clarification_text:
+            raise HTTPException(422, "Choose an option or write a clarification, not both.")
         if body.concept_check_option is not None and assignment["tool"] != "socratic":
             raise HTTPException(422, "Concept checks are only available in Socratic Chat.")
         message_options = {}
         if body.clarification_index is not None:
             message_options["clarification_index"] = body.clarification_index
+        if body.clarification_text:
+            message_options["clarification_text"] = True
         if body.concept_check_option is not None:
             message_options["concept_check_option"] = body.concept_check_option
+        inline_clarification_choice = (
+            body.clarification_index is not None
+            and bool(attempt.get("engine_state", {}).get("socratic", {}).get("pending_clarification", {}).get("inline"))
+        )
         state = engines.message(
             assignment, attempt, body.message, rid, **message_options
         )
+        quiz_only = state.pop("quiz_only", False)
         student_message = state.pop("student_message", body.message)
-        assessment = state.pop("assessment", None)
-        apply_state(attempt, state, student_message)
-        if assessment:
-            if attempt["messages"] and attempt["messages"][-1]["role"] == "assistant":
-                attempt["messages"][-1]["total_score"] = assessment["total_score"]
-            for saved_message in reversed(attempt["messages"]):
-                if saved_message["role"] == "user":
-                    saved_message["total_score"] = assessment["total_score"]
-                    break
-            conn.execute("""INSERT INTO assignment_assessments_platform
-                (id,attempt_id,assignment_id,student_id,course_id,request_id,concept,student_answer,
-                 total_score,correctness,completeness,reasoning,application,critical_misconception,evaluation)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ON CONFLICT (attempt_id,request_id) DO NOTHING""",
-                (uuid4(),attempt["id"],assignment_id,account["user_id"],assignment["course_id"],rid,
-                 assessment["concept"],student_message,assessment["total_score"],assessment["correctness"],
-                 assessment["completeness"],assessment["reasoning"],assessment["application"],
-                 assessment["critical_misconception"],Jsonb(assessment)))
+        apply_state(attempt, state, None if quiz_only or inline_clarification_choice else student_message)
         attempt["processed_requests"].append(rid)
         store.save_attempt(conn, attempt)
         return public_attempt(attempt)
+
+
+def _student_chat_status(event: str) -> tuple[str, str] | None:
+    """Expose completed pipeline stages without revealing internal prompts or labels."""
+    return {
+        "assignment_chat_received": ("received", "Reading your message"),
+        "classifier_llm_started": ("understanding", "Understanding your question"),
+        "message_classification_completed": ("understood", "Question understood"),
+        "retrieval_started": ("searching", "Finding course material"),
+        "assignment_sources_merged_and_reranked": ("evidence", "Relevant passages found"),
+        "answer_evaluation_started": ("checking", "Checking your reasoning"),
+        "socratic_strategy_selected": ("planning", "Planning the reply"),
+        "llm_request_started": ("drafting", "Writing your reply"),
+        "structured_socratic_response": ("reviewing", "Checking the reply"),
+    }.get(event)
+
+
+@router.post("/assignments/{assignment_id}/messages/stream")
+async def message_stream(assignment_id: UUID, body: MessageInput, account=Depends(user)):
+    """Stream actual Socratic pipeline stages and the normal saved attempt."""
+
+    async def events():
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+        last_stage = None
+        current_understanding = ""
+
+        def on_event(event, fields):
+            nonlocal last_stage, current_understanding
+            if event == "message_classification_completed":
+                query = fields.get("retrieval_query")
+                if isinstance(query, str):
+                    current_understanding = " ".join(query.split())[:180]
+            status = _student_chat_status(event)
+            if status and status[0] != last_stage:
+                last_stage = status[0]
+                update = {
+                    "type": "status", "stage": status[0], "label": status[1],
+                }
+                if current_understanding:
+                    update["understanding"] = current_understanding
+                loop.call_soon_threadsafe(queue.put_nowait, update)
+
+        def execute():
+            token = set_event_sink(on_event)
+            try:
+                return message(assignment_id, body, account)
+            finally:
+                reset_event_sink(token)
+
+        async def run():
+            try:
+                result = await asyncio.to_thread(execute)
+                queue.put_nowait({"type": "result", "data": jsonable_encoder(result)})
+            except HTTPException as error:
+                queue.put_nowait({"type": "error", "message": str(error.detail)})
+            except Exception:
+                queue.put_nowait({"type": "error", "message": "The tutor could not complete this reply. Please retry."})
+
+        task = asyncio.create_task(run())
+        try:
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield json.dumps({"type": "heartbeat"}) + "\n"
+                    continue
+                yield json.dumps(item, ensure_ascii=False) + "\n"
+                if item["type"] in {"result", "error"}:
+                    break
+        finally:
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(events(), media_type="application/x-ndjson", headers={
+        "Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+    })
 
 
 @router.post("/assignments/{assignment_id}/reflection")
@@ -486,6 +1003,15 @@ def socratic_reflection(assignment_id: UUID, body: SocraticReflectionInput, acco
             raise HTTPException(409, "Start an unfinished Socratic assignment first.")
         if assignment["tool"] != "socratic":
             raise HTTPException(422, "This assignment does not use a Socratic learning summary.")
+        config = ((assignment.get("snapshot") or {}).get("config") or {})
+        steps = config.get("learning_steps") or []
+        state = (attempt.get("engine_state") or {}).get("socratic") or {}
+        if steps and int(state.get("learning_step_index") or 0) == len(steps) - 1:
+            minimum_questions = int(config.get("minimum_step_questions") or 1)
+            if step_question_count(attempt["messages"], state.get("step_started_at_message_count")) < minimum_questions:
+                raise HTTPException(409, f"Discuss at least {minimum_questions} tutor question(s) in the final step before summarizing.")
+            if steps[-1].get("checks") and (state.get("step_check") or {}).get("status") not in {"passed", "continued_with_support"}:
+                raise HTTPException(409, "Finish the final step check before summarizing.")
         rid = str(body.request_id)
         if rid in attempt["processed_requests"] or (attempt["engine_state"].get("socratic") or {}).get("completion_summary"):
             return public_attempt(attempt)

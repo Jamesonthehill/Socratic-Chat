@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from app.answer_evaluation import (
+    assess_student_answer_qualitatively,
     answer_evaluation_query,
     concept_coverage,
     evaluate_student_answer,
@@ -34,6 +35,35 @@ def answering_classification() -> MessageClassification:
 
 
 class AnswerEvaluationTests(unittest.TestCase):
+    def test_qualitative_feedback_has_no_score_or_mastery_fields(self) -> None:
+        payload = {
+            "concept": "resource check",
+            "supported_concepts": [],
+            "missing_concepts": ["check ingredients before payment"],
+            "critical_misconception": False,
+            "misconception": None,
+            "feedback": "The assignment checks ingredients before asking for coins.",
+        }
+        response = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload)))],
+        )
+        create = AsyncMock(return_value=response)
+        history = [ChatMessage(role="assistant", content="What happens after choosing small?")]
+        source = Source(document_id="pdf", chunk_id="step", title="Sandwich.pdf",
+                        text="Check resources before asking for coins.", score=1)
+        with (
+            patch("app.answer_evaluation._client_config", return_value=("Ollama", "", "http://localhost", "qwen")),
+            patch("app.answer_evaluation.chat_completion", create),
+            patch("app.answer_evaluation.write_llm_request_snapshot"),
+            patch("app.answer_evaluation.update_llm_request_snapshot"),
+        ):
+            feedback = asyncio.run(assess_student_answer_qualitatively(
+                "It adds my order to a list.", history, [source], answering_classification(),
+            ))
+        self.assertEqual(feedback.concept, "resource check")
+        self.assertFalse(feedback.ready_to_complete)
+        self.assertNotIn("total_score", create.await_args.args[2]["response_format"]["json_schema"]["schema"]["properties"])
+
     def test_openai_gpt_4_1_mini_uses_strict_schema(self) -> None:
         payload = {
             "concept": "version control",

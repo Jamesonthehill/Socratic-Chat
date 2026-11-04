@@ -1014,13 +1014,13 @@ function showGithubConnection() {
   githubConnectWrap?.classList.remove("is-hidden");
   authStatus.textContent = "";
   if (authCopy) authCopy.textContent = primarySignIn
-    ? "New users continue with GitHub. Returning users can also sign in with their CourseLab ID below."
+    ? "New users continue with GitHub. Returning users can also sign in with their BrainTutor ID below."
     : "Connect the GitHub account you want linked to this school account.";
   if (githubConnectMessage) {
     githubConnectMessage.textContent = githubOauthConfigured
       ? (primarySignIn
         ? "Your GitHub account must contain a verified @charlotte.edu email. No repository access is requested."
-        : "Link the GitHub account you want to use with CourseLab.")
+        : "Link the GitHub account you want to use with BrainTutor.")
       : "GitHub authentication is not configured on the server yet.";
   }
   if (githubSchoolEmail) {
@@ -2460,11 +2460,11 @@ function applyAuthenticationMode(config) {
   const domain = config.school_domain || "your school";
   if (authCopy && authMode === "school_google") {
     authCopy.textContent = passwordAuthEnabled
-      ? `New users: verify your ${domain} Google account. Returning users: sign in with your CourseLab ID and password.`
+      ? `New users: verify your ${domain} Google account. Returning users: sign in with your BrainTutor ID and password.`
       : `Sign in with your ${domain} Google account to use the chatbot.`;
   }
   if (authCopy && authMode === "school_github") {
-    authCopy.textContent = `New users verify a @${domain} email through GitHub. Returning users may use their CourseLab ID.`;
+    authCopy.textContent = `New users verify a @${domain} email through GitHub. Returning users may use their BrainTutor ID.`;
   }
   if (githubConnectMessage && authMode !== "school_github") {
     githubConnectMessage.textContent = githubOauthConfigured

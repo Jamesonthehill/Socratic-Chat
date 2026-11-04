@@ -23,6 +23,279 @@ EVALUATION = AnswerEvaluation(concept="version control", keyword_coverage=0.7, s
 
 
 class ScenarioContinuityTests(unittest.TestCase):
+    def test_quoted_refund_message_is_not_split_into_thinking_step(self):
+        model_reply = json.dumps({
+            "lead_in": "The required message is '**Sorry, that**'s not enough money.",
+            "next_question": "Money refunded.' Does your answer match that exact text from the requirements?",
+        })
+        response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=model_reply))])
+        create = AsyncMock(return_value=response)
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch("app.rag.generation_client_config", return_value=(
+            "openai", "test-key", "https://api.openai.com/v1", "test-model"
+        )), patch("openai.AsyncOpenAI", return_value=client):
+            answer = asyncio.run(rag.generate_answer(
+                "The inserted money must be refunded", [], [SOURCE], assignment_scope=True,
+            ))
+        self.assertEqual(answer.replace("**", ""), "The required message is 'Sorry, that's not enough money. Money refunded.'")
+        self.assertIn("never split a quote across the fields", create.call_args.kwargs["messages"][3]["content"])
+
+    def test_exact_text_confirmation_is_removed_without_affecting_application_question(self):
+        self.assertTrue(rag.confirms_answer_just_supplied(
+            "Does your answer match that exact text from the requirements?"
+        ))
+        self.assertFalse(rag.confirms_answer_just_supplied(
+            "If the customer pays too little, what should the machine do with the coins?"
+        ))
+
+    def test_tutor_emphasis_selects_reason_and_core_question(self):
+        self.assertEqual(rag.ensure_tutor_emphasis(
+            "The order cannot continue. The machine has no bread.", "The machine has no bread."
+        ), "The order cannot continue. **The machine has no bread.**")
+        self.assertEqual(rag.ensure_tutor_emphasis(
+            "The order cannot continue. **The machine has no bread.**"
+        ), "The order cannot continue. **The machine has no bread.**")
+        self.assertEqual(rag.ensure_tutor_emphasis(
+            "Before asking for money, what should the machine check?", purpose="question"
+        ), "Before asking for money, **what should the machine check?**")
+        self.assertEqual(rag.ensure_tutor_emphasis(
+            "The machine stops because it lacks bread."
+        ), "The machine stops **because it lacks bread.**")
+        self.assertEqual(rag.ensure_tutor_emphasis(
+            "Since you have the bill, what message should appear?", "Since you have the bill", purpose="question"
+        ), "Since you have the bill, **what message should appear?**")
+
+    def test_tutor_uses_model_selected_clauses_in_both_reply_parts(self):
+        model_reply = json.dumps({
+            "lead_in": "There is no bread. The order must stop before payment.",
+            "next_question": "Before taking money, what should the machine check?",
+            "lead_emphasis": "The order must stop before payment.",
+            "question_emphasis": "what should the machine check?",
+        })
+        complete = AsyncMock(return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=model_reply))],
+        ))
+        with patch("app.rag.generation_client_config", return_value=(
+            "Ollama", "ollama", "http://127.0.0.1:11434/v1", "test-model"
+        )), patch("app.rag.chat_completion", complete):
+            answer = asyncio.run(rag.generate_answer("The customer paid", [], [SOURCE], assignment_scope=True))
+        self.assertEqual(answer, "There is no bread. **The order must stop before payment.**\n\n"
+                         "Before taking money, **what should the machine check?**")
+        required = complete.call_args.args[2]["response_format"]["json_schema"]["schema"]["required"]
+        self.assertIn("lead_emphasis", required)
+        self.assertIn("question_emphasis", required)
+
+    def test_guided_answer_without_question_or_quiz_invitation_is_repaired(self):
+        first = json.dumps({
+            "lead_in": "Saving the revision preserves an earlier version for the team.",
+            "next_question": "", "lead_emphasis": "", "question_emphasis": "",
+        })
+        repaired = json.dumps({
+            "lead_in": "Saving the revision preserves an earlier version for the team.",
+            "next_question": "If a teammate changes it tomorrow, how could you compare the versions?",
+            "lead_emphasis": "preserves an earlier version", "question_emphasis": "how could you compare the versions?",
+        })
+        complete = AsyncMock(side_effect=[
+            SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=first))]),
+            SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=repaired))]),
+        ])
+        with patch("app.rag.generation_client_config", return_value=(
+            "Ollama", "ollama", "http://127.0.0.1:11434/v1", "test-model"
+        )), patch("app.rag.chat_completion", complete):
+            answer = asyncio.run(rag.generate_answer(
+                "I would save the previous version", [ChatMessage(role="assistant", content="How could the team preserve an earlier version?")],
+                [SOURCE], assignment_scope=True,
+                active_learning_step={"title": "Version history", "goal": "Compare revisions"},
+                classification=MessageClassification(message_role="student_answer", conversation_action="continue"),
+            ))
+        self.assertEqual(complete.await_count, 2)
+        self.assertIn("how could you compare the versions?", answer)
+
+    def test_repeated_question_with_decimal_amounts_is_detected(self):
+        question = (
+            "Based on the example where a user inserted $3.00 for a $1.75 sandwich, "
+            "what exact text should the machine display to show the correct change?"
+        )
+        history = [ChatMessage(role="assistant", content=(
+            "The document specifies a change amount.\n\n"
+            "**Your next thinking step**\n" + question
+        ))]
+        self.assertTrue(rag.repeated_tutor_question(question, history))
+        self.assertFalse(rag.repeated_tutor_question(
+            "If a customer inserts $2.00 for a $1.75 sandwich, how much change is due?", history,
+        ))
+
+    def test_assignment_tutor_does_not_repeat_change_question_after_partial_answer(self):
+        question = (
+            "Based on the example where a user inserted $3.00 for a $1.75 sandwich, "
+            "what exact text should the machine display to show the correct change?"
+        )
+        history = [ChatMessage(role="assistant", content=(
+            "**Your next thinking step**\n" + question
+        ))]
+        model_reply = json.dumps({
+            "lead_in": "The change is $1.25. The required message is 'Here is $1.25 in change'.",
+            "next_question": question,
+        })
+        response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=model_reply))])
+        create = AsyncMock(return_value=response)
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch("app.rag.generation_client_config", return_value=(
+            "openai", "test-key", "https://api.openai.com/v1", "test-model"
+        )), patch("openai.AsyncOpenAI", return_value=client):
+            answer = asyncio.run(rag.generate_answer(
+                "1.25$ refunded", history, [SOURCE], assignment_scope=True,
+            ))
+        self.assertEqual(answer.replace("**", ""), "The change is $1.25. The required message is 'Here is $1.25 in change'.")
+        self.assertIn("acknowledge the correct substance", create.call_args_list[0].kwargs["messages"][1]["content"])
+
+    def test_numbered_follow_ups_are_reduced_to_one_question(self):
+        turn = {
+            "lead_in": (
+                "In your registration project, think about priorities and teamwork.\n\n"
+                "1. Who chooses what gets built first?\n"
+                "2. Who helps the team work through obstacles?\n"
+                "3. Who builds and tests the feature?"
+            ),
+            "next_question": "",
+        }
+        result = rag.one_question_socratic_turn(turn)
+        self.assertEqual(result["lead_in"], "In your registration project, think about priorities and teamwork.")
+        self.assertEqual(result["next_question"], "Who chooses what gets built first?")
+
+    def test_inline_follow_up_does_not_include_its_answer_or_second_question(self):
+        turn = {
+            "lead_in": (
+                "The Product Owner orders the backlog. "
+                "In this example, who decides whether students need search or event details? "
+                "That is the Product Owner. Who builds the registration feature? Those are the Developers."
+            ),
+            "next_question": "",
+        }
+        result = rag.one_question_socratic_turn(turn)
+        self.assertEqual(result["lead_in"], "The Product Owner orders the backlog.")
+        self.assertEqual(result["next_question"],
+                         "In this example, who decides whether students need search or event details?")
+
+    def test_assignment_tutor_uses_brief_conversational_style_without_losing_explanation_option(self):
+        model_reply = json.dumps({"lead_in": "That makes sense.", "next_question": "What would you tell the team about the slowdown?"})
+        response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=model_reply))])
+        create = AsyncMock(return_value=response)
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch("app.rag.generation_client_config", return_value=(
+            "openai", "test-key", "https://api.openai.com/v1", "test-model"
+        )), patch("openai.AsyncOpenAI", return_value=client):
+            answer = asyncio.run(rag.generate_answer(
+                "We should tell the team about the slowdown.", [], [SOURCE],
+                assignment_scope=True,
+                active_learning_step={"title": "Apply Scrum values", "scenario": "The location filter is slow."},
+            ))
+        instruction = create.call_args.kwargs["messages"][1]["content"]
+        self.assertIn("friendly, informal tone without slang", instruction)
+        self.assertIn("answer that exact request in plain language first", instruction)
+        self.assertIn("one small example using the assignment's current situation", instruction)
+        self.assertIn("unless the student asks for a different example or analogy", instruction)
+        self.assertIn("Never end with a generic comprehension check", instruction)
+        self.assertIn("two or three short sentences", instruction)
+        self.assertIn("one meaningful sentence or clause in the tutor explanation", instruction)
+        self.assertIn("one meaningful sentence or clause in the next thinking question", instruction)
+        self.assertIn("Stay with the current example", instruction)
+        self.assertIn("the reply is too much to read", instruction)
+        self.assertIn("current example is hard to picture", instruction)
+        self.assertIn("one short everyday analogy", instruction)
+        self.assertIn("give the missing idea or answer in one or two plain sentences", instruction)
+        self.assertIn("current scene depends on unexplained specialist terms", instruction)
+        self.assertIn("Do not introduce another cast of characters", instruction)
+        self.assertIn("familiar student situation", instruction)
+        self.assertIn("use enough words to answer clearly", instruction)
+        self.assertEqual(create.call_args.kwargs["response_format"]["json_schema"]["name"], "socratic_turn")
+        self.assertEqual(answer.replace("**", ""), "That makes sense.\n\nWhat would you tell the team about the slowdown?")
+
+    def test_assignment_tutor_allows_question_without_lead_in(self):
+        model_reply = json.dumps({"lead_in": "", "next_question": "What would you try first?"})
+        complete = AsyncMock(return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=model_reply))],
+        ))
+        with patch("app.rag.generation_client_config", return_value=(
+            "Ollama", "ollama", "http://127.0.0.1:11434/v1", "test-model"
+        )), patch("app.rag.chat_completion", complete):
+            answer = asyncio.run(rag.generate_answer(
+                "Let's start.", [], [SOURCE], assignment_scope=True,
+            ))
+        schema = complete.call_args.args[2]["response_format"]["json_schema"]["schema"]
+        self.assertEqual(schema["properties"]["lead_in"], {"type": "string"})
+        self.assertEqual(answer.replace("**", ""), "What would you try first?")
+
+    def test_requested_different_analogy_overrides_current_example(self):
+        model_reply = json.dumps({"lead_in": "Think of a bakery choosing what to bake next.", "next_question": ""})
+        response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=model_reply))])
+        create = AsyncMock(return_value=response)
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch("app.rag.generation_client_config", return_value=(
+            "openai", "test-key", "https://api.openai.com/v1", "test-model"
+        )), patch("openai.AsyncOpenAI", return_value=client):
+            asyncio.run(rag.generate_answer(
+                "Please give me a different, simple hypothetical example", [], [SOURCE],
+                assignment_scope=True,
+                active_learning_step={"title": "Scrum artifacts", "scenario": "The campus team plans registration."},
+            ))
+        instruction = create.call_args.kwargs["messages"][1]["content"]
+        self.assertIn("overrides the usual preference to stay with the current example", instruction)
+        self.assertIn("different everyday setting", instruction)
+
+    def test_assignment_support_reply_is_repaired_before_reaching_student(self):
+        first = json.dumps({
+            "lead_in": "The Product Owner orders the backlog. Who decides what comes first?",
+            "next_question": "Who decides whether search or event details comes first?",
+        })
+        repaired = json.dumps({
+            "lead_in": "The Product Owner decides the order of backlog items.",
+            "next_question": "What student need would you compare before ordering search and event details?",
+        })
+        complete = AsyncMock(side_effect=[
+            SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=first))]),
+            SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=repaired))]),
+        ])
+        with patch("app.rag.generation_client_config", return_value=(
+            "Ollama", "ollama", "http://127.0.0.1:11434/v1", "test-model"
+        )), patch("app.rag.chat_completion", complete):
+            answer = asyncio.run(rag.generate_answer(
+                "That's too complicated. Explain it more simply.",
+                [ChatMessage(role="assistant", content="Who orders the Product Backlog?")],
+                [SOURCE], replace(CLASSIFICATION, message_role="support_request"),
+                assignment_scope=True,
+                active_learning_step={"title": "Scrum roles", "question": "Who orders the Product Backlog?"},
+            ))
+        self.assertEqual(answer.replace("**", ""), "The Product Owner decides the order of backlog items.\n\n"
+                         "What student need would you compare before ordering search and event details?")
+        self.assertEqual(complete.await_count, 2)
+
+    def test_assignment_support_keeps_one_model_written_application_question(self):
+        reply = json.dumps({
+            "lead_in": "The Product Owner orders the backlog according to value.",
+            "next_question": "What student need would help them choose between search and event details?",
+        })
+        complete = AsyncMock(return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=reply))],
+        ))
+        with patch("app.rag.generation_client_config", return_value=(
+            "Ollama", "ollama", "http://127.0.0.1:11434/v1", "test-model"
+        )), patch("app.rag.chat_completion", complete):
+            answer = asyncio.run(rag.generate_answer(
+                "Please explain this more simply.",
+                [ChatMessage(role="assistant", content="Who orders the Product Backlog?")],
+                [SOURCE], replace(CLASSIFICATION, message_role="support_request"),
+                assignment_scope=True,
+                active_learning_step={"title": "Scrum roles", "question": "Who orders the Product Backlog?"},
+            ))
+        self.assertIn("What student need would help them choose", answer)
+        self.assertEqual(complete.await_count, 1)
+
+    def test_support_rephrased_who_question_is_repaired(self):
+        history = [ChatMessage(role="assistant", content="Who orders the Product Backlog?")]
+        self.assertTrue(rag.repeats_identity_question("In a kitchen, who chooses what to cook first?", history))
+        self.assertFalse(rag.repeats_identity_question("What would guide the order of the work?", history))
+
     def test_contextual_wording_request_keeps_previous_tutor_question_in_prompt(self):
         previous = (
             "Alex explains his payment bug fix to Sam without changing his original approach. "
@@ -101,7 +374,7 @@ class ScenarioContinuityTests(unittest.TestCase):
         self.assertNotIn("Why preserve it?", str(messages))
         self.assertEqual(sum(item["role"] == "assistant" for item in messages), 0)
         self.assertEqual(create.call_args.kwargs["response_format"]["json_schema"]["name"], "socratic_turn")
-        self.assertEqual(answer, model_reply)
+        self.assertEqual(answer.replace("**", ""), model_reply)
 
     def test_complete_answer_advances_josh_scenario_without_old_question_in_prompt(self):
         prior_question = "How does this allow Josh to recover from a mistake without tracking versions?"
@@ -155,9 +428,9 @@ class ScenarioContinuityTests(unittest.TestCase):
         self.assertIn("Strategy: feedback_then_question", request["messages"][1]["content"])
         self.assertIn("Target concept: code review", request["messages"][1]["content"])
         self.assertEqual(request["response_format"]["json_schema"]["schema"]["required"], [
-            "lead_in", "next_question",
+            "lead_in", "next_question", "lead_emphasis", "question_emphasis",
         ])
-        self.assertTrue(answer.endswith("What should Sam check next to decide whether the payment fix is safe?"))
+        self.assertTrue(answer.replace("**", "").endswith("What should Sam check next to decide whether the payment fix is safe?"))
 
     def test_support_request_keeps_only_latest_unresolved_tutor_question(self):
         old_question = "Why does code consistency matter later?"
@@ -195,6 +468,51 @@ class ScenarioContinuityTests(unittest.TestCase):
         self.assertIn("exact support request", messages[1]["content"])
         self.assertIn("relevance concern", messages[1]["content"])
         self.assertIn("do not automatically retry", messages[1]["content"])
+
+    def test_student_stuck_after_answer_was_given_can_receive_explanation_without_repeat(self):
+        history = [ChatMessage(role="assistant", content=(
+            "If bread is missing, show 'Sorry there is not enough bread.' "
+            "What exact phrase should appear on the screen?"
+        ))]
+        classification = replace(CLASSIFICATION, message_role="support_request",
+                                 dialogue_status="requesting_support", has_substantive_claim=False)
+        model_reply = json.dumps({
+            "lead_in": "The screen should say 'Sorry there is not enough bread.' The machine cannot make that order.",
+            "next_question": "",
+        })
+        response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=model_reply))])
+        create = AsyncMock(return_value=response)
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch("app.rag.generation_client_config", return_value=(
+            "Ollama", "ollama", "http://127.0.0.1:11434/v1", "test-model"
+        )), patch("openai.AsyncOpenAI", return_value=client):
+            answer = asyncio.run(rag.generate_answer("I don't know", history, [SOURCE], classification))
+        self.assertEqual(answer.replace("**", ""), json.loads(model_reply)["lead_in"])
+        prompt = create.call_args.kwargs["messages"]
+        self.assertIn("a response with no new question is valid", prompt[1]["content"])
+        self.assertIn("use an empty string", prompt[3]["content"])
+
+    def test_repeated_support_question_is_repaired_before_returning(self):
+        previous = "If you chose small with one slice of bread, what exact phrase should appear on the screen?"
+        history = [ChatMessage(role="assistant", content=previous)]
+        classification = replace(CLASSIFICATION, message_role="support_request",
+                                 dialogue_status="requesting_support", has_substantive_claim=False)
+        replies = [
+            json.dumps({"lead_in": "Let's try again.", "next_question": previous}),
+            json.dumps({"lead_in": "The message is 'Sorry there is not enough bread.'",
+                        "next_question": "What should the machine do with this order after displaying that message?"}),
+        ]
+        responses = [SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=reply))])
+                     for reply in replies]
+        create = AsyncMock(side_effect=responses)
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch("app.rag.generation_client_config", return_value=(
+            "Ollama", "ollama", "http://127.0.0.1:11434/v1", "test-model"
+        )), patch("openai.AsyncOpenAI", return_value=client):
+            answer = asyncio.run(rag.generate_answer("I don't know", history, [SOURCE], classification))
+        self.assertEqual(create.await_count, 2)
+        self.assertIn("What should the machine do", answer)
+        self.assertNotIn(previous, answer)
 
     def test_original_example_survives_beyond_eight_messages(self):
         history = [ChatMessage(role="assistant", content=SCENARIO)]

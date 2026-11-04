@@ -544,7 +544,8 @@ async def instructor_url_preview(body: ResourceURLInput, user=Depends(current_us
     return await preview_url_document(body.url.strip())
 
 
-def _document_plan(material: str, filename: str, *, starting_point: str = "", ending_point: str = "") -> dict:
+def _document_plan(material: str, filename: str, *, starting_point: str = "", ending_point: str = "",
+                   allow_course_material_fallback: bool = False) -> dict:
     stage = "document setup"
     try:
         authoring_material = material
@@ -554,7 +555,7 @@ def _document_plan(material: str, filename: str, *, starting_point: str = "", en
         if ending_point:
             context["objective_descriptions"] = [ending_point]
         # A single optional lookup budget across topic and prerequisite readings.
-        topic_candidates = discover_resources(context["topic"])
+        topic_candidates = context.get("resource_candidates", []) + discover_resources(context["topic"])
         prerequisite_topic = context.get("prerequisite_knowledge") or starting_point
         prerequisite_candidates = discover_resources(prerequisite_topic) if starting_point and ending_point else []
         candidates = topic_candidates[:2] + prerequisite_candidates[:1] if prerequisite_candidates else topic_candidates[:3]
@@ -563,6 +564,15 @@ def _document_plan(material: str, filename: str, *, starting_point: str = "", en
         prerequisite_titles = {item["title"] for item in prerequisite_candidates}
         resources = [item for item in verified if item["title"] in topic_titles]
         prerequisite_resources = [item for item in verified if item["title"] in prerequisite_titles]
+        missing_external_readings = not resources
+        if missing_external_readings and allow_course_material_fallback:
+            resources = [{
+                "title": "Selected course materials",
+                "url": "",
+                "provider": "Instructor course materials",
+                "description": "The course documents selected for this assignment are included in the lesson.",
+                "focus": f"Study the explanations and examples about {context['topic']} in these materials.",
+            }]
         stage = "lesson generation"
         plan = generate_learning_plan(context["topic"], context.get("course_level", "Undergraduate"),
             [], approved_material=material,
@@ -570,7 +580,7 @@ def _document_plan(material: str, filename: str, *, starting_point: str = "", en
             intended_difficulty=context.get("intended_difficulty", "Undergraduate"),
             prerequisite_knowledge=context.get("prerequisite_knowledge", "None"))
         reading_note = "Uploaded course material is the primary source. External readings are optional."
-        if not resources:
+        if missing_external_readings:
             reading_note += " No supplemental topic readings were verified; review the generated lesson against the uploaded material and add optional links if desired."
         if starting_point and ending_point and not prerequisite_resources:
             reading_note += " No prerequisite links were verified. Review the prerequisite assumptions and add supporting course material if students need it."

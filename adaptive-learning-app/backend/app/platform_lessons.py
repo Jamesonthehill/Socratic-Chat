@@ -42,9 +42,10 @@ def prepare(body: PrepareInput):
     material = body.material
     if body.focus.strip():
         material = ("Instructor learning focus: " + body.focus + "\n\nCourse material:\n" + material)[:30000]
-    if not body.starting_point.strip() or not body.ending_point.strip():
+    if bool(body.starting_point.strip()) != bool(body.ending_point.strip()):
         raise HTTPException(422, "Define the starting point and ending outcomes before preparing SDL.")
-    plan = _document_plan(material, body.filename, starting_point=body.starting_point, ending_point=body.ending_point)
+    plan = _document_plan(material, body.filename, starting_point=body.starting_point,
+                          ending_point=body.ending_point, allow_course_material_fallback=True)
     return plan
 
 

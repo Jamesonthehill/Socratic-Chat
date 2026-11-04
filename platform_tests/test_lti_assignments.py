@@ -5,6 +5,7 @@ from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
 import pytest
+from psycopg.types.json import Jsonb
 
 from app import settings
 from platform_app import lti, lti11, store
@@ -208,3 +209,60 @@ def test_canvas_chatbot_selection_survives_relaunch_and_opens_correct_student_en
     opened = client.post(path + '/start', headers=student_headers)
     assert opened.status_code == 200, opened.text
     assert opened.json()['messages'][0]['content'] == 'Which position would you defend?'
+
+
+def test_student_dashboard_lists_canvas_linked_activities_not_unlinked_canvas_course_activities(
+    client, configured_lti11,
+):
+    context_id = str(uuid4())
+    teacher = exchange(client, assignment_launch(client, {
+        'context_id': context_id,
+        'user_id': str(uuid4()),
+        'resource_link_id': 'canvas-debate',
+        'custom_canvas_assignment_id': '42',
+        'custom_canvas_assignment_title': 'Canvas debate',
+    }))
+    linked_id = teacher['assignment_id']
+    unlinked_id = str(uuid4())
+    config = {'scenario': 'Should every change receive a code review?', 'minimum_messages': 3}
+    with store.connection() as conn:
+        conn.execute(
+            """UPDATE assignments_platform
+               SET tool='debate', status='published', audience='course',
+                   config=%s, snapshot=%s, published_at=NOW()
+               WHERE id=%s""",
+            (Jsonb(config), Jsonb({'config': config}), linked_id),
+        )
+        conn.execute(
+            """INSERT INTO assignments_platform
+               (id, course_id, creator_id, tool, title, audience, status, config, snapshot, published_at)
+               VALUES (%s,%s,%s,'debate','BrainTutor-only activity','course','published',%s,%s,NOW())""",
+            (unlinked_id, teacher['course_id'], teacher['user']['user_id'],
+             Jsonb(config), Jsonb({'config': config})),
+        )
+
+    student_user_id = str(uuid4())
+    student = exchange(client, launch(client, {
+        'context_id': context_id, 'user_id': student_user_id, 'roles': 'Learner',
+    }))
+    refreshed = exchange(client, assignment_launch(client, {
+        'context_id': context_id,
+        'user_id': student_user_id,
+        'roles': 'Learner',
+        'resource_link_id': 'canvas-debate',
+        'custom_canvas_assignment_id': '42',
+        'custom_canvas_assignment_title': 'Updated Canvas debate',
+        'custom_canvas_assignment_due_at': '2026-12-02T15:30:00Z',
+    }))
+    assert refreshed['assignment_id'] == linked_id
+    response = client.get(
+        '/api/platform/assignments',
+        headers={'Authorization': 'Bearer ' + student['access_token']},
+    )
+    assert response.status_code == 200, response.text
+    assert [(item['id'], item['title'], item['canvas_linked']) for item in response.json()] == [
+        (linked_id, 'Updated Canvas debate', True),
+    ]
+    assert datetime.fromisoformat(response.json()[0]['due_at'].replace('Z', '+00:00')) == datetime(
+        2026, 12, 2, 15, 30, tzinfo=timezone.utc,
+    )

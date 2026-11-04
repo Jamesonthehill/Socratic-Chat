@@ -13,6 +13,65 @@ from app.schemas import ChatMessage, ClarificationOption
 
 
 class MessageClassifierTests(unittest.TestCase):
+    def test_stray_trailing_quote_does_not_turn_ok_into_an_answer(self) -> None:
+        history = [ChatMessage(role="assistant", content="What should the reviewer check first?")]
+        result = classifier._rule_classification("ok'", history)
+        self.assertEqual(result.message_role, "acknowledgement")
+
+    def test_model_can_clarify_an_acknowledgement_after_an_open_question(self) -> None:
+        history = [ChatMessage(role="assistant", content="What should the reviewer check first?")]
+        ambiguous = classifier._classification_from_observation(
+            message_role="ambiguous",
+            clarification_question="Are you ready to answer, or would a hint help?",
+            clarification_options=(
+                ClarificationOption(label="Please repeat it", message_role="support_request",
+                                    resolved_message="Please repeat the review question."),
+                ClarificationOption(label="I need a hint", message_role="support_request",
+                                    resolved_message="Please give one hint about the review question."),
+            ),
+        )
+        with patch("app.classifier._classify_with_llm", new_callable=AsyncMock, return_value=ambiguous):
+            result = asyncio.run(classify_message("ok", history, "Code review"))
+        self.assertTrue(result.needs_clarification)
+        self.assertEqual(result.message_role, "ambiguous")
+        self.assertEqual(len(result.clarification_options), 2)
+
+    def test_clarification_options_do_not_add_a_fixed_support_choice(self) -> None:
+        options = classifier._validated_clarification_options({"clarification_options": [
+            {"label": "Explain this assignment", "message_role": "direct_answer_request",
+             "resolved_message": "Please explain this assignment."},
+            {"label": "Explain the general term", "message_role": "direct_answer_request",
+             "resolved_message": "Please explain the term generally."},
+        ]})
+        self.assertEqual([option.label for option in options], [
+            "Explain this assignment", "Explain the general term",
+        ])
+
+    def test_model_interpretation_of_short_reply_is_not_overridden_by_acknowledgement_rule(self) -> None:
+        history = [ChatMessage(role="assistant", content="Does that clarify how it works?")]
+        observed = classifier._classification_from_observation(message_role="understanding_claim")
+        with patch("app.classifier._classify_with_llm", new_callable=AsyncMock, return_value=observed):
+            result = asyncio.run(classify_message("ok", history, "Code review"))
+        self.assertEqual(result.message_role, "understanding_claim")
+        self.assertFalse(result.needs_clarification)
+
+    def test_model_support_request_is_not_overridden_by_answer_fallback(self) -> None:
+        history = [ChatMessage(role="assistant", content="Which ingredient should the machine check?")]
+        observed = classifier._classification_from_observation(
+            message_role="support_request", concepts=("assignment requirements",),
+            rewritten_query="sandwich machine assignment requirements",
+        )
+        with patch("app.classifier._classify_with_llm", new_callable=AsyncMock, return_value=observed):
+            result = asyncio.run(classify_message(
+                "i dont get it explain what shoudl be done in this assignmen", history,
+            ))
+        self.assertEqual(result.message_role, "support_request")
+        self.assertFalse(result.assessment_candidate)
+
+    def test_acknowledgement_does_not_close_the_chat(self) -> None:
+        result = classifier._rule_classification("ok", [])
+        self.assertEqual(result.conversation_action, "continue")
+
     def test_unknown_recent_term_is_a_follow_up_and_corrects_transposed_acronym(self) -> None:
         message = "I don't know what the PATL is"
         history = [

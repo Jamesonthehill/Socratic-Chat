@@ -17,7 +17,7 @@ def test_shared_login_and_public_frontend(client, roster):
     frontend = client.get('/platform/professor')
     if frontend.status_code != 503:  # Backend tests also run before the optional UI build.
         assert frontend.status_code == 200
-        assert 'CourseLab' in frontend.text
+        assert 'BrainTutor' in frontend.text
 
 
 def draft(client, roster, tool='socratic', **changes):
@@ -41,6 +41,49 @@ def test_requires_signed_session_and_professor(client, roster):
     assert client.post('/api/platform/assignments', headers=roster['headers']['student'], json={}).status_code == 403
 
 
+def test_professor_catalog_shows_all_courses_but_details_require_membership(client, roster):
+    first, _ = draft(client, roster)
+    other_course = str(uuid4())
+    with store.connection() as conn:
+        conn.execute("INSERT INTO courses_platform(id,course_code,title,instructor_id) VALUES (%s,'SE202','Other course',%s)",
+                     (other_course, roster['other_prof']))
+        conn.execute("""INSERT INTO course_memberships_platform(id,course_id,user_id,course_role,status)
+            VALUES (%s,%s,%s,'instructor','approved')""",
+            (uuid4(), other_course, roster['other_prof']))
+    second = client.post('/api/platform/assignments', headers=roster['headers']['other_prof'], json={
+        'course_id': other_course, 'tool': 'reflections', 'title': 'Other teacher activity',
+        'instructions': 'Reflect.', 'audience': 'course', 'config': {},
+    })
+    assert second.status_code == 201, second.text
+    second_id = second.json()['id']
+
+    def listed(role):
+        response = client.get('/api/platform/assignments', headers=roster['headers'][role])
+        assert response.status_code == 200, response.text
+        return {item['id'] for item in response.json()}
+
+    assert listed('prof') == {first['id'], second_id}
+    assert listed('other_prof') == {first['id'], second_id}
+
+    # Co-instructors can see the same course, regardless of who created an activity.
+    with store.connection() as conn:
+        conn.execute("""INSERT INTO course_memberships_platform(id,course_id,user_id,course_role,status)
+            VALUES (%s,%s,%s,'instructor','approved')""",
+            (uuid4(), roster['course'], roster['other_prof']))
+    assert listed('other_prof') == {first['id'], second_id}
+    assert client.get('/api/platform/assignments', headers=roster['headers']['other_prof'],
+                      params={'course_id': roster['course']}).json()[0]['id'] == first['id']
+
+    with store.connection() as conn:
+        conn.execute("""UPDATE course_memberships_platform SET status='rejected'
+            WHERE course_id=%s AND user_id=%s""", (roster['course'], roster['other_prof']))
+    assert listed('other_prof') == {first['id'], second_id}
+    assert client.get('/api/platform/assignments', headers=roster['headers']['other_prof'],
+                      params={'course_id': roster['course']}).status_code == 403
+    assert client.get(f"/api/platform/assignments/{first['id']}",
+                      headers=roster['headers']['other_prof']).status_code == 403
+
+
 def test_draft_publish_visibility_and_frozen_config(client, roster, monkeypatch):
     item, body = draft(client, roster)
     sid = item['id']; path = f'/api/platform/assignments/{sid}'
@@ -55,6 +98,31 @@ def test_draft_publish_visibility_and_frozen_config(client, roster, monkeypatch)
     assert client.put(path, headers=roster['headers']['prof'], json=body).status_code == 409
     duplicate = client.post(path+'/duplicate', headers=roster['headers']['prof']).json()
     assert duplicate['status'] == 'draft' and duplicate['id'] != sid
+
+
+def test_concept_check_choice_is_saved_without_adding_chat_messages(client, roster, monkeypatch):
+    item, _ = draft(client, roster)
+    publish(client, roster, item, monkeypatch)
+    path = f"/api/platform/assignments/{item['id']}"
+    started = client.post(path + '/start', headers=roster['headers']['student'])
+    assert started.status_code == 200, started.text
+    before = started.json()['messages']
+    monkeypatch.setattr(engines, 'message', lambda *_args, **_kwargs: {
+        'quiz_only': True,
+        'socratic': {'concept_check_completed': True, 'concept_check_response': {'correct': True}},
+    })
+    request_id = str(uuid4())
+    answer = client.post(path + '/messages', headers=roster['headers']['student'], json={
+        'message': 'Selected quiz option', 'request_id': request_id, 'concept_check_option': 0,
+    })
+    assert answer.status_code == 200, answer.text
+    assert answer.json()['messages'] == before
+    assert answer.json()['engine_state']['socratic']['concept_check_response']['correct'] is True
+    repeat = client.post(path + '/messages', headers=roster['headers']['student'], json={
+        'message': 'Selected quiz option', 'request_id': request_id, 'concept_check_option': 0,
+    })
+    assert repeat.status_code == 200
+    assert repeat.json()['messages'] == before
 
 
 def test_socratic_snapshot_survives_material_changes(client, roster, monkeypatch):

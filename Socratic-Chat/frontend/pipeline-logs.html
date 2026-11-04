@@ -23,6 +23,12 @@
       .event { display: grid; grid-template-columns: 72px 190px 1fr; gap: 12px; padding: 13px 0; border-top: 1px solid var(--line); }
       .event:first-child { border-top: 0; } .stage { color: var(--blue); font-weight: 700; } .event-name { font-weight: 700; }
       .fields { display: flex; flex-wrap: wrap; gap: 6px; } code { padding: 3px 6px; border-radius: 6px; background: #f0f3f8; color: #38465e; font-size: .82rem; word-break: break-word; }
+      .snapshot-panel { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+      .snapshot-panel p { color: var(--muted); font-size: .9rem; }
+      .snapshot-panel details { border: 1px solid var(--line); border-radius: 10px; margin-top: 10px; padding: 10px 14px; }
+      .snapshot-panel summary { cursor: pointer; font-weight: 700; }
+      .snapshot-panel h3 { font-size: .9rem; margin: 16px 0 6px; }
+      .snapshot-panel pre { background: #f0f3f8; border-radius: 8px; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 440px; overflow: auto; font-size: .8rem; }
       .empty { color: var(--muted); padding: 24px 0; } .warning { padding: 12px; border-radius: 10px; background: #fff5dc; color: #765000; }
       @media (max-width: 760px) { header, .layout { display: block; } header button { margin-top: 12px; } .card { margin-bottom: 18px; } .event { grid-template-columns: 58px 1fr; } .fields { grid-column: 2; } }
     </style>
@@ -52,7 +58,7 @@
       </div>
     </main>
     <script>
-      const state = { traces: [], selected: null, request: 0, deleting: false, loading: false };
+      const state = { traces: [], selected: null, request: 0, deleting: false, loading: false, snapshots: {}, expandedSnapshots: {} };
       let refreshTimer;
       function scheduleRefresh() {
         clearTimeout(refreshTimer);
@@ -71,14 +77,70 @@
           state.selected = button.dataset.trace; renderList(); renderDetail();
         }));
       }
+      function renderSnapshots() {
+        const panel = document.querySelector("#snapshotPanel");
+        if (!panel) return;
+        const snapshots = state.snapshots[state.selected];
+        if (!snapshots) return;
+        if (!snapshots.length) {
+          panel.innerHTML = '<p>No full model inputs were saved for this trace. Send a new message after enabling full prompt logging.</p>';
+          return;
+        }
+        const label = (phase) => ({ classifier: "Classifier", "answer-evaluation": "Answer evaluation", "tutor-generation": "Tutor generation" })[phase] || phase;
+        panel.innerHTML = snapshots.map((snapshot) => {
+          const result = snapshot.result || {};
+          const blocks = [
+            ["Prompt sent to model", snapshot.request?.messages],
+            ["Model output", result.raw_response],
+            ["Interpreted classification or evaluation", result.parsed_output],
+            ["Reply shown to student", result.final_response],
+          ].filter(([, value]) => value !== undefined && value !== null)
+            .map(([title, value]) => `<h3>${esc(title)}</h3><pre>${esc(typeof value === "string" ? value : JSON.stringify(value, null, 2))}</pre>`).join("");
+          const expanded = state.expandedSnapshots[state.selected] || [];
+          return `<details data-phase="${esc(snapshot.phase)}"${expanded.includes(snapshot.phase) ? " open" : ""}><summary>${esc(label(snapshot.phase))} · ${esc(snapshot.provider || "model")}</summary>${blocks}</details>`;
+        }).join("");
+      }
+      function rememberExpandedSnapshots() {
+        const detail = document.querySelector("#traceDetail");
+        if (!detail?.dataset.trace) return;
+        state.expandedSnapshots[detail.dataset.trace] = [...detail.querySelectorAll("#snapshotPanel details[open]")]
+          .map((item) => item.dataset.phase);
+      }
+      async function loadSnapshots(traceId) {
+        const panel = document.querySelector("#snapshotPanel");
+        if (!panel) return;
+        rememberExpandedSnapshots();
+        panel.textContent = "Loading model inputs and outputs…";
+        const apiBase = (window.SOCRATIC_CONFIG?.API_BASE_URL || "").replace(/\/+$/, "");
+        const storedUser = JSON.parse(localStorage.getItem("my_rag_chatbot_user") || "null");
+        const headers = {};
+        if (storedUser?.access_token) headers.Authorization = `Bearer ${storedUser.access_token}`;
+        else if (storedUser?.user_id) headers["X-User-Id"] = storedUser.user_id;
+        try {
+          const response = await fetch(`${apiBase}/api/debug/pipeline/traces/${encodeURIComponent(traceId)}/snapshots`, { headers, cache: "no-store" });
+          if (!response.ok) throw new Error(response.status === 404 ? "Full prompt logging is off. Enable LOG_FULL_PROMPTS and send a new message." : `Could not load model inputs (${response.status}).`);
+          const data = await response.json();
+          if (!Array.isArray(data.snapshots)) throw new Error("Invalid model snapshot response.");
+          state.snapshots[traceId] = data.snapshots;
+          if (state.selected === traceId) renderSnapshots();
+        } catch (error) {
+          if (state.selected === traceId && document.querySelector("#snapshotPanel"))
+            document.querySelector("#snapshotPanel").innerHTML = `<p class="warning">${esc(error.message)}</p>`;
+        }
+      }
       function renderDetail() {
         const trace = state.traces.find((item) => item.trace_id === state.selected);
         const detail = document.querySelector("#traceDetail");
-        if (!trace) { detail.innerHTML = '<p class="empty">Select a request to inspect its stages.</p>'; return; }
+        rememberExpandedSnapshots();
+        if (!trace) { detail.dataset.trace = ""; detail.innerHTML = '<p class="empty">Select a request to inspect its stages.</p>'; return; }
+        detail.dataset.trace = trace.trace_id;
         detail.innerHTML = `<h2>Trace ${esc(trace.trace_id)}</h2><p class="meta">Conversation: ${esc(trace.conversation_id || "not assigned")} · Started: ${esc(trace.started_at)}</p>` +
           trace.events.map((event) => `<article class="event"><div class="stage">Stage ${esc(event.stage)}<br><small>${esc(event.elapsed_ms)} ms</small></div><div class="event-name">${esc(event.event)}</div><div class="fields">${
             Object.entries(event.fields || {}).map(([key, value]) => `<code>${esc(key)}=${esc(formatValue(value))}</code>`).join("")
-          }</div></article>`).join("");
+          }</div></article>`).join("") +
+          '<section class="snapshot-panel"><h2>Model inputs and outputs</h2><p>See the classifier observation, the retrieved evidence inside the tutor prompt, and the reply that reached the student. A classifier label informs retrieval and clarification; it does not prove understanding.</p><button id="loadSnapshots" type="button">Show full model inputs and outputs</button><div id="snapshotPanel"></div></section>';
+        detail.querySelector("#loadSnapshots").addEventListener("click", () => loadSnapshots(trace.trace_id));
+        renderSnapshots();
       }
       async function requestTraces(method = "GET") {
           const apiBase = (window.SOCRATIC_CONFIG?.API_BASE_URL || "").replace(/\/+$/, "");

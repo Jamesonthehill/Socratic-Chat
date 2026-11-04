@@ -50,19 +50,61 @@ class Topic(StrictModel):
     number: int = 100
 
 
+class SocraticStepCheck(StrictModel):
+    scenario: str = Field(min_length=12, max_length=700)
+    question: str = Field(min_length=10, max_length=500)
+    options: list[str] = Field(min_length=3, max_length=4)
+    incorrect_option_index: int = Field(ge=0, le=3)
+    expected_reason: str = Field(min_length=12, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_options(self):
+        if self.incorrect_option_index >= len(self.options) or any(not option.strip() for option in self.options):
+            raise ValueError("Choose one incorrect option among the available answers.")
+        if len({option.strip().casefold() for option in self.options}) != len(self.options):
+            raise ValueError("Check options must be distinct.")
+        return self
+
+
+class SocraticLearningStep(StrictModel):
+    title: str = Field(min_length=3, max_length=120)
+    goal: str = Field(min_length=8, max_length=500)
+    scenario: str = Field(default="", max_length=700)
+    question: str = Field(default="", max_length=500)
+    evidence_quote: str = Field(min_length=12, max_length=350)
+    source_chunk_id: str = Field(min_length=1, max_length=150)
+    source_file: str = Field(default="", max_length=255)
+    checks: list[SocraticStepCheck] = Field(default_factory=list, max_length=2)
+
 class SocraticConfig(StrictModel):
+    scope_mode: Literal["assignment", "keywords"] = "assignment"
+    guidance_mode: Literal["basic", "guided"] = "basic"
     keywords: list[str] = Field(default_factory=list, max_length=8)
     optional_keywords: list[str] = Field(default_factory=list, max_length=48)
     dismissed_keywords: list[str] = Field(default_factory=list, max_length=500)
     learning_objective_id: UUID | None = None
     document_ids: list[str] = Field(default_factory=list, max_length=100)
+    learning_steps: list[SocraticLearningStep] = Field(default_factory=list, max_length=10)
+    learning_path_minutes: int = Field(default=7, ge=1, le=180)
     prompt: str = Field(default="", max_length=10000)
-    minimum_messages: int = Field(default=1, ge=1, le=100)
+    minimum_step_questions: int = Field(default=2, ge=1, le=10)
+
+    @model_validator(mode="before")
+    @classmethod
+    def infer_legacy_guidance_mode(cls, data):
+        if isinstance(data, dict):
+            data = {key: value for key, value in data.items() if key != "minimum_messages"}
+            if "guidance_mode" not in data:
+                data["guidance_mode"] = "guided" if data.get("learning_steps") else "basic"
+        return data
 
 
     @model_validator(mode="after")
     def validate_keywords(self):
         from app.objective_extraction import _clean_keywords
+        # Accept older saved drafts, but every newly saved Socratic activity
+        # now uses its selected indexed materials as the teaching boundary.
+        self.scope_mode = "assignment"
         if any(not item.strip() or len(item) > 120 for item in self.keywords):
             raise ValueError("Keywords must contain 1 to 120 characters each.")
         self.keywords = _clean_keywords(self.keywords)
@@ -87,6 +129,12 @@ class SocraticConfig(StrictModel):
                 dismissed.append(word)
         self.dismissed_keywords = dismissed
         return self
+
+
+class SocraticSetupInput(StrictModel):
+    document_ids: list[str] = Field(min_length=1, max_length=12)
+    title: str = Field(min_length=1, max_length=200)
+    assignment_instructions: str = Field(default="", max_length=10000)
 
 
 class DebateConfig(StrictModel):
@@ -189,6 +237,7 @@ class MessageInput(StrictModel):
     message: str = Field(min_length=1, max_length=20000)
     request_id: UUID
     clarification_index: int | None = Field(default=None, ge=0, le=2)
+    clarification_text: bool = False
     concept_check_option: int | None = Field(default=None, ge=0, le=2)
 
 

@@ -27,7 +27,7 @@ export default function StudentAssignmentBrowser({ items, error, reload, renderI
         <div>
           <p className="context">Your learning workspace</p>
           <h1>Your assignments</h1>
-          <p>See what you have finished and what is left to do.</p>
+          <p>See published activities across your courses, including those linked to Canvas assignments.</p>
         </div>
       </div>
       <div className="student-view-toolbar">
@@ -91,7 +91,11 @@ export default function StudentAssignmentBrowser({ items, error, reload, renderI
             {remaining.length ? (
               renderItems(remaining, view)
             ) : (
-              <p className="student-group-empty">You’re all caught up. No assignments left to do.</p>
+              <p className="student-group-empty">
+                {items.length
+                  ? "You’re all caught up. No assignments left to do."
+                  : "No published assignments are available yet. Canvas-linked activities appear after your instructor publishes them."}
+              </p>
             )}
           </section>
           <section className="student-assignment-group" aria-labelledby="assignments-finished">

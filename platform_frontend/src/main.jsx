@@ -29,6 +29,7 @@ import InstructorActivityPage, {
 } from "./InstructorActivityPage";
 import { loadCourseContext, cachedCourseContext } from "./courseContext";
 import StudentWorkspace from "./StudentWorkspace";
+import ReflectionAnalysis from "./ReflectionAnalysis";
 import "./styles.css";
 
 import { Notice, Badge, GenerationStatus } from "./ui";
@@ -130,6 +131,10 @@ function ToolIcon({ tool }) {
 
 export function App() {
   const { pathname } = useLocation();
+  const [analysisOpened, setAnalysisOpened] = useState(pathname === "/professor/reflection-analysis");
+  useEffect(() => {
+    if (pathname === "/professor/reflection-analysis") setAnalysisOpened(true);
+  }, [pathname]);
   const [user, setUser] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -195,6 +200,12 @@ export function App() {
                 Professor dashboard
               </Link>
               <Link
+                to="/professor/reflection-analysis"
+                aria-current={pathname === "/professor/reflection-analysis" ? "page" : undefined}
+              >
+                Reflection analysis
+              </Link>
+              <Link
                 to="/professor/analytics"
                 aria-current={
                   pathname === "/professor/analytics" ? "page" : undefined
@@ -227,6 +238,10 @@ export function App() {
                 <Navigate to={home} replace />
               )
             }
+          />
+          <Route
+            path="/professor/reflection-analysis"
+            element={isProfessor ? null : <Navigate to={home} replace />}
           />
           <Route
             path="/professor/analytics"
@@ -308,6 +323,7 @@ export function App() {
             }
           />
         </Routes>
+        {isProfessor && analysisOpened && <div hidden={pathname !== "/professor/reflection-analysis"}><ReflectionAnalysis /></div>}
       </main>
       <footer>
         <BrandLockup compact />

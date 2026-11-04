@@ -1,0 +1,61 @@
+{
+    "task": "Annotate each reflection with topic labels based on the challenges a student identifies in their reflections. This is a multi-label classification task where you may use multiple labels if mutliple labels are present. However, try to use as few labels as possible, only using multiple if one label is not sufficient. You will also be asked to explain your selections. This task answers the question 'What challenges do students discuss in reflections?'",
+  
+    "context": "This is a set of reflections taken from an undergraduate computer science course where students are taught the fundamentals of software engineering. In the course, students complete programming assignments, short activities in class, complete a midterm, and a final group project. The course is taught in Python and includes theory like requirements analysis, design patterns, and testing, as well as practical skills like version control, database management, and FastAPI.",
+  
+    "input_format": "You receive a string list of question-answer reflection pairs. The prompt will be in the format 'Q1: question\nA1: answer\nQ2: question\nA2: answer\n...'",
+    "labels_and_descriptions": {
+      "instructions": "You will perform a multi-label classification task for student reflections. Select at least one label from the 'primary_labels' category that best represents the main challenge described in the reflection. Even if multiple challenges are mentioned, you may choose more than one label for the 'primary_labels_selected' field.",
+      "label_types": {
+      "primary_labels": "Primary Labels are challenges related to specific key concepts in software engineering. These can include tools (e.g., github for version control), technologies (e.g., mysql for database management), and subjects (e.g., python_and_coding for programming in Python). Additionally, Primary Labels encompass broader concepts that influence the learning process. Primary Labels often serve as the focus for problems associated with assigned work, such as quizzes and assignments, without including the assigned work itself. Challenges focusing on assigned work without any clear explanation of what the problem relating to the assigned work is, such as assignments and quizzes, would be considered Secondary Challenges, which is outside your scope.",
+      "urgency_labels": "Urgency Labels are labels that describe the urgency of the challenge. Urgency reflects the level of impact the challenge has on the student's learning. These can include labels such as 'low', where the student is experiencing a low level of impact, 'medium', defining an intermediate level of impact, 'high', representing a significant level of impact, and 'none' which characterizes a student without any challenges.",
+      "resolution_labels": "Resolution Labels include the labels 'resolved,' 'unresolved,' 'no_challenge,' and 'unspecified.' In the reflection questions, students often say or imply whether or not their challenge was resolved. Use the context from the rest of the reflection to ascertain this."
+
+    },
+
+     "primary_labels_defined": {
+      "description": "This section provides the definitions for each Primary Label.",
+      "python_and_coding": "Students' challenge centers around learning and coding in Python. Non-specified coding challenges fall into this category as well. This category often includes learning Python for the first time or transitioning from another language to Python.",
+      "github": "Student describes a challenge with using GitHub. This can include difficulty with using GitHub in an assignment.",
+      "time_management_and_motivation": "Student has difficulty managing their time and balancing their workload. This can include procrastination and falling behind. This also includes issues with motivation or focus.",
+      "mysql": "Student describes a difficulty with using MySQL, the database management system.",
+      "api": "Student describes difficulty with using or understanding APIs, especially in the context of FastAPI.",
+      "ide_package_software_installation": "Students describe difficulty installing packages, software, or tools within their IDE or other IDE problems. They may reference downloading or installing packages with PIP, using the terminal, and so forth. Other IDE problems may include issues with the interpreter or virtual environment.",
+      "html": "Students describe difficulty working with, coding, or learning HTML.",
+      "group_work": "Students describe difficulty with collaborating with their peers in group work. This can include issues of poor communication or lack of participation from their teammates, among other issues. ",
+      "SDLC": "Students describe difficulty with the Software Development Life Cycle. This can include difficulty with the requirements analysis, design, implementation, testing, and maintenance phases of the SDLC. The SDLC describes the general process associated with developing a software project.",
+      "Sway": "Students describe difficulty with the Sway activity. The Sway activity is an activity where students are given a scenario and asked to debate a stance with another student. This assignment has also been called 'The Great Compscenario Debate' or a similar name.",
+      "other_primary": "Student describes a challenge that does not fit into the categories above, but falls under the scope of 'primary_label'.",
+      "other_secondary": "Student describes a challenge that does not fit into the categories above, but falls under the scope of 'secondary_label'. Secondary labels define the context in which a challenge occurs, such as a quiz, assignment, or project, but does not specify what the primary challenge is. For example, a student may say they have a problem with a project, but does not clarify what the problem is. While this is technically not a primary_label, it is still included to differentiate between two types of 'other' challenges. This category can also include challenges unrelated to the course, such as personal challenges, like environment, family, health, or access to technology. Only use this label if the described challenge cannot be classified as a primary label.",
+      "none": "The student does NOT specify ANY challenges that would fall under the definition of Primary Labels. Only use this label if there are NO challenges mentioned that fall under the Primary Label. If so, this should be the only label. Sometimes, students will say they have no challenges, but do provide some challenges. These students do not fall under the category of none."
+
+    },
+
+    "urgency_labels_defined": {
+        "description": "This section provides the definitions for each Urgency Label.",
+        "none": "The student does not mention any challenges or issues that are currently affecting them.",
+        "low": "The student is overall satisfied with the course and their progress, but have a minor issue or suggestion for improvement. No action is needed from the instructor.",
+        "medium": "The student has an issue or suggestion for improvement that impacts their learning, but they seem to be able to manage it. The instructor should keep track of the student, but an intervention is likely unnecessary at this stage.",
+        "high": "The student has a significant issue or challenge that seems to be severely hindering their learning. The instructor should reach out to the student to discuss the issue and find a solution. The instructor should be aware of the issue and consider it when planning future course content or activities."
+      },
+
+    "resolution_labels_defined": {
+      "description": "This section provides the definitions for each Resolution Label.",
+      "resolved": "A student mentions a specific challenge but later states or implies that they were able to overcome it. This may include instances where a student says they have no current challenges, but their reflection indicates that they did have a challenge previously that they resolved.",
+      "unresolved": "A student mentions a specific challenge but directly states or indirectly implies that they were unable to resolve it. This includes instances when the student mentions an issue as a current challenge.",
+      "no_challenge": "A student does not mention any challenges, so there is nothing to resolve.",
+      "unspecified": "The student does not suggest or state whether or not their challenge was resolved, making it difficult to determine."
+    },
+
+    "output_instructions": {
+        "format": "Output the annotation in json format as specified below. You will include a 'primary_labels_selected' field that indicates all the labels selected, a 'resolution_primary_labels' field that specifies the resolution status for each primary label, and an 'urgency' field. You will also be asked to summarize your findings in the 'reflection_summary' field.",
+        "fields": {
+          "primary_labels_selected": ["label1", "label2"],
+          "resolution_primary_labels": ["resolved", "unresolved"],
+          "urgency": "none|low|medium|high",
+          "reflection_summary": "A very concise summary of the reflection including an explanation of why the labels (primary and resolution) were selected. The summary should include an overall evaluation of the students' progress. The summary should be 3-4 sentences.",
+          "instructor_suggestions": "If necessary, recommend suggestions for the instructor to consider when addressing the issues identified in the reflection and an explanation for why. The tone of the response should frame this as a suggestion that the instructor may or may not take. The suggestion(s) should be specific to the issues identified in the reflection and should be actionable by the instructor. At most 1-2 sentences. If no action is needed, write that no action is needed. If the student made the suggestion, mention that."
+        }
+        }
+      }
+}

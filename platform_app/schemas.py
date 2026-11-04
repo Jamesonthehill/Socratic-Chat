@@ -71,13 +71,6 @@ class SocraticLearningStep(StrictModel):
     source_file: str = Field(default="", max_length=255)
     checks: list[SocraticStepCheck] = Field(default_factory=list, max_length=2)
 
-    @model_validator(mode="after")
-    def validate_checks(self):
-        if len(self.checks) == 1:
-            raise ValueError("Provide both an initial and an alternate step check.")
-        return self
-
-
 class SocraticConfig(StrictModel):
     scope_mode: Literal["assignment", "keywords"] = "assignment"
     guidance_mode: Literal["basic", "guided"] = "basic"

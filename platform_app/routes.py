@@ -555,8 +555,8 @@ async def draft_published_step_checks(assignment_id: UUID, account=Depends(profe
     provider, api_key, base_url, model = config
     checks = []
     for step in steps:
-        if len(step.get("checks") or []) == 2:
-            checks.append(step["checks"])
+        if step.get("checks"):
+            checks.append(step["checks"][:1])
             continue
         source = socratic_step_source(item, step)
         if not source:
@@ -578,10 +578,8 @@ def save_published_step_checks(assignment_id: UUID, body: PublishedStepChecksInp
         published_steps = snapshot_config.get("learning_steps") or []
         if item["status"] != "published" or item["tool"] != "socratic" or not published_steps:
             raise HTTPException(409, "This assignment has no published Socratic learning path.")
-        if len(body.checks) != len(published_steps) or any(len(pair) != 2 for pair in body.checks):
-            raise HTTPException(422, "Review two checks for every learning step.")
-        if any(pair[0].scenario.casefold() == pair[1].scenario.casefold() for pair in body.checks):
-            raise HTTPException(422, "Use a different situation for the second check in each step.")
+        if len(body.checks) != len(published_steps) or any(len(pair) != 1 for pair in body.checks):
+            raise HTTPException(422, "Review one check for every learning step.")
         checked_steps = [{**step, "checks": [check.model_dump() for check in pair]}
                          for step, pair in zip(published_steps, body.checks)]
         minimum_questions = body.minimum_step_questions or snapshot_config.get("minimum_step_questions", 1)
@@ -788,7 +786,7 @@ def socratic_step_check(assignment_id: UUID, body: SocraticStepCheckInput, accou
         steps = ((assignment.get("snapshot") or {}).get("config") or {}).get("learning_steps") or []
         index = int(state.get("learning_step_index") or 0)
         checks = steps[index].get("checks") or [] if 0 <= index < len(steps) else []
-        if len(checks) != 2 or state.get("phase") != "teaching" or state.get("pending_clarification") or state.get("concept_check"):
+        if not checks or state.get("phase") != "teaching" or state.get("pending_clarification") or state.get("concept_check"):
             raise HTTPException(409, "This learning step has no application check.")
         since = int(state.get("step_started_at_message_count") or 0)
         if not any(message.get("role") == "user" for message in attempt["messages"][since:]):
@@ -801,26 +799,23 @@ def socratic_step_check(assignment_id: UUID, body: SocraticStepCheckInput, accou
             progress = {"step_index": index, "variant": 0, "attempts": 0, "status": "active"}
         status = progress.get("status")
         if body.action == "try_another":
-            if status != "choice" or int(progress.get("variant") or 0) != 0:
-                raise HTTPException(409, "Try the current check first.")
-            progress.update({"variant": 1, "status": "active", "feedback": ""})
-            progress.pop("correct_option_index", None)
-            progress.pop("last_option_index", None)
-            progress.pop("last_option_correct", None)
+            raise HTTPException(409, "This step has one quiz. Review your answer or continue with support.")
         elif body.action == "continue_with_support":
-            if status not in {"choice", "continued_with_support"} or int(progress.get("variant") or 0) != 1:
-                raise HTTPException(409, "Try the second example before continuing with support.")
+            if status not in {"choice", "continued_with_support"}:
+                raise HTTPException(409, "Try both chances before continuing with support.")
             progress["status"] = "continued_with_support"
         else:
             if status in {"passed", "choice", "continued_with_support"}:
                 raise HTTPException(409, "Choose one of the available step-check actions.")
-            variant = min(int(progress.get("variant") or 0), 1)
+            variant = min(int(progress.get("variant") or 0), len(checks) - 1)
             check = checks[variant]
             if body.option_index is None or body.option_index >= len(check["options"]):
                 raise HTTPException(422, "Choose an answer option.")
             reason = body.reason.strip()
             if len(reason) < 5:
                 raise HTTPException(422, "Explain why you chose that answer.")
+            if progress.get("last_option_correct") is False and body.option_index == progress.get("last_option_index"):
+                raise HTTPException(409, "Choose a different option for your second chance.")
             selected_correctly = body.option_index == check["incorrect_option_index"]
             progress["last_option_index"] = body.option_index
             progress["last_option_correct"] = selected_correctly
@@ -838,17 +833,11 @@ def socratic_step_check(assignment_id: UUID, body: SocraticStepCheckInput, accou
                     "feedback": feedback or "You found the mistake and explained why it matters. Ready for the next step.",
                     "correct_option_index": check["incorrect_option_index"],
                 })
-            elif variant == 0:
+            elif progress["attempts"] < 2:
                 progress.update({
-                    "variant": 1,
                     "status": "active",
-                    "feedback": "",
-                    "previous_answer": check["options"][check["incorrect_option_index"]],
-                    "previous_explanation": f"{feedback} {check['expected_reason']}".strip(),
-                    "previous_choice": check["options"][body.option_index] if not selected_correctly else None,
+                    "feedback": feedback,
                 })
-                progress.pop("last_option_index", None)
-                progress.pop("last_option_correct", None)
             else:
                 progress.update({
                     "status": "choice",

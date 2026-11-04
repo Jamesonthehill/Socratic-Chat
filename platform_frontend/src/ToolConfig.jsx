@@ -131,7 +131,7 @@ export function SocraticConfig({
             {generatingSetup ? "Generating setup…" : "Generate setup from selected sources"}
           </button>
           <p className="help">
-            AI drafts a beginning-to-end learning path, two application checks per step, an opening question, student/submission instructions, and a completion-message count from the selected indexed documents. Review and edit these before publishing.
+            AI drafts a beginning-to-end learning path, one application check per step, an opening question, student/submission instructions, and a completion-message count from the selected indexed documents. Review and edit these before publishing.
           </p>
           {setupError && <p className="publish-inline-error" role="alert">{setupError}</p>}
           {publishIssue?.target === "learning-path" && <p className="publish-inline-error">{publishIssue.message}</p>}
@@ -244,13 +244,13 @@ export function SocraticConfig({
                 </label>
                 <p className="help">Give students enough context to picture this step before its question. Continue the same example, use only details supported by this step’s selected material, and leave the answer open.</p>
                 <label>Question for this step<textarea rows={2} maxLength={500} value={step.question || ""} disabled={frozen} onChange={(event) => updateStep("question", event.target.value)} placeholder="What should the student reason about next?" /></label>
-                {step.checks?.length === 2 ? <div className="socratic-step-check-editor">
-                  <h4>End-of-step application checks</h4>
-                  <p className="help">Students find the incorrect answer and explain why. The second check uses another example if they choose to try again.</p>
-                  {step.checks.map((check, checkIndex) => {
-                    const updateCheck = (field, next) => updateStep("checks", step.checks.map((item, position) => position === checkIndex ? { ...item, [field]: next } : item));
+                {step.checks?.length > 0 ? <div className="socratic-step-check-editor">
+                  <h4>End-of-step application check</h4>
+                  <p className="help">Students find the incorrect answer and explain why. They can try the same question once more if needed.</p>
+                  {step.checks.slice(0, 1).map((check, checkIndex) => {
+                    const updateCheck = (field, next) => updateStep("checks", [{ ...check, [field]: next }]);
                     return <fieldset key={checkIndex}>
-                      <legend>{checkIndex === 0 ? "First check" : "Another example"}</legend>
+                      <legend>Application check</legend>
                       <label>Situation<textarea rows={3} value={check.scenario} disabled={frozen} onChange={(event) => updateCheck("scenario", event.target.value)} /></label>
                       <label>Question<textarea rows={2} value={check.question} disabled={frozen} onChange={(event) => updateCheck("question", event.target.value)} /></label>
                       <label>Answer options, one per line<textarea rows={4} value={check.options.join("\n")} disabled={frozen} onChange={(event) => updateCheck("options", event.target.value.split("\n"))} /></label>

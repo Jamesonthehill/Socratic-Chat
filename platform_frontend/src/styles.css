@@ -1838,13 +1838,13 @@ html[data-theme="dark"] .socratic-assignment-info .student-learning-progress {
   background: color-mix(in srgb, var(--surface) 96%, var(--brand-indigo));
   border-style: dashed;
 }
-.student-learning-path li .student-step-chain {
+.student-learning-path li .student-step-padlock {
   pointer-events: none;
   display: inline-block;
   margin: 0;
   width: 100%;
 }
-.student-step-chain svg { display: block; height: auto; width: 100%; }
+.student-step-padlock svg { display: block; height: auto; width: 100%; }
 .student-learning-path li .student-step-lock-status {
   align-items: center;
   display: inline-flex;
@@ -1852,26 +1852,23 @@ html[data-theme="dark"] .socratic-assignment-info .student-learning-progress {
   height: 48px;
   margin: -5px 0 -5px auto;
   opacity: .8;
-  width: 100px;
+  width: 42px;
 }
-.student-chain-arm rect { fill: #dbe6ee; stroke: #587491; stroke-width: 3; }
-.student-chain-arm,
-.student-chain-padlock { transform-box: fill-box; transform-origin: center; }
-.student-chain-top-left { --chain-x: -38px; --chain-y: -12px; --chain-rotate: -13deg; }
-.student-chain-top-right { --chain-x: 38px; --chain-y: -12px; --chain-rotate: 13deg; }
+.student-padlock,
+.student-padlock-shackle { transform-box: fill-box; transform-origin: center; }
+.student-padlock-shackle { transform-origin: 15% 100%; }
 .socratic-assignment-info .student-learning-path li.is-current.is-unlocking {
   animation: student-step-unlock-glow 1900ms ease-out both;
 }
-.student-learning-path li.is-unlocking .student-chain-arm {
-  animation: student-chain-release 1800ms ease-in-out forwards;
+.student-learning-path li.is-unlocking .student-padlock-shackle {
+  animation: student-padlock-open 1800ms ease-in-out forwards;
 }
-.student-learning-path li.is-unlocking .student-chain-padlock {
+.student-learning-path li.is-unlocking .student-padlock {
   animation: student-padlock-release 1800ms ease-in-out forwards;
 }
-@keyframes student-chain-release {
-  0%, 18% { opacity: 1; transform: translate(0, 0) rotate(0); }
-  72% { opacity: 1; transform: translate(var(--chain-x), var(--chain-y)) rotate(var(--chain-rotate)); }
-  100% { opacity: 0; transform: translate(var(--chain-x), var(--chain-y)) rotate(var(--chain-rotate)); }
+@keyframes student-padlock-open {
+  0%, 20% { transform: rotate(0); }
+  52%, 100% { transform: translate(-3px, -3px) rotate(-38deg); }
 }
 @keyframes student-padlock-release {
   0%, 18% { opacity: 1; transform: translateY(0) scale(1); }
@@ -1906,17 +1903,16 @@ html[data-theme="dark"] .socratic-assignment-info .student-learning-progress {
   width: min(70vw, 540px);
   animation: student-unlock-halo 1900ms ease-out both;
 }
-.student-unlock-celebration .student-step-chain {
+.student-unlock-celebration .student-step-padlock {
   position: relative;
-  width: min(72vw, 440px);
+  width: min(38vw, 176px);
   z-index: 1;
 }
-.student-unlock-celebration .student-step-chain svg { height: auto; }
-.student-unlock-celebration .student-chain-arm rect { fill: #7e9fbd; stroke: #d8e9f8; stroke-width: 3; }
-.student-unlock-celebration .student-chain-padlock rect { fill: #526688; stroke: #f7d574; }
-.student-unlock-celebration .student-chain-padlock path { stroke: #f7d574; }
-.student-unlock-celebration .student-chain-arm { animation: student-chain-release 1800ms ease-in-out forwards; }
-.student-unlock-celebration .student-chain-padlock { animation: student-padlock-release 1800ms ease-in-out forwards; }
+.student-unlock-celebration .student-step-padlock svg { height: auto; }
+.student-unlock-celebration .student-padlock-body rect { fill: #526688; stroke: #f7d574; }
+.student-unlock-celebration .student-padlock-shackle path { stroke: #f7d574; }
+.student-unlock-celebration .student-padlock-shackle { animation: student-padlock-open 1800ms ease-in-out forwards; }
+.student-unlock-celebration .student-padlock { animation: student-padlock-release 1800ms ease-in-out forwards; }
 .student-unlock-celebration strong {
   font-size: clamp(22px, 4vw, 34px);
   letter-spacing: .03em;
@@ -2032,9 +2028,9 @@ html[data-theme="dark"] .socratic-assignment-info .student-learning-progress {
 @media (prefers-reduced-motion: reduce) {
   .student-learning-path .student-step-star { animation: none; }
   .socratic-assignment-info .student-learning-path li.is-current.is-unlocking,
-  .student-learning-path li.is-unlocking .student-chain-arm,
-  .student-learning-path li.is-unlocking .student-chain-padlock { animation: none; }
-  .student-learning-path li.is-unlocking .student-step-chain { display: none; }
+  .student-learning-path li.is-unlocking .student-padlock-shackle,
+  .student-learning-path li.is-unlocking .student-padlock { animation: none; }
+  .student-learning-path li.is-unlocking .student-step-padlock { display: none; }
   .student-unlock-celebration { display: none; }
 }
 .student-learning-path .student-step-active-label {

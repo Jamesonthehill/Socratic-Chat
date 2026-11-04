@@ -64,24 +64,24 @@ def test_step_check_endpoint_enforces_instructor_question_minimum(monkeypatch):
     assert result["engine_state"]["socratic"]["step_check"]["attempts"] == 1
 
 
-def test_step_check_schema_requires_two_valid_examples():
+def test_step_check_schema_accepts_one_check_and_legacy_pair():
     step = SocraticLearningStep.model_validate({
         "title": "Check supplies", "goal": "Explain the inventory check before payment.",
         "evidence_quote": "Check supplies before asking the customer for money.",
         "source_chunk_id": "chunk-1", "checks": [_check("first"), _check("second")],
     })
     assert len(step.checks) == 2
-    with pytest.raises(ValueError):
-        SocraticLearningStep.model_validate({**step.model_dump(), "checks": [_check("first")]})
+    single = SocraticLearningStep.model_validate({**step.model_dump(), "checks": [_check("first")]})
+    assert len(single.checks) == 1
 
 
-def test_generated_checks_survive_source_validation_and_require_another_example():
+def test_generated_check_survives_source_validation():
     step = {
         "title": "Check supplies", "goal": "Explain why supplies are checked before payment.",
         "scenario": "A customer asks for a sandwich and the machine checks its supplies.",
         "question": "What should the machine check before payment?",
         "evidence_quote": "Check supplies before asking the customer for money.",
-        "source_chunk_id": "chunk-1", "checks": [_check("first"), _check("second")],
+        "source_chunk_id": "chunk-1", "checks": [_check("first")],
     }
     draft = {"opening_prompt": "What should the machine check first?",
              "student_instructions": "You will reason about the machine's order flow.",
@@ -89,9 +89,9 @@ def test_generated_checks_survive_source_validation_and_require_another_example(
              "learning_steps": [step, {**step, "title": "Explain the result"}]}
     evidence = '[chunk_id=chunk-1] Check supplies before asking the customer for money.'
     result = socratic_setup.validate_draft(json.dumps(draft), {"chunk-1"}, evidence)
-    assert len(result["learning_steps"][0]["checks"]) == 2
-    draft["learning_steps"][0]["checks"][1]["scenario"] = draft["learning_steps"][0]["checks"][0]["scenario"]
-    with pytest.raises(ValueError, match="different example"):
+    assert len(result["learning_steps"][0]["checks"]) == 1
+    draft["learning_steps"][0]["checks"].extend([_check("second"), _check("third")])
+    with pytest.raises(ValueError, match="check"):
         socratic_setup.validate_draft(json.dumps(draft), {"chunk-1"}, evidence)
 
 
@@ -110,7 +110,7 @@ def test_first_failed_reason_does_not_reveal_instructor_answer(monkeypatch):
 
 def test_checks_are_drafted_in_a_small_separate_request(monkeypatch):
     calls = []
-    checks = [_check("first"), _check("second")]
+    checks = [_check("first")]
     async def complete(_key, _url, request):
         calls.append(request)
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps({"checks": checks})))])
@@ -119,14 +119,21 @@ def test_checks_are_drafted_in_a_small_separate_request(monkeypatch):
         "title": "Check supplies", "goal": "Explain why the machine checks supplies before payment.",
         "scenario": "A customer selects a sandwich.", "question": "What should happen first?",
     }, "Check supplies before taking coins.", "Ollama", "key", "url", "model"))
-    assert len(result) == 2
+    assert len(result) == 1
     assert calls[0]["reasoning_effort"] == "none"
     assert calls[0]["max_tokens"] == 1600
     assert "step_scene" in calls[0]["messages"][1]["content"]
 
 
+def test_generated_setup_keeps_only_one_embedded_check():
+    draft = {"learning_steps": [{"title": "Check supplies", "source_chunk_id": "chunk-1",
+                                 "checks": [_check("first"), _check("second")]}]}
+    result = asyncio.run(socratic_setup.add_step_checks(draft, "", "Ollama", "key", "url", "model"))
+    assert result["learning_steps"][0]["checks"] == [_check("first")]
+
+
 def test_groq_schema_rejection_recovers_trailing_empty_quiz_options(monkeypatch):
-    checks = [_check("first"), _check("second")]
+    checks = [_check("first")]
     for check in checks:
         check["options"] = [*check["options"], "Valid fourth option", ""]
     raw = json.dumps({"checks": checks})
@@ -145,7 +152,7 @@ def test_groq_schema_rejection_recovers_trailing_empty_quiz_options(monkeypatch)
         "scenario": "A customer selects a sandwich.", "question": "What should happen first?",
     }, "Check supplies before taking coins.", "Groq", "key", "url", "openai/gpt-oss-20b"))
     assert len(calls) == 1
-    assert len(result) == 2
+    assert len(result) == 1
     assert all(len(check["options"]) == 4 for check in result)
 
 
@@ -192,7 +199,7 @@ def test_short_provider_limit_is_shown_as_a_readable_wait():
 
 
 def test_schema_rejection_with_real_fifth_option_retries_instead_of_dropping_it(monkeypatch):
-    checks = [_check("first"), _check("second")]
+    checks = [_check("first")]
     checks[0]["options"] = [*checks[0]["options"], "Fourth choice", "Fifth choice"]
     raw = json.dumps({"checks": checks})
     response = Response(400, request=Request("POST", "https://api.groq.com/openai/v1/chat/completions"))
@@ -205,7 +212,7 @@ def test_schema_rejection_with_real_fifth_option_retries_instead_of_dropping_it(
         if len(calls) == 1:
             raise error
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps({
-            "checks": [_check("first"), _check("second")],
+            "checks": [_check("first")],
         })))])
 
     monkeypatch.setattr(socratic_setup, "chat_completion", complete)
@@ -215,7 +222,7 @@ def test_schema_rejection_with_real_fifth_option_retries_instead_of_dropping_it(
     }, "Check supplies before taking coins.", "Groq", "key", "url", "openai/gpt-oss-20b"))
     assert len(calls) == 2
     assert "blank fifth option" in calls[1]["messages"][-1]["content"]
-    assert len(result) == 2
+    assert len(result) == 1
 
 
 def test_setup_reports_its_validation_failure_after_retry(monkeypatch, caplog):
@@ -253,11 +260,11 @@ def test_setup_does_not_mask_step_quiz_failure_as_lesson_validation(monkeypatch)
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))])
 
     async def failed_checks(*_args):
-        raise ValueError("Could not draft two application checks for First step.")
+        raise ValueError("Could not draft an application check for First step.")
 
     monkeypatch.setattr(socratic_setup, "chat_completion", complete)
     monkeypatch.setattr(socratic_setup, "add_step_checks", failed_checks)
-    with pytest.raises(ValueError, match="Could not draft two application checks for First step"):
+    with pytest.raises(ValueError, match="Could not draft an application check for First step"):
         asyncio.run(socratic_setup.generate_setup([{"id": "file", "filename": "lesson.pdf"}], "Lesson", ""))
     assert len(calls) == 1
 
@@ -302,12 +309,12 @@ def test_published_checks_can_be_reviewed_and_saved_without_changing_steps(monke
         yield Connection()
     monkeypatch.setattr(routes.store, "connection", connection)
     monkeypatch.setattr(routes, "get_assignment", lambda *_args, **_kwargs: item)
-    body = PublishedStepChecksInput.model_validate({"checks": [[_check("first"), _check("second")]],
+    body = PublishedStepChecksInput.model_validate({"checks": [[_check("first")]],
                                                      "minimum_step_questions": 3})
     result = routes.save_published_step_checks(assignment_id, body, account={"authority_level": 1})
     assert result["config"]["learning_steps"][0]["title"] == "Check supplies"
-    assert len(written["snapshot"]["config"]["learning_steps"][0]["checks"]) == 2
-    assert len(written["config"]["learning_steps"][0]["checks"]) == 2
+    assert len(written["snapshot"]["config"]["learning_steps"][0]["checks"]) == 1
+    assert len(written["config"]["learning_steps"][0]["checks"]) == 1
     assert written["snapshot"]["config"]["minimum_step_questions"] == 3
 
 
@@ -326,14 +333,14 @@ def test_legacy_published_assignment_can_draft_checks_from_its_cited_source(monk
     captured = {}
     async def generate(_step, passage, *_args):
         captured["passage"] = passage
-        return [_check("first"), _check("second")]
+        return [_check("first")]
     monkeypatch.setattr(routes.store, "connection", connection)
     monkeypatch.setattr(routes, "get_assignment", lambda *_args, **_kwargs: item)
     monkeypatch.setattr(routes.settings, "llm_client_config", lambda *_args: ("Ollama", "key", "url", "model"))
     monkeypatch.setattr(socratic_setup, "generate_checks_for_step", generate)
     result = asyncio.run(routes.draft_published_step_checks(assignment_id, account={"authority_level": 1}))
     assert captured["passage"] == "Check ingredients before taking coins."
-    assert len(result["steps"][0]["checks"]) == 2
+    assert len(result["steps"][0]["checks"]) == 1
 
 
 def test_published_socratic_settings_preserve_sources_and_existing_checks(monkeypatch):
@@ -377,9 +384,9 @@ def test_published_socratic_settings_preserve_sources_and_existing_checks(monkey
     assert written["snapshot"]["chunks"] == item["snapshot"]["chunks"]
 
 
-def test_wrong_check_reveals_answer_then_requires_a_different_example(monkeypatch):
+def test_wrong_check_allows_second_chance_on_same_question(monkeypatch):
     assignment_id = uuid4()
-    checks = [_check("first"), _check("second")]
+    checks = [_check("first")]
     assignment = {"tool": "socratic", "status": "published", "snapshot": {"config": {
         "learning_steps": [{"title": "Check supplies", "checks": checks}, {"title": "Payment"}],
     }}}
@@ -406,10 +413,11 @@ def test_wrong_check_reveals_answer_then_requires_a_different_example(monkeypatc
         request_id=uuid4(), action="submit", option_index=0, reason="I think this is wrong because supplies matter."), account)
     progress = result["engine_state"]["socratic"]["step_check"]
     assert progress["status"] == "active"
-    assert progress["variant"] == 1
-    assert progress["previous_answer"] == "Take coins despite missing supplies"
-    assert "should not take coins" in progress["previous_explanation"]
-    with pytest.raises(HTTPException, match="second example"):
+    assert progress["variant"] == 0
+    assert progress["attempts"] == 1
+    assert progress["last_option_index"] == 0
+    assert "correct_option_index" not in progress
+    with pytest.raises(HTTPException, match="both chances"):
         routes.socratic_step_check(assignment_id, routes.SocraticStepCheckInput(
             request_id=uuid4(), action="continue_with_support"), account)
     result = routes.socratic_step_check(assignment_id, routes.SocraticStepCheckInput(

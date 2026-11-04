@@ -16,7 +16,7 @@ export default function PublishedSocraticSettings({ assignment, onSaved }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const steps = config.learning_steps || [];
-  const missingChecks = steps.filter((step) => step.checks?.length !== 2).length;
+  const missingChecks = steps.filter((step) => !step.checks?.length).length;
   if (assignment.status !== "published" || assignment.tool !== "socratic" || !steps.length) return null;
 
   function updateStep(index, key, value) {

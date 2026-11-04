@@ -19,7 +19,7 @@ const SOCRATIC_TOUR_STEPS = [
   { demo: "start", title: "Start with the first example", detail: "Start assignment opens the tutor’s first situation and question." },
   { demo: "chat", title: "Discuss the example", detail: "Share your reasoning or ask a question. The tutor responds in the conversation." },
   { demo: "check", title: "Take the step quiz", detail: "After discussing the step, choose the action that would cause a problem and explain why you chose it." },
-  { demo: "retry", title: "Learn from a missed answer", detail: "If you miss the first question, the answer appears and a different question opens. After a second miss, you can continue with support." },
+  { demo: "retry", title: "Try the same check again", detail: "If your first answer misses the mark, review the feedback and try the same question once more. After a second miss, you can continue with support." },
   { demo: "continue", title: "Continue to the next step", detail: "Complete the check, then continue. Your new star celebrates the step you finished before the next one begins." },
   { demo: "finish", title: "Finish the last topic", detail: "When you are ready to end the conversation, open your summary." },
   { demo: "summary", title: "Summarize and review feedback", detail: "Explain what you learned, get final feedback, and read it before submitting." },
@@ -47,10 +47,10 @@ function SocraticTourPreview({ kind, onAdvance }) {
         <button type="button" className="socratic-tour-preview-action is-highlighted" onClick={onAdvance}>Submit</button>
       </>}
       {kind === "retry" && <>
-        <div className="socratic-tour-preview-heading">A missed answer · A new question</div>
-        <div className="socratic-tour-preview-message">The tutor shows which action causes a problem and explains why.</div>
-        <div className="socratic-tour-preview-message is-student">Use that explanation to answer a different question about the same idea.</div>
-        <button type="button" className="socratic-tour-preview-action is-highlighted" onClick={onAdvance}>Try the new question</button>
+        <div className="socratic-tour-preview-heading">A missed answer · One more chance</div>
+        <div className="socratic-tour-preview-message">Your first choice is marked in red, with a short hint.</div>
+        <div className="socratic-tour-preview-message is-student">Choose another option in the same question and explain why.</div>
+        <button type="button" className="socratic-tour-preview-action is-highlighted" onClick={onAdvance}>Try again</button>
       </>}
       {kind === "continue" && <>
         <div className="socratic-tour-preview-heading">Your learning path · Step 1 complete</div>
@@ -414,23 +414,19 @@ function StarMedal() {
   );
 }
 
-function StepChainLock() {
+function StepPadlock() {
   return (
-    <span className="student-step-chain" aria-hidden="true">
-      <svg viewBox="0 0 120 58" focusable="false">
-        <g className="student-chain-arm student-chain-top-left">
-          <rect x="5" y="26" width="23" height="11" rx="5.5" transform="rotate(-18 16 31)" />
-          <rect x="25" y="21" width="23" height="11" rx="5.5" transform="rotate(-18 36 26)" />
-        </g>
-        <g className="student-chain-arm student-chain-top-right">
-          <rect x="72" y="21" width="23" height="11" rx="5.5" transform="rotate(18 83 26)" />
-          <rect x="92" y="26" width="23" height="11" rx="5.5" transform="rotate(18 103 31)" />
-        </g>
-        <g className="student-chain-padlock">
-          <path d="M51 28v-8a9 9 0 0 1 18 0v8" fill="none" stroke="#536d8b" strokeWidth="5" />
-          <rect x="44" y="27" width="32" height="25" rx="5" fill="#354260" stroke="#253650" strokeWidth="3" />
-          <circle cx="60" cy="37" r="2.5" fill="#b5c8dc" />
-          <path d="m60 39-2.5 6h5z" fill="#b5c8dc" />
+    <span className="student-step-padlock" aria-hidden="true">
+      <svg viewBox="0 0 48 58" focusable="false">
+        <g className="student-padlock">
+          <g className="student-padlock-shackle">
+            <path d="M14 28v-9a10 10 0 0 1 20 0v9" fill="none" stroke="#7189a4" strokeWidth="6" strokeLinecap="round" />
+          </g>
+          <g className="student-padlock-body">
+            <rect x="6" y="27" width="36" height="27" rx="6" fill="#52627f" stroke="#354460" strokeWidth="3" />
+            <circle cx="24" cy="38" r="3" fill="#d6e3f2" />
+            <path d="m24 40-3 7h6z" fill="#d6e3f2" />
+          </g>
         </g>
       </svg>
     </span>
@@ -1288,13 +1284,6 @@ export default function StudentWorkspace({ user }) {
       setStepCheckReason("");
     }
   }
-  async function tryAnotherStepCheck() {
-    const sent = await perform("step-check", { request_id: crypto.randomUUID(), action: "try_another" });
-    if (sent) {
-      setStepCheckOption(null);
-      setStepCheckReason("");
-    }
-  }
   async function continueWithSupport() {
     setBusy(true);
     setError("");
@@ -1554,7 +1543,7 @@ export default function StudentWorkspace({ user }) {
       {unlockPhase === "releasing" && createPortal(
         <div className="student-unlock-celebration" role="status" aria-label="Mission unlocked">
           <span className="student-unlock-sparkles" aria-hidden="true">✦ ✧ ✦</span>
-          <StepChainLock />
+          <StepPadlock />
           <strong>Mission {String(activeLearningStep + 1).padStart(2, "0")} unlocked!</strong>
         </div>, document.body,
       )}
@@ -1648,10 +1637,10 @@ export default function StudentWorkspace({ user }) {
                           <div className="student-step-topline">
                             <span className="student-step-chapter">Mission {String(index + 1).padStart(2, "0")}</span>
                             {current ? unlockPending || unlocking
-                              ? <span className="student-step-lock-status" role="img" aria-label={unlockPending ? "Next step locked until the star celebration finishes" : "Unlocking current step"}><StepChainLock /></span>
+                              ? <span className="student-step-lock-status" role="img" aria-label={unlockPending ? "Next step locked until the star celebration finishes" : "Unlocking current step"}><StepPadlock /></span>
                               : <span className="student-step-active-label">Current step</span>
                               : completed ? <span className="student-step-star" role="img" aria-label={completedWithSupport ? "Completed with support" : "Completed step"}><StarMedal /></span>
-                                : <span className="student-step-lock-status" role="img" aria-label="Locked until the previous step is complete"><StepChainLock /></span>}
+                                : <span className="student-step-lock-status" role="img" aria-label="Locked until the previous step is complete"><StepPadlock /></span>}
                           </div>
                           <div className="student-step-title">
                             <strong>{step.title}</strong>
@@ -2117,18 +2106,12 @@ export default function StudentWorkspace({ user }) {
                           <div className="socratic-step-check-inline-feedback" role="status">
                             <strong>Why this action causes a problem</strong>
                             <p>{displayedCheckFeedback}</p>
-                            <p>{checkProgress.variant ? "You can continue with support and revisit this idea later." : "Try the idea in a different situation."}</p>
+                            <p>You can continue with support and revisit this idea later.</p>
                           </div>
-                          <div className="socratic-step-check-actions">{checkProgress.variant ? <button type="button" className="next-learning-step" disabled={busy} onClick={continueWithSupport}>{activeLearningStep < learningStepCount - 1 ? "Continue to next step with support" : "Continue to summary with support"}</button> : <button type="button" className="next-learning-step" disabled={busy} onClick={tryAnotherStepCheck}>Try a new question</button>}</div>
+                          <div className="socratic-step-check-actions"><button type="button" className="next-learning-step" disabled={busy} onClick={continueWithSupport}>{activeLearningStep < learningStepCount - 1 ? "Continue to next step with support" : "Continue to summary with support"}</button></div>
                         </div>
                       ) : (
                         <form onSubmit={submitStepCheck}>
-                          {checkProgress?.previous_answer && <div className="socratic-step-check-previous" role="status">
-                            <span>Previous question · action that causes a problem</span>
-                            <strong>{checkProgress.previous_answer}</strong>
-                            {checkProgress.previous_explanation && <p>{checkProgress.previous_explanation}</p>}
-                            <span>Now use that idea in a different situation.</span>
-                          </div>}
                           <div className="socratic-step-check-content">
                             <div className="socratic-step-check-prompts">
                               <div className="socratic-step-check-scenario"><span className="socratic-step-check-eyebrow">Scenario</span><p>{activeCheck.scenario}</p></div>

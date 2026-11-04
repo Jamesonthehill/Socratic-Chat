@@ -342,9 +342,9 @@ test("Socratic tutorial explains the current quiz retry and star flow", async ()
   for (let index = 0; index < 4; index += 1) await user.click(within(tutorial).getByRole("button", { name: "Next" }));
   expect(within(tutorial).getByRole("heading", { name: "Take the step quiz" })).toBeInTheDocument();
   await user.click(within(tutorial).getByRole("button", { name: "Submit" }));
-  expect(within(tutorial).getByRole("heading", { name: "Learn from a missed answer" })).toBeInTheDocument();
-  expect(within(tutorial).getByText(/answer appears and a different question opens/)).toBeInTheDocument();
-  await user.click(within(tutorial).getByRole("button", { name: "Try the new question" }));
+  expect(within(tutorial).getByRole("heading", { name: "Try the same check again" })).toBeInTheDocument();
+  expect(within(tutorial).getByText(/try the same question once more/)).toBeInTheDocument();
+  await user.click(within(tutorial).getByRole("button", { name: "Try again" }));
   expect(within(tutorial).getByText(/star lights up against a dark screen/)).toBeInTheDocument();
 });
 
@@ -653,7 +653,8 @@ test("student follows a generated Socratic path one step at a time", async () =>
   expect(within(screen.getByText("Choose a size").closest("li")).getByText("Ready to continue to the next mission.")).toBeInTheDocument();
   expect(within(screen.getByText("Check ingredients").closest("li")).getByRole("img", { name: "Locked until the previous step is complete" })).toBeInTheDocument();
   expect(screen.getByText("Check ingredients").closest("li")).toHaveClass("is-locked");
-  expect(screen.getByText("Check ingredients").closest("li").querySelector(".student-step-chain")).toBeInTheDocument();
+  expect(screen.getByText("Check ingredients").closest("li").querySelector(".student-step-padlock")).toBeInTheDocument();
+  expect(screen.getByText("Check ingredients").closest("li").querySelector(".student-chain-arm")).not.toBeInTheDocument();
   expect(screen.queryByRole("separator", { name: /Step 2 of 2/ })).not.toBeInTheDocument();
   expect(screen.getByRole("progressbar", { name: "Learning path progress" })).toHaveAttribute("aria-valuenow", "0");
   expect(screen.getByRole("progressbar", { name: "Learning path progress" }).querySelectorAll(".student-learning-star")).toHaveLength(2);
@@ -663,7 +664,7 @@ test("student follows a generated Socratic path one step at a time", async () =>
   await userEvent.setup().click(nextStep);
   expect(await screen.findByText(/the same machine now checks its supplies/)).toBeInTheDocument();
   expect(within(screen.getByRole("list", { name: "Learning path steps" })).getByText("Check ingredients").closest("li")).toHaveClass("is-unlock-pending");
-  expect(within(screen.getByRole("list", { name: "Learning path steps" })).getByText("Check ingredients").closest("li").querySelector(".student-step-chain")).toBeInTheDocument();
+  expect(within(screen.getByRole("list", { name: "Learning path steps" })).getByText("Check ingredients").closest("li").querySelector(".student-step-padlock")).toBeInTheDocument();
   expect(screen.getByText(/You are deciding what information the program should compare/)).toBeInTheDocument();
   expect(screen.getByRole("separator", { name: "Step 2 of 2: Check ingredients" })).toBeInTheDocument();
   expect(screen.getByRole("separator", { name: "Step 2 of 2: Check ingredients" })).toHaveClass("is-new-step");
@@ -690,23 +691,22 @@ test("student follows a generated Socratic path one step at a time", async () =>
   expect(fetch.mock.calls.some(([url]) => url.endsWith("/next-step"))).toBe(true);
 }, 8000);
 
-test("a wrong step check shows the answer above a different question", async () => {
+test("a missed step quiz keeps the same question for one more chance", async () => {
   const checks = [
     { scenario: "A customer orders a small sandwich but bread is missing.", question: "Which action is incorrect?", options: ["Check supplies", "Take coins anyway", "Explain the shortage"] },
-    { scenario: "A customer orders a medium sandwich but cheese is missing.", question: "Which action is incorrect now?", options: ["Check cheese", "Take coins anyway", "Explain the shortage"] },
   ];
   const learning_steps = [
     { title: "Check supplies", goal: "Explain when the machine checks supplies.", checks },
     { title: "Payment", goal: "Explain how payment works." },
   ];
-  const secondQuestion = { ...attempt,
+  const retry = { ...attempt,
     messages: [...attempt.messages, { role: "user", content: "It must check ingredients first." }],
     engine_state: { socratic: { phase: "teaching", learning_step_index: 0, step_started_at_message_count: 1,
-      step_check: { step_index: 0, variant: 1, attempts: 1, status: "active", feedback: "", previous_answer: "Take coins anyway", previous_explanation: "The machine should check supplies before taking coins." } } },
+      step_check: { step_index: 0, variant: 0, attempts: 1, status: "active", feedback: "That choice fits this situation.", last_option_index: 0, last_option_correct: false } } },
   };
   mockApi("student", {
     "/api/platform/assignments/assignment-1": { ...assignment, student_config: { minimum_messages: 1, learning_steps } },
-    "/api/platform/assignments/assignment-1/attempt": secondQuestion,
+    "/api/platform/assignments/assignment-1/attempt": retry,
   });
   open("/student/assignments/assignment-1");
   const continueButton = await screen.findByRole("button", { name: "Take step quiz" });
@@ -715,12 +715,11 @@ test("a wrong step check shows the answer above a different question", async () 
   expect(screen.queryByText(/Application check ready/)).not.toBeInTheDocument();
   await userEvent.setup().click(continueButton);
   const dialog = screen.getByRole("dialog", { name: "Check this step" });
-  expect(within(dialog).getByText(/Now use that idea in a different situation/)).toBeInTheDocument();
-  expect(within(dialog.querySelector(".socratic-step-check-previous")).getByText("Take coins anyway")).toBeInTheDocument();
+  expect(within(dialog).getByText("That choice fits this situation.")).toBeInTheDocument();
+  expect(within(dialog).getByText(/Already tried · choose another/)).toBeInTheDocument();
   expect(within(dialog).queryByRole("button", { name: "Continue to next step" })).not.toBeInTheDocument();
-  expect(within(dialog).getByText(/medium sandwich but cheese is missing/)).toBeInTheDocument();
-  expect(within(dialog.querySelector(".socratic-step-check-scenario")).getByText(/medium sandwich but cheese is missing/)).toBeInTheDocument();
-  expect(dialog.querySelector(".socratic-step-check-question p")).toHaveTextContent("Which action is incorrect now?");
+  expect(within(dialog.querySelector(".socratic-step-check-scenario")).getByText(/small sandwich but bread is missing/)).toBeInTheDocument();
+  expect(dialog.querySelector(".socratic-step-check-question p")).toHaveTextContent("Which action is incorrect?");
   expect(dialog.querySelector(".socratic-step-check-question .socratic-step-check-incorrect")).toHaveTextContent("incorrect");
   expect(dialog.querySelector(".socratic-step-check-heading .socratic-step-check-incorrect")).toHaveTextContent("incorrect");
   expect(within(dialog).getByRole("textbox", { name: "Why did you choose it?" })).toBeInTheDocument();

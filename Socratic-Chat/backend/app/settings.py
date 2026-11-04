@@ -27,6 +27,7 @@ OLLAMA_GENERATION_MAX_TOKENS = int(os.getenv("OLLAMA_GENERATION_MAX_TOKENS", "60
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_API_BASE_URL = os.getenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+GROQ_TUTOR_MODEL = os.getenv("GROQ_TUTOR_MODEL", "openai/gpt-oss-120b").strip()
 GROQ_CLASSIFIER_MODEL = os.getenv("GROQ_CLASSIFIER_MODEL", "").strip()
 GROQ_ANSWER_EVALUATION_MODEL = os.getenv("GROQ_ANSWER_EVALUATION_MODEL", "").strip()
 RAG_TEMPERATURE = float(os.getenv("RAG_TEMPERATURE", "0.2"))
@@ -91,6 +92,7 @@ def llm_client_config(role: str = "generation") -> tuple[str, str, str, str] | N
         if not GROQ_API_KEY:
             return None
         role_model = {
+            "tutor": GROQ_TUTOR_MODEL,
             "classifier": GROQ_CLASSIFIER_MODEL,
             "evaluation": GROQ_ANSWER_EVALUATION_MODEL,
         }.get(role, "")

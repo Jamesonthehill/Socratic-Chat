@@ -29,7 +29,7 @@ services:
       - key: GROQ_API_BASE_URL
         value: https://api.groq.com/openai/v1
       - key: GROQ_MODEL
-        value: openai/gpt-oss-20b
+        value: openai/gpt-oss-120b
       - key: GROQ_CLASSIFIER_MODEL
         value: openai/gpt-oss-20b
       - key: GROQ_ANSWER_EVALUATION_MODEL

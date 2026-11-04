@@ -843,7 +843,7 @@ def repeats_identity_question(candidate: str, history: list[ChatMessage]) -> boo
 
 def generation_client_config() -> tuple[str, str, str, str] | None:
     """Use the configured OpenAI-compatible provider for tutor generation."""
-    return settings.llm_client_config("generation")
+    return settings.llm_client_config("tutor")
 
 
 async def generate_sample_student_answer(

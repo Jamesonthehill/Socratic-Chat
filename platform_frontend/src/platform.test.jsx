@@ -651,7 +651,9 @@ test("student follows a generated Socratic path one step at a time", async () =>
   expect(screen.getByText("Current step")).toBeInTheDocument();
   expect(within(screen.getByText("Choose a size").closest("li")).getByText("Mission 01")).toBeInTheDocument();
   expect(within(screen.getByText("Choose a size").closest("li")).getByText("Ready to continue to the next mission.")).toBeInTheDocument();
-  expect(within(screen.getByText("Check ingredients").closest("li")).getByText("Upcoming")).toBeInTheDocument();
+  expect(within(screen.getByText("Check ingredients").closest("li")).getByRole("img", { name: "Locked until the previous step is complete" })).toBeInTheDocument();
+  expect(screen.getByText("Check ingredients").closest("li")).toHaveClass("is-locked");
+  expect(screen.getByText("Check ingredients").closest("li").querySelector(".student-step-chain")).toBeInTheDocument();
   expect(screen.queryByRole("separator", { name: /Step 2 of 2/ })).not.toBeInTheDocument();
   expect(screen.getByRole("progressbar", { name: "Learning path progress" })).toHaveAttribute("aria-valuenow", "0");
   expect(screen.getByRole("progressbar", { name: "Learning path progress" }).querySelectorAll(".student-learning-star")).toHaveLength(2);
@@ -660,6 +662,8 @@ test("student follows a generated Socratic path one step at a time", async () =>
   expect(nextStep).toBeEnabled();
   await userEvent.setup().click(nextStep);
   expect(await screen.findByText(/the same machine now checks its supplies/)).toBeInTheDocument();
+  expect(within(screen.getByRole("list", { name: "Learning path steps" })).getByText("Check ingredients").closest("li")).toHaveClass("is-unlock-pending");
+  expect(within(screen.getByRole("list", { name: "Learning path steps" })).getByText("Check ingredients").closest("li").querySelector(".student-step-chain")).toBeInTheDocument();
   expect(screen.getByText(/You are deciding what information the program should compare/)).toBeInTheDocument();
   expect(screen.getByRole("separator", { name: "Step 2 of 2: Check ingredients" })).toBeInTheDocument();
   expect(screen.getByRole("separator", { name: "Step 2 of 2: Check ingredients" })).toHaveClass("is-new-step");
@@ -675,12 +679,16 @@ test("student follows a generated Socratic path one step at a time", async () =>
   expect(screen.getByRole("progressbar", { name: "Learning path progress" })).toHaveAttribute("aria-valuenow", "1");
   expect(screen.getByRole("status", { name: "Step complete" })).toHaveTextContent("Stage complete!");
   await waitFor(() => expect(screen.getByRole("progressbar", { name: "Learning path progress" }).querySelectorAll(".student-learning-star.is-earned")).toHaveLength(1), { timeout: 3200 });
+  await waitFor(() => expect(within(screen.getByRole("list", { name: "Learning path steps" })).getByText("Check ingredients").closest("li")).toHaveClass("is-unlocking"), { timeout: 1600 });
+  expect(screen.getByRole("status", { name: "Mission unlocked" })).toHaveTextContent("Mission 02 unlocked!");
+  await waitFor(() => expect(within(screen.getByRole("list", { name: "Learning path steps" })).getByText("Check ingredients").closest("li")).not.toHaveClass("is-unlocking"), { timeout: 2400 });
+  expect(screen.queryByRole("status", { name: "Mission unlocked" })).not.toBeInTheDocument();
   expect(screen.queryByRole("status", { name: "Step complete" })).not.toBeInTheDocument();
   expect(screen.getByText("50%")).toBeInTheDocument();
   expect(screen.getByText("1 of 2 steps complete · Stage 2 of 2")).toBeInTheDocument();
   expect(screen.getAllByRole("region", { name: "Your next thinking step" }).at(-1)).toHaveTextContent("What should it check before asking for coins?");
   expect(fetch.mock.calls.some(([url]) => url.endsWith("/next-step"))).toBe(true);
-});
+}, 8000);
 
 test("a wrong step check shows the answer above a different question", async () => {
   const checks = [
@@ -1273,9 +1281,10 @@ test("Socratic response shows a generation timer and thinking step", async () =>
   expect(
     (await screen.findAllByText("Your next thinking step")).length,
   ).toBeGreaterThan(0);
-  expect(
-    screen.getByText("version control", { selector: "strong" }),
-  ).toBeInTheDocument();
+  expect(screen.getAllByRole("region", { name: "Your next thinking step" }).at(-1))
+    .toHaveTextContent("How does version control help two developers collaborate?");
+  expect(document.querySelector(".socratic-message-card.assistant.is-new-reply .message-thinking-question strong"))
+    .toHaveTextContent("How does version control help two developers collaborate?");
   expect(screen.getByText(/^Generated in \d+s$/)).toBeInTheDocument();
   expect(document.querySelector(".socratic-message-card.assistant.is-new-reply")).toHaveTextContent(
     "How does version control help two developers collaborate?",
@@ -1295,19 +1304,57 @@ test("Socratic response shows a generation timer and thinking step", async () =>
 
 });
 
-test("Socratic tutor highlights a short concept and a focused question phrase", async () => {
+test("Socratic tutor highlights the model's chosen clause in both reply and question", async () => {
   mockApi("student", {
     "/api/platform/assignments/assignment-1/attempt": {
       ...attempt,
       messages: [{ role: "assistant",
-        content: "An 'input string' is the text you type.\n\nWhich **choice** would you enter?",
-        next_thinking_step: "Which **choice** would you enter?" }],
+        content: "An 'input string' is the text you type. **It is not the menu prompt.**\n\nWhich choice would you enter **to order a small sandwich**?",
+        next_thinking_step: "Which choice would you enter **to order a small sandwich**?" }],
     },
   });
   open("/student/assignments/assignment-1");
-  await screen.findByText("input string", { selector: "strong.tutor-key-term" });
-  expect(document.querySelector(".message-lead strong.tutor-key-term")).toHaveTextContent("input string");
-  expect(document.querySelector(".message-thinking-question strong.tutor-key-term")).toHaveTextContent("choice");
+  await screen.findByText("It is not the menu prompt.", { selector: "strong.tutor-key-term" });
+  expect(document.querySelectorAll(".message-lead strong.tutor-key-term")).toHaveLength(1);
+  expect(document.querySelector(".message-lead strong.tutor-key-term")).toHaveTextContent("It is not the menu prompt.");
+  expect(document.querySelectorAll(".message-thinking-question strong.tutor-key-term")).toHaveLength(1);
+  expect(document.querySelector(".message-thinking-question strong.tutor-key-term")).toHaveTextContent("to order a small sandwich");
+});
+
+test("saved tutor replies without model emphasis highlight the reason and core question", async () => {
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1/attempt": {
+      ...attempt,
+      messages: [{ role: "assistant",
+        content: "The machine must return the dollar bill because it lacks bread.\n\nSince you have the bill in hand, what message should appear?",
+        next_thinking_step: "Since you have the bill in hand, what message should appear?" }],
+    },
+  });
+  open("/student/assignments/assignment-1");
+  await screen.findByRole("region", { name: "Your next thinking step" });
+  expect(document.querySelector(".message-lead strong.tutor-key-term")).toHaveTextContent(
+    "because it lacks bread.",
+  );
+  expect(document.querySelector(".message-thinking-question strong.tutor-key-term")).toHaveTextContent(
+    "what message should appear?",
+  );
+  expect(document.querySelector(".message-thinking-question strong.tutor-key-term")).not.toHaveTextContent(
+    "Since you have the bill in hand",
+  );
+});
+
+test("a fully bold model question remains in the thinking-step box", async () => {
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1/attempt": {
+      ...attempt,
+      messages: [{ role: "assistant",
+        content: "The order must stop before payment.\n\n**What should the machine check first?**" }],
+    },
+  });
+  open("/student/assignments/assignment-1");
+  const question = await screen.findByRole("region", { name: "Your next thinking step" });
+  expect(within(question).getByText("What should the machine check first?", { selector: "strong" }))
+    .toBeInTheDocument();
 });
 
 test("Socratic chat displays real streamed reply stages", async () => {
@@ -1516,7 +1563,7 @@ test("final feedback shows the centered active loading display until evaluation 
   await waitFor(() => expect(screen.queryByRole("status", { name: "BrainTutor is preparing final feedback" })).not.toBeInTheDocument());
 });
 
-test("final feedback highlights evidenced misunderstandings and enables the green submit button", async () => {
+test("final feedback highlights evidenced misunderstandings and enables the gold submit button", async () => {
   const readyAttempt = {
     ...attempt,
     engine_state: {
@@ -1546,6 +1593,31 @@ test("final feedback highlights evidenced misunderstandings and enables the gree
   expect(within(revisit).getByText("Review guarantees no bugs.").closest("mark")).toBeInTheDocument();
   expect(within(revisit).getByText("Course source: Code review guide")).toBeInTheDocument();
   expect(within(revisit).getByText(/cannot guarantee a change has no bugs/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Submit assignment" })).toHaveClass("submit-assignment-ready");
+});
+
+test("all earned stars gather at the submit button after final feedback", async () => {
+  const learning_steps = [{ title: "Review code", goal: "Explain why review helps." }];
+  const reflecting = {
+    ...attempt,
+    engine_state: { socratic: { phase: "awaiting_reflection", learning_step_index: 0 } },
+  };
+  const ready = {
+    ...reflecting,
+    engine_state: { socratic: { phase: "ready_to_submit", learning_step_index: 0, completion_summary: {} } },
+  };
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1": { ...assignment, student_config: { ...assignment.student_config, learning_steps } },
+    "/api/platform/assignments/assignment-1/attempt": reflecting,
+    "POST /api/platform/assignments/assignment-1/reflection": ready,
+  });
+  open("/student/assignments/assignment-1");
+  const user = userEvent.setup();
+  await user.type(await screen.findByLabelText("Summarize what you learned in your own words"), "Review helps catch mistakes.");
+  await user.click(screen.getByRole("button", { name: "Get final feedback" }));
+  expect(await screen.findByRole("status", { name: "All learning stars earned" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Submit assignment" })).toBeDisabled();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Submit assignment" })).toBeEnabled(), { timeout: 4000 });
   expect(screen.getByRole("button", { name: "Submit assignment" })).toHaveClass("submit-assignment-ready");
 });
 

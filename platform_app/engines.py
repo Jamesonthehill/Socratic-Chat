@@ -587,7 +587,8 @@ def _next_thinking_step(answer: str) -> str:
         for sentence in re.split(r"(?<=[.!?])\s+", answer.strip())
         if sentence.strip()
     ]
-    return next((sentence for sentence in reversed(sentences) if sentence.endswith("?")), "")
+    return next((sentence for sentence in reversed(sentences)
+                 if sentence.rstrip("*_`'\" ").endswith("?")), "")
 
 
 def _socratic_result(answer, sources, state, classification, score=None):
@@ -611,6 +612,34 @@ def _socratic_result(answer, sources, state, classification, score=None):
         "sources": [source.model_dump() for source in sources],
         "socratic": state,
     }
+
+
+def _misconception_context(state, evaluation, step_index):
+    pending = state.get("pending_misconception")
+    if pending and pending.get("step_index") != step_index:
+        state.pop("pending_misconception", None)
+        pending = None
+    if pending:
+        return pending
+    if not evaluation or not evaluation.misconception:
+        return None
+    paused_question = str(state.get("next_thinking_step") or "").strip()
+    if not paused_question:
+        return None
+    return {"phase": "explain", "paused_question": paused_question,
+            "misconception": evaluation.misconception, "step_index": step_index}
+
+
+def _save_misconception_context(state, context, answer, resolution_status):
+    if not context:
+        return
+    if context["phase"] == "confirm":
+        if resolution_status in {"resolved", "redirected"}:
+            state.pop("pending_misconception", None)
+        else:
+            state["pending_misconception"] = context
+    elif re.search(r"\?\*{0,2}\s*$", answer):
+        state["pending_misconception"] = {**context, "phase": "confirm"}
 
 
 async def public_socratic_message(content, history, engine_state, learning_topic=None):
@@ -718,6 +747,10 @@ async def _socratic_message(
     if history and history[0].content == "What would you like to explore in the assigned materials?":
         history = history[1:]
     state = dict(attempt["engine_state"].get("socratic") or {})
+    pending_misconception = state.get("pending_misconception")
+    if pending_misconception and pending_misconception.get("step_index") != int(state.get("learning_step_index") or 0):
+        state.pop("pending_misconception", None)
+        pending_misconception = None
     state.setdefault("pipeline_version", "local-socratic-v1")
     if state.pop("objective_keywords", None):
         # Resume legacy keyword-only attempts without carrying their old gate
@@ -824,6 +857,7 @@ async def _socratic_message(
         }
         log_event(4, "message_classification_completed", **state["classification"])
         if classification.conversation_action in {"soft_close", "complete"}:
+            state.pop("pending_misconception", None)
             state["conversation_status"] = "paused"
             return _socratic_result(await rag.generate_conversation_transition(content, history, classification), [], state, classification)
         operational = _snapshot_context_answer(snapshot, classification)
@@ -882,7 +916,7 @@ async def _socratic_message(
                 [], state, classification,
             )
         # Selecting an interpretation is not evidence of subject understanding.
-        evaluation = None if pending and not clarification_text else await assess_student_answer_qualitatively(
+        evaluation = None if (pending and not clarification_text) or pending_misconception else await assess_student_answer_qualitatively(
             content, history, sources, classification, **scope_options,
         )
         if evaluation:
@@ -919,7 +953,8 @@ async def _socratic_message(
         guided_steps = (snapshot.get("config") or {}).get("learning_steps") or []
         step_index = int(state.get("learning_step_index") or 0)
         active_step = guided_steps[step_index] if 0 <= step_index < len(guided_steps) else None
-        answer = await rag.generate_answer(generation_message, generation_history, sources, classification=classification,
+        misconception_context = _misconception_context(state, evaluation, step_index)
+        generated = await rag.generate_answer(generation_message, generation_history, sources, classification=classification,
             evaluation=evaluation,
             learning_topic=classification.target if general_example_choice else topic,
             stable_concept=(
@@ -929,7 +964,11 @@ async def _socratic_message(
                 else stable
             ),
             term_resolution=(resolution.original_term, resolution.selected_term) if resolution else None,
-            assignment_scope=assignment_scope, active_learning_step=active_step, **scope_options)
+            assignment_scope=assignment_scope, active_learning_step=active_step,
+            misconception_context=misconception_context,
+            return_misconception_status=bool(pending_misconception), **scope_options)
+        answer, resolution_status = generated if isinstance(generated, tuple) else (generated, None)
+        _save_misconception_context(state, misconception_context, answer, resolution_status)
         result = _socratic_result(answer, sources, state, classification)
         if should_show_concept_check:
             state["concept_check"] = _concept_check(snapshot, answer_count)

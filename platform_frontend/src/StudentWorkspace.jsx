@@ -160,7 +160,16 @@ function nextQuestion(messages) {
   if (labeled) return labeled[1].trim();
   if (!answer.trim().replace(/[\s*_`'\"]+$/, "").endsWith("?")) return "";
   const sentences = answer.split(/(?<=[.!?])\s+/).filter(Boolean);
-  return [...sentences].reverse().find((sentence) => sentence.trim().endsWith("?"))?.trim() || "";
+  return [...sentences].reverse().find((sentence) => sentence.trim().replace(/[\s*_`'\"]+$/, "").endsWith("?"))?.trim() || "";
+}
+
+function emphasizeUnmarkedTutorText(text, purpose) {
+  if (!text || /\*\*[^*\n]+\*\*/.test(text)) return text;
+  const reason = text.match(/\b(?:because|therefore|as a result|so that)\b[^.!?\n]*(?:[.!?]|$)/i)?.[0]
+    || text.split(/(?<=[.!?])\s+|\n+/).find((part) => /\b(?:must|needs? to|requires?|specifies?|means)\b/i.test(part));
+  const questionCore = text.match(/\b(?:what|why|how|which|when|where|should|would|could|does|do|is|are)\b[^?\n]*\?/i)?.[0];
+  const emphasis = purpose === "question" ? questionCore : reason;
+  return emphasis ? text.replace(emphasis, `**${emphasis}**`) : text;
 }
 
 function currentStepQuestionCount(messages, stepStartedAtMessageCount) {
@@ -405,18 +414,74 @@ function StarMedal() {
   );
 }
 
+function StepChainLock() {
+  return (
+    <span className="student-step-chain" aria-hidden="true">
+      <svg viewBox="0 0 240 100" preserveAspectRatio="none" focusable="false">
+        <g className="student-chain-arm student-chain-top-left">
+          <g transform="rotate(24 60 35)">
+            <rect x="-12" y="26" width="37" height="18" rx="9" />
+            <rect x="19" y="26" width="37" height="18" rx="9" />
+            <rect x="50" y="26" width="37" height="18" rx="9" />
+          </g>
+        </g>
+        <g className="student-chain-arm student-chain-top-right">
+          <g transform="rotate(-24 180 35)">
+            <rect x="153" y="26" width="37" height="18" rx="9" />
+            <rect x="184" y="26" width="37" height="18" rx="9" />
+            <rect x="215" y="26" width="37" height="18" rx="9" />
+          </g>
+        </g>
+        <g className="student-chain-arm student-chain-bottom-left">
+          <g transform="rotate(-24 60 65)">
+            <rect x="-12" y="56" width="37" height="18" rx="9" />
+            <rect x="19" y="56" width="37" height="18" rx="9" />
+            <rect x="50" y="56" width="37" height="18" rx="9" />
+          </g>
+        </g>
+        <g className="student-chain-arm student-chain-bottom-right">
+          <g transform="rotate(24 180 65)">
+            <rect x="153" y="56" width="37" height="18" rx="9" />
+            <rect x="184" y="56" width="37" height="18" rx="9" />
+            <rect x="215" y="56" width="37" height="18" rx="9" />
+          </g>
+        </g>
+        <g className="student-chain-padlock">
+          <path d="M103 55V39a17 17 0 0 1 34 0v16" fill="none" stroke="#536d8b" strokeWidth="8" />
+          <rect x="94" y="52" width="52" height="37" rx="5" fill="#354260" stroke="#253650" strokeWidth="4" />
+          <circle cx="120" cy="68" r="4" fill="#b5c8dc" />
+          <path d="m120 69-3 10h6z" fill="#b5c8dc" />
+        </g>
+      </svg>
+    </span>
+  );
+}
+
+const STAR_FLIGHT_MS = 2400;
+const STAR_POP_MS = 1000;
+const STEP_UNLOCK_MS = 1900;
+const SUBMIT_STAR_FINALE_MS = 2900;
+
 function LearningPathProgress({ completed, total, stage, started }) {
   const starRefs = useRef([]);
   const [displayedCompleted, setDisplayedCompleted] = useState(completed);
   const [flyingStar, setFlyingStar] = useState(null);
   const [advancing, setAdvancing] = useState(false);
+  const [justEarnedIndex, setJustEarnedIndex] = useState(null);
   const percentage = Math.round(completed / total * 100);
+
+  useEffect(() => {
+    if (justEarnedIndex === null) return undefined;
+    const timer = window.setTimeout(() => setJustEarnedIndex(null), STAR_POP_MS);
+    return () => window.clearTimeout(timer);
+  }, [justEarnedIndex]);
 
   useEffect(() => {
     if (completed < displayedCompleted) {
       setDisplayedCompleted(completed);
       setFlyingStar(null);
       setAdvancing(false);
+      setJustEarnedIndex(null);
       return;
     }
     if (completed === displayedCompleted) return;
@@ -437,10 +502,11 @@ function LearningPathProgress({ completed, total, stage, started }) {
     });
     setAdvancing(true);
     const timer = window.setTimeout(() => {
+      setJustEarnedIndex(displayedCompleted);
       setDisplayedCompleted((value) => value + 1);
       setFlyingStar(null);
       setAdvancing(false);
-    }, 2400);
+    }, STAR_FLIGHT_MS);
     return () => window.clearTimeout(timer);
   }, [completed, displayedCompleted]);
 
@@ -453,9 +519,13 @@ function LearningPathProgress({ completed, total, stage, started }) {
       <div className="student-learning-stars" role="progressbar" aria-label="Learning path progress" aria-valuemin={0} aria-valuemax={total} aria-valuenow={completed} aria-valuetext={`${completed} of ${total} stars earned`} style={{ "--star-columns": Math.min(total, 10) }}>
         {Array.from({ length: total }, (_, index) => (
           <span ref={(element) => { starRefs.current[index] = element; }} key={index}
-            className={`student-learning-star${index < displayedCompleted ? " is-earned" : ""}${index === displayedCompleted && flyingStar ? " is-arriving" : ""}`}
+            className={`student-learning-star${index < displayedCompleted ? " is-earned" : ""}${index === displayedCompleted && flyingStar ? " is-arriving" : ""}${index === justEarnedIndex ? " is-popping" : ""}`}
             style={{ "--star-shine-delay": `${index * 480}ms` }}
-            aria-hidden="true"><StarMedal /></span>
+            aria-hidden="true"><StarMedal />{index === justEarnedIndex && (
+              <span className="student-star-pop-sparks">{Array.from({ length: 8 }, (_, spark) => (
+                <i key={spark} style={{ "--spark-angle": `${spark * 45}deg` }}>✦</i>
+              ))}</span>
+            )}</span>
         ))}
       </div>
       {flyingStar && createPortal(<div className="student-star-celebration" aria-label="Step complete" role="status">
@@ -678,7 +748,7 @@ function SocraticMessage({
     message.role === "assistant"
       ? message.next_thinking_step || (latest ? thinkingStep : nextQuestion([message]))
       : "";
-  const showQuestion = !paused && question.endsWith("?");
+  const showQuestion = !paused && question.trim().replace(/[\s*_`'\"]+$/, "").endsWith("?");
   const lead =
     showQuestion && message.content.trim().endsWith(question)
       ? message.content.trim().slice(0, -question.length).trim()
@@ -698,6 +768,12 @@ function SocraticMessage({
     strong: ({ children }) => <strong className={message.role === "assistant" ? "tutor-key-term" : undefined}>{renderReferences(children, false)}</strong>,
     em: ({ children }) => <em>{renderReferences(children)}</em>,
     li: ({ children }) => <li>{renderReferences(children)}</li>,
+  };
+  const questionMarkdown = {
+    ...referenceMarkdown,
+    p: ({ children }) => <p>{renderReferences(children, false)}</p>,
+    em: ({ children }) => <em>{renderReferences(children, false)}</em>,
+    li: ({ children }) => <li>{renderReferences(children, false)}</li>,
   };
   return (
     <article
@@ -727,7 +803,7 @@ function SocraticMessage({
           <>
             {lead && (
               <div className="prose message-lead">
-                <Markdown components={referenceMarkdown}>{lead}</Markdown>
+                <Markdown components={questionMarkdown}>{emphasizeUnmarkedTutorText(lead, "reason")}</Markdown>
               </div>
             )}
             <section
@@ -736,13 +812,13 @@ function SocraticMessage({
             >
               <span>Your next thinking step</span>
               <div className="message-thinking-question">
-                <Markdown components={referenceMarkdown}>{question}</Markdown>
+                <Markdown components={questionMarkdown}>{emphasizeUnmarkedTutorText(question, "question")}</Markdown>
               </div>
             </section>
           </>
         ) : (
           <div className="prose">
-            <Markdown components={referenceMarkdown}>{message.content}</Markdown>
+            <Markdown components={message.role === "assistant" ? questionMarkdown : referenceMarkdown}>{message.content}</Markdown>
           </div>
         )}
       </div>
@@ -873,7 +949,10 @@ export default function StudentWorkspace({ user }) {
     [stepCheckOption, setStepCheckOption] = useState(null),
     [stepCheckReason, setStepCheckReason] = useState(""),
     [stepCheckOpen, setStepCheckOpen] = useState(false),
-    [showLearningSummary, setShowLearningSummary] = useState(false);
+    [unlockingStepIndex, setUnlockingStepIndex] = useState(null),
+    [unlockPhase, setUnlockPhase] = useState(null),
+    [showLearningSummary, setShowLearningSummary] = useState(false),
+    [submitStarFinale, setSubmitStarFinale] = useState(null);
   const endRef = useRef(null),
     messagesRef = useRef(null),
     learningPathRef = useRef(null),
@@ -883,9 +962,74 @@ export default function StudentWorkspace({ user }) {
     summaryFormRef = useRef(null),
     summaryInputRef = useRef(null),
     stepCheckDialogRef = useRef(null),
+    submitButtonRef = useRef(null),
+    previousSubmitReady = useRef(null),
     focusComposerAfterReply = useRef(false),
     evidenceResize = useRef(null);
   const currentLearningStep = attempt?.engine_state?.socratic?.learning_step_index ?? 0;
+  const submitReady = loaded && assignment?.tool === "socratic" && attempt?.engine_state?.socratic?.phase === "ready_to_submit";
+  const allLearningStarsEarned = Boolean(assignment?.student_config?.learning_steps?.length && (
+    Number(currentLearningStep) >= assignment.student_config.learning_steps.length - 1 &&
+    (showLearningSummary || ["awaiting_reflection", "ready_to_submit"].includes(attempt?.engine_state?.socratic?.phase))
+  ));
+  useEffect(() => {
+    if (!loaded || assignment?.tool !== "socratic") return undefined;
+    if (previousSubmitReady.current === null) {
+      previousSubmitReady.current = submitReady;
+      return undefined;
+    }
+    const becameReady = !previousSubmitReady.current && submitReady;
+    previousSubmitReady.current = submitReady;
+    if (!becameReady || !allLearningStarsEarned || window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return undefined;
+    let frame;
+    let waitTimer;
+    let waited = 0;
+    const gatherStars = () => {
+      const button = submitButtonRef.current;
+      const stars = document.querySelectorAll(".student-learning-progress .student-learning-star");
+      if (!button || !stars.length) return;
+      if (Array.from(stars).some((star) => !star.classList.contains("is-earned")) && waited < STAR_FLIGHT_MS + STAR_POP_MS + 200) {
+        waited += 100;
+        waitTimer = window.setTimeout(gatherStars, 100);
+        return;
+      }
+      button.scrollIntoView?.({ block: "nearest", behavior: "instant" });
+      const target = button.getBoundingClientRect();
+      const targetX = target.left + target.width / 2;
+      const targetY = target.top + target.height / 2;
+      const positions = Array.from(stars, (star, index) => {
+        const rect = star.getBoundingClientRect();
+        const x = Math.min(window.innerWidth - 35, Math.max(35, rect.left + rect.width / 2));
+        const y = Math.min(window.innerHeight - 35, Math.max(35, rect.top + rect.height / 2));
+        return { x, y, dx: targetX - x, dy: targetY - y, delay: index * 95 };
+      });
+      setSubmitStarFinale(positions);
+    };
+    frame = window.requestAnimationFrame(gatherStars);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(waitTimer);
+    };
+  }, [loaded, assignment?.tool, submitReady, allLearningStarsEarned]);
+  useEffect(() => {
+    if (!submitStarFinale) return undefined;
+    const timer = window.setTimeout(() => setSubmitStarFinale(null), SUBMIT_STAR_FINALE_MS);
+    return () => window.clearTimeout(timer);
+  }, [submitStarFinale]);
+  useEffect(() => {
+    if (unlockingStepIndex === null) return undefined;
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    const waitForStar = reducedMotion ? 0 : STAR_FLIGHT_MS + STAR_POP_MS + 100;
+    const releaseTimer = window.setTimeout(() => setUnlockPhase("releasing"), waitForStar);
+    const finishTimer = window.setTimeout(() => {
+      setUnlockPhase(null);
+      setUnlockingStepIndex(null);
+    }, waitForStar + (reducedMotion ? 0 : STEP_UNLOCK_MS));
+    return () => {
+      window.clearTimeout(releaseTimer);
+      window.clearTimeout(finishTimer);
+    };
+  }, [unlockingStepIndex]);
   useEffect(() => {
     setStepCheckOption(null);
     setStepCheckReason("");
@@ -1140,8 +1284,13 @@ export default function StudentWorkspace({ user }) {
   }
   async function advanceLearningStep() {
     const previousMessageCount = attempt?.messages?.length || 0;
+    const nextStepIndex = activeLearningStep + 1;
     setNewReplyIndex(null);
     await perform("next-step", {}, (result) => {
+      if (result.engine_state?.socratic?.learning_step_index === nextStepIndex) {
+        setUnlockPhase("waiting");
+        setUnlockingStepIndex(nextStepIndex);
+      }
       const replyIndex = (result.messages?.length || 0) - 1;
       if (replyIndex >= previousMessageCount && result.messages[replyIndex]?.role === "assistant") {
         setNewReplyIndex(replyIndex);
@@ -1174,8 +1323,13 @@ export default function StudentWorkspace({ user }) {
         method: "POST", body: { request_id: crypto.randomUUID(), action: "continue_with_support" },
       });
       if (activeLearningStep < learningStepCount - 1) {
+        const nextStepIndex = activeLearningStep + 1;
         const result = await api(`/platform/assignments/${id}/next-step`, { method: "POST", body: {} });
         setAttempt(result);
+        if (result.engine_state?.socratic?.learning_step_index === nextStepIndex) {
+          setUnlockPhase("waiting");
+          setUnlockingStepIndex(nextStepIndex);
+        }
         setNewReplyIndex((result.messages?.length || 1) - 1);
       } else {
         const result = await api(`/platform/assignments/${id}/attempt`);
@@ -1411,6 +1565,19 @@ export default function StudentWorkspace({ user }) {
     assignment.student_config?.module_type === "milestone_based";
   return (
     <>
+      {submitStarFinale && createPortal(<div className="student-submit-finale" role="status" aria-label="All learning stars earned">
+        {submitStarFinale.map((star, index) => <span className="student-submit-flying-star" aria-hidden="true" key={index} style={{
+          left: `${star.x}px`, top: `${star.y}px`, "--submit-star-dx": `${star.dx}px`, "--submit-star-dy": `${star.dy}px`, "--submit-star-delay": `${star.delay}ms`,
+        }}><StarMedal /></span>)}
+        <strong>All missions complete!</strong>
+      </div>, document.body)}
+      {unlockPhase === "releasing" && createPortal(
+        <div className="student-unlock-celebration" role="status" aria-label="Mission unlocked">
+          <span className="student-unlock-sparkles" aria-hidden="true">✦ ✧ ✦</span>
+          <StepChainLock />
+          <strong>Mission {String(activeLearningStep + 1).padStart(2, "0")} unlocked!</strong>
+        </div>, document.body,
+      )}
       <Link className="back" to="/student">
         ← Dashboard
       </Link>
@@ -1493,14 +1660,18 @@ export default function StudentWorkspace({ user }) {
                       const completed = attempt && (index < activeLearningStep || (finalLearningStepFinished && index === activeLearningStep));
                       const current = attempt && attempt.status !== "completed" && !finalLearningStepFinished && index === activeLearningStep;
                       const completedWithSupport = socratic.step_check_results?.some((result) => result.step_index === index && result.status === "continued_with_support");
+                      const unlockPending = current && index === unlockingStepIndex && unlockPhase === "waiting";
+                      const unlocking = current && index === unlockingStepIndex && unlockPhase === "releasing";
                       return (
-                        <li key={`${index}-${step.title}`} className={current ? "is-current" : completed ? "is-completed" : ""} aria-current={current ? "step" : undefined}>
+                        <li key={`${index}-${step.title}`} className={`${current ? "is-current" : completed ? "is-completed" : "is-locked"}${unlockPending ? " is-unlock-pending" : ""}${unlocking ? " is-unlocking" : ""}`} aria-current={current ? "step" : undefined}>
                           <span className="student-step-number" aria-hidden="true">{index + 1}</span>
                           <div className="student-step-topline">
                             <span className="student-step-chapter">Mission {String(index + 1).padStart(2, "0")}</span>
-                            {current ? <span className="student-step-active-label">Current step</span>
+                            {current ? unlockPending || unlocking
+                              ? <span className="student-step-lock-status" role="img" aria-label={unlockPending ? "Next step locked until the star celebration finishes" : "Unlocking current step"}><StepChainLock /></span>
+                              : <span className="student-step-active-label">Current step</span>
                               : completed ? <span className="student-step-star" role="img" aria-label={completedWithSupport ? "Completed with support" : "Completed step"}><StarMedal /></span>
-                                : <span className="student-step-state">Upcoming</span>}
+                                : <span className="student-step-lock-status" role="img" aria-label="Locked until the previous step is complete"><StepChainLock /></span>}
                           </div>
                           <div className="student-step-title">
                             <strong>{step.title}</strong>
@@ -1545,10 +1716,6 @@ export default function StudentWorkspace({ user }) {
                   </dl>
                 </section>
               )}
-              <p className="student-process-note">
-                <span aria-hidden="true">✦</span>
-                Discuss each step with your tutor, then summarize what you learned before submitting.
-              </p>
             </>
           )}
           {assignment.tool === "debate" && (
@@ -1603,11 +1770,13 @@ export default function StudentWorkspace({ user }) {
               {!milestone && (
                 <div>
                 <button
+                  ref={submitButtonRef}
                   className={assignment.tool === "socratic" && socratic.phase === "ready_to_submit"
-                    ? "submit-assignment-ready"
+                    ? `submit-assignment-ready${submitStarFinale ? " is-charging" : ""}`
                     : "secondary"}
                   disabled={
                     busy ||
+                    Boolean(submitStarFinale) ||
                     (assignment.tool === "socratic" &&
                       socratic.phase !== "ready_to_submit")
                   }

@@ -96,6 +96,33 @@ def keep_quoted_answer_together(turn: dict[str, str]) -> dict[str, str]:
     }
 
 
+def ensure_tutor_emphasis(text: str, model_choice: str = "", purpose: str = "reason") -> str:
+    """Emphasize the explanation's reason or the question's core request."""
+    if not text or re.search(r"\*\*[^*\n]+\*\*", text):
+        return text
+    choice = model_choice.strip()
+    if purpose == "question":
+        core = re.search(r"\b(?:what|why|how|which|when|where|should|would|could|does|do|is|are)\b[^?\n]*\?", text, re.IGNORECASE)
+        if core and (not choice or choice not in text or not re.search(r"\b(?:what|why|how|which|when|where|should|would|could|does|do|is|are)\b", choice, re.IGNORECASE)):
+            choice = core.group(0)
+    else:
+        reason = re.search(r"\b(?:because|therefore|as a result|so that)\b[^.!?\n]*(?:[.!?]|$)", text, re.IGNORECASE)
+        if reason:
+            choice = reason.group(0).strip()
+        elif not choice or choice not in text:
+            sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+|\n+", text) if part.strip()]
+            choice = next((part for part in sentences if re.search(r"\b(?:must|needs? to|requires?|specifies?|means)\b", part, re.IGNORECASE)), "")
+    if choice not in text:
+        return text
+    quote_marks = r"(?<![A-Za-z])'|'(?![A-Za-z])"
+    if len(re.findall(quote_marks, choice)) % 2:
+        # A sentence boundary inside quoted source output must not split the quote.
+        choice = text if len(re.findall(quote_marks, text)) % 2 == 0 else text.split("'", 1)[0].strip()
+    if not choice:
+        return text
+    return text.replace(choice, f"**{choice}**", 1)
+
+
 def confirms_answer_just_supplied(question: str) -> bool:
     """An exact-text confirmation adds no reasoning after giving the answer."""
     return bool(re.search(
@@ -879,6 +906,8 @@ async def generate_answer(
     allowed_keywords: tuple[str, ...] = (),
     assignment_scope: bool = False,
     active_learning_step: dict[str, str] | None = None,
+    misconception_context: dict[str, str] | None = None,
+    return_misconception_status: bool = False,
 ) -> str:
     contextual_meaning = is_contextual_meaning_request(question, history)
     # No accepted course evidence means no factual answer from general model
@@ -947,8 +976,11 @@ async def generate_answer(
         "two or three short sentences: briefly respond to one useful part of the student's reasoning, add only "
         "the context needed, then ask one natural question if it helps. Avoid superlatives and canned praise "
         "such as 'excellent analysis' or 'perfectly'; do not restate the student's full answer. When it helps "
-        "students scan the reply, use Markdown bold for one short key concept in the explanation and at most "
-        "one decisive phrase in the question. Keep the "
+        "students scan the reply, choose one meaningful sentence or clause in the tutor explanation and one "
+        "meaningful sentence or clause in the next thinking question to emphasize with Markdown bold. Choose "
+        "each span for its importance to the current reasoning task; it may contain a key term, an objective, "
+        "or a decisive action. Keep other text at normal weight. If a reply has no explanation or no next "
+        "question, emphasize the part that is present. Keep the "
         "question open enough for reasoning rather than embedding its answer in the wording. Stay with the "
         "current example unless the student asks for a different one; do not add another scenario just to "
         "extend the exchange. When a new example "
@@ -999,7 +1031,12 @@ async def generate_answer(
                 "confirms it helped, acknowledge that briefly, then continue the same example with one new, "
                 "concrete application question that advances the current step's goal. Do not repeat the explanation, "
                 "ask another yes/no comprehension check, introduce a new concept, or move to another step. "
-                "Do not claim the learner has mastered the step based on their confirmation."
+                "Do not claim the learner has mastered the step based on their confirmation. "
+                "When the learner attempts to answer your current question, do not end on feedback alone. "
+                "After responding to their reasoning, either ask one new, concrete application question in the "
+                "same example or, if this step's reasoning is ready to check, invite them to take the step quiz "
+                "in lead_in. Do not repeat the question they just answered. A direct explanation request or a "
+                "request to pause may still end without a question."
             )
         if re.search(r"\bdifferent, simple hypothetical example\b", question, re.I):
             teaching_instruction += (
@@ -1018,7 +1055,35 @@ async def generate_answer(
             "subtopic as long as the learner wants. If their intent to change or return is unclear, ask "
             "whether they want to explore the new topic or revisit the earlier one; do not silently redirect."
         )
-    elif learning_topic:
+    if misconception_context:
+        paused_question = misconception_context.get("paused_question", "").strip()
+        mistaken_idea = misconception_context.get("misconception", "").strip()
+        if misconception_context.get("phase") == "explain":
+            teaching_instruction += (
+                " The learner's answer contained a specific misconception. Correct that idea from the selected "
+                "material in one or two plain sentences, using one tiny, familiar hypothetical analogy to "
+                "clarify the difference. Then ask one short, specific confirmation question about whether "
+                "that correction makes sense or whether they want another explanation. This confirmation is "
+                "an intentional pause, not a mastery check. If the paused question offered misleading choices, "
+                "say so and correct the choices before asking for confirmation. Do not resume or replace the "
+                "paused question yet. "
+                f"Misconception: <misconception>{mistaken_idea}</misconception>. "
+                f"Paused question: <paused_question>{paused_question}</paused_question>."
+            )
+        elif misconception_context.get("phase") == "confirm":
+            teaching_instruction += (
+                " The previous tutor reply corrected a misconception and asked whether that explanation "
+                "made sense. Read the student's latest answer in that context. If they confirm it helped, "
+                "briefly acknowledge that and return to the reasoning task paused by the misconception: ask "
+                "one concrete application question in the same example, building on the paused question "
+                "without repeating its wording. If they are still confused, explain the same distinction "
+                "another simple way and ask one specific clarification question; do not advance. If they "
+                "clearly ask about a different topic, answer their actual request. Set misconception_resolution "
+                "to resolved, unresolved, or redirected accordingly; do not treat a confirmation as mastery. "
+                f"Misconception: <misconception>{mistaken_idea}</misconception>. "
+                f"Paused question: <paused_question>{paused_question}</paused_question>."
+            )
+    if learning_topic and not assignment_scope:
         teaching_instruction += (
             f" The student's original learning question is <learning_topic>{learning_topic}</learning_topic>. "
             "That question is the primary teaching objective, not background context. Every Socratic follow-up "
@@ -1046,6 +1111,7 @@ async def generate_answer(
     assignment_support_request = bool(
         assignment_scope and recent_tutor_turns and classification
         and classification.message_role == "support_request"
+        and not (misconception_context and misconception_context.get("phase") == "confirm")
     )
     if recent_tutor_turns and socratic_decision.mode == "socratic" and not assignment_scope:
         if support_request:
@@ -1134,6 +1200,11 @@ async def generate_answer(
                 "Keep any quoted source message complete in lead_in; never split a quote across the fields. "
                 "Put at most one new, specific question for the learner "
                 "in next_question; use an empty string when the learner needs a direct explanation before another question. "
+                "In lead_emphasis, copy the exact clause or sentence that explains WHY the answer is true "
+                "or names the governing course requirement, rather than generic praise or setup. "
+                "In question_emphasis, copy the exact core request the learner must reason about, "
+                "rather than its introductory scenario clause. Use an empty string "
+                "for an absent part. The application will bold those chosen spans; do not add extra emphasis. "
                 "Never rephrase a question that already received a support request without adding a new idea. "
                 "Both fields are your own words. Keep any question connected "
                 "to the established scenario and the original learning goal. These are parts of one natural "
@@ -1177,8 +1248,14 @@ async def generate_answer(
                         "properties": {
                             "lead_in": {"type": "string"},
                             "next_question": {"type": "string"},
+                            "lead_emphasis": {"type": "string"},
+                            "question_emphasis": {"type": "string"},
+                            **({"misconception_resolution": {"type": "string", "enum": [
+                                "resolved", "unresolved", "redirected",
+                            ]}} if misconception_context and misconception_context.get("phase") == "confirm" else {}),
                         },
-                        "required": ["lead_in", "next_question"],
+                        "required": ["lead_in", "next_question", "lead_emphasis", "question_emphasis"] + (["misconception_resolution"]
+                            if misconception_context and misconception_context.get("phase") == "confirm" else []),
                         "additionalProperties": False,
                     },
                 },
@@ -1198,8 +1275,39 @@ async def generate_answer(
         )
         log_event(9, "candidate_response_generated", source="llm", response_chars=len(raw_answer))
         debug_preview("candidate_answer", raw_answer)
+        turn_resolution = None
         if structured_turn and raw_answer.strip() not in {fallback_answer(question, []), "That topic is outside the currently published course documentation.", "That topic has not been approved by your instructor for tutoring."}:
             turn = json.loads(raw_answer)
+            if (
+                assignment_scope and active_learning_step and classification
+                and classification.message_role == "student_answer"
+                and classification.conversation_action == "continue"
+                and not str(turn.get("next_question") or "").strip()
+                and not re.search(r"\b(?:step quiz|take (?:the )?quiz)\b", str(turn.get("lead_in") or ""), re.I)
+            ):
+                log_event(10, "guided_answer_needs_follow_up_repair")
+                repair_request = {**request, "messages": [
+                    *messages,
+                    {"role": "assistant", "content": raw_answer},
+                    {"role": "system", "content": (
+                        "Your draft answers the student's attempted response but leaves them with neither a "
+                        "next question nor a clear path to the step quiz. Review the latest student message "
+                        "and current guided step. Return a revised JSON turn that keeps the useful feedback. "
+                        "If one more reasoning move would help, ask exactly one new application question in "
+                        "next_question, grounded in the established example. If the student has done enough "
+                        "for this step, make next_question empty and explicitly invite the step quiz in lead_in. "
+                        "If the student actually asked for only an explanation or to pause, you may leave "
+                        "next_question empty. Never ask them to repeat a fact you just supplied."
+                    )},
+                ]}
+                try:
+                    repaired = await chat_completion(api_key, base_url, repair_request)
+                    repaired_turn = json.loads(repaired.choices[0].message.content or "")
+                    if isinstance(repaired_turn, dict) and isinstance(repaired_turn.get("lead_in"), str) and isinstance(repaired_turn.get("next_question"), str):
+                        turn = repaired_turn
+                        log_event(10, "guided_answer_follow_up_repaired", has_question=bool(turn["next_question"].strip()))
+                except Exception as repair_error:
+                    log_exception(10, "guided_answer_follow_up_repair_failed", repair_error)
             if assignment_support_request and (
                 turn["lead_in"].count("?") + turn["next_question"].count("?") > 1
                 or len(turn["lead_in"]) > 350
@@ -1251,6 +1359,9 @@ async def generate_answer(
                     log_exception(10, "repeated_support_question_repair_failed", repair_error)
                 if repeated_tutor_question(turn["next_question"], recent_history):
                     turn["next_question"] = ""
+            lead_emphasis = str(turn.get("lead_emphasis") or "")
+            question_emphasis = str(turn.get("question_emphasis") or "")
+            turn_resolution = turn.get("misconception_resolution")
             turn = one_question_socratic_turn(keep_quoted_answer_together(turn))
             if assignment_scope and confirms_answer_just_supplied(turn["next_question"]):
                 log_event(10, "redundant_answer_confirmation_removed")
@@ -1263,6 +1374,8 @@ async def generate_answer(
                 or repeats_identity_question(turn["next_question"], recent_history)
             ):
                 turn["next_question"] = ""
+            turn["lead_in"] = ensure_tutor_emphasis(turn["lead_in"], lead_emphasis)
+            turn["next_question"] = ensure_tutor_emphasis(turn["next_question"], question_emphasis, purpose="question")
             answer = "\n\n".join(
                 part.strip() for part in (turn["lead_in"], turn["next_question"]) if part.strip()
             )
@@ -1277,7 +1390,7 @@ async def generate_answer(
             latency_ms=llm_latency_ms,
         )
         debug_preview("validated_answer", answer)
-        return answer
+        return (answer, turn_resolution) if return_misconception_status else answer
     except Exception as error:
         # Return a safe student-facing message if OpenAI is temporarily unavailable or rate-limited.
         if trace_active():

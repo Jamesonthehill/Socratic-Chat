@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api } from "./api";
+import { api, logout } from "./api";
 import { Notice } from "./ui";
 import "./aiducate.css";
+import aiducateLogo from "./aiducate-logo.png";
 import CanvasSurveyImport from "./CanvasSurveyImport";
 
 const statusLabel = status => ({ completed: "Completed", in_progress: "In progress", not_started: "Not started" })[status] || status;
@@ -59,19 +60,23 @@ export default function AiducateWorkspace() {
   }
   return <div className="aid-workspace aid-shell">
     <aside className="aid-rail">
-      <strong className="aid-brand">AIDucate</strong>
-      <small>Instructor workspace</small>
+      <div className="aid-identity"><img src={aiducateLogo} alt="" /><div><strong>AIDucate</strong><small>Reflection analysis</small></div></div>
       <nav aria-label="AIDucate workspace">
+        <h2>Workspace</h2>
         <button aria-current={!importOpen && !course ? "page" : undefined} onClick={() => navigateCourse("")}>Dashboard</button>
         <button aria-current={importOpen ? "page" : undefined} onClick={() => setImportOpen(true)}>Import reflections</button>
         <Link className="aid-analysis-link" to="/professor/reflection-analysis">Reflection analysis</Link>
-        {courses.length > 0 && <><h2>Courses</h2>{courses.map(item =>
+        {courses.length > 0 && <><h2>Your courses</h2>{courses.map(item =>
           <button key={item.course_id} aria-current={!importOpen && courseId === String(item.course_id) ? "page" : undefined}
             onClick={() => navigateCourse(item.course_id)}>{item.course_code || item.title}</button>
         )}</>}
+        <h2>Account</h2>
+        <Link className="aid-analysis-link" to="/professor">Professor dashboard</Link>
+        <button type="button" onClick={logout}>Log out</button>
       </nav>
     </aside>
     <div className="aid-content">
+    <header className="aid-topbar"><span>Workspace / <b>{importOpen ? "Import reflections" : selected?.title || course?.course_code || "Dashboard"}</b></span><small>Instructor workspace</small></header>
     <div hidden={!importOpen}>
       {header("Instructor workspace", "Import reflections", "Choose your reflection file and an optional grading file to review responses together.")}
       <CanvasSurveyImport />
@@ -84,13 +89,13 @@ export default function AiducateWorkspace() {
     </nav>
     {error && <Notice error={error}/>}
     {loading ? <p role="status">Opening AIducate workspace…</p> : !course ? <>
-      {header("Instructor workspace", "AIducate dashboard", "Choose a course to review its Reflection assignments and student responses.")}
+      {header("Instructor workspace", "Dashboard", "Choose a course to review its Reflection assignments and student responses.")}
       <div className="aid-metrics">
         <Metric label="Your courses" value={courses.length} hint="Courses you teach" />
         <Metric label="Reflection sets" value={assignments.length} hint="Published BrainTutor assignments" />
         <Metric label="Completed submissions" value={assignments.reduce((sum, item) => sum + Number(item.completed_count || 0), 0)} hint="Across the listed assignments" />
       </div>
-      <section className="aid-section" aria-labelledby="aid-courses-title"><div className="aid-section-heading"><div><span className="aid-eyebrow">Your course content</span><h2 id="aid-courses-title">Your courses</h2></div></div>
+      <section className="aid-section" aria-labelledby="aid-courses-title"><div className="aid-section-heading"><div><h2 id="aid-courses-title">Your courses</h2></div></div>
         {courses.length ? <div className="aid-course-grid">{courses.map(item => {
           const count = assignments.filter(assignment => String(assignment.course_id) === String(item.course_id)).length;
           return <button type="button" className="aid-course-card" key={item.course_id} onClick={() => openCourse(item.course_id)}><span className="aid-eyebrow">{item.course_code || "Course"}</span><strong>{item.title || item.course_code}</strong><small>{count} Reflection assignment{count === 1 ? "" : "s"}</small><span className="aid-text-action">Open course →</span></button>;
@@ -101,7 +106,7 @@ export default function AiducateWorkspace() {
       <div className="aid-guide" aria-label="How AIducate works">
         {[["01", "Collect reflections", "Publish a Reflection assignment and let students respond."], ["02", "Analyze reflections", "Select an assignment to count participation and open saved responses."], ["03", "Explore results", "Review the class overview and individual responses."]].map(([number, title, detail]) => <div className="aid-guide-card" key={number}><span className="aid-eyebrow">{number}</span><h3>{title}</h3><p>{detail}</p></div>)}
       </div>
-      <section className="aid-section" aria-labelledby="aid-assignments-title"><div className="aid-section-heading"><div><span className="aid-eyebrow">Your course content</span><h2 id="aid-assignments-title">Reflection assignments</h2><p>Published assignments in this course are ready for review.</p></div></div>
+      <section className="aid-section" aria-labelledby="aid-assignments-title"><div className="aid-section-heading"><div><h2 id="aid-assignments-title">Reflection assignments</h2><p>Published assignments in this course are ready for review.</p></div></div>
         {courseAssignments.length ? <div className="aid-assignment-list">{courseAssignments.map(item => <button className="aid-assignment-row" type="button" key={item.id} onClick={() => openAssignment(item.id)}><span><strong>{item.title}</strong><small>BrainTutor Reflection · {item.completed_count || 0} completed</small></span><span className="aid-text-action">Open analysis →</span></button>)}</div> : <div className="aid-empty"><span className="aid-empty-icon">◇</span><h3>No published Reflection assignments</h3><p>Create a Reflection activity in this course, then return here to review responses.</p><Link className="button" to="/professor/activities/new">Create Reflection activity</Link></div>}
       </section>
     </> : <>

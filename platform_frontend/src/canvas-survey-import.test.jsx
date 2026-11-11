@@ -52,7 +52,8 @@ test("two uploads match by SIS ID instead of unrelated Canvas ID and show the se
   await user.upload(screen.getByLabelText('Grading CSV file'),grading);
   await screen.findByText('grading.csv');
   expect(screen.getByLabelText('Grading student ID')).toHaveValue('2');
-  expect(screen.getByRole('button',{name:'Review imported responses'})).toBeDisabled();
+  expect(screen.getByRole('button',{name:'Review imported responses'})).toBeEnabled();
+  expect(screen.getByLabelText('Grade to display')).toHaveValue('4');
   await user.selectOptions(screen.getByLabelText('Grade to display'),'3');
   await user.click(screen.getByRole('button',{name:'Review imported responses'}));
   expect(screen.getByRole('table')).toHaveTextContent('Matched');

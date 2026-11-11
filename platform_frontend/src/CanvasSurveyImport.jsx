@@ -77,7 +77,7 @@ export default function CanvasSurveyImport({ onUse }) {
       const parsed = parseSurveyCsv(await file.text(), { grading: true });
       setGrades({ ...parsed, filename: file.name });
       setGradeKey(findColumn(parsed.headers, ["sis login id", "sis user id", "email", "id", "student id"]));
-      setGradeColumn(-1);
+      setGradeColumn(findColumn(parsed.headers, ["current score", "current grade"]));
     } catch (e) { setGradeError(e.message); }
     finally { setBusy(false); if (gradeInput.current) gradeInput.current.value = ""; }
   }
@@ -101,11 +101,11 @@ export default function CanvasSurveyImport({ onUse }) {
         <p className="help">Select columns containing the same student identifier. Email addresses are matched using the part before @; capitalization is ignored. Duplicate grading IDs are not joined.</p>
         <label>Reflection student ID<select value={reflectionKey} onChange={e=>{setReflectionKey(Number(e.target.value));setReview(false);}}><option value={-1}>Choose ID column</option>{data.headers.map((h,i)=><option key={i} value={i}>{h}</option>)}</select></label>
         <label>Grading student ID<select value={gradeKey} onChange={e=>{setGradeKey(Number(e.target.value));setReview(false);}}><option value={-1}>Choose ID column</option>{grades.headers.map((h,i)=><option key={i} value={i}>{h}</option>)}</select></label>
-        <label>Grade to display<select value={gradeColumn} onChange={e=>{setGradeColumn(Number(e.target.value));setReview(false);}}><option value={-1}>Choose assignment or score column</option>{scoreColumns.map(i=><option key={i} value={i}>{grades.headers[i]}</option>)}</select></label>
+        <label>Grade to display<select value={gradeColumn} onChange={e=>{setGradeColumn(Number(e.target.value));setReview(false);}}><option value={-1}>Review without a grade</option>{scoreColumns.map(i=><option key={i} value={i}>{grades.headers[i]}</option>)}</select></label>
         {matches && <p>{matches.filter(m=>m.status === "Matched").length} matched reflection records; {matches.filter(m=>m.status !== "Matched").length} unmatched or ambiguous. {grades.rows.filter(r=>{const id=normalizeStudentId(r[gradeKey]);return id && !data.rows.some(row=>normalizeStudentId(row[reflectionKey])===id);}).length} grading records have no reflection record.</p>}
       </fieldset>}
       <fieldset><legend>Select reflection question columns</legend>{data.headers.map((h, i) => <label key={i} style={{display:"flex",gap:"0.6rem",alignItems:"center",marginBlock:"0.5rem"}}><input style={{width:"auto"}} type="checkbox" checked={selected.includes(i)} onChange={e => { setReview(false); setSelected(e.target.checked ? [...selected, i].sort((a,b)=>a-b) : selected.filter(n => n !== i)); }}/>{h}</label>)}</fieldset>
-      <div className="editor-actions"><button type="button" disabled={!selected.length || Boolean(grades && (!matches || gradeColumn < 0))} onClick={() => setReview(true)}>Review imported responses</button><button type="button" className="secondary" onClick={() => {setData(null);setGrades(null);setReview(false);setError("");setGradeError("");}}>Clear imported data</button>{grades && <button type="button" className="secondary" onClick={()=>{setGrades(null);setGradeError("");setReview(false);}}>Remove grading CSV</button>}</div>
+      <div className="editor-actions"><button type="button" disabled={!selected.length} onClick={() => setReview(true)}>Review imported responses</button><button type="button" className="secondary" onClick={() => {setData(null);setGrades(null);setReview(false);setError("");setGradeError("");}}>Clear imported data</button>{grades && <button type="button" className="secondary" onClick={()=>{setGrades(null);setGradeError("");setReview(false);}}>Remove grading CSV</button>}</div>
       {review && <div aria-live="polite"><h3>Response overview</h3><p><strong>{responded.length}</strong> records contain responses to the selected questions; <strong>{data.rows.length - responded.length}</strong> have no selected responses. These counts do not establish learning or mastery.</p>
         {onUse && <button type="button" onClick={() => {
           const students = data.rows.map((row, n) => {
@@ -115,7 +115,7 @@ export default function CanvasSurveyImport({ onUse }) {
           onUse(data.filename, { students, summary: { assigned: students.length, started: responded.length, completed: responded.length, responses: students.reduce((sum, s) => sum + s.response_count, 0) } });
         }}>Use these responses in this course</button>}
         {selected.map(i => <details key={i}><summary><strong>{data.headers[i]}</strong> · {data.rows.filter(r=>r[i].trim()).length} responses</summary><ol>{data.rows.map((r,n)=>r[i].trim() ? <li key={n}><strong>Record {n+1}</strong><p style={{whiteSpace:"pre-wrap"}}>{r[i]}</p></li> : null)}</ol></details>)}
-        {grades && matches && <><h3>Grades alongside reflections</h3><p>Grades are shown as provided. Blank grades are missing, not zero. These records do not establish that a grade caused a particular reflection.</p><p><strong>{grades.headers[gradeColumn]}</strong>{grades.points?.[gradeColumn]?.trim() ? ` · Points possible: ${grades.points[gradeColumn]}` : ""}</p>
+        {grades && matches && gradeColumn >= 0 && <><h3>Grades alongside reflections</h3><p>Grades are shown as provided. Blank grades are missing, not zero. These records do not establish that a grade caused a particular reflection.</p><p><strong>{grades.headers[gradeColumn]}</strong>{grades.points?.[gradeColumn]?.trim() ? ` · Points possible: ${grades.points[gradeColumn]}` : ""}</p>
           <div style={{overflowX:"auto"}}><table><thead><tr><th>Record</th><th>Match status</th><th>Grade</th>{selected.map(i=><th key={i}>{data.headers[i]}</th>)}</tr></thead><tbody>{data.rows.map((row,n)=><tr key={n}><td>{n+1}</td><td>{matches[n].status}</td><td>{matches[n].grade ? matches[n].grade[gradeColumn]?.trim() || "Not provided" : "Not matched"}</td>{selected.map(i=><td key={i} style={{whiteSpace:"pre-wrap",minWidth:"12rem"}}>{row[i] || "No response"}</td>)}</tr>)}</tbody></table></div>
         </>}
       </div>}

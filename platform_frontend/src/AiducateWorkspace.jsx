@@ -94,7 +94,6 @@ export default function AiducateWorkspace() {
         <h2>Workspace</h2>
         <button aria-current={!profileOpen && !importOpen && !course ? "page" : undefined} onClick={() => navigateCourse("")}>Dashboard</button>
         <button aria-current={importOpen ? "page" : undefined} onClick={() => beginImport()}>Import reflections</button>
-        <Link className="aid-analysis-link" to="/professor/reflection-analysis">Reflection analysis</Link>
         {courses.length > 0 && <><h2>Your courses</h2>{courses.map(item =>
           <button key={item.course_id} aria-current={!profileOpen && !importOpen && courseId === String(item.course_id) ? "page" : undefined}
             onClick={() => navigateCourse(item.course_id)}>{item.course_code || item.title}</button>

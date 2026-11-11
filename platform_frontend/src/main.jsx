@@ -29,7 +29,6 @@ import InstructorActivityPage, {
 } from "./InstructorActivityPage";
 import { loadCourseContext, cachedCourseContext } from "./courseContext";
 import StudentWorkspace from "./StudentWorkspace";
-import ReflectionAnalysis from "./ReflectionAnalysis";
 import "./styles.css";
 
 import { Notice, Badge, GenerationStatus } from "./ui";
@@ -130,7 +129,7 @@ function ToolIcon({ tool }) {
 }
 
 export function App() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const aiducatePage = ["/professor/analytics", "/professor/reflection-analysis"].includes(pathname);
   useEffect(() => {
     if (!aiducatePage) return;
@@ -138,10 +137,6 @@ export function App() {
     document.title = "AIDucate · Instructor workspace";
     return () => { document.title = previous; };
   }, [aiducatePage]);
-  const [analysisOpened, setAnalysisOpened] = useState(pathname === "/professor/reflection-analysis");
-  useEffect(() => {
-    if (pathname === "/professor/reflection-analysis") setAnalysisOpened(true);
-  }, [pathname]);
   const [user, setUser] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -242,7 +237,7 @@ export function App() {
           />
           <Route
             path="/professor/reflection-analysis"
-            element={isProfessor ? null : <Navigate to={home} replace />}
+            element={<Navigate to={isProfessor ? { pathname: "/professor/analytics", search } : home} replace />}
           />
           <Route
             path="/professor/analytics"
@@ -324,7 +319,6 @@ export function App() {
             }
           />
         </Routes>
-        {isProfessor && analysisOpened && <div hidden={pathname !== "/professor/reflection-analysis"}><ReflectionAnalysis /></div>}
       </main>
       <footer>
         {aiducatePage ? <strong>AIDucate</strong> : <><BrandLockup compact /><span>Guide. Reflect. Practice.</span></>}

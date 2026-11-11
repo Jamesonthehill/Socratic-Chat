@@ -1,0 +1,31 @@
+name: Verify guided portfolio demo
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Start guided activity and test OpenAI reply
+        run: |
+          python3 - <<'PY'
+          import json, urllib.request
+          url = "https://socratic-chat-api.onrender.com/api/public/guided"
+          def post(body):
+              request = urllib.request.Request(url, data=json.dumps(body).encode(),
+                  headers={"Content-Type": "application/json"})
+              with urllib.request.urlopen(request, timeout=150) as response:
+                  return json.load(response)
+          initial = post({"action": "start"})
+          assert len(initial["steps"]) == 3
+          print("Guided activity started successfully")
+          result = post({"action": "message", "message": "I do not understand what an edge case means.",
+              "history": initial["messages"], "engine_state": initial["socratic"],
+              "conversation_id": initial["conversation_id"]})
+          answer = result["messages"][-1]["content"]
+          assert answer and "could not generate" not in answer.lower(), answer
+          print("Tutor reply:", answer)
+          print("Subtopic return available:", bool(result["socratic"].get("learning_detour")))
+          PY

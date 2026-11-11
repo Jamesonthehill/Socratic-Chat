@@ -2270,7 +2270,7 @@ export default function StudentWorkspace({ user }) {
                   <button disabled={busy || !studentReflection.trim()}>
                     Get final feedback
                   </button>
-                  {socratic.phase === "teaching" && (
+                  {socratic.phase === "teaching" && !finalLearningStepFinished && (
                     <button
                       type="button"
                       className="secondary compact"

@@ -55,8 +55,8 @@ NEW_CONCEPT_PATTERN = re.compile(
 @dataclass(frozen=True)
 class SocraticDecision:
     mode: str  # "socratic" asks a guided question; "direct" explains plainly.
-    student_state: str  # Why this strategy fits the learner's current turn.
-    strategy: str  # Loggable name of the selected teaching move.
+    student_state: str | None  # Learner state when a strategy actually evaluates it.
+    strategy: str | None  # Selected teaching move, when this path chooses one.
     instruction: str  # Specific behavior sent to the generation model.
     target_concept: str | None = None  # The course idea being explored.
     example_type: str = "none"  # Kind of scenario to use, if any.

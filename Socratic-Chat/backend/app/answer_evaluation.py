@@ -168,11 +168,16 @@ async def assess_student_answer_qualitatively(
     """Assess the latest answer against the latest question without scoring it."""
     if not sources or not should_evaluate_answer(message, history, classification):
         return None
-    config = _client_config()
+    config = settings.llm_client_config("qualitative_feedback")
     if config is None:
         return None
     provider, api_key, base_url, model = config
-    tutor_question = next(item.content for item in reversed(history) if item.role == "assistant" and "?" in item.content)
+    checking_claim = classification.message_role == "confirmation_request"
+    tutor_question = (
+        "Is the student's stated claim accurate according to the selected material?"
+        if checking_claim else
+        next(item.content for item in reversed(history) if item.role == "assistant" and "?" in item.content)
+    )
     conversation = "\n".join(f"{item.role}: {item.content}" for item in history[-6:])
     context = "\n\n".join(f"[{index + 1}] {source.title}\n{source.text}" for index, source in enumerate(sources[:4]))
     request: dict[str, Any] = {
@@ -181,7 +186,8 @@ async def assess_student_answer_qualitatively(
         "messages": [
             {"role": "system", "content": (
                 "Give qualitative, evidence-grounded tutoring feedback. Return only the required JSON object. "
-                "Judge the student's answer to the LATEST tutor question, not an earlier concept. "
+                "For a confirmation request, judge the student's own claim against the selected material, not "
+                "the previous tutor question. Otherwise judge the answer to the LATEST tutor question. "
                 "Name what the learner actually demonstrated, what remains unclear, and any specific contradiction. "
                 "If the question asks what happens next, focus on the action sequence. Do not assign a score, "
                 "grade, rubric level, or mastery status. Do not infer knowledge absent from the answer. "
@@ -190,7 +196,7 @@ async def assess_student_answer_qualitatively(
             )},
             {"role": "user", "content": (
                 f"Recent conversation:\n{conversation}\n\nLatest tutor question:\n{tutor_question}\n\n"
-                f"Student answer:\n{message}\n\nInstructor evidence:\n{context}"
+                f"Student {'claim to verify' if checking_claim else 'answer'}:\n{message}\n\nInstructor evidence:\n{context}"
             )},
         ],
         "response_format": {"type": "json_schema", "json_schema": {
@@ -199,6 +205,8 @@ async def assess_student_answer_qualitatively(
         }},
     }
     request.update(settings.completion_token_parameters(provider, settings.ANSWER_EVALUATION_MAX_TOKENS))
+    if provider == "Groq" and "gpt-oss" in model:
+        request["reasoning_effort"] = "low"
     try:
         log_event(6, "qualitative_feedback_started", provider=provider, model=model)
         write_llm_request_snapshot("qualitative-feedback", provider, request)
@@ -241,6 +249,8 @@ def should_evaluate_answer(
         return False
     if classification.dialogue_status in INELIGIBLE_STATUSES:
         return False
+    if classification.message_role == "confirmation_request":
+        return len(re.findall(r"\b[\w'-]+\b", message)) >= 3
     # An answer is meaningful only relative to a tutor question already asked.
     latest_tutor = next((item for item in reversed(history) if item.role == "assistant"), None)
     if latest_tutor is None or "?" not in latest_tutor.content:

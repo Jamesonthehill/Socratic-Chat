@@ -34,7 +34,6 @@ MESSAGE_ROLES = {
     "closing",                # Clearly ends the learning session.
     "topic_change",           # Requests a different primary learning objective.
     "administrative",         # Requests course/application information.
-    "ambiguous",              # Context cannot establish the intended referent or task.
 }
 CLARIFICATION_OPTION_ROLES = {
     "student_answer",
@@ -76,35 +75,19 @@ CLASSIFICATION_SCHEMA: dict[str, Any] = {
             "type": "array",  # A comparison can have more than one concept.
             "items": {"type": "string", "maxLength": 100},  # Bound each concept label.
         },
-        "missing_context": {"type": ["string", "null"], "maxLength": 160},
-        "clarification_question": {"type": ["string", "null"], "maxLength": 200},
-        "clarification_options": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "label": {"type": "string", "minLength": 1, "maxLength": 60},
-                    "message_role": {"type": "string", "enum": sorted(CLARIFICATION_OPTION_ROLES)},
-                    "resolved_message": {"type": "string", "minLength": 1, "maxLength": 500},
-                },
-                "required": ["label", "message_role", "resolved_message"],
-                "additionalProperties": False,
-            },
-            "maxItems": 3,
-        },
         "retrieval_query": {"type": "string", "minLength": 1, "maxLength": 300},  # Standalone DB search wording.
         "retrieval_subqueries": {
             "type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 300},  # Compound question parts.
             "maxItems": 3,  # Limit model-suggested searches per turn.
         },
+        "subtopic_request": {"type": "boolean"},
         "operational_request": {"type": "string", "enum": sorted(OPERATIONAL_REQUESTS)},  # Course/application lookup.
     },
     # Requiring all fields makes missing model judgments a validation error
     # instead of allowing an accidental default route or score.
     "required": [
-        "message_role", "target_concepts", "missing_context",
-        "clarification_question", "clarification_options",
-        "retrieval_query", "retrieval_subqueries", "operational_request",
+        "message_role", "target_concepts",
+        "retrieval_query", "retrieval_subqueries", "operational_request", "subtopic_request",
     ],
     "additionalProperties": False,  # Reject unrecognized model-created fields.
 }
@@ -148,7 +131,7 @@ MISCONCEPTION_PATTERN = re.compile(
 REASONING_PATTERN = re.compile(r"\b(?:because|therefore|since|which means|so that)\b", re.IGNORECASE)  # Possible reasoning.
 # These openings commonly introduce a new concept rather than answer a prompt.
 DEFINITION_REQUEST_PATTERN = re.compile(
-    r"^(?:what (?:is|are)|define|explain|tell me about|help me understand)\b", re.IGNORECASE,
+    r"^(?:what (?:is|are)|what's|define|explain|tell me about|help me understand)\b", re.IGNORECASE,
 )
 # The next two patterns work together: asking what a phrase means, plus a
 # pointer to earlier tutor wording, should stay in the existing topic.
@@ -213,15 +196,49 @@ def recent_term_correction(message: str, history: list[ChatMessage]) -> tuple[st
     return None
 
 
-def is_contextual_meaning_request(message: str, history: list[ChatMessage]) -> bool:
+def is_contextual_meaning_request(
+    message: str, history: list[ChatMessage], scenario: str | None = None,
+) -> bool:
     """A learner is asking about wording the tutor just used, not opening a new topic."""
     unknown_term = UNKNOWN_TERM_PATTERN.match(message)
     recent_assistant_text = "\n".join(item.content for item in history[-8:] if item.role == "assistant")
+    tutor_context = "\n".join(part for part in (recent_assistant_text, scenario or "") if part)
+    # A named actor introduced by the tutor is conversation context. The name
+    # need not appear in the instructor's documents for the tutor to explain
+    # whom it meant. Require the name in recent tutor text so an unrelated
+    # question about a person cannot bypass course-source grounding.
+    actor_question = re.match(
+        r"^\s*(?:who\s+(?:is|was)\s+|(?:is|was)\s+|what\s+role\s+(?:does|did|is|was)\s+)?"
+        r"(?P<name>[a-z][a-z]+)\b.*\?\s*$",
+        message,
+        re.IGNORECASE,
+    )
+    actor_name = actor_question.group("name") if actor_question else ""
+    actor_in_scenario = bool(
+        actor_name
+        and re.search(rf"\b{re.escape(actor_name)}\b", tutor_context, re.I)
+        and (
+            re.search(
+                rf"\b(?:customer|developer|manager|student|teacher|instructor|user|friend|owner)\b"
+                rf"[^.!?]{{0,35}}\b{re.escape(actor_name)}\b"
+                rf"|\b{re.escape(actor_name)}\b[^.!?]{{0,35}}"
+                rf"\b(?:customer|developer|manager|student|teacher|instructor|user|friend|owner)\b",
+                tutor_context, re.I,
+            )
+            or re.search(rf"\b(?:would|should|does|did)\s+{re.escape(actor_name)}\b", tutor_context, re.I)
+        )
+    )
+    tutor_actor_question = bool(
+        actor_question
+        and re.search(r"\b(?:who|what\s+role|customer|developer|student|teacher|instructor|user|person)\b", message, re.I)
+        and actor_in_scenario
+    )
     return bool(
         (
             CONTEXTUAL_MEANING_PATTERN.search(message)
             and CONTEXT_REFERENCE_PATTERN.search(message)
             or QUESTION_REPHRASE_PATTERN.search(message)
+            or tutor_actor_question
             or (
                 unknown_term
                 and re.search(
@@ -231,7 +248,7 @@ def is_contextual_meaning_request(message: str, history: list[ChatMessage]) -> b
                 )
             )
         )
-        and bool(recent_assistant_text)
+        and bool(tutor_context)
     )
 
 
@@ -254,6 +271,7 @@ class MessageClassification:
     direct_answer: str | None = None  # Deterministic reply for a guarded special case.
     rewritten_query: str | None = None  # Standalone wording for database retrieval.
     retrieval_subqueries: tuple[str, ...] = ()  # Extra searches for compound questions.
+    subtopic_request: bool = False  # Model observation: asks to explore a supporting concept.
     operational_request: str = "none"  # Course/application metadata lookup, if any.
     understanding_level: str = "unknown"  # Legacy DB field; the pre-retrieval classifier no longer estimates mastery.
     source: str = "rules"  # Whether labels came from rules or the model.
@@ -287,7 +305,6 @@ ROLE_POLICY: dict[str, tuple[str, str, str, bool]] = {
     "closing": ("session_control", "closing", "complete", False),
     "topic_change": ("learning", "changing_topic", "continue", True),
     "administrative": ("administrative", "administrative_request", "direct", True),
-    "ambiguous": ("unclear", "unclear", "clarify", True),
 }
 
 
@@ -301,27 +318,13 @@ def _classification_from_observation(
     rewritten_query: str | None = None,
     retrieval_subqueries: tuple[str, ...] = (),
     operational_request: str = "none",
+    subtopic_request: bool = False,
     confidence: float = 0.8,
     source: str = "llm",
 ) -> MessageClassification:
     """Turn one semantic observation into one internally consistent policy decision."""
-    role = message_role if message_role in MESSAGE_ROLES else "ambiguous"
+    role = message_role if message_role in MESSAGE_ROLES else "learning_question"
     route, dialogue_status, action, wants_to_continue = ROLE_POLICY[role]
-    clarification = None
-    if role == "ambiguous":
-        supplied_question = " ".join(clarification_question.split())[:200] if clarification_question else None
-        if supplied_question:
-            clarification = supplied_question.rstrip(" ")
-            if not clarification.endswith("?"):
-                clarification += "?"
-        else:
-            detail = " ".join(missing_context.split())[:160] if missing_context else "the course concept or problem"
-            if re.match(r"^(?:what|which|who|where|when|why|how|can|could|would|do|does|did|is|are)\b", detail, re.I):
-                clarification = detail.rstrip("?.! ") + "?"
-            else:
-                clarification = f"What do you mean by {detail.rstrip('?.! ')}?"
-    else:
-        clarification_options = ()
     return MessageClassification(
         message_role=role,
         route=route,
@@ -333,12 +336,13 @@ def _classification_from_observation(
         has_substantive_claim=role in {"student_answer", "confirmation_request"},
         wants_to_continue=wants_to_continue,
         confidence=confidence,
-        needs_clarification=role == "ambiguous",
-        clarification_question=clarification,
-        clarification_options=clarification_options if role == "ambiguous" else (),
+        needs_clarification=False,
+        clarification_question=None,
+        clarification_options=(),
         target=concepts[0] if concepts else None,
         rewritten_query=rewritten_query,
         retrieval_subqueries=retrieval_subqueries,
+        subtopic_request=subtopic_request,
         operational_request=operational_request,
         understanding_level="unknown",
         source=source,
@@ -378,7 +382,7 @@ def _extract_concepts(message: str) -> tuple[str, ...]:
     # For a definition or process question, capture its subject after the
     # opening phrase (for example, "what is code review?").
     patterns = [
-        r"^(?:please\s+)?(?:what (?:is|are)|define|explain(?:\s+what)?|tell me about|help me understand)\s+(.+)$",
+        r"^(?:please\s+)?(?:what (?:is|are)|what's|define|explain(?:\s+what)?|tell me about|help me understand)\s+(.+)$",
         r"^(?:please\s+)?(?:why|how)\s+(?:does|do|is|are|can|could|would|should)\s+(.+)$",
     ]
     for pattern in patterns:
@@ -459,17 +463,11 @@ def _rule_classification(message: str, history: list[ChatMessage]) -> MessageCla
         if concepts and pronoun_follow_up and role == "learning_question":
             role = "follow_up"
 
-    vague = len(clean.split()) <= 2 and not concepts and role not in {
-        "support_request", "direct_answer_request", "acknowledgement", "understanding_claim",
-    }
-    if vague:
-        role = "ambiguous"
     return _classification_from_observation(
         message_role=role,
         concepts=concepts,
-        missing_context="the course concept or problem" if vague else None,
         rewritten_query=_retrieval_query(clean, concepts),
-        confidence=0.45 if vague else 0.72,
+        confidence=0.72,
         source="rules",
     )
 
@@ -553,7 +551,7 @@ def _validated_llm_classification(
         elif state == "follow_up":
             role = "follow_up"
         elif route == "unclear" or payload.get("needs_clarification") is True:
-            role = "ambiguous"
+            role = fallback.message_role
         elif state == "new_concept":
             role = "learning_question"
         else:
@@ -575,14 +573,20 @@ def _validated_llm_classification(
     # decide course meaning; they prevent a model role from bypassing the
     # student's clear request.
     if DEFINITION_REQUEST_PATTERN.match(message) and operational_request == "none":
-        if role in {"administrative", "support_request", "direct_answer_request"}:
+        if role in {"administrative", "support_request", "direct_answer_request", "confirmation_request"}:
             role = fallback.message_role
         concepts = fallback.target_concepts
     if DIRECT_ANSWER_PATTERN.search(message):
         role = "direct_answer_request"
     elif role == "direct_answer_request":
         role = fallback.message_role
-    if role == "confirmation_request" and not CONFIRMATION_REQUEST_PATTERN.search(message):
+    if role == "confirmation_request" and not (
+        "?" in message or CONFIRMATION_REQUEST_PATTERN.search(message)
+        or re.search(r"\b(?:confirm|verify|check if)\b", message, re.IGNORECASE)
+    ):
+        # A plain answer to the tutor is not a request to verify a claim.
+        # For an actual question, keep the model's interpretation instead of
+        # requiring one fixed phrase such as "is that correct?".
         role = fallback.message_role
 
     rewrite = payload.get("retrieval_query")
@@ -630,6 +634,7 @@ def _validated_llm_classification(
         rewritten_query=rewrite,
         retrieval_subqueries=tuple(subqueries),
         operational_request=operational_request,
+        subtopic_request=payload.get("subtopic_request") is True,
         confidence=0.8,
         source="llm",
     )
@@ -663,20 +668,15 @@ async def _classify_with_llm(
         "wrong), support_request (asks for a hint, simpler wording, or says they are stuck), direct_answer_request "
         "(explicitly asks the tutor to answer), follow_up (asks about wording or an idea already in the exchange), "
         "confirmation_request (offers a claim and asks if it is correct), understanding_claim (says they understand "
-        "without demonstrating it), acknowledgement, closing, topic_change, administrative, or ambiguous. "
-        "Use ambiguous only when the recent conversation leaves at least two reasonable meanings that require different "
-        "responses. A mixed message may be ambiguous when it contains both a tentative answer and a request for help. "
-        "Interpret short replies using the tutor's actual preceding question. A brief reply may answer a "
-        "yes/no question, acknowledge an explanation, or leave intent unclear; do not infer the same meaning "
-        "for every short reply. If two plausible meanings would require different responses, use ambiguous "
-        "and propose context-specific interpretations without supplying the answer. "
+        "without demonstrating it), acknowledgement, closing, topic_change, or administrative. "
+        "Assume a student's course question refers to the current assignment and its selected materials "
+        "unless they explicitly ask for a general explanation or a different example. "
+        "Interpret short replies using the tutor's actual preceding question. "
         "Return target_concepts as concise noun phrases inferred from the latest message and conversation, not a "
-        "fixed topic list. Return missing_context as a short noun phrase only for ambiguous; "
-        "otherwise null. For ambiguous, return one natural clarification_question and two or three short "
-        "clarification_options. Each option must state a complete student-facing meaning, use one allowed message_role, "
-        "and provide resolved_message as the standalone meaning to resume with. Options clarify intent and "
-        "must not reveal the course answer. For every "
-        "non-ambiguous message, return clarification_question=null and clarification_options=[]. Return retrieval_query "
+        "fixed topic list. Set subtopic_request=true when the student asks to understand a supporting "
+        "concept instead of answering the current tutor question. Use the conversation meaning, not "
+        "specific opening words. Use false for an answer attempt, acknowledgement, course administration, "
+        "or a request to continue the current task. This observation does not assess understanding. Return retrieval_query "
         "as one standalone search that resolves pronouns from history, plus "
         "zero to three retrieval_subqueries only for genuinely separate information needs. Return operational_request "
         "as none, list_documents, document_visibility, document_overview, course_title, course_instructor, "
@@ -747,6 +747,7 @@ async def _classify_with_llm(
         "model_observation": {
             "keyword_scope_match": classification.keyword_scope_match,
             "approved_keywords": list(allowed_keywords),
+            "subtopic_request": classification.subtopic_request,
             "message_role": classification.message_role,
             "target_concepts": list(classification.target_concepts),
             "clarification_question": classification.clarification_question,
@@ -810,7 +811,26 @@ async def classify_message(
             rewritten_query=result.rewritten_query or fallback.rewritten_query,
             retrieval_subqueries=result.retrieval_subqueries,
             source=result.source,
-        ), keyword_scope_match=result.keyword_scope_match)
+        ), keyword_scope_match=result.keyword_scope_match, subtopic_request=result.subtopic_request)
+    if (
+        result.needs_clarification
+        and fallback.message_role == "learning_question"
+        and DEFINITION_REQUEST_PATTERN.match(message.strip())
+        and fallback.target_concepts
+        and not re.search(
+            r"\b(?:in general|generally|outside (?:this|the) assignment|different example|another example)\b",
+            message, re.IGNORECASE,
+        )
+    ):
+        # A named course term already has a natural scope: this assignment.
+        # The model's assignment-versus-general choice should not interrupt it.
+        return replace(_classification_from_observation(
+            message_role="learning_question",
+            concepts=fallback.target_concepts,
+            rewritten_query=result.rewritten_query or fallback.rewritten_query,
+            retrieval_subqueries=result.retrieval_subqueries,
+            source=result.source,
+        ), keyword_scope_match=result.keyword_scope_match, subtopic_request=result.subtopic_request)
     # Explicit surface evidence and the preceding tutor turn resolve the few
     # roles that must never be turned into a generic clarification.  This is a
     # normalization of the single observation, not a second intent system.
@@ -819,18 +839,12 @@ async def classify_message(
         "understanding_claim",
     }
     normalized_role = result.message_role
-    actionable_mixed_ambiguity = bool(
-        result.message_role == "ambiguous"
-        and len(result.clarification_options) >= 2
-        and fallback.message_role == "support_request"
-        and TENTATIVE_ANSWER_PATTERN.search(message)
-    )
-    if fallback.message_role in protected_roles and not actionable_mixed_ambiguity:
+    if result.needs_clarification:
+        # Older saved classifier output may still carry this label. Keep the
+        # conversation moving with the locally observed role instead of pausing.
         normalized_role = fallback.message_role
-    elif fallback.message_role == "student_answer" and result.needs_clarification and len(result.clarification_options) < 2:
-        # Do not interrupt a declarative answer with an unusable clarification.
-        # A genuine ambiguity with concrete choices still reaches the student.
-        normalized_role = "student_answer"
+    elif fallback.message_role in protected_roles:
+        normalized_role = fallback.message_role
     if normalized_role != result.message_role:
         return replace(_classification_from_observation(
             message_role=normalized_role,
@@ -839,5 +853,5 @@ async def classify_message(
             retrieval_subqueries=result.retrieval_subqueries,
             operational_request=result.operational_request,
             source=result.source,
-        ), keyword_scope_match=result.keyword_scope_match)
+        ), keyword_scope_match=result.keyword_scope_match, subtopic_request=result.subtopic_request)
     return result

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextvars import ContextVar
 import os
 import re
 from pathlib import Path
@@ -18,6 +19,12 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_API_BASE_URL = os.getenv("OPENAI_API_BASE_URL", "https://api.openai.com/v1")
 RAG_MODEL = os.getenv("RAG_MODEL", "gpt-4.1-mini")
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").strip().lower()
+SOCRATIC_TUTOR_PROVIDER = os.getenv("SOCRATIC_TUTOR_PROVIDER", "").strip().lower()
+SOCRATIC_TUTOR_MODEL = os.getenv("SOCRATIC_TUTOR_MODEL", "openai/gpt-oss-20b").strip()
+SOCRATIC_CLASSIFIER_PROVIDER = os.getenv("SOCRATIC_CLASSIFIER_PROVIDER", "").strip().lower()
+SOCRATIC_SETUP_PROVIDER = os.getenv("SOCRATIC_SETUP_PROVIDER", "").strip().lower()
+SOCRATIC_FEEDBACK_PROVIDER = os.getenv("SOCRATIC_FEEDBACK_PROVIDER", "").strip().lower()
+SOCRATIC_FEEDBACK_MODEL = os.getenv("SOCRATIC_FEEDBACK_MODEL", "openai/gpt-oss-20b").strip()
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "ollama")
 OLLAMA_API_BASE_URL = os.getenv("OLLAMA_API_BASE_URL", "http://127.0.0.1:11434/v1")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b-q4_K_M")
@@ -27,7 +34,6 @@ OLLAMA_GENERATION_MAX_TOKENS = int(os.getenv("OLLAMA_GENERATION_MAX_TOKENS", "60
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_API_BASE_URL = os.getenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
-GROQ_TUTOR_MODEL = os.getenv("GROQ_TUTOR_MODEL", "openai/gpt-oss-120b").strip()
 GROQ_CLASSIFIER_MODEL = os.getenv("GROQ_CLASSIFIER_MODEL", "").strip()
 GROQ_ANSWER_EVALUATION_MODEL = os.getenv("GROQ_ANSWER_EVALUATION_MODEL", "").strip()
 RAG_TEMPERATURE = float(os.getenv("RAG_TEMPERATURE", "0.2"))
@@ -67,6 +73,8 @@ def completion_token_parameters(provider: str, limit: int) -> dict[str, int | st
 
 def embedding_client_config() -> tuple[str, str, str, str] | None:
     """Configure document/query embeddings independently of conversational models."""
+    if PORTFOLIO_OPENAI.get():
+        return "OpenAI", OPENAI_API_KEY, OPENAI_API_BASE_URL, "text-embedding-3-small"
     if EMBEDDING_PROVIDER in {"local", "ollama"}:
         return "Ollama", OLLAMA_API_KEY or "ollama", OLLAMA_API_BASE_URL, EMBEDDING_MODEL
     if EMBEDDING_PROVIDER != "openai":
@@ -77,26 +85,44 @@ def embedding_client_config() -> tuple[str, str, str, str] | None:
 
 
 def embedding_model_name() -> str:
-    return EMBEDDING_MODEL
+    return "text-embedding-3-small" if PORTFOLIO_OPENAI.get() else EMBEDDING_MODEL
+
+
+PORTFOLIO_OPENAI = ContextVar("portfolio_openai", default=False)
 
 
 def llm_client_config(role: str = "generation") -> tuple[str, str, str, str] | None:
     """Return the configured chat provider, independently of embedding settings."""
-    if LLM_PROVIDER in {"local", "ollama"}:
+    if PORTFOLIO_OPENAI.get():
+        if not OPENAI_API_KEY:
+            return None
+        return "OpenAI", OPENAI_API_KEY, OPENAI_API_BASE_URL, os.getenv("PORTFOLIO_OPENAI_MODEL", "gpt-4.1-mini")
+    provider_name = (
+        SOCRATIC_TUTOR_PROVIDER if role == "tutor" and SOCRATIC_TUTOR_PROVIDER
+        else SOCRATIC_CLASSIFIER_PROVIDER if role == "classifier" and SOCRATIC_CLASSIFIER_PROVIDER
+        else SOCRATIC_SETUP_PROVIDER if role == "setup" and SOCRATIC_SETUP_PROVIDER
+        else SOCRATIC_FEEDBACK_PROVIDER if role == "qualitative_feedback" and SOCRATIC_FEEDBACK_PROVIDER
+        else LLM_PROVIDER
+    )
+    if provider_name in {"local", "ollama"}:
         role_model = {
             "classifier": OLLAMA_CLASSIFIER_MODEL,
             "evaluation": OLLAMA_ANSWER_EVALUATION_MODEL,
         }.get(role, "")
         return "Ollama", OLLAMA_API_KEY or "ollama", OLLAMA_API_BASE_URL, role_model or OLLAMA_MODEL
-    if LLM_PROVIDER == "groq":
+    if provider_name == "groq":
         if not GROQ_API_KEY:
             return None
         role_model = {
-            "tutor": GROQ_TUTOR_MODEL,
             "classifier": GROQ_CLASSIFIER_MODEL,
             "evaluation": GROQ_ANSWER_EVALUATION_MODEL,
         }.get(role, "")
-        return "Groq", GROQ_API_KEY, GROQ_API_BASE_URL, role_model or GROQ_MODEL
+        model = (
+            SOCRATIC_TUTOR_MODEL if role == "tutor" and SOCRATIC_TUTOR_PROVIDER
+            else SOCRATIC_FEEDBACK_MODEL if role == "qualitative_feedback" and SOCRATIC_FEEDBACK_PROVIDER
+            else role_model or GROQ_MODEL
+        )
+        return "Groq", GROQ_API_KEY, GROQ_API_BASE_URL, model
     if not OPENAI_API_KEY:
         return None
     role_model = {

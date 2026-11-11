@@ -34,3 +34,9 @@ def test_demo_openai_override_is_scoped_to_request(monkeypatch):
         assert result["messages"][-1]["content"] == "Why does that matter?"
         assert settings.PORTFOLIO_OPENAI.get() is False
     asyncio.run(run())
+
+
+def test_guided_route_precedes_frontend_fallback():
+    from app.main import app
+    paths = [route.path for route in app.routes]
+    assert paths.index("/api/public/guided") < paths.index("")

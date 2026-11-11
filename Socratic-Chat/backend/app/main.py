@@ -1524,9 +1524,8 @@ async def sample_answer(payload: SampleAnswerRequest, request: Request) -> Sampl
         raise HTTPException(status_code=502, detail="Could not generate a sample answer. Please try again.") from error
     return SampleAnswerResponse(answer=answer)
 
-app.mount("/", StaticFiles(directory=settings.FRONTEND_DIR, html=True), name="frontend")
-
-
 # Portfolio visitors use the guided demo with server-side OpenAI credentials.
 from app.portfolio_demo import router as portfolio_demo_router
 app.include_router(portfolio_demo_router)
+
+app.mount("/", StaticFiles(directory=settings.FRONTEND_DIR, html=True), name="frontend")

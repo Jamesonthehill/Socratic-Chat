@@ -131,6 +131,13 @@ function ToolIcon({ tool }) {
 
 export function App() {
   const { pathname } = useLocation();
+  const aiducatePage = ["/professor/analytics", "/professor/reflection-analysis"].includes(pathname);
+  useEffect(() => {
+    if (!aiducatePage) return;
+    const previous = document.title;
+    document.title = "AIDucate · Instructor workspace";
+    return () => { document.title = previous; };
+  }, [aiducatePage]);
   const [analysisOpened, setAnalysisOpened] = useState(pathname === "/professor/reflection-analysis");
   useEffect(() => {
     if (pathname === "/professor/reflection-analysis") setAnalysisOpened(true);
@@ -187,8 +194,8 @@ export function App() {
   return (
     <>
       <header className="site-header">
-        <Link className="brand" to={home}>
-          <BrandLockup />
+        <Link className="brand" to={aiducatePage ? "/professor/analytics" : home}>
+          {aiducatePage ? <strong className="aid-header-brand">AIDucate</strong> : <BrandLockup />}
         </Link>
         <nav aria-label="Main navigation">
           {isProfessor ? (
@@ -320,8 +327,7 @@ export function App() {
         {isProfessor && analysisOpened && <div hidden={pathname !== "/professor/reflection-analysis"}><ReflectionAnalysis /></div>}
       </main>
       <footer>
-        <BrandLockup compact />
-        <span>Guide. Reflect. Practice.</span>
+        {aiducatePage ? <strong>AIDucate</strong> : <><BrandLockup compact /><span>Guide. Reflect. Practice.</span></>}
       </footer>
     </>
   );

@@ -335,14 +335,16 @@ test("activity choices include AIducate; Socratic settings follow Next and revie
     screen.queryByRole("combobox", { name: "Course" }),
   ).not.toBeInTheDocument();
 });
-test("AIducate can be selected and directs instructors to its analysis workspace", async () => {
-  const user = await open();
-  const aiducate = screen.getByRole("button", { name: /AIducate/ });
-  await user.click(aiducate);
-  expect(aiducate).toHaveAttribute("aria-pressed", "true");
-  expect(screen.getByRole("heading", { name: "AIducate settings" })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Open AIducate for this course" }))
-    .toHaveAttribute("href", `/professor/analytics?course=${course.course_id}`);
+test("AIDucate opens the instructor workspace for the selected course", async () => {
+  function Destination() {
+    return <p>{useLocation().search}</p>;
+  }
+  render(<MemoryRouter><Routes>
+    <Route path="/" element={<CreateActivity />} />
+    <Route path="/professor/analytics" element={<Destination />} />
+  </Routes></MemoryRouter>);
+  await userEvent.setup().click(await screen.findByRole("button", { name: /AIducate/ }));
+  expect(await screen.findByText(`?course=${course.course_id}`)).toBeInTheDocument();
 });
 test("selected materials and description persist when a new chat is saved as a draft", async () => {
   const user = await open();

@@ -183,6 +183,11 @@ export default function CreateActivity({
     setError("");
   };
   const chooseTool = (key) => {
+    if (key === "aiducate") {
+      const search = draft.course_id ? "?" + new URLSearchParams({ course: draft.course_id }) : "";
+      navigate("/professor/analytics" + search);
+      return;
+    }
     chatConfigs.current[draft.tool] = draft.config;
     setDraft((d) => ({
       ...d,

@@ -6,9 +6,9 @@ import "./aiducate.css";
 import aiducateLogo from "./aiducate-logo.png";
 import { download, reportHtml } from "./reflection-analysis-export";
 import AiducateProfile from "./AiducateProfile";
+import AiducateStudentProfiles from "./AiducateStudentProfiles";
 import CanvasSurveyImport from "./CanvasSurveyImport";
 
-const statusLabel = status => ({ completed: "Completed", in_progress: "In progress", not_started: "Not started" })[status] || status;
 
 function Metric({ label, value, hint }) {
   return <div className="aid-metric"><span>{label}</span><strong>{value}</strong><small>{hint}</small></div>;
@@ -34,7 +34,6 @@ export default function AiducateWorkspace() {
     setImportOpen(false);
     setAssignmentId(String(id));
     setAnalysis(null);
-    setQuery("");
   }
   const [importOpen, setImportOpen] = useState(false);
   const [searchParams] = useSearchParams();
@@ -44,7 +43,6 @@ export default function AiducateWorkspace() {
   const [assignmentId, setAssignmentId] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [tab, setTab] = useState("overview");
-  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState("");
@@ -62,8 +60,6 @@ export default function AiducateWorkspace() {
   const course = courses.find(item => String(item.course_id) === String(courseId));
   const courseAssignments = [...assignments, ...imports].filter(item => String(item.course_id) === String(courseId));
   const selected = courseAssignments.find(item => String(item.id) === String(assignmentId));
-  const visibleStudents = (analysis?.students || []).filter(student =>
-    `${student.name} ${student.status} ${student.responses.join(" ")}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
 
   async function runAnalysis(id = assignmentId) {
     if (!id) return;
@@ -89,8 +85,8 @@ export default function AiducateWorkspace() {
     download(filename, reportHtml(title, records, "", { responseReport: true }), "text/html;charset=utf-8");
   }
 
-  function openCourse(id) { setCourseId(String(id)); setAssignmentId(""); setAnalysis(null); setQuery(""); }
-  function openAssignment(id) { setAssignmentId(String(id)); setAnalysis(ready[id] || null); setTab("overview"); setQuery(""); }
+  function openCourse(id) { setCourseId(String(id)); setAssignmentId(""); setAnalysis(null); }
+  function openAssignment(id) { setAssignmentId(String(id)); setAnalysis(ready[id] || null); setTab("overview"); }
 
   const header = (eyebrow, title, description) => <div className="aid-heading"><div><span className="aid-eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div></div>;
 
@@ -160,7 +156,7 @@ export default function AiducateWorkspace() {
           <div className="aid-metrics"><Metric label="Assigned students" value={analysis.summary.assigned} hint="Students assigned this activity"/><Metric label="Started" value={analysis.summary.started} hint="Students who opened it"/><Metric label="Completed" value={analysis.summary.completed} hint="Finished assignments"/><Metric label="Student responses" value={analysis.summary.responses} hint="Saved messages from students"/></div>
           <div className="aid-overview-grid"><section className="aid-section"><span className="aid-eyebrow">01 · Notice participation</span><h2>Assignment progress</h2><p>{analysis.summary.completed} of {analysis.summary.assigned} assigned students completed this Reflection.</p><div className="aid-progress-track"><div style={{width: `${analysis.summary.assigned ? Math.round(analysis.summary.completed / analysis.summary.assigned * 100) : 0}%`}}/></div><button className="aid-link" type="button" onClick={() => setTab("students")}>Review student responses →</button></section><section className="aid-section"><span className="aid-eyebrow">02 · Understand the data</span><h2>What this view shows</h2><p>Participation counts and original student messages from this Reflection assignment.</p><p>Topic, emotion, and challenge analysis can be added when a verified analysis service is connected.</p><button className="aid-link" type="button" onClick={() => setTab("details")}>See analysis details →</button></section></div>
         </>}
-        {tab === "students" && <section className="aid-section"><div className="aid-section-heading"><div><span className="aid-eyebrow">Explore results</span><h2>Student reflections</h2><p>Open a student to read their saved responses.</p></div><label className="aid-search">Search students or responses<input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search…"/></label></div>{visibleStudents.length ? <div className="aid-assignment-list">{visibleStudents.map(student => <details key={student.student_id} className="aid-student-row"><summary><span><strong>{student.name}</strong><small>{statusLabel(student.status)} · {student.response_count} response{student.response_count === 1 ? "" : "s"}</small></span><span className="aid-text-action">View responses</span></summary>{student.responses.length ? <ol>{student.responses.map((response, index) => <li key={index}>{response}</li>)}</ol> : <p>No response saved yet.</p>}</details>)}</div> : <p className="aid-no-results">No matching students or responses.</p>}</section>}
+        {tab === "students" && <AiducateStudentProfiles key={selected.id} analysis={analysis} />}
         {tab === "details" && <section className="aid-section"><span className="aid-eyebrow">About this analysis</span><h2>Data and limits</h2><dl className="aid-details"><dt>Source</dt><dd>BrainTutor Reflection assignment responses</dd><dt>Included</dt><dd>Assigned students, activity status, and saved student messages</dd><dt>Current method</dt><dd>Counts and direct review of original responses</dd><dt>Not yet available</dt><dd>Automatic Canvas synchronization, saved CSV imports, theme classification, emotion analysis, and grade comparisons</dd></dl></section>}
       </>}
     </>}

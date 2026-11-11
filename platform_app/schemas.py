@@ -77,7 +77,6 @@ class SocraticLearningStep(StrictModel):
     checks: list[SocraticStepCheck] = Field(default_factory=list, max_length=2)
 
 class SocraticConfig(StrictModel):
-    step_surveys: dict[str, dict] = Field(default_factory=dict, max_length=100)
     scope_mode: Literal["assignment", "keywords"] = "assignment"
     guidance_mode: Literal["basic", "guided"] = "basic"
     keywords: list[str] = Field(default_factory=list, max_length=8)
@@ -155,7 +154,6 @@ class SelfDirectedConfig(StrictModel):
 
 
 class ReflectionConfig(StrictModel):
-    step_surveys: dict[str, dict] = Field(default_factory=dict, max_length=100)
     document_ids: list[str] = Field(default_factory=list, max_length=100)
     module_type: Literal["topic_based", "milestone_based"] = "topic_based"
     required_topics: list[str] = Field(default_factory=list, max_length=100)

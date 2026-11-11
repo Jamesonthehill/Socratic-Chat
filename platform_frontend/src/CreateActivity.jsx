@@ -9,7 +9,6 @@ import ActivityIcon from "./ActivityIcon";
 import ActivityTutorial from "./ActivityTutorial";
 import PublishedStepChecks from "./PublishedStepChecks";
 import PublishedSocraticSettings from "./PublishedSocraticSettings";
-import { StepSurveyEditor } from "./StepSurveys";
 import { loadCourseContext } from "./courseContext";
 
 const initial = {
@@ -549,7 +548,6 @@ export default function CreateActivity({
       {busy && <GenerationStatus message={busyLabel || "Working on your activity"} fullScreen />}
       {showTutorial && <ActivityTutorial tool={draft.tool} onClose={closeTutorial} />}
       {frozen && <PublishedSocraticSettings assignment={draft} onSaved={(updated) => setDraft((current) => ({ ...current, ...updated }))} />}
-      {frozen && ["socratic", "reflections"].includes(draft.tool) && draft.status === "published" && <StepSurveyEditor assignment={draft} />}
       {frozen && <PublishedStepChecks assignment={draft} onSaved={(updated) => setDraft((current) => ({ ...current, ...updated }))} />}
       <fieldset className="editor-fieldset" disabled={busy || frozen}>
         <section className="panel">

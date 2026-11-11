@@ -412,8 +412,8 @@ def reflection_analysis(assignment_id: UUID, account=Depends(professor)):
     """A course instructor's read-only view of saved Reflection attempts."""
     with store.connection() as conn:
         assignment = get_assignment(conn, assignment_id, account, manage=True)
-        if assignment["tool"] not in {"reflections", "socratic"}:
-            raise HTTPException(422, "Choose a Reflection or Socratic assignment to analyze.")
+        if assignment["tool"] != "reflections":
+            raise HTTPException(422, "Choose a Reflection assignment to analyze.")
         rows = conn.execute("""SELECT u.id AS student_id, u.display_name, u.username,
                 t.status, t.messages, t.result, t.completed_at
             FROM assignment_recipients_platform r
@@ -1224,8 +1224,3 @@ def submit_self_directed_task(
         f"/api/student/assignments/{assignment_id}/submit-task",
         json=body.model_dump(),
     )
-
-
-# Surveys collect optional feedback without changing tutoring or completion decisions.
-from platform_app.step_surveys import register_step_surveys
-register_step_surveys(router, get_assignment, professor, user, socratic_step_source)

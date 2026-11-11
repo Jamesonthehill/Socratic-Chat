@@ -113,3 +113,9 @@ body:has(.aid-shell) .site-header, body:has(.aid-shell) .main + footer { display
 html:not([data-theme="dark"]) .aid-shell { --line: #dbe7df; --muted: #52695e; --ink: #19382d; background: #f5f9f6; }
 html:not([data-theme="dark"]) .aid-shell .aid-text-action { color: #00684c; }
 @media(max-width:720px) { .aid-shell { grid-template-columns: minmax(0,1fr); } .aid-identity { padding-bottom: 8px; } .aid-topbar small { display: none; } }
+
+.aid-profile-grid { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr); gap:20px; align-items:start; }
+.aid-profile-grid label { display:grid; gap:6px; margin:16px 0; }
+.aid-content .aid-heading:has(+ section[aria-labelledby="aid-assignments-title"]) { padding:30px; border:1px solid var(--line); border-radius:16px; background:linear-gradient(110deg, var(--surface), color-mix(in srgb,#dbeecf 22%,var(--surface))); }
+.aid-shell .aid-ready { padding-block:clamp(40px,7vw,110px); }
+@media(max-width:820px) { .aid-profile-grid { grid-template-columns:1fr; } }

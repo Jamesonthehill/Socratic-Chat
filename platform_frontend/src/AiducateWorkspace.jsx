@@ -4,6 +4,7 @@ import { api, logout } from "./api";
 import { Notice } from "./ui";
 import "./aiducate.css";
 import aiducateLogo from "./aiducate-logo.png";
+import AiducateProfile from "./AiducateProfile";
 import CanvasSurveyImport from "./CanvasSurveyImport";
 
 const statusLabel = status => ({ completed: "Completed", in_progress: "In progress", not_started: "Not started" })[status] || status;
@@ -13,6 +14,27 @@ function Metric({ label, value, hint }) {
 }
 
 export default function AiducateWorkspace() {
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [imports, setImports] = useState([]);
+  const [ready, setReady] = useState({});
+  const [replaceId, setReplaceId] = useState("");
+  const [importVersion, setImportVersion] = useState(0);
+  function beginImport(id = "") {
+    setProfileOpen(false);
+    setReplaceId(id);
+    setImportVersion(v => v + 1);
+    setImportOpen(true);
+  }
+  function acceptImport(filename, overview) {
+    const id = replaceId || crypto.randomUUID();
+    const item = { id, course_id: courseId, title: filename, completed_count: overview.summary.completed, overview };
+    setImports(previous => [...previous.filter(r => r.id !== id), item]);
+    setReady(previous => ({ ...previous, [id]: false }));
+    setImportOpen(false);
+    setAssignmentId(String(id));
+    setAnalysis(null);
+    setQuery("");
+  }
   const [importOpen, setImportOpen] = useState(false);
   const [searchParams] = useSearchParams();
   const [courses, setCourses] = useState([]);
@@ -37,25 +59,32 @@ export default function AiducateWorkspace() {
   }, []);
 
   const course = courses.find(item => String(item.course_id) === String(courseId));
-  const courseAssignments = assignments.filter(item => String(item.course_id) === String(courseId));
+  const courseAssignments = [...assignments, ...imports].filter(item => String(item.course_id) === String(courseId));
   const selected = courseAssignments.find(item => String(item.id) === String(assignmentId));
   const visibleStudents = (analysis?.students || []).filter(student =>
     `${student.name} ${student.status} ${student.responses.join(" ")}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
 
   async function runAnalysis(id = assignmentId) {
     if (!id) return;
+    if (selected?.overview) {
+      setAnalysis(selected.overview);
+      setReady(previous => ({ ...previous, [id]: selected.overview }));
+      setTab("overview");
+      return;
+    }
     setError(""); setAnalyzing(true); setAnalysis(null);
-    try { setAnalysis(await api(`/platform/assignments/${id}/reflection-analysis`)); setTab("overview"); }
+    try { const result = await api(`/platform/assignments/${id}/reflection-analysis`); setAnalysis(result); setTab("overview"); setReady(previous => ({ ...previous, [id]: result })); }
     catch (e) { setError(e.message); }
     finally { setAnalyzing(false); }
   }
   function openCourse(id) { setCourseId(String(id)); setAssignmentId(""); setAnalysis(null); setQuery(""); }
-  function openAssignment(id) { setAssignmentId(String(id)); setAnalysis(null); setQuery(""); }
+  function openAssignment(id) { setAssignmentId(String(id)); setAnalysis(ready[id] || null); setTab("overview"); setQuery(""); }
 
   const header = (eyebrow, title, description) => <div className="aid-heading"><div><span className="aid-eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div></div>;
 
   function navigateCourse(id) {
     setImportOpen(false);
+    setProfileOpen(false);
     openCourse(id);
   }
   return <div className="aid-workspace aid-shell">
@@ -63,25 +92,27 @@ export default function AiducateWorkspace() {
       <div className="aid-identity"><img src={aiducateLogo} alt="" /><div><strong>AIDucate</strong><small>Reflection analysis</small></div></div>
       <nav aria-label="AIDucate workspace">
         <h2>Workspace</h2>
-        <button aria-current={!importOpen && !course ? "page" : undefined} onClick={() => navigateCourse("")}>Dashboard</button>
-        <button aria-current={importOpen ? "page" : undefined} onClick={() => setImportOpen(true)}>Import reflections</button>
+        <button aria-current={!profileOpen && !importOpen && !course ? "page" : undefined} onClick={() => navigateCourse("")}>Dashboard</button>
+        <button aria-current={importOpen ? "page" : undefined} onClick={() => beginImport()}>Import reflections</button>
         <Link className="aid-analysis-link" to="/professor/reflection-analysis">Reflection analysis</Link>
         {courses.length > 0 && <><h2>Your courses</h2>{courses.map(item =>
-          <button key={item.course_id} aria-current={!importOpen && courseId === String(item.course_id) ? "page" : undefined}
+          <button key={item.course_id} aria-current={!profileOpen && !importOpen && courseId === String(item.course_id) ? "page" : undefined}
             onClick={() => navigateCourse(item.course_id)}>{item.course_code || item.title}</button>
         )}</>}
         <h2>Account</h2>
+        <button aria-current={profileOpen ? "page" : undefined} onClick={() => {setImportOpen(false);setProfileOpen(true);}}>Instructor Profile</button>
         <Link className="aid-analysis-link" to="/professor">Professor dashboard</Link>
         <button type="button" onClick={logout}>Log out</button>
       </nav>
     </aside>
     <div className="aid-content">
-    <header className="aid-topbar"><span>Workspace / <b>{importOpen ? "Import reflections" : selected?.title || course?.course_code || "Dashboard"}</b></span><small>Instructor workspace</small></header>
+    <header className="aid-topbar"><span>Workspace / <b>{profileOpen ? "Instructor Profile" : importOpen ? "Import reflections" : selected?.title || course?.course_code || "Dashboard"}</b></span><small>Instructor workspace</small></header>
+    {profileOpen && <AiducateProfile />}
     <div hidden={!importOpen}>
       {header("Instructor workspace", "Import reflections", "Choose your reflection file and an optional grading file to review responses together.")}
-      <CanvasSurveyImport />
+      <CanvasSurveyImport key={importVersion} onUse={course ? acceptImport : undefined} />
     </div>
-    <div hidden={importOpen}>
+    <div hidden={importOpen || profileOpen}>
     <nav className="aid-breadcrumb" aria-label="AIducate location">
       <button type="button" onClick={() => { setCourseId(""); setAssignmentId(""); setAnalysis(null); }}>AIducate</button>
       {course && <><span>›</span><button type="button" onClick={() => openCourse(courseId)}>{course.course_code || course.title}</button></>}
@@ -99,18 +130,17 @@ export default function AiducateWorkspace() {
         {courses.length ? <div className="aid-course-grid">{courses.map(item => {
           const count = assignments.filter(assignment => String(assignment.course_id) === String(item.course_id)).length;
           return <button type="button" className="aid-course-card" key={item.course_id} onClick={() => openCourse(item.course_id)}><span className="aid-eyebrow">{item.course_code || "Course"}</span><strong>{item.title || item.course_code}</strong><small>{count} Reflection assignment{count === 1 ? "" : "s"}</small><span className="aid-text-action">Open course →</span></button>;
-        })}</div> : <div className="aid-empty"><span className="aid-empty-icon">◇</span><h3>Welcome to AIDucate</h3><p>Open a course you teach through Canvas, or review exported survey responses.</p><button onClick={() => setImportOpen(true)}>Import your first reflection CSV</button></div>}
+        })}</div> : <div className="aid-empty"><span className="aid-empty-icon">◇</span><h3>Welcome to AIDucate</h3><p>Open a course you teach through Canvas, or review exported survey responses.</p><button onClick={() => beginImport()}>Import your first reflection CSV</button></div>}
       </section>
     </> : !selected ? <>
       {header(`Course workspace · ${course.course_code || "Course"}`, course.title || course.course_code, "Collect Reflection responses, open an assignment, and explore what students shared.")}
-      <div className="aid-guide" aria-label="How AIducate works">
-        {[["01", "Collect reflections", "Publish a Reflection assignment and let students respond."], ["02", "Analyze reflections", "Select an assignment to count participation and open saved responses."], ["03", "Explore results", "Review the class overview and individual responses."]].map(([number, title, detail]) => <div className="aid-guide-card" key={number}><span className="aid-eyebrow">{number}</span><h3>{title}</h3><p>{detail}</p></div>)}
-      </div>
-      <section className="aid-section" aria-labelledby="aid-assignments-title"><div className="aid-section-heading"><div><h2 id="aid-assignments-title">Reflection assignments</h2><p>Published assignments in this course are ready for review.</p></div></div>
-        {courseAssignments.length ? <div className="aid-assignment-list">{courseAssignments.map(item => <button className="aid-assignment-row" type="button" key={item.id} onClick={() => openAssignment(item.id)}><span><strong>{item.title}</strong><small>BrainTutor Reflection · {item.completed_count || 0} completed</small></span><span className="aid-text-action">Open analysis →</span></button>)}</div> : <div className="aid-empty"><span className="aid-empty-icon">◇</span><h3>No published Reflection assignments</h3><p>Create a Reflection activity in this course, then return here to review responses.</p><Link className="button" to="/professor/activities/new">Create Reflection activity</Link></div>}
+      <section className="aid-section" aria-labelledby="aid-assignments-title"><div className="aid-section-heading"><div><h2 id="aid-assignments-title">Reflection assignments</h2><p>{courseAssignments.length} reflection sets in this course. CSV sets are available during this visit.</p></div><button onClick={() => beginImport()}>+ Add reflection</button></div>
+        {courseAssignments.length ? <div className="aid-assignment-list">{courseAssignments.map(item => <button className="aid-assignment-row" type="button" key={item.id} onClick={() => openAssignment(item.id)}><span><strong>{item.title}</strong><small>{item.overview ? "CSV import" : "BrainTutor Reflection"} · {item.completed_count || 0} completed</small></span><span className="aid-text-action">{ready[item.id] ? "Explore results →" : "Set up analysis →"}</span></button>)}</div> : <div className="aid-empty"><span className="aid-empty-icon">◇</span><h3>No published Reflection assignments</h3><p>Create a Reflection activity in this course, then return here to review responses.</p><Link className="button" to="/professor/activities/new">Create Reflection activity</Link></div>}
       </section>
     </> : <>
-      {header("Reflection workspace", selected.title, `${course.course_code || course.title} · BrainTutor Reflection`)}
+      <button className="aid-link" onClick={() => openCourse(courseId)}>← Back to {course.course_code || course.title}</button>
+      {selected.overview && <button className="secondary" onClick={() => beginImport(selected.id)}>Import / replace data</button>}
+      {header("Reflection workspace", selected.title, `${course.course_code || course.title} · ${selected.completed_count || 0} submissions`)}
       {!analysis ? <div className="aid-empty aid-ready"><span className="aid-empty-icon">◌</span><h2>Ready for analysis</h2><p>Open the saved responses and participation counts for this assignment.</p><div className="aid-progress-steps"><span className="done">✓ Reflection selected</span><span>Review responses</span><span>Explore results</span></div><button type="button" onClick={() => runAnalysis()} disabled={analyzing}>{analyzing ? "Opening analysis…" : "Run analysis"}</button></div> : <>
         <div className="aid-result-banner"><strong>Analysis ready</strong><span>These results come from saved BrainTutor responses. No grades, emotions, or themes have been inferred.</span><button type="button" onClick={() => runAnalysis()} disabled={analyzing}>{analyzing ? "Refreshing…" : "Refresh results"}</button></div>
         <div className="aid-tabs" role="tablist" aria-label="Analysis views">{[["overview", "Overview"], ["students", "Students"], ["details", "Analysis details"]].map(([id, label]) => <button type="button" role="tab" aria-selected={tab === id} key={id} onClick={() => setTab(id)}>{label}</button>)}</div>

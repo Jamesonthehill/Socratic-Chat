@@ -110,7 +110,9 @@ export default function CanvasSurveyImport({ onUse }) {
         {onUse && <button type="button" onClick={() => {
           const students = data.rows.map((row, n) => {
             const responses = selected.filter(i => row[i].trim()).map(i => data.headers[i] + " — " + row[i]);
-            return { student_id: String(n), name: "Record " + (n + 1), responses, response_count: responses.length, status: responses.length ? "completed" : "not_started" };
+            const grade = gradeColumn >= 0 ? matches?.[n]?.grade?.[gradeColumn]?.trim() : "";
+            const gradeLabel = grade ? grades.headers[gradeColumn] + ": " + grade : null;
+            return { gradeLabel, student_id: String(n), name: "Record " + (n + 1), responses, response_count: responses.length, status: responses.length ? "completed" : "not_started" };
           });
           onUse(data.filename, { students, summary: { assigned: students.length, started: responded.length, completed: responded.length, responses: students.reduce((sum, s) => sum + s.response_count, 0) } });
         }}>Use these responses in this course</button>}

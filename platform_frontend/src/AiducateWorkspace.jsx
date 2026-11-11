@@ -4,6 +4,7 @@ import { api, logout } from "./api";
 import { Notice } from "./ui";
 import "./aiducate.css";
 import aiducateLogo from "./aiducate-logo.png";
+import { download, reportHtml } from "./reflection-analysis-export";
 import AiducateProfile from "./AiducateProfile";
 import CanvasSurveyImport from "./CanvasSurveyImport";
 
@@ -77,6 +78,17 @@ export default function AiducateWorkspace() {
     catch (e) { setError(e.message); }
     finally { setAnalyzing(false); }
   }
+  function downloadInstructorReport() {
+    const title = selected.title;
+    const filename = (title.replace(/\.csv$/i, "").replace(/[^a-z0-9_-]+/gi, "-") || "reflection") + "-instructor-report.html";
+    const records = analysis.students.filter(student => student.responses.length).map(student => ({
+      name: student.name,
+      text: student.responses.join("\n\n"),
+      grade: student.gradeLabel,
+    }));
+    download(filename, reportHtml(title, records, "", { responseReport: true }), "text/html;charset=utf-8");
+  }
+
   function openCourse(id) { setCourseId(String(id)); setAssignmentId(""); setAnalysis(null); setQuery(""); }
   function openAssignment(id) { setAssignmentId(String(id)); setAnalysis(ready[id] || null); setTab("overview"); setQuery(""); }
 
@@ -141,7 +153,7 @@ export default function AiducateWorkspace() {
       {selected.overview && <button className="secondary" onClick={() => beginImport(selected.id)}>Import / replace data</button>}
       {header("Reflection workspace", selected.title, `${course.course_code || course.title} · ${selected.completed_count || 0} submissions`)}
       {!analysis ? <div className="aid-empty aid-ready"><span className="aid-empty-icon">◌</span><h2>Ready for analysis</h2><p>Open the saved responses and participation counts for this assignment.</p><div className="aid-progress-steps"><span className="done">✓ Reflection selected</span><span>Review responses</span><span>Explore results</span></div><button type="button" onClick={() => runAnalysis()} disabled={analyzing}>{analyzing ? "Opening analysis…" : "Run analysis"}</button></div> : <>
-        <div className="aid-result-banner"><strong>Analysis ready</strong><span>These results come from saved BrainTutor responses. No grades, emotions, or themes have been inferred.</span><button type="button" onClick={() => runAnalysis()} disabled={analyzing}>{analyzing ? "Refreshing…" : "Refresh results"}</button></div>
+        <div className="aid-result-banner"><strong>Analysis ready</strong><button type="button" onClick={downloadInstructorReport}>Download Instructor Report</button><span>These results come from saved BrainTutor responses. No grades, emotions, or themes have been inferred.</span><button type="button" onClick={() => runAnalysis()} disabled={analyzing}>{analyzing ? "Refreshing…" : "Refresh results"}</button></div>
         <div className="aid-tabs" role="tablist" aria-label="Analysis views">{[["overview", "Overview"], ["students", "Students"], ["details", "Analysis details"]].map(([id, label]) => <button type="button" role="tab" aria-selected={tab === id} key={id} onClick={() => setTab(id)}>{label}</button>)}</div>
         {tab === "overview" && <>
           <section className="aid-start"><span className="aid-eyebrow">Start here · Reflection results</span><h2>Start with the basics</h2><p>See how many students responded, then open their reflections when you need more detail.</p></section>

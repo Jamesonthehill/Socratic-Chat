@@ -1,4 +1,5 @@
-.aid-workspace { max-width: 1440px; margin: 0 auto; color: var(--ink, #20304a); }
+.main:has(> .aid-workspace) { max-width: none; padding: 0; }
+.aid-workspace { margin: 0; color: var(--ink, #20304a); }
 .aid-breadcrumb { display: flex; align-items: center; gap: 10px; margin: 3px 0 24px; color: var(--muted, #66748c); font-size: 13px; }
 .aid-breadcrumb button { border: 0; background: none; color: #5c51d5; padding: 0; cursor: pointer; font: inherit; }
 .aid-heading { display: flex; justify-content: space-between; gap: 24px; margin: 0 0 28px; }
@@ -63,3 +64,32 @@
 .aid-no-results { text-align: center; padding: 20px; }
 @media (max-width: 900px) { .aid-course-grid, .aid-guide { grid-template-columns: repeat(2, minmax(0, 1fr)); } .aid-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) { .aid-course-grid, .aid-guide, .aid-metrics, .aid-overview-grid { grid-template-columns: 1fr; } .aid-section-heading, .aid-result-banner { align-items: stretch; flex-direction: column; } .aid-search input { min-width: 0; width: 100%; } .aid-details { grid-template-columns: 1fr; gap: 3px; } .aid-details dd { margin-bottom: 12px; } }
+/* Course workspace layout from the AIDucate instructor prototype. */
+.aid-shell {
+  display: grid;
+  grid-template-columns: clamp(185px, 18vw, 250px) minmax(0, 1fr);
+  background: var(--bg, #f5f7fa);
+  min-height: inherit;
+}
+.aid-rail { padding: 28px 16px; background: #142438; color: white; }
+.aid-brand, .aid-rail > small { display: block; padding: 0 10px; }
+.aid-brand { font-size: 22px; letter-spacing: -.04em; }
+.aid-rail > small { color: #bbcadb; margin-bottom: 24px; }
+.aid-rail nav { display: grid; gap: 4px; }
+.aid-rail nav h2 { font-size: 13px; color: #bbcadb; margin: 20px 10px 6px; }
+.aid-rail nav button { text-align: left; color: #d4ddeb; background: transparent; border: 0; border-radius: 8px; box-shadow: none; padding: 10px 12px; overflow-wrap: anywhere; }
+.aid-rail nav button:is(:hover, :focus-visible, [aria-current="page"]) { background: #283d57; color: white; }
+.aid-content { padding: clamp(16px, 3vw, 36px); min-width: 0; }
+.aid-shell .aid-metrics { grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); }
+.aid-shell .aid-course-grid { grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); }
+.aid-shell .aid-course-card { border-top: 3px solid #405ed6; }
+@media (max-width: 720px) {
+  .aid-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  .aid-rail { min-width: 0; padding: 14px; }
+  .aid-rail > small { margin-bottom: 10px; }
+  .aid-rail nav { display: flex; overflow-x: auto; }
+  .aid-rail nav h2 { display: none; }
+  .aid-rail nav button { flex-shrink: 0; }
+}
+
+.aid-rail .aid-analysis-link { color: #d4ddeb; padding: 10px 12px; }

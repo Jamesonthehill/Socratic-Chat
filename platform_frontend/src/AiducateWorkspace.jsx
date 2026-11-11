@@ -12,6 +12,7 @@ function Metric({ label, value, hint }) {
 }
 
 export default function AiducateWorkspace() {
+  const [importOpen, setImportOpen] = useState(false);
   const [searchParams] = useSearchParams();
   const [courses, setCourses] = useState([]);
   const [assignments, setAssignments] = useState([]);
@@ -52,27 +53,48 @@ export default function AiducateWorkspace() {
 
   const header = (eyebrow, title, description) => <div className="aid-heading"><div><span className="aid-eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div></div>;
 
-  return <div className="aid-workspace">
+  function navigateCourse(id) {
+    setImportOpen(false);
+    openCourse(id);
+  }
+  return <div className="aid-workspace aid-shell">
+    <aside className="aid-rail">
+      <strong className="aid-brand">AIDucate</strong>
+      <small>Instructor workspace</small>
+      <nav aria-label="AIDucate workspace">
+        <button aria-current={!importOpen && !course ? "page" : undefined} onClick={() => navigateCourse("")}>Dashboard</button>
+        <button aria-current={importOpen ? "page" : undefined} onClick={() => setImportOpen(true)}>Import reflections</button>
+        <Link className="aid-analysis-link" to="/professor/reflection-analysis">Reflection analysis</Link>
+        {courses.length > 0 && <><h2>Courses</h2>{courses.map(item =>
+          <button key={item.course_id} aria-current={!importOpen && courseId === String(item.course_id) ? "page" : undefined}
+            onClick={() => navigateCourse(item.course_id)}>{item.course_code || item.title}</button>
+        )}</>}
+      </nav>
+    </aside>
+    <div className="aid-content">
+    <div hidden={!importOpen}>
+      {header("Instructor workspace", "Import reflections", "Choose your reflection file and an optional grading file to review responses together.")}
+      <CanvasSurveyImport />
+    </div>
+    <div hidden={importOpen}>
     <nav className="aid-breadcrumb" aria-label="AIducate location">
       <button type="button" onClick={() => { setCourseId(""); setAssignmentId(""); setAnalysis(null); }}>AIducate</button>
       {course && <><span>›</span><button type="button" onClick={() => openCourse(courseId)}>{course.course_code || course.title}</button></>}
       {selected && <><span>›</span><span>{selected.title}</span></>}
     </nav>
-    <div className="aid-section-heading"><Link className="button compact" to="/professor/reflection-analysis">Reflection analysis →</Link></div>
-    <CanvasSurveyImport />
     {error && <Notice error={error}/>}
     {loading ? <p role="status">Opening AIducate workspace…</p> : !course ? <>
       {header("Instructor workspace", "AIducate dashboard", "Choose a course to review its Reflection assignments and student responses.")}
       <div className="aid-metrics">
         <Metric label="Your courses" value={courses.length} hint="Courses you teach" />
         <Metric label="Reflection sets" value={assignments.length} hint="Published BrainTutor assignments" />
-        <Metric label="Available assignments" value={assignments.length} hint="Open one to review saved responses" />
+        <Metric label="Completed submissions" value={assignments.reduce((sum, item) => sum + Number(item.completed_count || 0), 0)} hint="Across the listed assignments" />
       </div>
       <section className="aid-section" aria-labelledby="aid-courses-title"><div className="aid-section-heading"><div><span className="aid-eyebrow">Your course content</span><h2 id="aid-courses-title">Your courses</h2></div></div>
         {courses.length ? <div className="aid-course-grid">{courses.map(item => {
           const count = assignments.filter(assignment => String(assignment.course_id) === String(item.course_id)).length;
           return <button type="button" className="aid-course-card" key={item.course_id} onClick={() => openCourse(item.course_id)}><span className="aid-eyebrow">{item.course_code || "Course"}</span><strong>{item.title || item.course_code}</strong><small>{count} Reflection assignment{count === 1 ? "" : "s"}</small><span className="aid-text-action">Open course →</span></button>;
-        })}</div> : <div className="aid-empty"><span className="aid-empty-icon">◇</span><h3>No instructor courses yet</h3><p>When you have a course in BrainTutor, it will appear here.</p></div>}
+        })}</div> : <div className="aid-empty"><span className="aid-empty-icon">◇</span><h3>Welcome to AIDucate</h3><p>Open a course you teach through Canvas, or review exported survey responses.</p><button onClick={() => setImportOpen(true)}>Import your first reflection CSV</button></div>}
       </section>
     </> : !selected ? <>
       {header(`Course workspace · ${course.course_code || "Course"}`, course.title || course.course_code, "Collect Reflection responses, open an assignment, and explore what students shared.")}
@@ -96,5 +118,6 @@ export default function AiducateWorkspace() {
         {tab === "details" && <section className="aid-section"><span className="aid-eyebrow">About this analysis</span><h2>Data and limits</h2><dl className="aid-details"><dt>Source</dt><dd>BrainTutor Reflection assignment responses</dd><dt>Included</dt><dd>Assigned students, activity status, and saved student messages</dd><dt>Current method</dt><dd>Counts and direct review of original responses</dd><dt>Not yet available</dt><dd>Automatic Canvas synchronization, saved CSV imports, theme classification, emotion analysis, and grade comparisons</dd></dl></section>}
       </>}
     </>}
+    </div></div>
   </div>;
 }

@@ -1,4 +1,5 @@
 import SocraticLearningSummary from "./SocraticLearningSummary";
+import { StudentStepSurvey } from "./StepSurveys";
 import { Children, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useParams } from "react-router-dom";
@@ -1730,6 +1731,7 @@ export default function StudentWorkspace({ user }) {
               </p>
             </>
           )}
+          {assignment.tool === "reflections" && attempt && <StudentStepSurvey assignmentId={id} reflection />}
           {attempt && !completed && assignment.tool !== "reflections" && (
             <div className={assignment.tool === "socratic" ? `student-finish-card${socratic.phase === "ready_to_submit" ? " is-ready" : ""}` : undefined}>
               <p className="saved-note">
@@ -1966,7 +1968,8 @@ export default function StudentWorkspace({ user }) {
                       canViewOriginal={canViewOriginal}
                       onOpenReference={openCourseReference}
                       canOpenReference={materials.some((material) => material.original_available)}
-                    />
+                    />,
+                    i === latestAssistantIndex && m.role === "assistant" && <StudentStepSurvey key={`step-survey-${i}`} assignmentId={id} stepIndex={activeLearningStep} />
                   ] : (
                     <article className={`message ${m.role}`} key={i}>
                       <span className="message-author">

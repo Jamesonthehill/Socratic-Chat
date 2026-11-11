@@ -200,15 +200,9 @@ export function App() {
                 Professor dashboard
               </Link>
               <Link
-                to="/professor/reflection-analysis"
-                aria-current={pathname === "/professor/reflection-analysis" ? "page" : undefined}
-              >
-                Reflection analysis
-              </Link>
-              <Link
                 to="/professor/analytics"
                 aria-current={
-                  pathname === "/professor/analytics" ? "page" : undefined
+                  ["/professor/analytics", "/professor/reflection-analysis"].includes(pathname) ? "page" : undefined
                 }
               >
                 AIducate

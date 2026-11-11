@@ -10,6 +10,7 @@ import ActivityTutorial from "./ActivityTutorial";
 import PublishedStepChecks from "./PublishedStepChecks";
 import PublishedSocraticSettings from "./PublishedSocraticSettings";
 import { loadCourseContext } from "./courseContext";
+import CanvasSurveyImport from "./CanvasSurveyImport";
 
 const initial = {
   course_id: "",
@@ -826,6 +827,8 @@ export default function CreateActivity({
                   );
                 }}
               />
+            ) : draft.tool === "aiducate" ? (
+              <><p>Review Canvas survey responses or open your instructor analysis dashboard.</p><CanvasSurveyImport /></>
             ) : draft.tool === "reflections" ? (
               <ReflectionConfig value={draft.config} onChange={setConfig} publishIssue={publishIssue} />
             ) : draft.tool === "self-directed-learning" ? (
@@ -883,7 +886,7 @@ export default function CreateActivity({
               Open AIducate for this course
             </Link>
           )}
-          <button
+          {draft.tool !== "aiducate" && <><button
             className="secondary"
             disabled={!ready}
             onClick={() => run(() => save(false))}
@@ -900,7 +903,7 @@ export default function CreateActivity({
           >
             {busy ? "Preparing…" : "Review activity"}
           </button>
-          {(draft.tool !== "self-directed-learning" || stage !== 3) && <button onClick={publishActivity}>Publish activity</button>}
+          {(draft.tool !== "self-directed-learning" || stage !== 3) && <button onClick={publishActivity}>Publish activity</button>}</>}
         </div>
         {!connected && (
           <p className="help">

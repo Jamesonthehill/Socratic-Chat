@@ -3033,6 +3033,19 @@ html[data-theme="dark"] .socratic-learning-step-heading button.socratic-step-rem
   color: var(--muted);
   margin-bottom: 25px;
 }
+.socratic-workspace .chat-panel > .start-state {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: safe center;
+  overflow: auto;
+  padding: 24px clamp(16px, 4vw, 35px);
+}
+.socratic-workspace .start-state p {
+  margin-inline: auto;
+}
 .messages {
   padding: 28px 28px 12px;
   max-height: 60vh;

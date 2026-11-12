@@ -15,7 +15,7 @@ from psycopg.types.json import Jsonb
 
 from app import auth, db, settings
 from app.pipeline_logging import reset_event_sink, set_event_sink
-from platform_app import canvas_lms, engines, store, evidence_diagram, step_check
+from platform_app import canvas_lms, engines, store, evidence_diagram, step_check, step_metrics
 from platform_app.schemas import (
     ActionInput,
     SelfDirectedStudyInput, SelfDirectedQuizInput, SelfDirectedMessageInput, SelfDirectedTaskInput, SelfDirectedLearningTurn,
@@ -707,6 +707,8 @@ def start(assignment_id: UUID, account=Depends(user)):
             opening_question = state.get("socratic", {}).get("next_thinking_step")
             if opening_question:
                 attempt["messages"][0]["next_thinking_step"] = opening_question
+        if assignment["tool"] == "socratic" and state.get("socratic"):
+            step_metrics.track(state["socratic"])
         attempt["engine_state"] = state
         store.save_attempt(conn, attempt)
         return public_attempt(attempt)
@@ -749,6 +751,49 @@ def resume_socratic_question(assignment_id: UUID, account=Depends(user)):
         return public_attempt(attempt)
 
 
+@router.get("/assignments/{assignment_id}/learning-journey")
+def learning_journey(assignment_id: UUID, account=Depends(user)):
+    from platform_app.learning_journey import summarize_difficulty
+    with store.connection() as conn:
+        assignment = get_assignment(conn, assignment_id, account)
+        if assignment["tool"] != "socratic":
+            raise HTTPException(404, "Learning journey is not available for this activity.")
+        own = conn.execute("SELECT engine_state FROM assignment_attempts_platform WHERE assignment_id=%s AND student_id=%s",
+                           (assignment_id, account["user_id"])).fetchone()
+        if not own or not ((own["engine_state"] or {}).get("socratic") or {}).get("completion_summary"):
+            raise HTTPException(409, "Finish your learning summary to view the class comparison.")
+        peers = conn.execute("""SELECT t.engine_state FROM assignment_attempts_platform t
+            JOIN assignment_recipients_platform r ON r.assignment_id=t.assignment_id AND r.student_id=t.student_id
+            JOIN course_memberships_platform m ON m.course_id=%s AND m.user_id=t.student_id
+            WHERE t.assignment_id=%s AND t.student_id<>%s
+              AND m.status='approved' AND m.course_role='student'""",
+            (assignment["course_id"], assignment_id, account["user_id"])).fetchall()
+        steps = ((assignment.get("snapshot") or {}).get("config") or {}).get("learning_steps") or []
+        return summarize_difficulty(steps, peers)
+
+
+class StepDifficultyInput(BaseModel):
+    step_index: int = Field(ge=0)
+    difficulty: Literal["easy", "moderate", "hard", "skipped"]
+
+
+@router.post("/assignments/{assignment_id}/step-difficulty")
+def save_step_difficulty(assignment_id: UUID, body: StepDifficultyInput, account=Depends(user)):
+    with store.locked_attempt(assignment_id, account["user_id"]) as (conn, attempt):
+        assignment = get_assignment(conn, assignment_id, account)
+        if not attempt or assignment["tool"] != "socratic" or attempt["status"] == "completed":
+            raise HTTPException(409, "Start an active Socratic assignment first.")
+        state = dict(attempt["engine_state"].get("socratic") or {})
+        steps = ((assignment.get("snapshot") or {}).get("config") or {}).get("learning_steps") or []
+        if body.step_index != state.get("learning_step_index") or body.step_index >= len(steps):
+            raise HTTPException(409, "This learning step is no longer active.")
+        step_metrics.track(state)
+        state["step_metrics"][str(body.step_index)]["difficulty"] = body.difficulty
+        attempt["engine_state"]["socratic"] = state
+        store.save_attempt(conn, attempt)
+        return public_attempt(attempt)
+
+
 @router.post("/assignments/{assignment_id}/next-step")
 def next_socratic_step(assignment_id: UUID, account=Depends(user)):
     """Advance the learner's saved path only after they have discussed this step."""
@@ -773,6 +818,8 @@ def next_socratic_step(assignment_id: UUID, account=Depends(user)):
             raise HTTPException(409, f"Discuss at least {minimum_questions} tutor question(s) in this step before continuing.")
         index += 1
         step = steps[index]
+        previous_step_state = dict(state)
+        step_metrics.track(previous_step_state)
         state.update({
             "learning_step_index": index,
             "learning_topic": step["title"],
@@ -793,6 +840,7 @@ def next_socratic_step(assignment_id: UUID, account=Depends(user)):
         elif not question.endswith("?"):
             question = f"{question.rstrip('.!')}?"
         state["next_thinking_step"] = question
+        step_metrics.track(state, previous=previous_step_state)
         attempt["engine_state"]["socratic"] = state
         attempt["messages"].append({
             "role": "assistant",
@@ -889,6 +937,12 @@ def socratic_step_check(assignment_id: UUID, body: SocraticStepCheckInput, accou
 
 
 def apply_state(attempt, state, content=None):
+    if state.get("socratic"):
+        step_metrics.track(
+            state["socratic"],
+            previous=(attempt.get("engine_state") or {}).get("socratic"),
+            student_message=bool(content) and state["socratic"].get("phase") == "teaching",
+        )
     if "messages" in state:
         attempt["messages"] = state.pop("messages")
     else:
@@ -1048,25 +1102,38 @@ def socratic_reflection(assignment_id: UUID, body: SocraticReflectionInput, acco
         raise HTTPException(422, "Write your own learning summary first.")
     with store.locked_attempt(assignment_id, account["user_id"]) as (conn, attempt):
         assignment = get_assignment(conn, assignment_id, account)
-        if not attempt or attempt["status"] == "completed":
+        if not attempt or (attempt["status"] == "completed" and not body.regenerate_feedback):
             raise HTTPException(409, "Start an unfinished Socratic assignment first.")
         if assignment["tool"] != "socratic":
             raise HTTPException(422, "This assignment does not use a Socratic learning summary.")
         config = ((assignment.get("snapshot") or {}).get("config") or {})
         steps = config.get("learning_steps") or []
         state = (attempt.get("engine_state") or {}).get("socratic") or {}
-        if steps and int(state.get("learning_step_index") or 0) == len(steps) - 1:
+        if not body.regenerate_feedback and steps and int(state.get("learning_step_index") or 0) == len(steps) - 1:
             minimum_questions = int(config.get("minimum_step_questions") or 1)
             if step_question_count(attempt["messages"], state.get("step_started_at_message_count")) < minimum_questions:
                 raise HTTPException(409, f"Discuss at least {minimum_questions} tutor question(s) in the final step before summarizing.")
         rid = str(body.request_id)
-        if rid in attempt["processed_requests"] or (attempt["engine_state"].get("socratic") or {}).get("completion_summary"):
+        if rid in attempt["processed_requests"] or (state.get("completion_summary") and not body.regenerate_feedback):
             return public_attempt(attempt)
+        target = attempt
+        if body.regenerate_feedback:
+            if state.get("phase") != "ready_to_submit" or not state.get("completion_summary"):
+                raise HTTPException(409, "Generate your final feedback before updating it.")
+            from copy import deepcopy
+            target = deepcopy(attempt)
+            target["engine_state"]["socratic"].pop("completion_summary", None)
+            target["engine_state"]["socratic"]["phase"] = "teaching"
         try:
-            state = engines.reflect(assignment, attempt, reflection)
+            state = engines.reflect(assignment, target, reflection)
         except (ValueError, RuntimeError) as error:
             raise HTTPException(503, "The final feedback could not be generated. Your learning checkpoint is saved; please retry.") from error
-        apply_state(attempt, state, reflection)
+        if body.regenerate_feedback:
+            attempt["engine_state"]["socratic"] = state["socratic"]
+            if attempt["status"] == "completed":
+                attempt["result"] = {**(attempt.get("result") or {}), "completion_summary": state["socratic"]["completion_summary"]}
+        else:
+            apply_state(attempt, state, reflection)
         attempt["processed_requests"].append(rid)
         store.save_attempt(conn, attempt)
         return public_attempt(attempt)
@@ -1093,8 +1160,12 @@ def action(assignment_id: UUID, body: ActionInput, account=Depends(user)):
         return public_attempt(attempt)
 
 
+class CompletionInput(BaseModel):
+    improvement_consent: bool | None = None
+
+
 @router.post("/assignments/{assignment_id}/complete")
-def complete(assignment_id: UUID, account=Depends(user)):
+def complete(assignment_id: UUID, body: CompletionInput | None = None, account=Depends(user)):
     with store.locked_attempt(assignment_id, account["user_id"]) as (conn, attempt):
         assignment = get_assignment(conn, assignment_id, account)
         if not attempt:
@@ -1102,6 +1173,14 @@ def complete(assignment_id: UUID, account=Depends(user)):
         if attempt["status"] == "completed":
             return public_attempt(attempt)
         result = engines.complete(assignment, attempt)
+        if assignment["tool"] == "socratic":
+            from datetime import datetime, timezone
+            attempt["engine_state"]["improvement_consent"] = {
+                "allowed": body.improvement_consent is True if body else False,
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
+                "notice_version": "braintutor-improvement-v1",
+                "notice": "May our team use your chat, learning summary, and step difficulty ratings to improve the Socratic tutor? Your choice won’t affect your grade or access.",
+            }
         if assignment["tool"] == "student-agent":
             apply_state(attempt, result.copy())
             result = {"phase": result.get("phase"), "ended": True}

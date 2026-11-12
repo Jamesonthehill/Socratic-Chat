@@ -874,7 +874,53 @@ function Result({ result }) {
   );
 }
 
+export function ImprovementConsentDialog({ busy, complete = false, error, onChoose, onClose }) {
+  const dialog = useRef(null);
+  useEffect(() => { dialog.current.showModal(); }, []);
+  return <dialog ref={dialog} className="improvement-consent-dialog" aria-labelledby="improvement-consent-title"
+    onClose={onClose} onCancel={event => { if (busy || complete) event.preventDefault(); }}>
+    {complete ? <div className="submission-celebration" role="status">
+      <div className="submission-success-mark" aria-hidden="true">✓{Array.from({ length: 8 }, (_, index) => <i key={index} style={{ "--spark-angle": `${index * 45}deg` }} />)}</div>
+      <h2 id="improvement-consent-title">Assignment submitted!</h2>
+      <p>Your work and sharing preference have been saved.</p>
+    </div> : <>
+    <span className="improvement-consent-icon" aria-hidden="true">✦</span>
+    <h2 id="improvement-consent-title">Help us improve BrainTutor?</h2>
+    <p>May our team use your chat, learning summary, and step difficulty ratings to improve the Socratic tutor? <strong>Your choice won’t affect your grade or access.</strong></p>
+    <div className="improvement-consent-actions">
+      <button type="button" disabled={busy} onClick={() => onChoose(true)}>Allow use</button>
+      <button type="button" className="secondary" disabled={busy} onClick={() => onChoose(false)}>Submit without sharing</button>
+    </div>
+    {busy && <p className="submission-saving" role="status"><span aria-hidden="true" />Submitting your assignment…</p>}
+    {error && <p role="alert">{error}</p>}
+    </>}
+  </dialog>;
+}
+
+function StepDifficultyDialog({ busy, onChoose, onClose }) {
+  const dialog = useRef(null);
+  useEffect(() => { dialog.current.showModal(); }, []);
+  return <dialog ref={dialog} className="step-difficulty-dialog" aria-labelledby="step-difficulty-title"
+    onClose={onClose} onCancel={event => { if (busy) event.preventDefault(); }}>
+    <h2 id="step-difficulty-title">How difficult was this step for you?</h2>
+    <div className="step-difficulty-options">
+      {[["easy", "Easy"], ["moderate", "Moderate"], ["hard", "Hard"]].map(([value, label]) =>
+        <button key={value} type="button" disabled={busy} onClick={() => onChoose(value)}>{label}</button>)}
+    </div>
+    <button className="secondary" type="button" disabled={busy} onClick={() => onChoose("skipped")}>Skip</button>
+    {busy && <p role="status">Saving your response…</p>}
+  </dialog>;
+}
+
 export default function StudentWorkspace({ user }) {
+  const [difficultyOpen, setDifficultyOpen] = useState(false);
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [consentComplete, setConsentComplete] = useState(false);
+  useEffect(() => {
+    if (!consentComplete) return;
+    const timer = setTimeout(() => { setConsentOpen(false); setConsentComplete(false); }, 1800);
+    return () => clearTimeout(timer);
+  }, [consentComplete]);
   const studentName = user?.display_name?.trim() || user?.username || "Student";
   const { id } = useParams();
   const [assignment, setAssignment] = useState(null),
@@ -1220,6 +1266,10 @@ export default function StudentWorkspace({ user }) {
       setBusy(false);
     }
   }
+  async function submitWithConsent(allowed) {
+    const submitted = await perform("complete", { improvement_consent: allowed });
+    if (submitted) setConsentComplete(true);
+  }
   function closeSocraticGuide() {
     setSocraticGuideOpen(false);
   }
@@ -1362,6 +1412,19 @@ export default function StudentWorkspace({ user }) {
       setFinalFeedbackBusy(false);
     }
   }
+  async function updateStepFeedback() {
+    const summary = attempt?.engine_state?.socratic?.completion_summary?.student_reflection;
+    if (!summary || busy) return;
+    setFinalFeedbackBusy(true);
+    setGenerationStartedAt(Date.now());
+    setGenerationSeconds(0);
+    try {
+      await perform("reflection", { summary, request_id: crypto.randomUUID(), regenerate_feedback: true });
+    } finally {
+      setGenerationStartedAt(null);
+      setFinalFeedbackBusy(false);
+    }
+  }
   function clampEvidenceWidth(width) {
     return Math.min(Math.max(320, width), maximumEvidenceWidth());
   }
@@ -1446,7 +1509,12 @@ export default function StudentWorkspace({ user }) {
   const showStepAction = !learningDetour && stepReady && stepQuestionCount >= minimumStepQuestions &&
     hasDiscussedCurrentStep && !completed && !showLearningSummary && socratic.phase === "teaching" &&
     !busy && !socratic.pending_clarification && !socratic.concept_check;
-  const continueFromStep = () => {
+  const continueFromStep = () => setDifficultyOpen(true);
+  const saveDifficultyAndContinue = async (difficulty) => {
+    if (busy) return;
+    const saved = await perform("step-difficulty", { step_index: activeLearningStep, difficulty });
+    if (!saved) return;
+    setDifficultyOpen(false);
     if (activeLearningStep < learningStepCount - 1) {
       advanceLearningStep();
     } else {
@@ -1465,6 +1533,8 @@ export default function StudentWorkspace({ user }) {
     assignment.student_config?.module_type === "milestone_based";
   return (
     <>
+      {difficultyOpen && <StepDifficultyDialog busy={busy} onChoose={saveDifficultyAndContinue} onClose={() => setDifficultyOpen(false)} />}
+      {consentOpen && <ImprovementConsentDialog busy={busy} complete={consentComplete} error={error} onChoose={submitWithConsent} onClose={() => setConsentOpen(false)} />}
       {submitStarFinale && createPortal(<div className="student-submit-finale" role="status" aria-label="All learning stars earned">
         {submitStarFinale.map((star, index) => <span className="student-submit-flying-star" aria-hidden="true" key={index} style={{
           left: `${star.x}px`, top: `${star.y}px`, "--submit-star-dx": `${star.dx}px`, "--submit-star-dy": `${star.dy}px`, "--submit-star-delay": `${star.delay}ms`,
@@ -1678,7 +1748,7 @@ export default function StudentWorkspace({ user }) {
                     (assignment.tool === "socratic" &&
                       socratic.phase !== "ready_to_submit")
                   }
-                  onClick={() => perform("complete")}
+                  onClick={() => assignment.tool === "socratic" ? setConsentOpen(true) : perform("complete")}
                 >
                   {assignment.tool === "socratic"
                     ? "Submit assignment"
@@ -2116,7 +2186,15 @@ export default function StudentWorkspace({ user }) {
               )}
               {assignment.tool === "socratic" && (
                 <SocraticLearningSummary
+                  assignmentId={assignment.id}
                   summary={socratic.completion_summary}
+                  messages={attempt.messages}
+                  steps={assignment.student_config?.learning_steps || []}
+                  metrics={socratic.step_metrics || {}}
+                  onUpdateFeedback={updateStepFeedback}
+                  busy={busy}
+                  onViewOriginal={viewOriginalSource}
+                  canViewOriginal={canViewOriginal}
                 />
               )}
               {!completed &&

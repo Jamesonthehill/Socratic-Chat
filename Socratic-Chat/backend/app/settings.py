@@ -17,6 +17,7 @@ load_dotenv(ROOT_DIR / ".env")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_API_BASE_URL = os.getenv("OPENAI_API_BASE_URL", "https://api.openai.com/v1")
+SOCRATIC_COMPLETION_MODEL = os.getenv("SOCRATIC_COMPLETION_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"
 RAG_MODEL = os.getenv("RAG_MODEL", "gpt-4.1-mini")
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").strip().lower()
 SOCRATIC_TUTOR_PROVIDER = os.getenv("SOCRATIC_TUTOR_PROVIDER", "").strip().lower()

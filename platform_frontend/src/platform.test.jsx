@@ -85,6 +85,8 @@ function mockApi(role = "instructor", override = {}) {
     "/api/platform/assignments/assignment-1/materials": { materials: [] },
     "/api/platform/assignments/assignment-1/attempt": null,
     "/api/platform/assignments/assignment-1/start": attempt,
+    "POST /api/platform/assignments/assignment-1/step-difficulty": () => override["/api/platform/assignments/assignment-1/attempt"] || attempt,
+    "/api/platform/assignments/assignment-1/learning-journey": { steps: [], minimum_responses: 3 },
     ...override,
   };
   const fetch = vi.fn(async (url, options = {}) => {
@@ -706,6 +708,7 @@ test("student follows a generated Socratic path one step at a time", async () =>
   expect(nextStep).toHaveClass("next-learning-step");
   expect(nextStep).toBeEnabled();
   await userEvent.setup().click(nextStep);
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Skip", exact: true }));
   await waitFor(() => expect(within(screen.getByRole("list", { name: "Learning path steps" })).getByText("Check ingredients").closest("li")).toHaveClass("is-unlock-pending"));
   expect(screen.queryByText(/the same machine now checks its supplies/)).not.toBeInTheDocument();
   expect(within(screen.getByRole("list", { name: "Learning path steps" })).getByText("Check ingredients").closest("li")).toHaveClass("is-unlock-pending");
@@ -760,6 +763,7 @@ test("an older guided assignment with saved checks continues without a quiz", as
   expect(nextStep).toBeEnabled();
   expect(screen.queryByRole("dialog", { name: "Check this step" })).not.toBeInTheDocument();
   await userEvent.setup().click(nextStep);
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Skip", exact: true }));
   await waitFor(() => expect(fetch.mock.calls.some(([url]) => url.endsWith("/next-step"))).toBe(true));
 });
 
@@ -810,6 +814,7 @@ test("guided Socratic path hides legacy timer data without affecting step progre
   expect(await screen.findByRole("heading", { name: "Socratic Chat" })).toBeInTheDocument();
   expect(screen.queryByRole("timer", { name: "Total learning path time" })).not.toBeInTheDocument();
   await userEvent.setup().click(screen.getByRole("button", { name: "Continue to next step" }));
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Skip", exact: true }));
   expect(within(screen.getByRole("list", { name: "Learning path steps" })).getByText("Check ingredients").closest("li")).toHaveAttribute("aria-current", "step");
   expect(screen.queryByRole("timer", { name: "Total learning path time" })).not.toBeInTheDocument();
 });
@@ -861,6 +866,9 @@ test("last guided step offers the summary action in the learning path", async ()
   expect(screen.getByRole("progressbar", { name: "Learning path progress" })).toHaveAttribute("aria-valuenow", "1");
   expect(screen.queryByRole("button", { name: "Continue to next step" })).not.toBeInTheDocument();
   await userEvent.setup().click(action);
+  if (screen.queryByRole("dialog", { name: "How difficult was this step for you?" })) {
+    await userEvent.setup().click(screen.getByRole("button", { name: "Skip", exact: true }));
+  }
   const summaryInput = screen.getByLabelText("Summarize what you learned in your own words");
   expect(summaryInput.closest("form")).toHaveClass("is-highlighted");
   expect(summaryInput).toHaveFocus();
@@ -1555,7 +1563,7 @@ test("final feedback highlights evidenced misunderstandings and enables the gold
   open("/student/assignments/assignment-1");
 
   const revisit = await screen.findByRole("region", { name: "Concepts to revisit" });
-  expect(within(revisit).getByText("Review guarantees no bugs.").closest("mark")).toBeInTheDocument();
+  expect(within(revisit).queryByText("Review guarantees no bugs.")).not.toBeInTheDocument();
   expect(within(revisit).getByText("Course source: Code review guide")).toBeInTheDocument();
   expect(within(revisit).getByText(/cannot guarantee a change has no bugs/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Submit assignment" })).toHaveClass("submit-assignment-ready");

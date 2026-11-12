@@ -958,7 +958,11 @@ async def _socratic_reflection(assignment, attempt, reflection):
         if not student_turns:
             raise HTTPException(409, "Discuss the assignment with the tutor before writing your summary.")
         checkpoint = {
-            "original_question": state.get("original_question") or student_turns[0],
+            "original_question": next((
+                str(message.get("next_thinking_step") or _next_thinking_step(str(message.get("content") or ""))).strip()
+                for message in attempt["messages"] if message.get("role") == "assistant"
+                and (message.get("next_thinking_step") or "?" in str(message.get("content") or ""))
+            ), state.get("original_question") or ""),
             "latest_answer": student_turns[-1],
             "evaluation": None,
         }
@@ -971,10 +975,25 @@ async def _socratic_reflection(assignment, attempt, reflection):
         scope_options = {"allowed_keywords": keywords} if keywords else {}
         anchor = "Instructor-approved keywords: " + ", ".join(keywords) + "\n" if keywords else ""
         sources = _retrieve_assignment_sources(anchor + checkpoint["original_question"], assignment["snapshot"].get("chunks") or [], [anchor + reflection])
+        steps = (assignment["snapshot"].get("config") or {}).get("learning_steps") or []
+        step_conversations = [
+            {"step_index": index, "title": step["title"], "goal": step["goal"], "messages": []}
+            for index, step in enumerate(steps)
+        ]
+        active_index = 0
+        for message in attempt["messages"]:
+            if message.get("role") == "assistant":
+                marker = re.match(r"Step (\d+):", str(message.get("content") or ""))
+                if marker:
+                    active_index = int(marker.group(1)) - 1
+            if 0 <= active_index < len(step_conversations):
+                step_conversations[active_index]["messages"].append({
+                    "role": message["role"], "content": message["content"],
+                })
         summary = await rag.generate_completion_summary(checkpoint["original_question"], checkpoint["latest_answer"],
             history, sources,
             AnswerEvaluation(**checkpoint["evaluation"]) if checkpoint.get("evaluation") else None,
-            reflection, **scope_options)
+            reflection, step_conversations=step_conversations, **scope_options)
         state.update({"phase": "ready_to_submit", "student_reflection": reflection, "completion_summary": summary.model_dump()})
         log_event(12, "assignment_summary_returned", phase="ready_to_submit")
         return {"socratic": state, "reply": summary.final_comment}

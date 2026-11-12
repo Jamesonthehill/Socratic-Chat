@@ -43,7 +43,23 @@ class ConceptToRevisit(BaseModel):
     source_title: str | None = None
 
 
+class LearningFinding(BaseModel):
+    explanation: str
+    student_quotes: list[str] = Field(default_factory=list)
+
+
+class LearningStepReview(BaseModel):
+    step_index: int
+    title: str
+    understood: list[LearningFinding] = Field(default_factory=list)
+    clarified: list[LearningFinding] = Field(default_factory=list)
+    revisit: list[LearningFinding] = Field(default_factory=list)
+
+
 class CompletionSummary(BaseModel):
+    step_reviews: list[LearningStepReview] = Field(default_factory=list)
+    next_action: str = ""
+
     original_question: str
     student_reflection: str = ""
     demonstrated: list[str] = Field(default_factory=list)

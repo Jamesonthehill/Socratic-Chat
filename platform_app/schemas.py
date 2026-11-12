@@ -242,6 +242,7 @@ class MessageInput(StrictModel):
 class SocraticReflectionInput(StrictModel):
     summary: str = Field(min_length=1, max_length=4000)
     request_id: UUID
+    regenerate_feedback: bool = False
 
 
 class ActionInput(StrictModel):

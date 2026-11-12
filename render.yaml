@@ -23,8 +23,10 @@ services:
     autoDeployTrigger: commit
     envVars:
       - fromGroup: cluball-personal-shared
-      - key: GROQ_TUTOR_MODEL
-        value: openai/gpt-oss-120b
+      - key: SOCRATIC_TUTOR_PROVIDER
+        value: openai
+      - key: SOCRATIC_TUTOR_MODEL
+        value: gpt-4.1-mini
       - key: GROQ_CLASSIFIER_MODEL
         value: openai/gpt-oss-20b
       - key: GROQ_ANSWER_EVALUATION_MODEL

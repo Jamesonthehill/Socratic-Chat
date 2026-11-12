@@ -7,6 +7,20 @@ from app import rag, settings
 
 
 class LlmProviderConfigTests(unittest.TestCase):
+    def test_openai_tutor_override_keeps_other_generation_roles_on_groq(self):
+        with (
+            patch.object(settings, "LLM_PROVIDER", "groq"),
+            patch.object(settings, "SOCRATIC_TUTOR_PROVIDER", "openai"),
+            patch.object(settings, "SOCRATIC_TUTOR_MODEL", "gpt-4.1-mini"),
+            patch.object(settings, "OPENAI_API_KEY", "openai-test"),
+            patch.object(settings, "GROQ_API_KEY", "groq-test"),
+        ):
+            tutor = settings.llm_client_config("tutor")
+            self.assertEqual((tutor[0], tutor[1], tutor[3]), ("OpenAI", "openai-test", "gpt-4.1-mini"))
+            for role in ("generation", "classifier", "evaluation"):
+                self.assertEqual(settings.llm_client_config(role)[0], "Groq")
+
+
     def test_local_qwen_roles_and_visible_output_parameters(self) -> None:
         with (
             patch.object(settings, "LLM_PROVIDER", "ollama"),
@@ -72,7 +86,8 @@ class LlmProviderConfigTests(unittest.TestCase):
             patch.object(settings, "LLM_PROVIDER", "groq"),
             patch.object(settings, "GROQ_API_KEY", "groq-test-key"),
             patch.object(settings, "GROQ_MODEL", "openai/gpt-oss-20b"),
-            patch.object(settings, "GROQ_TUTOR_MODEL", "openai/gpt-oss-120b"),
+            patch.object(settings, "SOCRATIC_TUTOR_PROVIDER", "groq"),
+            patch.object(settings, "SOCRATIC_TUTOR_MODEL", "openai/gpt-oss-120b"),
             patch.object(settings, "GROQ_CLASSIFIER_MODEL", "openai/gpt-oss-20b"),
             patch.object(settings, "GROQ_ANSWER_EVALUATION_MODEL", "openai/gpt-oss-20b"),
         ):

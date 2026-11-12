@@ -126,6 +126,7 @@ def llm_client_config(role: str = "generation") -> tuple[str, str, str, str] | N
     if not OPENAI_API_KEY:
         return None
     role_model = {
+        "tutor": SOCRATIC_TUTOR_MODEL if SOCRATIC_TUTOR_PROVIDER == "openai" else "",
         "classifier": CLASSIFIER_MODEL,
         "evaluation": ANSWER_EVALUATION_MODEL,
     }.get(role, "")

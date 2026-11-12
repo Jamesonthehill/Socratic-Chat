@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Chat from "../../reflections-app/frontend/src/Chat";
 import { api, SESSION_KEY } from "./api";
 import { GenerationStatus } from "./ui";
+import { StudentStepSurvey } from "./StepSurveys";
 
 export default function ReflectionAssignment({ assignmentId }) {
   const [assignment, setAssignment] = useState(null);
@@ -97,6 +98,7 @@ export default function ReflectionAssignment({ assignmentId }) {
           <span>Reflection assignment</span>
           <strong>{assignment.title}</strong>
           <p>{assignment.instructions}</p>
+          {attempt && <StudentStepSurvey assignmentId={assignmentId} reflection />}
         </header>
       )}
       {loading ? (

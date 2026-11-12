@@ -147,6 +147,37 @@ test("expanded classifier and tutor inputs stay open during automatic refresh", 
   expect(document.querySelector('#snapshotPanel details[data-phase="tutor-generation"]').open).toBe(true);
 });
 
+test("copy buttons copy the selected trace and an individual model output", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  try {
+    const snapshots = [{
+      phase: "tutor-generation", provider: "Groq",
+      request: { messages: [{ role: "user", content: "Who is Maya?" }] },
+      result: { raw_response: "Maya is the kitchen manager." },
+    }];
+    fetch.mockImplementation((url) => Promise.resolve(response(
+      url.endsWith("/snapshots") ? { snapshots } : { traces: [trace] },
+    )));
+    openPage();
+    await settle();
+    document.querySelector("#copyTrace").click();
+    await settle();
+    expect(writeText).toHaveBeenCalledWith(JSON.stringify(trace, null, 2));
+    expect(document.querySelector("#copyTrace").textContent).toBe("Copied");
+
+    document.querySelector("#loadSnapshots").click();
+    await settle();
+    document.querySelector('[aria-label="Copy Model output"]').click();
+    await settle();
+    expect(writeText).toHaveBeenLastCalledWith("Maya is the kitchen manager.");
+  } finally {
+    if (originalClipboard) Object.defineProperty(navigator, "clipboard", originalClipboard);
+    else delete navigator.clipboard;
+  }
+});
+
 test("polling and repeated refresh clicks do not overlap pending reads", async () => {
   let complete;
   fetch.mockReturnValueOnce(new Promise((resolve) => { complete = resolve; }));

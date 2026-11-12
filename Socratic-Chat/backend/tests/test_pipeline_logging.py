@@ -67,6 +67,23 @@ class PipelineLoggingTests(unittest.TestCase):
         self.assertEqual(event["fields"]["question_type"], "what")
         self.assertEqual(event["fields"]["target_concepts"], "core skill|code review")
 
+    def test_provider_failure_persists_safe_error_metadata(self) -> None:
+        class ProviderError(Exception):
+            status_code = 429
+            body = {"error": {"code": "rate_limit_exceeded", "message": "Private student text"}}
+
+        tokens = pipeline_logging.begin_trace("trace-provider-error", "conversation-456")
+        try:
+            pipeline_logging.log_exception(8, "llm_request_failed", ProviderError(), provider="Groq")
+        finally:
+            pipeline_logging.end_trace(tokens)
+
+        trace = next(item for item in pipeline_logging.recent_traces() if item["trace_id"] == "trace-provider-error")
+        event = trace["events"][0]
+        self.assertEqual(event["fields"]["status_code"], 429)
+        self.assertEqual(event["fields"]["provider_error_code"], "rate_limit_exceeded")
+        self.assertNotIn("Private student text", json.dumps(trace))
+
     def test_debug_logging_uses_digest_instead_of_content(self) -> None:
         sensitive_text = "student@example.edu asked a private question"
         tokens = pipeline_logging.begin_trace("trace-123", "conversation-456")

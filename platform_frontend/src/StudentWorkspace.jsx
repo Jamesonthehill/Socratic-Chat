@@ -1,4 +1,5 @@
 import SocraticLearningSummary from "./SocraticLearningSummary";
+import { StudentStepSurvey } from "./StepSurveys";
 import { Children, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useParams } from "react-router-dom";
@@ -7,20 +8,12 @@ import PdfMaterialPreview from "./PdfMaterialPreview";
 import { api, date, session, streamApi, TOOLS } from "./api";
 import { Badge, GenerationStatus, Notice } from "./ui";
 
-function highlightIncorrectWord(text) {
-  return text.split(/(\bincorrect\b)/gi).map((part, index) =>
-    /^incorrect$/i.test(part) ? <span className="socratic-step-check-incorrect" key={index}>{part}</span> : part
-  );
-}
-
 const SOCRATIC_TOUR_STEPS = [
   { selector: '[data-socratic-tour="materials"]', title: "Read the course materials", detail: "View or download the instructor-selected documents before you begin. You can return to them during the chat." },
-  { selector: '[data-socratic-tour="learning-path"]', title: "Review the learning path", detail: "Follow these topics in order. A step quiz opens after you discuss the step with the tutor." },
+  { selector: '[data-socratic-tour="learning-path"]', title: "Review the learning path", detail: "Follow these topics in order. Discuss each step with the tutor before continuing." },
   { demo: "start", title: "Start with the first example", detail: "Start assignment opens the tutor’s first situation and question." },
   { demo: "chat", title: "Discuss the example", detail: "Share your reasoning or ask a question. The tutor responds in the conversation." },
-  { demo: "check", title: "Take the step quiz", detail: "After discussing the step, choose the action that would cause a problem and explain why you chose it." },
-  { demo: "retry", title: "Try the same check again", detail: "If your first answer misses the mark, review the feedback and try the same question once more. After a second miss, you can continue with support." },
-  { demo: "continue", title: "Continue to the next step", detail: "Complete the check, then continue. Your new star celebrates the step you finished before the next one begins." },
+  { demo: "continue", title: "Continue to the next step", detail: "When the step is ready, continue. Your new star celebrates the step you finished before the next one begins." },
   { demo: "finish", title: "Finish the last topic", detail: "When you are ready to end the conversation, open your summary." },
   { demo: "summary", title: "Summarize and review feedback", detail: "Explain what you learned, get final feedback, and read it before submitting." },
   { demo: "submit", title: "Submit the assignment", detail: "Submit only after you have reviewed your final feedback." },
@@ -39,18 +32,6 @@ function SocraticTourPreview({ kind, onAdvance }) {
         <div className="socratic-tour-preview-message is-student">You: I think the first condition matters because…</div>
         <div className="socratic-tour-preview-message">Tutor: Good observation. What might happen if that condition changes?</div>
         <div className="socratic-tour-preview-composer is-highlighted">Write your answer or ask a question… <button type="button" onClick={onAdvance}>Send message</button></div>
-      </>}
-      {kind === "check" && <>
-        <div className="socratic-tour-preview-heading">Step quiz · Apply what you learned</div>
-        <div className="socratic-tour-preview-message">A new situation tests the same idea. Which action is incorrect?</div>
-        <div className="socratic-tour-preview-message is-student">Choose an option, then explain why it would cause a problem.</div>
-        <button type="button" className="socratic-tour-preview-action is-highlighted" onClick={onAdvance}>Submit</button>
-      </>}
-      {kind === "retry" && <>
-        <div className="socratic-tour-preview-heading">A missed answer · One more chance</div>
-        <div className="socratic-tour-preview-message">Your first choice is marked in red, with a short hint.</div>
-        <div className="socratic-tour-preview-message is-student">Choose another option in the same question and explain why.</div>
-        <button type="button" className="socratic-tour-preview-action is-highlighted" onClick={onAdvance}>Try again</button>
       </>}
       {kind === "continue" && <>
         <div className="socratic-tour-preview-heading">Your learning path · Step 1 complete</div>
@@ -371,13 +352,15 @@ function maximumEvidenceWidth() {
   return Math.max(320, workspaceWidth - 444);
 }
 
-function SocraticThinkingMessage({ elapsedSeconds, progressEvents }) {
+function SocraticThinkingMessage({ elapsedSeconds, progressEvents, awaitingChoice = false, children }) {
   const latest = progressEvents.at(-1);
   const understanding = latest?.understanding?.trim();
   const activity = ["drafting", "reviewing"].includes(latest?.stage)
     ? "preparing a reply from the course materials"
     : "checking the course materials";
-  const summary = understanding
+  const summary = awaitingChoice
+    ? "I found more than one possible meaning. Choose what you meant so I can continue."
+    : understanding
     ? `I’m reading your message as “${understanding}” and ${activity}.`
     : latest?.stage === "understanding"
       ? "I’m working out what you mean before checking the course materials."
@@ -385,15 +368,17 @@ function SocraticThinkingMessage({ elapsedSeconds, progressEvents }) {
         ? "I’m checking your message against the course materials."
         : "I’m reading your message to understand what help you need.";
   return (
-    <div className="socratic-progress-card" aria-live="polite">
+    <div className={`socratic-progress-card${awaitingChoice ? " is-awaiting-clarification" : ""}`} aria-live="polite">
       <GenerationStatus
         title="Socratic tutor"
         message={summary}
         elapsedSeconds={elapsedSeconds}
-        ariaLabel="Socratic tutor is preparing your reply"
+        ariaLabel={awaitingChoice ? "Socratic tutor is waiting for your choice" : "Socratic tutor is preparing your reply"}
         messageCard
         atomLogo
+        showElapsed={!awaitingChoice}
       />
+      {children}
       <div className="socratic-progress-runway" aria-hidden="true"><span /></div>
     </div>
   );
@@ -922,9 +907,6 @@ export default function StudentWorkspace({ user }) {
     [socraticTourStep, setSocraticTourStep] = useState(0);
   const [selectedConceptOption, setSelectedConceptOption] = useState(null),
     [conceptCheckHintVisible, setConceptCheckHintVisible] = useState(false),
-    [stepCheckOption, setStepCheckOption] = useState(null),
-    [stepCheckReason, setStepCheckReason] = useState(""),
-    [stepCheckOpen, setStepCheckOpen] = useState(false),
     [unlockingStepIndex, setUnlockingStepIndex] = useState(null),
     [unlockPhase, setUnlockPhase] = useState(null),
     [showLearningSummary, setShowLearningSummary] = useState(false),
@@ -937,7 +919,6 @@ export default function StudentWorkspace({ user }) {
     inputRef = useRef(null),
     summaryFormRef = useRef(null),
     summaryInputRef = useRef(null),
-    stepCheckDialogRef = useRef(null),
     submitButtonRef = useRef(null),
     previousSubmitReady = useRef(null),
     focusComposerAfterReply = useRef(false),
@@ -1006,24 +987,6 @@ export default function StudentWorkspace({ user }) {
       window.clearTimeout(finishTimer);
     };
   }, [unlockingStepIndex]);
-  useEffect(() => {
-    setStepCheckOption(null);
-    setStepCheckReason("");
-    setStepCheckOpen(false);
-  }, [currentLearningStep, assignment?.id]);
-  useEffect(() => {
-    if (!stepCheckOpen) return;
-    if (messagesRef.current && stepCheckDialogRef.current) {
-      const messages = messagesRef.current;
-      messages.scrollTop += stepCheckDialogRef.current.getBoundingClientRect().top - messages.getBoundingClientRect().top - 12;
-    }
-    stepCheckDialogRef.current?.focus({ preventScroll: true });
-    const closeOnEscape = (event) => {
-      if (event.key === "Escape") setStepCheckOpen(false);
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [stepCheckOpen]);
   useEffect(() => {
     const list = learningPathRef.current;
     const current = list?.querySelector('[aria-current="step"]');
@@ -1103,10 +1066,16 @@ export default function StudentWorkspace({ user }) {
     return () => window.clearInterval(timer);
   }, [generationStartedAt]);
   useEffect(() => {
-    if (newReplyIndex === null) return undefined;
+    if (newReplyIndex === null || unlockingStepIndex !== null) return undefined;
     const timer = window.setTimeout(() => setNewReplyIndex(null), 3500);
     return () => window.clearTimeout(timer);
-  }, [newReplyIndex]);
+  }, [newReplyIndex, unlockingStepIndex]);
+  useEffect(() => {
+    if (unlockingStepIndex !== null || newReplyIndex === null || !attempt?.messages?.[newReplyIndex]) return;
+    const divider = messagesRef.current?.querySelector(".socratic-step-divider.is-new-step");
+    if (!divider || !messagesRef.current) return;
+    messagesRef.current.scrollTop += divider.getBoundingClientRect().top - messagesRef.current.getBoundingClientRect().top - 12;
+  }, [unlockingStepIndex, newReplyIndex, attempt?.messages?.length]);
   useEffect(() => {
     setSelectedEvidence(null);
   }, [attempt?.engine_state?.sources]);
@@ -1273,44 +1242,15 @@ export default function StudentWorkspace({ user }) {
       }
     });
   }
-  async function submitStepCheck(event) {
-    event.preventDefault();
-    const sent = await perform("step-check", {
-      request_id: crypto.randomUUID(), action: "submit",
-      option_index: stepCheckOption, reason: stepCheckReason.trim(),
-    });
-    if (sent) {
-      setStepCheckOption(null);
-      setStepCheckReason("");
-    }
-  }
-  async function continueWithSupport() {
-    setBusy(true);
-    setError("");
-    try {
-      await api(`/platform/assignments/${id}/step-check`, {
-        method: "POST", body: { request_id: crypto.randomUUID(), action: "continue_with_support" },
-      });
-      if (activeLearningStep < learningStepCount - 1) {
-        const nextStepIndex = activeLearningStep + 1;
-        const result = await api(`/platform/assignments/${id}/next-step`, { method: "POST", body: {} });
-        setAttempt(result);
-        if (result.engine_state?.socratic?.learning_step_index === nextStepIndex) {
-          setUnlockPhase("waiting");
-          setUnlockingStepIndex(nextStepIndex);
-        }
-        setNewReplyIndex((result.messages?.length || 1) - 1);
-      } else {
-        const result = await api(`/platform/assignments/${id}/attempt`);
-        setAttempt(result);
-        setShowLearningSummary(true);
+  async function returnToTutorQuestion() {
+    const previousMessageCount = attempt?.messages?.length || 0;
+    setNewReplyIndex(null);
+    await perform("resume-question", {}, (result) => {
+      const replyIndex = (result.messages?.length || 0) - 1;
+      if (replyIndex >= previousMessageCount && result.messages[replyIndex]?.role === "assistant") {
+        setNewReplyIndex(replyIndex);
       }
-      setStepCheckOpen(false);
-    } catch (failure) {
-      setError(failure.message);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
   async function send(e) {
     e.preventDefault();
@@ -1328,7 +1268,6 @@ export default function StudentWorkspace({ user }) {
       conceptCheckOption === null &&
       !clarificationText &&
       message.trim() === text;
-    if (fromComposer && stepCheckOpen) setStepCheckOpen(false);
     if (
       !pending.current ||
       pending.current.message !== text ||
@@ -1348,7 +1287,9 @@ export default function StudentWorkspace({ user }) {
           : {}),
       };
     const startedAt = Date.now();
-    if (clarificationIndex === null) {
+    if (clarificationIndex !== null || clarificationText) {
+      setOutgoingMessage({ role: "user", content: text, isClarification: true });
+    } else {
       setOutgoingMessage({
         role: "user",
         content: text,
@@ -1470,6 +1411,7 @@ export default function StudentWorkspace({ user }) {
     completed = attempt?.status === "completed",
     state = attempt?.engine_state || {};
   const socratic = state.socratic || {};
+  const learningDetour = socratic.learning_detour?.question ? socratic.learning_detour : null;
   const inlineClarification = socratic.pending_clarification?.inline
     ? socratic.pending_clarification
     : null;
@@ -1486,6 +1428,9 @@ export default function StudentWorkspace({ user }) {
   const latestAssistantIndex = attempt?.messages
     ? attempt.messages.findLastIndex((item) => item.role === "assistant")
     : -1;
+  const pendingClarificationMessageIndex = outgoingMessage?.isClarification
+    ? attempt.messages.findLastIndex((item) => item.role === "user")
+    : -1;
   const stepBoundaries = assignment.tool === "socratic" && attempt?.messages
     ? attempt.messages.map((item) => learningStepBoundary(item, assignment.student_config?.learning_steps))
     : [];
@@ -1493,29 +1438,17 @@ export default function StudentWorkspace({ user }) {
     .some((item) => item.role === "user");
   const learningStepCount = assignment.student_config?.learning_steps?.length || 0;
   const activeLearningStep = Math.min(Math.max(Number(socratic.learning_step_index) || 0, 0), Math.max(learningStepCount - 1, 0));
-  const stepChecks = assignment.student_config?.learning_steps?.[activeLearningStep]?.checks || [];
-  const checkProgress = socratic.step_check?.step_index === activeLearningStep ? socratic.step_check : null;
-  const checkStatus = checkProgress?.status || "active";
-  const activeCheck = stepChecks[Math.min(Number(checkProgress?.variant) || 0, stepChecks.length - 1)];
-  const wrongStepCheckOption = checkProgress?.last_option_correct === false
-    ? checkProgress.last_option_index : null;
-  const revealedIncorrectAnswer = ["passed", "choice", "continued_with_support"].includes(checkStatus)
-    ? activeCheck?.options?.[checkProgress?.correct_option_index]
-    : null;
-  const checkFeedback = checkProgress?.feedback || "";
-  const displayedCheckFeedback = revealedIncorrectAnswer
-    ? checkFeedback.replace(`The incorrect choice is: ${revealedIncorrectAnswer}. `, "").trim()
-    : checkFeedback;
-  const needsStepCheck = stepChecks.length > 0 && !["passed", "continued_with_support"].includes(checkStatus);
+  const stepReady = socratic.step_readiness?.step_index === activeLearningStep && socratic.step_readiness?.ready === true;
   const minimumStepQuestions = assignment.student_config?.minimum_step_questions ?? 1;
   const stepQuestionCount = currentStepQuestionCount(attempt?.messages, socratic.step_started_at_message_count);
   const stepActionDisabled = busy || socratic.phase !== "teaching" ||
-    Boolean(socratic.pending_clarification || socratic.concept_check) || !hasDiscussedCurrentStep ||
-    stepQuestionCount < minimumStepQuestions;
+    Boolean(socratic.pending_clarification || socratic.concept_check) ||
+    !hasDiscussedCurrentStep || stepQuestionCount < minimumStepQuestions;
+  const showStepAction = !learningDetour && stepReady && stepQuestionCount >= minimumStepQuestions &&
+    hasDiscussedCurrentStep && !completed && !showLearningSummary && socratic.phase === "teaching" &&
+    !busy && !socratic.pending_clarification && !socratic.concept_check;
   const continueFromStep = () => {
-    if (needsStepCheck) {
-      setStepCheckOpen(true);
-    } else if (activeLearningStep < learningStepCount - 1) {
+    if (activeLearningStep < learningStepCount - 1) {
       advanceLearningStep();
     } else {
       setShowLearningSummary(true);
@@ -1527,7 +1460,6 @@ export default function StudentWorkspace({ user }) {
   const completedLearningSteps = attempt ? Math.min(learningStepCount, activeLearningStep + Number(finalLearningStepFinished)) : 0;
   const socraticTourSteps = SOCRATIC_TOUR_STEPS.filter((step) =>
     (!conceptCheck || step.demo) &&
-    (!["check", "retry"].includes(step.demo) || assignment.student_config?.learning_steps?.some((item) => item.checks?.length)) &&
     (learningStepCount || (step.selector !== '[data-socratic-tour="learning-path"]' && step.demo !== "continue"))
   );
   const milestone =
@@ -1627,7 +1559,7 @@ export default function StudentWorkspace({ user }) {
                   <ol ref={learningPathRef} role="list" aria-label="Learning path steps" tabIndex={0}>
                     {assignment.student_config.learning_steps.map((step, index) => {
                       const completed = attempt && (index < activeLearningStep || (finalLearningStepFinished && index === activeLearningStep));
-                      const current = attempt && attempt.status !== "completed" && !finalLearningStepFinished && index === activeLearningStep;
+                      const current = (!attempt && index === 0) || (attempt && attempt.status !== "completed" && !finalLearningStepFinished && index === activeLearningStep);
                       const completedWithSupport = socratic.step_check_results?.some((result) => result.step_index === index && result.status === "continued_with_support");
                       const unlockPending = current && index === unlockingStepIndex && unlockPhase === "waiting";
                       const unlocking = current && index === unlockingStepIndex && unlockPhase === "releasing";
@@ -1642,11 +1574,15 @@ export default function StudentWorkspace({ user }) {
                               : completed ? <span className="student-step-star" role="img" aria-label={completedWithSupport ? "Completed with support" : "Completed step"}><StarMedal /></span>
                                 : <span className="student-step-lock-status" role="img" aria-label="Locked until the previous step is complete"><StepPadlock /></span>}
                           </div>
-                          <div className="student-step-title">
-                            <strong>{step.title}</strong>
-                          </div>
-                          <span className="student-step-goal">{step.goal}</span>
-                          {current && (!needsStepCheck || stepActionDisabled) && <span className="student-step-objective">{!hasDiscussedCurrentStep
+                          {(current || completed) && <>
+                            <div className="student-step-title">
+                              <strong>{step.title}</strong>
+                            </div>
+                            <span className="student-step-goal">{step.goal}</span>
+                          </>}
+                          {current && <span className="student-step-objective">{stepReady
+                            ? "Ready to continue when you are."
+                            : !hasDiscussedCurrentStep
                             ? "Start the conversation to explore this mission."
                             : stepActionDisabled
                               ? "Keep discussing this example with your tutor."
@@ -1657,12 +1593,6 @@ export default function StudentWorkspace({ user }) {
                       );
                     })}
                   </ol>
-                  {attempt && attempt.status !== "completed" && !showLearningSummary &&
-                    (activeLearningStep < learningStepCount - 1 || socratic.phase !== "ready_to_submit") && (
-                      <button type="button" className="compact next-learning-step" disabled={stepActionDisabled || stepCheckOpen} onClick={continueFromStep}>
-                        {needsStepCheck ? "Take step quiz" : activeLearningStep < learningStepCount - 1 ? "Continue to next step" : "Finish conversation and summarize"}
-                      </button>
-                    )}
                 </section>
               )}
 
@@ -1730,6 +1660,7 @@ export default function StudentWorkspace({ user }) {
               </p>
             </>
           )}
+          {assignment.tool === "reflections" && attempt && <StudentStepSurvey assignmentId={id} reflection />}
           {attempt && !completed && assignment.tool !== "reflections" && (
             <div className={assignment.tool === "socratic" ? `student-finish-card${socratic.phase === "ready_to_submit" ? " is-ready" : ""}` : undefined}>
               <p className="saved-note">
@@ -1937,7 +1868,9 @@ export default function StudentWorkspace({ user }) {
                   </section>
                 )}
                 {attempt.messages.map((m, i) =>
-                  assignment.tool === "socratic" ? [
+                  assignment.tool === "socratic" && i === newReplyIndex && stepBoundaries[i] && unlockingStepIndex !== null
+                    ? null
+                    : assignment.tool === "socratic" ? [
                     stepBoundaries[i] && (
                       <div key={`step-divider-${i}`} className={`socratic-step-divider${i === newReplyIndex ? " is-new-step" : ""}`}
                         role="separator" aria-label={`Step ${stepBoundaries[i].index} of ${learningStepCount}: ${stepBoundaries[i].title}`}>
@@ -1948,7 +1881,9 @@ export default function StudentWorkspace({ user }) {
                     <SocraticMessage
                       key={i}
                       studentName={studentName}
-                      message={stepBoundaries[i] ? { ...m, content: stepBoundaries[i].body } : m}
+                      message={i === pendingClarificationMessageIndex
+                        ? { ...m, content: `${m.content}\n\nClarification: ${outgoingMessage.content}` }
+                        : stepBoundaries[i] ? { ...m, content: stepBoundaries[i].body } : m}
                       latest={i === latestAssistantIndex && !inlineClarification}
                       paused={i === latestAssistantIndex && socratic.conversation_status === "paused"}
                       currentReply={i === latestAssistantIndex && m.role === "assistant"}
@@ -1966,7 +1901,25 @@ export default function StudentWorkspace({ user }) {
                       canViewOriginal={canViewOriginal}
                       onOpenReference={openCourseReference}
                       canOpenReference={materials.some((material) => material.original_available)}
-                    />
+                    />,
+                    i === latestAssistantIndex && m.role === "assistant" && <StudentStepSurvey key={`step-survey-${i}`} assignmentId={id} stepIndex={activeLearningStep} />,
+                    i === latestAssistantIndex && m.role === "assistant" && showStepAction && (
+                      <div key={`step-action-${i}`} className="socratic-chat-step-action">
+                        <button type="button" className="next-learning-step"
+                          disabled={stepActionDisabled} onClick={continueFromStep}>
+                          {activeLearningStep < learningStepCount - 1
+                            ? "Continue to next step" : "Finish conversation and summarize"}
+                        </button>
+                      </div>
+                    ),
+                    i === latestAssistantIndex && m.role === "assistant" && learningDetour && !completed && (
+                      <div key={`return-to-question-${i}`} className="socratic-chat-return-action">
+                        <button type="button" className="compact" disabled={busy}
+                          onClick={returnToTutorQuestion}>
+                          Back to the original question
+                        </button>
+                      </div>
+                    )
                   ] : (
                     <article className={`message ${m.role}`} key={i}>
                       <span className="message-author">
@@ -2013,7 +1966,7 @@ export default function StudentWorkspace({ user }) {
                     </article>
                   ),
                 )}
-                {busy && outgoingMessage &&
+                {busy && outgoingMessage && !outgoingMessage.isClarification &&
                   (assignment.tool === "socratic" ? (
                     <SocraticMessage
                       message={outgoingMessage}
@@ -2030,14 +1983,46 @@ export default function StudentWorkspace({ user }) {
                       </div>
                     </article>
                   ))}
-                {busy && !finalFeedbackBusy && !stepCheckOpen &&
+                {(busy || inlineClarification) && !finalFeedbackBusy &&
                   (assignment.tool === "socratic" ? (
                     <SocraticThinkingMessage
                       elapsedSeconds={
                         generationStartedAt ? generationSeconds : 0
                       }
                       progressEvents={progressEvents}
-                    />
+                      awaitingChoice={Boolean(inlineClarification && !busy)}
+                    >
+                      {inlineClarification && !completed && !busy && (
+                        <div className="intent-confirmation" role="group" aria-label="Clarify your intent">
+                          <span className="intent-confirmation-label">Quick check before I answer</span>
+                          <p className="intent-confirmation-question">{inlineClarification.question}</p>
+                          <div className="intent-confirmation-options">
+                            {socratic.clarification_options?.map((option, index) => (
+                              <button
+                                type="button"
+                                className="suggestion-chip"
+                                key={index}
+                                onClick={() => sendMessage(option.label, index)}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                          <form className="intent-confirmation-form" onSubmit={(event) => {
+                            event.preventDefault();
+                            sendMessage(clarificationDraft.trim(), null, null, true);
+                          }}>
+                            <label htmlFor="clarification-response">Type your answer or tell me what you meant</label>
+                            <div>
+                              <input id="clarification-response" value={clarificationDraft} maxLength={2000}
+                                onChange={(event) => setClarificationDraft(event.target.value)}
+                                placeholder="Answer the question or clarify your intent…" />
+                              <button type="submit" className="compact" disabled={!clarificationDraft.trim()}>Continue</button>
+                            </div>
+                          </form>
+                        </div>
+                      )}
+                    </SocraticThinkingMessage>
                   ) : (
                     <GenerationStatus
                       title={TOOLS[assignment.tool]?.name || "BrainTutor"}
@@ -2045,90 +2030,6 @@ export default function StudentWorkspace({ user }) {
                       messageCard
                     />
                   ))}
-                {assignment.tool === "socratic" &&
-                  inlineClarification &&
-                  !completed &&
-                  !busy && (
-                    <div className="intent-confirmation" role="group" aria-label="Clarify your intent">
-                      <span className="intent-confirmation-label">Quick check before I answer</span>
-                      <p>{inlineClarification.question}</p>
-                      <div className="intent-confirmation-options">
-                        {socratic.clarification_options?.map((option, index) => (
-                          <button
-                            type="button"
-                            className="suggestion-chip"
-                            key={index}
-                            onClick={() => sendMessage(option.label, index)}
-                          >
-                            {option.label}
-                          </button>
-                        ))}
-                      </div>
-                      <form className="intent-confirmation-form" onSubmit={(event) => {
-                        event.preventDefault();
-                        sendMessage(clarificationDraft.trim(), null, null, true);
-                      }}>
-                        <label htmlFor="clarification-response">Type your answer or tell me what you meant</label>
-                        <div>
-                          <input id="clarification-response" value={clarificationDraft} maxLength={2000}
-                            onChange={(event) => setClarificationDraft(event.target.value)}
-                            placeholder="Answer the question or clarify your intent…" />
-                          <button type="submit" className="compact" disabled={!clarificationDraft.trim()}>Continue</button>
-                        </div>
-                      </form>
-                    </div>
-                  )}
-                {assignment.tool === "socratic" && learningStepCount > 0 && !completed && !showLearningSummary && socratic.phase === "teaching" && stepCheckOpen && activeCheck && (
-                  <div className="socratic-step-inline" aria-label="Current learning step quiz">
-                    <section className="socratic-step-check" role="dialog" aria-label="Check this step" ref={stepCheckDialogRef} tabIndex={-1}>
-                      <div className="socratic-step-check-heading">
-                        <div><span className="student-panel-kicker">STEP {activeLearningStep + 1} OF {learningStepCount} · APPLICATION CHECK</span><h4>Find the <span className="socratic-step-check-incorrect">incorrect</span> answer</h4></div>
-                        <button type="button" className="socratic-step-check-close" aria-label="Close step check" onClick={() => setStepCheckOpen(false)}>×</button>
-                      </div>
-                      {checkStatus === "passed" || checkStatus === "continued_with_support" ? (
-                        <>{revealedIncorrectAnswer && <div className="socratic-step-check-result"><span>Action that would cause a problem</span><strong>{revealedIncorrectAnswer}</strong></div>}
-                        <p role="status" className="socratic-step-check-ready">{checkStatus === "passed" ? displayedCheckFeedback || "You explained the mistake. Ready to continue." : "You can continue and return to this idea later."}</p>
-                        <button type="button" className="next-learning-step" disabled={busy} onClick={continueFromStep}>{activeLearningStep < learningStepCount - 1 ? "Continue to next step" : "Continue to summary"}</button></>
-                      ) : checkStatus === "choice" ? (
-                        <div className="socratic-step-check-content">
-                          <div className="socratic-step-check-prompts">
-                            <div className="socratic-step-check-scenario"><span className="socratic-step-check-eyebrow">Scenario</span><p>{activeCheck.scenario}</p></div>
-                            <div className="socratic-step-check-question"><span className="socratic-step-check-q" aria-hidden="true">Q.</span><p>{highlightIncorrectWord(activeCheck.question)}</p></div>
-                          </div>
-                          <div className="socratic-step-check-options is-review" aria-label="Reviewed answer choices">
-                            {activeCheck.options.map((option, index) => <div key={`${index}-${option}`} className={`socratic-step-check-review-option${index === checkProgress.correct_option_index ? " is-answer" : ""}${index === wrongStepCheckOption ? " is-missed" : ""}`}>
-                              <span className="socratic-step-check-choice-letter" aria-hidden="true">{String.fromCharCode(65 + index)}</span>
-                              <span>{option}</span>
-                              {index === checkProgress.correct_option_index && <small>Action that causes a problem</small>}
-                              {index === wrongStepCheckOption && <small>Your choice</small>}
-                            </div>)}
-                          </div>
-                          <div className="socratic-step-check-inline-feedback" role="status">
-                            <strong>Why this action causes a problem</strong>
-                            <p>{displayedCheckFeedback}</p>
-                            <p>You can continue with support and revisit this idea later.</p>
-                          </div>
-                          <div className="socratic-step-check-actions"><button type="button" className="next-learning-step" disabled={busy} onClick={continueWithSupport}>{activeLearningStep < learningStepCount - 1 ? "Continue to next step with support" : "Continue to summary with support"}</button></div>
-                        </div>
-                      ) : (
-                        <form onSubmit={submitStepCheck}>
-                          <div className="socratic-step-check-content">
-                            <div className="socratic-step-check-prompts">
-                              <div className="socratic-step-check-scenario"><span className="socratic-step-check-eyebrow">Scenario</span><p>{activeCheck.scenario}</p></div>
-                              <div className="socratic-step-check-question"><span className="socratic-step-check-q" aria-hidden="true">Q.</span><p>{highlightIncorrectWord(activeCheck.question)}</p></div>
-                            </div>
-                            <div className="socratic-step-check-response">
-                              <div className="socratic-step-check-options">{activeCheck.options.map((option, index) => <label key={`${index}-${option}`} className={wrongStepCheckOption === index ? "is-incorrect-selection" : undefined}><input type="radio" name="step-check-option" checked={stepCheckOption === index} disabled={wrongStepCheckOption === index} onChange={() => setStepCheckOption(index)} /><span className="socratic-step-check-choice-letter" aria-hidden="true">{String.fromCharCode(65 + index)}</span><span>{option}</span>{wrongStepCheckOption === index && <span className="socratic-step-check-wrong-tag">Already tried · choose another</span>}</label>)}</div>
-                              <label className="socratic-step-check-reason">Why did you choose it?<textarea rows={2} maxLength={1200} value={stepCheckReason} onChange={(event) => setStepCheckReason(event.target.value)} placeholder="Explain what would go wrong in this situation." /></label>
-                            </div>
-                          </div>
-                          {checkProgress?.feedback && <p role="status" className="socratic-step-check-feedback">{checkProgress.feedback}</p>}
-                          <button type="submit" disabled={busy || stepCheckOption === null || stepCheckReason.trim().length < 5}>{busy ? "Submitting…" : "Submit"}</button>
-                        </form>
-                      )}
-                    </section>
-                  </div>
-                )}
                 <div ref={endRef} />
               </div>
               {!completed && assignment.tool === "student-agent" && (

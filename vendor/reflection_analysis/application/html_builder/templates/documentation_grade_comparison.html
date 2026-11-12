@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Grade Comparison Analysis Documentation</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+        .section { margin: 20px 0; padding: 15px; border-left: 4px solid #2c3e50; background-color: #f8f9fa; }
+        .code-example { background-color: #f4f4f4; padding: 10px; border-radius: 5px; font-family: monospace; overflow-x: auto; }
+        .data-structure { background-color: #e8f4fd; padding: 10px; border-radius: 5px; margin: 10px 0; }
+        .method-signature { background-color: #fff3cd; padding: 8px; border-radius: 3px; font-family: monospace; }
+        .highlight { background-color: #fff3cd; padding: 2px 4px; border-radius: 3px; }
+        .warning { background-color: #f8d7da; padding: 10px; border-radius: 5px; border-left: 4px solid #dc3545; }
+        .success { background-color: #d4edda; padding: 10px; border-radius: 5px; border-left: 4px solid #28a745; }
+        table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .flow-step { margin: 10px 0; padding: 10px; background-color: #e9ecef; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>📊 Grade Comparison: Completed vs. Not Completed (per Module)</h1>
+    <p><strong>Comprehensive Documentation</strong></p>
+
+    <div class="section">
+        <h2>🎯 Overview</h2>
+        <p>This feature performs statistical analysis comparing student grades between those who completed specific support modules versus those who did not. It uses both parametric and non-parametric statistical tests to determine if module completion has a significant association with academic performance.</p>
+
+        <div class="success">
+            <strong>Key Question Answered:</strong> Do students who complete optional support modules perform better in their reflections compared to students who don't complete these modules?
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📁 Data Sources & Structure</h2>
+
+        <h3>1. Student Reflection Data</h3>
+        <div class="data-structure">
+            <strong>Source:</strong> <code>course.students[email].reflection_data[reflection_num]</code><br>
+            <strong>Structure:</strong>
+            <div class="code-example">
+student.reflection_data = {
+    1: {'reflection': Reflection_obj, 'grades': {'Current Score': 85.5, ...}},
+    2: {'reflection': Reflection_obj, 'grades': {'Current Score': 78.2, ...}},
+    3: {'reflection': Reflection_obj, 'grades': {'Current Score': 92.1, ...}},
+    4: {'reflection': Reflection_obj, 'grades': {'Current Score': 88.7, ...}}
+}
+            </div>
+        </div>
+
+        <h3>2. Module Completion Data</h3>
+        <div class="data-structure">
+            <strong>Source:</strong> <code>student.reflection_data[*].grades</code> (across all reflections)<br>
+            <strong>Identification:</strong> Columns containing <code>'feedback quiz'</code> (case-insensitive)<br>
+            <strong>Completion Criteria:</strong> Score > 0<br>
+            <div class="code-example">
+# Example grade columns that indicate module completion:
+{
+    'Personal Finance Feedback Quiz': 5.0,           # ✅ Completed (score > 0)
+    'Resume Writing Feedback Quiz': 0.0,             # ❌ Not completed
+    'Interview Skills Feedback Quiz': 3.5,          # ✅ Completed
+    'Group Work Module Feedback Quiz': 2.0          # ✅ Completed
+}
+            </div>
+        </div>
+
+        <h3>3. Grade Extraction Logic</h3>
+        <div class="code-example">
+# From grade_module_correlation_helper.py lines 1132-1157
+for student in course.students.values():
+    # Extract reflection grade (default: Reflection 4)
+    grade = None
+    grades_dict = student.reflection_data.get(reflection_num, {}).get('grades')
+    if grades_dict and 'Current Score' in grades_dict:
+        try:
+            grade = float(grades_dict['Current Score'])
+        except Exception:
+            grade = None
+
+    # Extract completed modules across ALL reflections
+    completed_modules = set()
+    for ref in student.reflection_data.values():
+        grades = ref.get('grades', {})
+        for col, val in grades.items():
+            if 'feedback quiz' in col.lower():
+                try:
+                    if float(val) > 0:  # Completion criterion
+                        completed_modules.add(col.strip())
+                except Exception:
+                    continue
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>🔄 Analysis Workflow</h2>
+
+        <div class="flow-step">
+            <strong>Step 1: Data Extraction</strong>
+            <ul>
+                <li>Iterate through all students in the course</li>
+                <li>Extract Reflection 4 grade (the 'Current Score' field)</li>
+                <li>Scan all reflections for feedback quiz columns</li>
+                <li>Determine module completion status (score > 0)</li>
+            </ul>
+        </div>
+
+        <div class="flow-step">
+            <strong>Step 2: Data Preprocessing</strong>
+            <ul>
+                <li>Create DataFrame with student data</li>
+                <li>Remove students with missing grades</li>
+                <li>Apply outlier removal if specified (IQR or threshold method)</li>
+                <li>Generate module completion summary statistics</li>
+            </ul>
+        </div>
+
+        <div class="flow-step">
+            <strong>Step 3: Statistical Analysis (Per Module)</strong>
+            <ul>
+                <li>Split students into two groups: completed vs. not completed</li>
+                <li>Perform normality tests (Shapiro-Wilk)</li>
+                <li>Execute Mann-Whitney U test (non-parametric)</li>
+                <li>Execute Welch's t-test (parametric)</li>
+                <li>Determine recommended test based on normality</li>
+            </ul>
+        </div>
+
+        <div class="flow-step">
+            <strong>Step 4: Visualization & Export</strong>
+            <ul>
+                <li>Generate box plots comparing grade distributions</li>
+                <li>Create summary tables with statistical results</li>
+                <li>Export raw data and results to CSV files</li>
+                <li>Apply color coding for statistical significance</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📊 Statistical Methods Used</h2>
+
+        <h3>1. Mann-Whitney U Test (Primary)</h3>
+        <div class="method-signature">scipy.stats.mannwhitneyu(group1, group2, alternative='two-sided')</div>
+        <ul>
+            <li><strong>Type:</strong> Non-parametric test</li>
+            <li><strong>Purpose:</strong> Compare distributions between two independent groups</li>
+            <li><strong>Assumptions:</strong> Independent observations, ordinal or continuous data</li>
+            <li><strong>Null Hypothesis:</strong> The two groups have identical distributions</li>
+            <li><strong>Alternative:</strong> One group tends to have higher/lower values</li>
+        </ul>
+
+        <h3>2. Welch's T-Test (Secondary)</h3>
+        <div class="method-signature">scipy.stats.ttest_ind(group1, group2, equal_var=False)</div>
+        <ul>
+            <li><strong>Type:</strong> Parametric test</li>
+            <li><strong>Purpose:</strong> Compare means between two independent groups</li>
+            <li><strong>Assumptions:</strong> Normal distributions, independent observations</li>
+            <li><strong>Advantage:</strong> More robust than Student's t-test (handles unequal variances)</li>
+            <li><strong>Null Hypothesis:</strong> The means of the two groups are equal</li>
+        </ul>
+
+        <h3>3. Shapiro-Wilk Normality Test</h3>
+        <div class="method-signature">scipy.stats.shapiro(data)</div>
+        <ul>
+            <li><strong>Purpose:</strong> Test if data follows a normal distribution</li>
+            <li><strong>Null Hypothesis:</strong> Data is normally distributed</li>
+            <li><strong>Decision Rule:</strong> p < 0.05 suggests non-normal data</li>
+            <li><strong>Usage:</strong> Determines which test (parametric vs. non-parametric) to recommend</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>📈 Example Data Flow</h2>
+
+        <h3>Sample Input Data</h3>
+        <table>
+            <tr>
+                <th>Student Email</th>
+                <th>Reflection 4 Grade</th>
+                <th>Completed Modules</th>
+            </tr>
+            <tr>
+                <td>student1@charlotte.edu</td>
+                <td>85.5</td>
+                <td>{'Personal Finance Feedback Quiz', 'Resume Writing Feedback Quiz'}</td>
+            </tr>
+            <tr>
+                <td>student2@charlotte.edu</td>
+                <td>78.2</td>
+                <td>{'Interview Skills Feedback Quiz'}</td>
+            </tr>
+            <tr>
+                <td>student3@charlotte.edu</td>
+                <td>92.1</td>
+                <td>{} (no modules completed)</td>
+            </tr>
+        </table>
+
+        <h3>Transformed Analysis Data (Per Module)</h3>
+        <div class="code-example">
+# For "Personal Finance Feedback Quiz":
+# df['completed_Personal Finance Feedback Quiz'] = df['completed_modules'].apply(
+#     lambda mods: 'Personal Finance Feedback Quiz' in mods
+# )
+
+# Group 1 (Completed): [85.5]        # student1
+# Group 2 (Not Completed): [78.2, 92.1]  # student2, student3
+
+# Statistical Analysis:
+# Mann-Whitney U: u_statistic=0.5, p_value=0.667
+# Welch's t-test: t_statistic=-0.45, p_value=0.705
+# Recommendation: "Insufficient sample size" (Group 1 has only 1 student)
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>🎨 Visualization Components</h2>
+
+        <h3>1. Module Completion Summary Table</h3>
+        <ul>
+            <li><strong>Columns:</strong> Module, Students Completed, Total Students, Completion Rate (%)</li>
+            <li><strong>Color Coding:</strong>
+                <ul>
+                    <li><span style="background-color:#d4edda;padding:2px 4px;">≥75%</span> - High completion (green)</li>
+                    <li><span style="background-color:#fff3cd;padding:2px 4px;">50-74%</span> - Medium completion (yellow)</li>
+                    <li><span style="background-color:#f8d7da;padding:2px 4px;">25-49%</span> - Low completion (light red)</li>
+                    <li><span style="background-color:#f5c6cb;padding:2px 4px;">&lt;25%</span> - Very low completion (red)</li>
+                </ul>
+            </li>
+        </ul>
+
+        <h3>2. Statistical Results Table</h3>
+        <ul>
+            <li><strong>Descriptive Stats:</strong> N, Mean, Median for each group</li>
+            <li><strong>Test Results:</strong> U-statistic, p-values, t-statistic</li>
+            <li><strong>Normality Tests:</strong> Shapiro-Wilk p-values for both groups</li>
+            <li><strong>Recommendations:</strong> Which test to trust based on assumptions</li>
+        </ul>
+
+        <h3>3. Box Plot Comparisons</h3>
+        <ul>
+            <li>Side-by-side box plots for completed vs. not completed groups</li>
+            <li>Shows distribution quartiles, medians, and outliers</li>
+            <li>Interactive hover information with individual data points</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>⚙️ Key Methods Called</h2>
+
+        <h3>Primary Analysis Method</h3>
+        <div class="method-signature">
+GradeModuleCorrelationHelper.module_completion_grade_comparison(course, reflection_num=4, course_name=None, export_base_dir=None, outlier_method=None)
+        </div>
+        <p><strong>Location:</strong> <code>application/html_builder/grade_module_correlation_helper.py:1132</code></p>
+
+        <h3>Visualization Methods</h3>
+        <div class="method-signature">
+GradeModuleCorrelationHelper.create_module_completion_distribution_charts(course, course_name=None, export_base_dir=None)
+        </div>
+        <p><strong>Location:</strong> <code>application/html_builder/grade_module_correlation_helper.py:341</code></p>
+
+        <h3>Integration Point</h3>
+        <div class="method-signature">
+HTMLBuilder.build_student_profiles(course) # Lines 1166-1280
+        </div>
+        <p><strong>Location:</strong> <code>application/html_builder/builder.py:1166</code></p>
+    </div>
+
+    <div class="section">
+        <h2>📂 Data Export Features</h2>
+
+        <h3>Exported Files</h3>
+        <ul>
+            <li><strong>input_data_per_student_module.csv:</strong> Raw student-module completion data</li>
+            <li><strong>module_completion_summary.csv:</strong> Summary statistics per module</li>
+            <li><strong>statistical_results.csv:</strong> Complete test results and recommendations</li>
+        </ul>
+
+        <h3>Export Directory Structure</h3>
+        <div class="code-example">
+export_base_dir/
+├── course_name/
+│   └── mann_whitney_module_comparison/
+│       ├── input_data_per_student_module.csv
+│       ├── module_completion_summary.csv
+│       └── statistical_results.csv
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>⚠️ Important Considerations</h2>
+
+        <div class="warning">
+            <strong>Sample Size Requirements:</strong> Statistical tests require at least 2 students per group. Results marked as NaN when insufficient data.
+        </div>
+
+        <div class="warning">
+            <strong>Multiple Testing:</strong> When testing multiple modules simultaneously, consider Bonferroni correction for p-values to control family-wise error rate.
+        </div>
+
+        <div class="warning">
+            <strong>Outlier Handling:</strong> Three modes available:
+            <ul>
+                <li><strong>Include All Data:</strong> No outlier removal</li>
+                <li><strong>Remove Statistical Outliers:</strong> IQR method (Q1 - 1.5*IQR, Q3 + 1.5*IQR)</li>
+                <li><strong>Remove Grades < 20:</strong> Threshold method to exclude very low scores</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>🔍 Interpretation Guidelines</h2>
+
+        <h3>Statistical Significance</h3>
+        <ul>
+            <li><strong>p < 0.001:</strong> Very strong evidence of difference</li>
+            <li><strong>p < 0.01:</strong> Strong evidence of difference</li>
+            <li><strong>p < 0.05:</strong> Moderate evidence of difference</li>
+            <li><strong>p ≥ 0.05:</strong> No significant difference detected</li>
+        </ul>
+
+        <h3>Effect Size Considerations</h3>
+        <ul>
+            <li>Statistical significance ≠ practical significance</li>
+            <li>Consider mean difference magnitude in context</li>
+            <li>Sample size affects detection of small differences</li>
+        </ul>
+
+        <h3>Test Selection Logic</h3>
+        <div class="code-example">
+# From grade_module_correlation_helper.py lines 1360-1380
+if shapiro_p1 >= 0.05 and shapiro_p2 >= 0.05:
+    recommended_test = "Welch's t-test"
+    recommendation_reason = "Both groups pass normality test"
+elif shapiro_p1 < 0.05 and shapiro_p2 < 0.05:
+    recommended_test = "Mann-Whitney U"
+    recommendation_reason = "Both groups fail normality test"
+else:
+    recommended_test = "Mann-Whitney U"
+    recommendation_reason = "Mixed normality results - using robust test"
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>🚀 Future Enhancements</h2>
+        <ul>
+            <li><strong>Effect Size Calculations:</strong> Add Cohen's d and rank-biserial correlation</li>
+            <li><strong>Confidence Intervals:</strong> Include confidence intervals for mean differences</li>
+            <li><strong>Longitudinal Analysis:</strong> Track grade changes before/after module completion</li>
+            <li><strong>Module Interaction Effects:</strong> Analyze combinations of module completions</li>
+            <li><strong>Regression Analysis:</strong> Control for demographic and academic covariates</li>
+        </ul>
+    </div>
+
+    <footer style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; color: #666;">
+        <p><em>Documentation generated for Grade Comparison Analysis Feature</em></p>
+        <p><em>Code references: application/html_builder/grade_module_correlation_helper.py</em></p>
+    </footer>
+</body>
+</html>

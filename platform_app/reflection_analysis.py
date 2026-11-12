@@ -9,10 +9,13 @@ import asyncio
 import csv
 import io
 import json
+import os
+import subprocess
+import sys
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -190,3 +193,41 @@ async def analyze(body: AnalysisInput, account=Depends(professor)):
                         "error": "Analysis failed for this reflection. Retry it after checking the model connection."}
     results = await asyncio.gather(*(one(index, record) for index, record in enumerate(body.records)))
     return {"results": results, "summary": summarize(results), "model": config[3]}
+
+
+class ReportStudent(BaseModel):
+    answers: dict[Annotated[str, Field(max_length=2000)], Annotated[str, Field(max_length=16000)]] = Field(max_length=150)
+    grades: dict[Annotated[str, Field(max_length=2000)], Annotated[float, Field(allow_inf_nan=False)]] = Field(max_length=150)
+    missing_assignments: list[Annotated[str, Field(max_length=2000)]] = Field(default_factory=list, max_length=150)
+    analysis: Annotation | None = None
+
+
+class ReportInput(BaseModel):
+    students: list[ReportStudent] = Field(min_length=1, max_length=5000)
+
+
+@router.post("/report")
+def instructor_report(body: ReportInput, account=Depends(professor)):
+    root = Path(__file__).resolve().parents[1]
+    builder = Path(os.getenv("AIDUCATE_REPORT_SOURCE", str(root / "vendor/reflection_analysis")))
+    if not (builder / "application/html_builder/builder.py").is_file():
+        raise HTTPException(503, "The original AIDucate report builder is unavailable on this server.")
+    if any(topic not in LABELS for student in body.students if student.analysis
+           for topic in student.analysis.primary_labels_selected):
+        raise HTTPException(422, "Run the reflection analysis again to refresh the report topics.")
+    payload = body.model_dump_json()
+    if len(payload.encode()) > 8 * 1024 * 1024:
+        raise HTTPException(413, "This reflection set is too large to export in one report.")
+    try:
+        output = subprocess.run(
+            [os.getenv("AIDUCATE_REPORT_PYTHON") or sys.executable,
+             str(root / "scripts/build_aiducate_report.py"), str(builder.resolve())],
+            input=payload, encoding="utf-8", stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            timeout=90, check=True,
+            env={"PATH": os.defpath, "PYTHONUTF8": "1", "ADAE_DISABLE_AI": "1"},
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(504, "The instructor report took too long to build.") from exc
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise HTTPException(503, "The original Python report builder could not run. Check its local dependencies.") from exc
+    return {"html": output.stdout}

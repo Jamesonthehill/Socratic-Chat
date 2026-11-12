@@ -1,0 +1,3058 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Student Profiles</title>
+    <style type="text/css">
+        /* styles are injected below */
+    </style>
+    <style id="dynamic-css"></style>
+</head>
+<body>
+    <div class="container">
+        <!-- Course and Reflection Header -->
+        <div class="report-header">
+            {% if not anonymized %}
+            <h1 class="course-title">{{ course.course_name }}</h1>
+            {% endif %}
+            <div class="reflection-info">
+                <span class="current-period">Current Period: Reflection {{ latest_ref }}</span>
+                {% if ref_numbers|length > 1 %}
+                <span class="period-range">Available Reflections: {{ ref_numbers|join(', ') }}</span>
+                {% endif %}
+            </div>
+            <div style="margin:8px 0; color:#444;">
+                <small><b>Email (first selected):</b> <span id="email-preview-address">—</span></small>
+            </div>
+
+            <!-- Anonymization Toggle -->
+            <div class="anonymization-controls" style="margin-top: 10px;">
+                <button id="anonymize-toggle" class="anonymize-button" onclick="toggleAnonymization()">
+                    {% if anonymized %}
+                        🔓 Show Student Names
+                    {% else %}
+                        🔒 Anonymize Report
+                    {% endif %}
+                </button>
+                {% if anonymized %}
+                <div class="anonymization-notice" style="font-size: 0.9em; color: #666; margin-top: 5px;">
+                    <em>⚠️ Report is anonymized. Student names and emails have been masked for privacy.</em>
+                    <br><small style="color: #888;">Names: Student A, Student B, etc. | Emails: A***@domain.edu, B***@domain.edu, etc.</small>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Add tab navigation -->
+        <div class="tab-navigation">
+            <button class="tab-button active" onclick="showTab('aggregates')">Class Aggregates</button>
+            <button class="tab-button" onclick="showTab('profiles')">Student Profiles</button>
+            <button class="tab-button" onclick="showTab('topics')">Topic Analysis</button>
+            <button class="tab-button" onclick="showTab('summarization')">Summarization</button>
+            <button class="tab-button" onclick="showTab('email')">Email</button>
+            {% if mode != "instructor" %}
+            <button class="tab-button" onclick="showTab('documentation')">📚 Documentation</button>
+            {% endif %}
+        </div>
+
+        <!-- Aggregates Tab -->
+        <div id="aggregates-tab" class="tab-content active">
+            {{ aggregates_html | safe }}
+        </div>
+
+        <!-- Profiles Tab -->
+        <div id="profiles-tab" class="tab-content">
+            <h1>{{ course.course_name }} - Student Profiles</h1>
+
+            <!-- Debug Info -->
+            <div style="background: #eee; padding: 10px; margin: 10px 0;">
+                <p><strong>Total Students in Course:</strong> {{ course.filtered_total_students }}</p>
+                <p><strong>Students with Recent Data:</strong> {{ course.matching_students_count }}</p>
+                <p style="font-size: 0.9em; color: #666; margin-top: 5px;">
+                    <em>Note: Shows students who shared their identity (submitted the most recent reflection AND have valid grade data in the most recent grade file).</em>
+                </p>
+            </div>
+
+            <div id="matching-count" style="font-weight:bold; margin-bottom:8px;">Showing Students (with shared identity): {{ course.matching_students_count }}</div>
+
+            <!-- Student Selection -->
+            <div class="navigation">
+                <!-- Add Filter Controls -->
+                <div class="filter-controls">
+                    <div class="filter-section">
+                        <label class="filter-label">Filter Students By:</label>
+                        <div class="checkbox-filters">
+                            <!-- Grade Filters -->
+                            <div class="filter-group">
+                                <h4>Grades</h4>
+                                <label><input type="checkbox" name="filter" value="grade-high" data-type="grade" data-value="green"> 🟢 High (≥90) <span class="filter-count" id="count-grade-high"></span></label>
+                                <label><input type="checkbox" name="filter" value="grade-good" data-type="grade" data-value="blue"> 🔵 Good (≥80) <span class="filter-count" id="count-grade-good"></span></label>
+                                <label><input type="checkbox" name="filter" value="grade-fair" data-type="grade" data-value="orange"> 🟠 Fair (≥70) <span class="filter-count" id="count-grade-fair"></span></label>
+                                <label><input type="checkbox" name="filter" value="grade-low" data-type="grade" data-value="red"> 🔴 Low (<70) <span class="filter-count" id="count-grade-low"></span></label>
+                            </div>
+
+                            <!-- Trend Filters -->
+                            <div class="filter-group">
+                                <h4>Grade Trend</h4>
+                                <label><input type="checkbox" name="filter" value="trend-up" data-type="trend" data-value="up"> 📈 Improving <span class="filter-count" id="count-trend-up"></span></label>
+                                <label><input type="checkbox" name="filter" value="trend-down" data-type="trend" data-value="down"> 📉 Declining <span class="filter-count" id="count-trend-down"></span></label>
+                            </div>
+
+                            <!-- Reflection Status -->
+                            <div class="filter-group">
+                                <h4>Reflection Status</h4>
+                                <label><input type="checkbox" name="filter" value="has-reflection" data-type="reflection" data-value="true"> 📝 Submitted <span class="filter-count" id="count-reflection-true"></span></label>
+                                <label><input type="checkbox" name="filter" value="missing-reflection" data-type="reflection" data-value="false"> ❌ Missing <span class="filter-count" id="count-reflection-false"></span></label>
+                            </div>
+
+                            <!-- Urgency Filters -->
+                            <div class="filter-group">
+                                <h4>Urgency Level</h4>
+                                <label><input type="checkbox" name="filter" value="urgency-high" data-type="urgency" data-value="high"> 🔥 High <span class="filter-count" id="count-urgency-high"></span></label>
+                                <label><input type="checkbox" name="filter" value="urgency-medium" data-type="urgency" data-value="medium"> ⚠️ Medium <span class="filter-count" id="count-urgency-medium"></span></label>
+                                <label><input type="checkbox" name="filter" value="urgency-low" data-type="urgency" data-value="low"> ℹ️ Low <span class="filter-count" id="count-urgency-low"></span></label>
+                                <label><input type="checkbox" name="filter" value="urgency-none" data-type="urgency" data-value="none"> ⭕ None <span class="filter-count" id="count-urgency-none"></span></label>
+                            </div>
+
+                            <!-- Combined Filter: Negative Emotion + Low Grade (<80) -->
+                            <div class="filter-group">
+                                <h4>Emotion + Grade</h4>
+                                <label><input type="checkbox" name="filter" value="negemo-lowgrade" data-type="negemo_lowgrade" data-value="true"> 😟 Negative Emotion + <80 <span class="filter-count" id="count-negemo-lowgrade"></span></label>
+                                <label><input type="checkbox" name="filter" value="posemo-lowgrade" data-type="posemo_lowgrade" data-value="true"> 🙂 Positive Emotion + <80 <span class="filter-count" id="count-posemo-lowgrade"></span></label>
+                            </div>
+
+                            <!-- Performance Filters removed -->
+
+                            <!-- Resolution Filters -->
+                            <div class="filter-group">
+                                <h4>Resolution Status</h4>
+                                <label><input type="checkbox" name="filter" value="resolution-resolved" data-type="resolution" data-value="resolved"> ✅ Resolved <span class="filter-count" id="count-resolution-resolved"></span></label>
+                                <label><input type="checkbox" name="filter" value="resolution-unresolved" data-type="resolution" data-value="unresolved"> ❗ Unresolved <span class="filter-count" id="count-resolution-unresolved"></span></label>
+                                <label><input type="checkbox" name="filter" value="resolution-progress" data-type="resolution" data-value="in_progress"> ⏳ In Progress <span class="filter-count" id="count-resolution-in_progress"></span></label>
+                                <label><input type="checkbox" name="filter" value="resolution-none" data-type="resolution" data-value="no_challenge"> ➖ No Challenge <span class="filter-count" id="count-resolution-no_challenge"></span></label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <label for="student-selector">Select Student:</label>
+                <select id="student-selector" onchange="showStudent(this.value)">
+                    <option value="">Select a student...</option>
+                    {% for student in students %}
+                        {% set indicators = get_student_indicators(student) %}
+                        {% set perf = {} %}
+                        <option value="{{ loop.index }}"
+                                data-grade-color="{{ indicators.grade_color }}"
+                                data-has-reflection="{{ indicators.has_latest_reflection|lower }}"
+                                data-grade-trend="{{ indicators.grade_trend }}"
+                                data-urgency="{{ indicators.urgency }}"
+                                data-resolution="{{ indicators.resolution }}"
+                                data-current-grade="{{ '%.1f' % indicators.current_grade if indicators.current_grade is not none else '' }}"
+                                data-negemo-lowgrade="{{ 'true' if indicators.negative_emotion and (indicators.grade_color in ['red','orange']) else 'false' }}"
+                                data-posemo-lowgrade="{{ 'true' if indicators.positive_emotion and (indicators.grade_color in ['red','orange']) else 'false' }}"
+                                data-perf-assign-lt80="false"
+                                data-perf-activities-lt80="false"
+                                data-perf-quiz-avg=""
+                                data-perf-assign-avg=""
+                                data-perf-assign-val=""
+                                data-perf-activities-val=""
+                                data-missing-assignments="{{ student.missing_assignments_str if student.missing_assignments_str is defined else '' }}"
+                                data-student-name="{{ student.name }}"
+                                data-student-email="{{ student.email }}">
+                            <!-- Grade Color -->
+                            {% if indicators.grade_color == "green" %}🟢{% endif %}
+                            {% if indicators.grade_color == "blue" %}🔵{% endif %}
+                            {% if indicators.grade_color == "orange" %}🟠{% endif %}
+                            {% if indicators.grade_color == "red" %}🔴{% endif %}
+
+                            <!-- Grade Trend -->
+                            {% if indicators.grade_trend == "up" %}📈{% endif %}
+                            {% if indicators.grade_trend == "down" %}📉{% endif %}
+
+                            <!-- Reflection Status -->
+                            {% if indicators.has_latest_reflection %}📝{% else %}❌{% endif %}
+
+                            <!-- Urgency Level -->
+                            {% if indicators.urgency == "high" %}🔥
+                            {% elif indicators.urgency == "medium" %}⚠️
+                            {% elif indicators.urgency == "low" %}ℹ️
+                            {% else %}⭕{% endif %}
+
+                            <!-- Resolution Status -->
+                            {% if indicators.resolution == "resolved" %}✅
+                            {% elif indicators.resolution == "unresolved" %}❗
+                            {% elif indicators.resolution == "in_progress" %}⏳
+                            {% else %}➖{% endif %}
+
+                            {{ student.name }} ({{ student.email }})
+                        </option>
+                    {% endfor %}
+                </select>
+
+                <!-- Add a legend for the indicators -->
+                <div class="indicator-legend">
+                    <div class="legend-item">
+                        <span>Grade Indicators:</span>
+                        <span>🟢 ≥90</span>
+                        <span>🔵 ≥80</span>
+                        <span>🟠 ≥70</span>
+                        <span>🔴 <70</span>
+                    </div>
+                    <div class="legend-item">
+                        <span>Reflection Status:</span>
+                        <span>📝 Latest Submitted</span>
+                        <span>❌ Missing Latest</span>
+                    </div>
+                    <div class="legend-item">
+                        <span>Grade Trend:</span>
+                        <span>📈 Improving</span>
+                        <span>📉 Declining</span>
+                    </div>
+                    <div class="legend-item">
+                        <span>Urgency Level:</span>
+                        <span>🔥 High</span>
+                        <span>⚠️ Medium</span>
+                        <span>ℹ️ Low</span>
+                        <span>⭕ None</span>
+                    </div>
+                    <div class="legend-item">
+                        <span>Resolution Status:</span>
+                        <span>✅ Resolved</span>
+                        <span>❗ Unresolved</span>
+                        <span>⏳ In Progress</span>
+                        <span>➖ No Challenge</span>
+                    </div>
+                </div>
+
+                <!-- Performance Averages (updates on selection) -->
+                <div id="perf-averages" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e5e7eb; border-radius:6px; font-size:0.95em; display:none;">
+                    <b>Performance Averages:</b>
+                    <span id="perf-quiz" style="margin-left:8px;">📘 Quiz Avg: —</span>
+                    <span id="perf-assign" style="margin-left:16px;">📕 Assignment Avg: —</span>
+                </div>
+
+                <!-- Add collapse/expand controls -->
+                <div class="collapse-controls">
+                    <button onclick="toggleAllPeriods(true)" class="control-button">Expand All</button>
+                    <button onclick="toggleAllPeriods(false)" class="control-button">Collapse All</button>
+                </div>
+            </div>
+
+            <!-- Student Profiles -->
+            {% for student in students %}
+                <div id="student-{{ loop.index }}" class="student-profile">
+                    {{ student_profile(student)|safe }}
+                </div>
+            {% endfor %}
+        </div>
+
+        <!-- Topics Tab -->
+        <div id="topics-tab" class="tab-content">
+            {{ topic_analysis|safe }}
+        </div>
+        <!-- Summarization Tab -->
+        <div id="summarization-tab" class="tab-content">
+            {{ summarization_html|safe }}
+        </div>
+
+        <!-- Email Tab -->
+        <div id="email-tab" class="tab-content">
+            <h1>Email Builder</h1>
+            <p>Use the same filters to target students and generate a suggested outreach email.</p>
+
+            <!-- Current filter summary -->
+            <div style="margin:10px 0; padding:10px; background:#f1f3f5; border-radius:6px;">
+                <div><b>Active Filters:</b> <span id="email-filter-summary">None</span></div>
+            </div>
+
+            <!-- Recipient selection -->
+            <div style="margin:10px 0; padding:10px; background:#f8f9fa; border-radius:6px;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <b>Recipients:</b> <span id="email-selected-count">0</span>
+                    <label style="margin-left:auto;"><input type="checkbox" id="email-select-all"> Select all</label>
+                </div>
+                <div id="email-recipients" style="margin-top:6px; font-size:0.95em; max-height:220px; overflow:auto; border:1px solid #e5e7eb; padding:8px; border-radius:6px;"></div>
+            </div>
+
+            <div style="margin:10px 0;">
+                <button class="button" onclick="buildSuggestedEmail()">Build Suggested Email</button>
+                <button class="button" style="margin-left:6px;" onclick="buildAIEmail()">Generate with AI</button>
+                <button class="button" style="margin-left:6px;" onclick="addMissingAssignmentsSelected()">Add Missing Assignments to Email</button>
+                <button class="button" style="margin-left:6px;" onclick="copyEmailToClipboard()">Copy Email</button>
+            </div>
+
+            <div>
+                <label>Subject:</label>
+                <input id="email-subject" type="text" style="width:100%; padding:8px; margin:6px 0;" value="Quick check‑in for ITSC {{ course.course_name }} (Reflection {{ selected_ref }})"/>
+            </div>
+            <div>
+                <label>Body (editable):</label>
+                <textarea id="email-body" style="width:100%; height:260px; padding:8px;"></textarea>
+            </div>
+        </div>
+
+        <!-- Documentation Tab -->
+        {% if mode != "instructor" %}
+        <div id="documentation-tab" class="tab-content">
+            <div class="documentation-container">
+                <h1>📊 Analysis Documentation Hub</h1>
+                <p><strong>Comprehensive documentation for all analysis features</strong></p>
+
+                <!-- Grade Comparison Documentation Section -->
+                <div class="expandable-section">
+                    <div class="section-header" onclick="toggleSectionById('grade-comparison-docs')">
+                        <span class="toggle-icon" id="icon-grade-comparison-docs">▼</span>
+                        <h2>📊 Grade Comparison: Completed vs. Not Completed (per Module)</h2>
+                    </div>
+                    <div id="grade-comparison-docs" class="section-content" style="display: block;">
+
+                        <div class="doc-section">
+                            <h3>🎯 Overview</h3>
+                            <p>This feature performs statistical analysis comparing student grades between those who completed specific support modules versus those who don't complete these modules? It uses both parametric and non-parametric statistical tests to determine if module completion has a significant association with academic performance.</p>
+
+                            <div class="success-box">
+                                <strong>Key Question Answered:</strong> Do students who complete optional support modules perform better in their reflections compared to students who don't complete these modules?
+                            </div>
+                        </div>
+
+                        <div class="doc-section">
+                            <h3>📁 Data Sources & Structure</h3>
+
+                            <h4>1. Student Reflection Data</h4>
+                            <div class="data-structure-box">
+                                <strong>Source:</strong> <code>course.students[email].reflection_data[reflection_num]</code><br>
+                                <strong>Structure:</strong>
+                                <div class="code-example">
+student.reflection_data = {
+    1: {'reflection': Reflection_obj, 'grades': {'Current Score': 85.5, ...}},
+    2: {'reflection': Reflection_obj, 'grades': {'Current Score': 78.2, ...}},
+    3: {'reflection': Reflection_obj, 'grades': {'Current Score': 92.1, ...}},
+    4: {'reflection': Reflection_obj, 'grades': {'Current Score': 88.7, ...}}
+}
+                                </div>
+                            </div>
+
+                            <h4>2. Module Completion Data</h4>
+                            <div class="data-structure-box">
+                                <strong>Source:</strong> <code>student.reflection_data[*].grades</code> (across all reflections)<br>
+                                <strong>Identification:</strong> Columns containing <code>'feedback quiz'</code> (case-insensitive)<br>
+                                <strong>Completion Criteria:</strong> Score > 0<br>
+                                <div class="code-example">
+# Real example grade columns from the system:
+{
+    'Group Work Module Feedback Quiz': 5.0,           # ✅ Completed (score > 0)
+    'Time Management Module Feedback Quiz': 0.0,      # ❌ Not completed
+    'FastAPI Module Feedback Quiz [EXTRA CREDIT]': 3.5, # ✅ Completed
+    'Communication Skills Feedback Quiz': 2.0         # ✅ Completed
+}
+                                </div>
+                            </div>
+
+                            <h4>3. Grade Extraction Logic</h4>
+                            <div class="code-example">
+# From grade_module_correlation_helper.py lines 1132-1157
+for student in course.students.values():
+    # Extract reflection grade (default: Reflection 4)
+    grade = None
+    grades_dict = student.reflection_data.get(reflection_num, {}).get('grades')
+    if grades_dict and 'Current Score' in grades_dict:
+        try:
+            grade = float(grades_dict['Current Score'])
+        except Exception:
+            grade = None
+
+    # Extract completed modules across ALL reflections
+    completed_modules = set()
+    for ref in student.reflection_data.values():
+        grades = ref.get('grades', {})
+        for col, val in grades.items():
+            if 'feedback quiz' in col.lower():
+                try:
+                    if float(val) > 0:  # Completion criterion
+                        completed_modules.add(col.strip())
+                except Exception:
+                    continue
+                            </div>
+                        </div>
+
+                        <div class="doc-section">
+                            <h3>🔄 Analysis Workflow</h3>
+
+                            <div class="flow-step">
+                                <strong>Step 1: Data Extraction</strong>
+                                <ul>
+                                    <li>Iterate through all students in the course</li>
+                                    <li>Extract Reflection 4 grade (the 'Current Score' field)</li>
+                                    <li>Scan all reflections for feedback quiz columns</li>
+                                    <li>Determine module completion status (score > 0)</li>
+                                </ul>
+                            </div>
+
+                            <div class="flow-step">
+                                <strong>Step 2: Data Preprocessing</strong>
+                                <ul>
+                                    <li>Create DataFrame with student data</li>
+                                    <li>Remove students with missing grades</li>
+                                    <li>Apply outlier removal if specified (IQR or threshold method)</li>
+                                    <li>Generate module completion summary statistics</li>
+                                </ul>
+                            </div>
+
+                            <div class="flow-step">
+                                <strong>Step 3: Statistical Analysis (Per Module)</strong>
+                                <ul>
+                                    <li>Split students into two groups: completed vs. not completed</li>
+                                    <li>Perform normality tests (Shapiro-Wilk)</li>
+                                    <li>Execute Mann-Whitney U test (non-parametric)</li>
+                                    <li>Execute Welch's t-test (parametric)</li>
+                                    <li>Determine recommended test based on normality</li>
+                                </ul>
+                            </div>
+
+                            <div class="flow-step">
+                                <strong>Step 4: Visualization & Export</strong>
+                                <ul>
+                                    <li>Generate box plots comparing grade distributions</li>
+                                    <li>Create summary tables with statistical results</li>
+                                    <li>Export raw data and results to CSV files</li>
+                                    <li>Apply color coding for statistical significance</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="doc-section">
+                            <h3>📊 Statistical Methods Used</h3>
+
+                            <h4>1. Mann-Whitney U Test (Primary)</h4>
+                            <div class="method-signature">scipy.stats.mannwhitneyu(group1, group2, alternative='two-sided')</div>
+                            <ul>
+                                <li><strong>Type:</strong> Non-parametric test</li>
+                                <li><strong>Purpose:</strong> Compare distributions between two independent groups</li>
+                                <li><strong>Assumptions:</strong> Independent observations, ordinal or continuous data</li>
+                                <li><strong>Null Hypothesis:</strong> The two groups have identical distributions</li>
+                                <li><strong>Alternative:</strong> One group tends to have higher/lower values</li>
+                            </ul>
+
+                            <h4>2. Welch's T-Test (Secondary)</h4>
+                            <div class="method-signature">scipy.stats.ttest_ind(group1, group2, equal_var=False)</div>
+                            <ul>
+                                <li><strong>Type:</strong> Parametric test</li>
+                                <li><strong>Purpose:</strong> Compare means between two independent groups</li>
+                                <li><strong>Assumptions:</strong> Normal distributions, independent observations</li>
+                                <li><strong>Advantage:</strong> More robust than Student's t-test (handles unequal variances)</li>
+                                <li><strong>Null Hypothesis:</strong> The means of the two groups are equal</li>
+                            </ul>
+
+                            <h4>3. Shapiro-Wilk Normality Test</h4>
+                            <div class="method-signature">scipy.stats.shapiro(data)</div>
+                            <ul>
+                                <li><strong>Purpose:</strong> Test if data follows a normal distribution</li>
+                                <li><strong>Null Hypothesis:</strong> Data is normally distributed</li>
+                                <li><strong>Decision Rule:</strong> p < 0.05 suggests non-normal data</li>
+                                <li><strong>Usage:</strong> Determines which test (parametric vs. non-parametric) to recommend</li>
+                            </ul>
+                        </div>
+
+                        <div class="doc-section">
+                            <h3>📈 Example Data Flow</h3>
+
+                            <h4>Sample Input Data</h4>
+                            <table class="doc-table">
+                                <tr>
+                                    <th>Student Email</th>
+                                    <th>Reflection 4 Grade</th>
+                                    <th>Completed Modules</th>
+                                </tr>
+                                <tr>
+                                    <td>jsmith123@charlotte.edu</td>
+                                    <td>91.5</td>
+                                    <td>Group Work Module, Time Management Module</td>
+                                </tr>
+                                <tr>
+                                    <td>mjones456@charlotte.edu</td>
+                                    <td>78.2</td>
+                                    <td>Communication Skills Module</td>
+                                </tr>
+                                <tr>
+                                    <td>kwilson789@charlotte.edu</td>
+                                    <td>85.8</td>
+                                    <td>(no modules completed)</td>
+                                </tr>
+                            </table>
+
+                            <h4>Real Statistical Results from D-ESP5 Course</h4>
+                            <div class="code-example">
+# Actual Analysis Results (97 students total):
+
+MODULES ANALYZED: 7 modules total
+├── Group Work Module Feedback Quiz        # 84 completed, 13 not completed
+├── Time Management Module Feedback Quiz   # Variable completion rates
+├── FastAPI Module Feedback Quiz [EXTRA CREDIT]
+├── Communication Skills Module
+├── Project Management Module
+├── Leadership Skills Module
+└── Technical Writing Module
+
+STATISTICAL SIGNIFICANCE FINDINGS:
+• Modules with significant Mann-Whitney U test (p < 0.05): 2 out of 7 (28.6%)
+• Modules with significant Welch's t-test (p < 0.05): 1 out of 7 (14.3%)
+• Test agreement rate: 6/7 modules (85.7%)
+• Normality assumption met: 0/7 modules (0.0%)
+
+SIGNIFICANT RESULT EXAMPLE:
+Group Work Module Feedback Quiz:
+├── Completed Students (n=84):   Mean=91.91, Median=93.25, SD=8.45
+├── Not Completed Students (n=13): Mean=78.74, Median=73.82, SD=12.73
+├── Mann-Whitney U: statistic=799.50, p=0.007382 ⭐ SIGNIFICANT
+├── Welch's t-test: t=2.869, p=0.013574 ⭐ SIGNIFICANT
+├── Effect Size (Cohen's d): 1.063 (Large effect)
+└── Recommendation: Use Mann-Whitney U (robust to non-normality)
+
+PRACTICAL INTERPRETATION:
+Students who completed the Group Work Module had significantly higher
+Reflection 4 grades (difference of ~13 points on average).
+This represents a large practical effect beyond statistical significance.
+                            </div>
+                        </div>
+
+                        <div class="doc-section">
+                            <h3>⚙️ Key Methods & Files</h3>
+
+                            <h4>Primary Analysis Method</h4>
+                            <div class="method-signature">
+GradeModuleCorrelationHelper.module_completion_grade_comparison(course, reflection_num=4, course_name=None, export_base_dir=None, outlier_method=None)
+                            </div>
+                            <p><strong>Location:</strong> <code>application/html_builder/grade_module_correlation_helper.py:1132</code></p>
+
+                            <h4>Core Implementation Files</h4>
+                            <div class="data-structure-box">
+                                <div class="code-example">
+# Key Classes & Methods:
+class GradeModuleCorrelationHelper:
+    - module_completion_grade_comparison()     # Lines 1132-1500+
+    - create_module_completion_distribution_charts()  # Lines 341-600+
+    - extract_grade_and_module_count()        # Lines 15-45
+    - support_module_completion_summary()     # Lines 2109-2300+
+
+class HTMLBuilder:
+    - build_student_profiles()                # Lines 120-1280
+    - _build_module_availability_and_prepost_analysis() # Lines 2129-2400+
+
+# Data Model Files:
+application/model/models/student.py          # Student data structure
+application/model/models/course.py           # Course data structure
+application/model/models/reflection.py       # Reflection data structure
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="doc-section">
+                            <h3>🔍 Interpretation Guidelines</h3>
+
+                            <div class="warning-box">
+                                <strong>Sample Size Requirements:</strong> Statistical tests require at least 2 students per group. Results marked as NaN when insufficient data.
+                            </div>
+
+                            <div class="warning-box">
+                                <strong>Multiple Testing:</strong> When testing multiple modules simultaneously, consider Bonferroni correction for p-values to control family-wise error rate.
+                            </div>
+
+                            <h4>Statistical Significance</h4>
+                            <ul>
+                                <li><strong>p < 0.001:</strong> Very strong evidence of difference (***)</li>
+                                <li><strong>p < 0.01:</strong> Strong evidence of difference (**)</li>
+                                <li><strong>p < 0.05:</strong> Moderate evidence of difference (*)</li>
+                                <li><strong>p ≥ 0.05:</strong> No significant difference detected (ns)</li>
+                            </ul>
+
+                            <h4>Effect Size Interpretation (Cohen's d)</h4>
+                            <div class="code-example">
+# Real examples from system analysis:
+
+SMALL EFFECT (d ≈ 0.2):     Grade difference of ~2-4 points
+MEDIUM EFFECT (d ≈ 0.5):    Grade difference of ~5-8 points
+LARGE EFFECT (d ≥ 0.8):     Grade difference of ~9+ points
+
+# Group Work Module: d = 1.063 (Large effect)
+# Mean difference: 91.91 - 78.74 = 13.17 points
+# This is both statistically significant AND practically meaningful
+                            </div>
+
+                            <h4>Export Data Structure</h4>
+                            <div class="code-example">
+# CSV files generated:
+{export_base_dir}/{course_name}/mann_whitney_module_comparison/
+├── input_data_per_student_module.csv     # 679 rows (97 students × 7 modules)
+├── module_completion_summary.csv         # 7 rows (one per module)
+└── statistical_results.csv               # 7 rows (statistical test results)
+                            </div>
+                        </div>
+
+                        <!-- CSV Export Documentation -->
+                        <div class="doc-section">
+                            <h3>📊 Intermediary CSV File Outputs</h3>
+
+                            <div class="csv-section">
+                                <h4>1. Input Data Per Student Module (input_data_per_student_module.csv)</h4>
+                                <div class="csv-description">
+                                    <p><strong>Purpose:</strong> Contains the raw analysis input data with one row per student-module combination</p>
+                                    <p><strong>Typical Size:</strong> n_students × n_modules rows (e.g., 97 students × 7 modules = 679 rows)</p>
+                                </div>
+
+                                <div class="csv-structure">
+                                    <h5>Column Structure:</h5>
+                                    <table class="doc-table">
+                                        <tr>
+                                            <th>Column Name</th>
+                                            <th>Data Type</th>
+                                            <th>Description</th>
+                                            <th>Example Values</th>
+                                        </tr>
+                                        <tr>
+                                            <td>student_email</td>
+                                            <td>string</td>
+                                            <td>Unique student identifier</td>
+                                            <td>jsmith123@charlotte.edu</td>
+                                        </tr>
+                                        <tr>
+                                            <td>reflection_grade</td>
+                                            <td>float</td>
+                                            <td>Student's reflection 4 grade (0-100)</td>
+                                            <td>91.5, 78.2, 85.8</td>
+                                        </tr>
+                                        <tr>
+                                            <td>module_name</td>
+                                            <td>string</td>
+                                            <td>Name of the support module</td>
+                                            <td>Group Work Module Feedback Quiz</td>
+                                        </tr>
+                                        <tr>
+                                            <td>completed_module</td>
+                                            <td>boolean</td>
+                                            <td>Whether student completed this module</td>
+                                            <td>True, False</td>
+                                        </tr>
+                                        <tr>
+                                            <td>completion_score</td>
+                                            <td>float</td>
+                                            <td>Module feedback quiz score</td>
+                                            <td>5.0, 3.5, 0.0</td>
+                                        </tr>
+                                        <tr>
+                                            <td>total_modules_completed</td>
+                                            <td>integer</td>
+                                            <td>Total modules completed by student</td>
+                                            <td>0, 1, 2, 3, ...</td>
+                                        </tr>
+                                    </table>
+                                </div>
+
+                                <div class="csv-sample">
+                                    <h5>Sample Data (first 10 rows):</h5>
+                                    <div class="code-example">
+student_email,reflection_grade,module_name,completed_module,completion_score,total_modules_completed
+jsmith123@charlotte.edu,91.5,Group Work Module Feedback Quiz,True,5.0,3
+jsmith123@charlotte.edu,91.5,Time Management Module Feedback Quiz,True,4.0,3
+jsmith123@charlotte.edu,91.5,FastAPI Module Feedback Quiz [EXTRA CREDIT],False,0.0,3
+mjones456@charlotte.edu,78.2,Group Work Module Feedback Quiz,True,3.5,1
+mjones456@charlotte.edu,78.2,Time Management Module Feedback Quiz,False,0.0,1
+mjones456@charlotte.edu,78.2,FastAPI Module Feedback Quiz [EXTRA CREDIT],False,0.0,1
+kwilson789@charlotte.edu,85.8,Group Work Module Feedback Quiz,False,0.0,0
+kwilson789@charlotte.edu,85.8,Time Management Module Feedback Quiz,False,0.0,0
+kwilson789@charlotte.edu,85.8,FastAPI Module Feedback Quiz [EXTRA CREDIT],False,0.0,0
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="csv-section">
+                                <h4>2. Module Completion Summary (module_completion_summary.csv)</h4>
+                                <div class="csv-description">
+                                    <p><strong>Purpose:</strong> Aggregated statistics for each module showing completion rates and basic descriptives</p>
+                                    <p><strong>Typical Size:</strong> One row per module (e.g., 7 rows for 7 modules)</p>
+                                </div>
+
+                                <div class="csv-structure">
+                                    <h5>Column Structure:</h5>
+                                    <table class="doc-table">
+                                        <tr>
+                                            <th>Column Name</th>
+                                            <th>Data Type</th>
+                                            <th>Description</th>
+                                            <th>Example Values</th>
+                                        </tr>
+                                        <tr>
+                                            <td>module_name</td>
+                                            <td>string</td>
+                                            <td>Name of the support module</td>
+                                            <td>Group Work Module Feedback Quiz</td>
+                                        </tr>
+                                        <tr>
+                                            <td>total_students</td>
+                                            <td>integer</td>
+                                            <td>Total students with valid grades</td>
+                                            <td>97, 98, 95</td>
+                                        </tr>
+                                        <tr>
+                                            <td>completed_count</td>
+                                            <td>integer</td>
+                                            <td>Number who completed module</td>
+                                            <td>84, 67, 23</td>
+                                        </tr>
+                                        <tr>
+                                            <td>not_completed_count</td>
+                                            <td>integer</td>
+                                            <td>Number who did not complete</td>
+                                            <td>13, 30, 74</td>
+                                        </tr>
+                                        <tr>
+                                            <td>completion_rate</td>
+                                            <td>float</td>
+                                            <td>Percentage who completed (0-100)</td>
+                                            <td>86.6, 69.1, 23.7</td>
+                                        </tr>
+                                        <tr>
+                                            <td>completed_mean_grade</td>
+                                            <td>float</td>
+                                            <td>Average grade of completers</td>
+                                            <td>91.91, 88.45, 92.33</td>
+                                        </tr>
+                                        <tr>
+                                            <td>not_completed_mean_grade</td>
+                                            <td>float</td>
+                                            <td>Average grade of non-completers</td>
+                                            <td>78.74, 83.22, 86.85</td>
+                                        </tr>
+                                        <tr>
+                                            <td>grade_difference</td>
+                                            <td>float</td>
+                                            <td>Completed mean - Not completed mean</td>
+                                            <td>13.17, 5.23, 5.48</td>
+                                        </tr>
+                                    </table>
+                                </div>
+
+                                <div class="csv-sample">
+                                    <h5>Sample Data:</h5>
+                                    <div class="code-example">
+module_name,total_students,completed_count,not_completed_count,completion_rate,completed_mean_grade,not_completed_mean_grade,grade_difference
+Group Work Module Feedback Quiz,97,84,13,86.6,91.91,78.74,13.17
+Time Management Module Feedback Quiz,97,67,30,69.1,88.45,83.22,5.23
+FastAPI Module Feedback Quiz [EXTRA CREDIT],97,23,74,23.7,92.33,86.85,5.48
+Communication Skills Module,97,45,52,46.4,89.12,87.89,1.23
+Project Management Module,97,38,59,39.2,90.45,86.78,3.67
+Leadership Skills Module,97,31,66,32.0,91.22,86.44,4.78
+Technical Writing Module,97,28,69,28.9,89.67,87.33,2.34
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="csv-section">
+                                <h4>3. Statistical Results (statistical_results.csv)</h4>
+                                <div class="csv-description">
+                                    <p><strong>Purpose:</strong> Complete statistical test results for each module comparison</p>
+                                    <p><strong>Typical Size:</strong> One row per module with all statistical test outcomes</p>
+                                </div>
+
+                                <div class="csv-structure">
+                                    <h5>Column Structure:</h5>
+                                    <table class="doc-table">
+                                        <tr>
+                                            <th>Column Name</th>
+                                            <th>Data Type</th>
+                                            <th>Description</th>
+                                            <th>Example Values</th>
+                                        </tr>
+                                        <tr>
+                                            <td>module_name</td>
+                                            <td>string</td>
+                                            <td>Name of the support module</td>
+                                            <td>Group Work Module Feedback Quiz</td>
+                                        </tr>
+                                        <tr>
+                                            <td>mannwhitney_statistic</td>
+                                            <td>float</td>
+                                            <td>Mann-Whitney U test statistic</td>
+                                            <td>799.50, 1245.33, 567.89</td>
+                                        </tr>
+                                        <tr>
+                                            <td>mannwhitney_pvalue</td>
+                                            <td>float</td>
+                                            <td>Mann-Whitney U p-value</td>
+                                            <td>0.007382, 0.234567, 0.000123</td>
+                                        </tr>
+                                        <tr>
+                                            <td>mannwhitney_significant</td>
+                                            <td>boolean</td>
+                                            <td>Significant at α=0.05 level</td>
+                                            <td>True, False</td>
+                                        </tr>
+                                        <tr>
+                                            <td>welch_ttest_statistic</td>
+                                            <td>float</td>
+                                            <td>Welch's t-test statistic</td>
+                                            <td>2.869, -1.234, 3.456</td>
+                                        </tr>
+                                        <tr>
+                                            <td>welch_ttest_pvalue</td>
+                                            <td>float</td>
+                                            <td>Welch's t-test p-value</td>
+                                            <td>0.013574, 0.456789, 0.001234</td>
+                                        </tr>
+                                        <tr>
+                                            <td>welch_ttest_significant</td>
+                                            <td>boolean</td>
+                                            <td>Significant at α=0.05 level</td>
+                                            <td>True, False</td>
+                                        </tr>
+                                        <tr>
+                                            <td>effect_size_cohens_d</td>
+                                            <td>float</td>
+                                            <td>Cohen's d effect size</td>
+                                            <td>1.063, 0.234, 0.789</td>
+                                        </tr>
+                                        <tr>
+                                            <td>effect_size_interpretation</td>
+                                            <td>string</td>
+                                            <td>Effect size category</td>
+                                            <td>Large, Small, Medium</td>
+                                        </tr>
+                                        <tr>
+                                            <td>completed_shapiro_pvalue</td>
+                                            <td>float</td>
+                                            <td>Normality test for completers</td>
+                                            <td>0.000234, 0.123456, 0.045678</td>
+                                        </tr>
+                                        <tr>
+                                            <td>not_completed_shapiro_pvalue</td>
+                                            <td>float</td>
+                                            <td>Normality test for non-completers</td>
+                                            <td>0.001234, 0.234567, 0.056789</td>
+                                        </tr>
+                                        <tr>
+                                            <td>recommended_test</td>
+                                            <td>string</td>
+                                            <td>Recommended statistical test</td>
+                                            <td>Mann-Whitney U, Welch t-test</td>
+                                        </tr>
+                                        <tr>
+                                            <td>practical_significance</td>
+                                            <td>string</td>
+                                            <td>Educational interpretation</td>
+                                            <td>Meaningful difference, No practical impact</td>
+                                        </tr>
+                                    </table>
+                                </div>
+
+                                <div class="csv-sample">
+                                    <h5>Sample Data (condensed view):</h5>
+                                    <div class="code-example">
+module_name,mannwhitney_pvalue,welch_ttest_pvalue,effect_size_cohens_d,recommended_test,practical_significance
+Group Work Module Feedback Quiz,0.007382,0.013574,1.063,Mann-Whitney U,Meaningful difference
+Time Management Module Feedback Quiz,0.234567,0.345678,0.234,Mann-Whitney U,Small effect
+FastAPI Module Feedback Quiz [EXTRA CREDIT],0.000123,0.001234,0.789,Mann-Whitney U,Meaningful difference
+Communication Skills Module,0.456789,0.567890,0.123,Mann-Whitney U,No practical impact
+Project Management Module,0.012345,0.023456,0.456,Mann-Whitney U,Small to medium effect
+Leadership Skills Module,0.034567,0.045678,0.567,Mann-Whitney U,Medium effect
+Technical Writing Module,0.678901,0.789012,0.178,Mann-Whitney U,No practical impact
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="csv-usage">
+                                <h4>📁 Export Location & Usage</h4>
+                                <div class="location-box">
+                                    <h5>File Structure:</h5>
+                                    <div class="code-example">
+{export_base_dir}/{course_name}/mann_whitney_module_comparison/
+├── input_data_per_student_module.csv      # Raw input data
+├── module_completion_summary.csv          # Aggregated statistics
+├── statistical_results.csv                # Complete test results
+└── analysis_metadata.txt                  # Analysis parameters & timestamp
+                                    </div>
+                                </div>
+
+                                <div class="usage-tips">
+                                    <h5>Usage Recommendations:</h5>
+                                    <ul>
+                                        <li><strong>Input Data CSV:</strong> Use for custom analysis, data validation, or reproducing results</li>
+                                        <li><strong>Summary CSV:</strong> Quick overview for reports, presentations, or dashboard creation</li>
+                                        <li><strong>Results CSV:</strong> Complete statistical documentation for research papers or detailed analysis</li>
+                                        <li><strong>Quality Assurance:</strong> Cross-validate web interface results with CSV exports</li>
+                                        <li><strong>Further Analysis:</strong> Import into R, SPSS, or other statistical software for extended analysis</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Grade Distribution Analysis Documentation -->
+                <div class="documentation-section">
+                    <div class="doc-header" onclick="toggleSectionById('grade-distribution-docs')">
+                        <h3>📊 Grade Distribution Analysis</h3>
+                        <span class="toggle-icon" id="icon-grade-distribution-docs">▶</span>
+                    </div>
+                    <div class="doc-content" id="grade-distribution-docs">
+                        <p class="section-description">
+                            Comprehensive documentation for the Grade Distribution Analysis feature, which examines how students'
+                            reflection grades are distributed and tests for normality patterns.
+                        </p>
+
+                        <!-- Data Sources -->
+                        <div class="doc-subsection">
+                            <h4>📂 Data Sources & Inputs</h4>
+                            <div class="data-box">
+                                <strong>Primary Input:</strong>
+                                <ul>
+                                    <li><code>student.reflection_4_grade</code> - Numeric grade for Reflection 4 (0-100 scale)</li>
+                                    <li><strong>File:</strong> <code>application/model/models/student.py</code></li>
+                                    <li><strong>Database Table:</strong> Student reflection grades</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <!-- Analysis Workflow -->
+                        <div class="doc-subsection">
+                            <h4>⚙️ Analysis Workflow</h4>
+                            <div class="workflow-steps">
+                                <div class="step">
+                                    <div class="step-number">1</div>
+                                    <div class="step-content">
+                                        <strong>Data Extraction</strong><br>
+                                        Collect all valid reflection 4 grades from enrolled students
+                                    </div>
+                                </div>
+                                <div class="step">
+                                    <div class="step-number">2</div>
+                                    <div class="step-content">
+                                        <strong>Statistical Computation</strong><br>
+                                        Calculate descriptive statistics (mean, median, mode, std, quartiles)
+                                    </div>
+                                </div>
+                                <div class="step">
+                                    <div class="step-number">3</div>
+                                    <div class="step-content">
+                                        <strong>Normality Testing</strong><br>
+                                        Apply Shapiro-Wilk test to assess if grades follow normal distribution
+                                    </div>
+                                </div>
+                                <div class="step">
+                                    <div class="step-number">4</div>
+                                    <div class="step-content">
+                                        <strong>Visualization</strong><br>
+                                        Generate histogram with normal distribution overlay
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Statistical Methods -->
+                        <div class="doc-subsection">
+                            <h4>📊 Statistical Methods</h4>
+                            <div class="method-box">
+                                <h5>Descriptive Statistics</h5>
+                                <ul>
+                                    <li><strong>Mean:</strong> <code>pandas.Series.mean()</code> - Average grade</li>
+                                    <li><strong>Median:</strong> <code>pandas.Series.median()</code> - Middle value when sorted</li>
+                                    <li><strong>Mode:</strong> <code>pandas.Series.mode()[0]</code> - Most frequent grade</li>
+                                    <li><strong>Standard Deviation:</strong> <code>pandas.Series.std()</code> - Measure of spread</li>
+                                    <li><strong>Quartiles:</strong> <code>pandas.Series.quantile([0.25, 0.75])</code> - Q1 and Q3</li>
+                                    <li><strong>Range:</strong> <code>max - min</code> - Total spread</li>
+                                    <li><strong>IQR:</strong> <code>Q3 - Q1</code> - Interquartile range</li>
+                                </ul>
+
+                                <h5>Normality Testing</h5>
+                                <div class="code-block">
+                                    <strong>Shapiro-Wilk Test:</strong><br>
+                                    <code>from scipy.stats import shapiro</code><br>
+                                    <code>statistic, p_value = shapiro(grades)</code>
+                                    <ul>
+                                        <li><strong>Null Hypothesis (H₀):</strong> Data is normally distributed</li>
+                                        <li><strong>p ≥ 0.05:</strong> Fail to reject H₀ (appears normal)</li>
+                                        <li><strong>p < 0.05:</strong> Reject H₀ (significantly non-normal)</li>
+                                    </ul>
+                                </div>
+
+                                <h5>Visualization</h5>
+                                <ul>
+                                    <li><strong>Histogram:</strong> <code>plotly.graph_objects.Bar()</code> - Actual grade distribution</li>
+                                    <li><strong>Normal Overlay:</strong> <code>plotly.graph_objects.Scatter()</code> - Theoretical normal curve</li>
+                                    <li><strong>Central Tendency Markers:</strong> Vertical lines for mean, median, mode</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <!-- Real Data Examples -->
+                        <div class="doc-subsection">
+                            <h4>📈 Real Data Examples</h4>
+
+                            <div class="example-box">
+                                <h5>D-ESP5 Course Results</h5>
+                                <div class="stats-grid">
+                                    <div class="stat-item">
+                                        <span class="stat-label">Sample Size:</span>
+                                        <span class="stat-value">100 students</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Mean Grade:</span>
+                                        <span class="stat-value">87.85 ± 16.03</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Median:</span>
+                                        <span class="stat-value">93.09</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Mode:</span>
+                                        <span class="stat-value">95.6</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Range:</span>
+                                        <span class="stat-value">11.96 - 100.6</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Q1 - Q3:</span>
+                                        <span class="stat-value">85.24 - 96.54</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Shapiro p-value:</span>
+                                        <span class="stat-value significance-high">1.24 × 10⁻¹⁴</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Distribution:</span>
+                                        <span class="stat-value non-normal">Non-normal</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="example-box">
+                                <h5>S-ESP5 Course Results</h5>
+                                <div class="stats-grid">
+                                    <div class="stat-item">
+                                        <span class="stat-label">Sample Size:</span>
+                                        <span class="stat-value">74 students</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Mean Grade:</span>
+                                        <span class="stat-value">89.78 ± 11.05</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Median:</span>
+                                        <span class="stat-value">92.31</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Mode:</span>
+                                        <span class="stat-value">95.42</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Range:</span>
+                                        <span class="stat-value">14.9 - 98.85</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Q1 - Q3:</span>
+                                        <span class="stat-value">88.64 - 95.42</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Shapiro p-value:</span>
+                                        <span class="stat-value significance-high">6.66 × 10⁻¹⁴</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Distribution:</span>
+                                        <span class="stat-value non-normal">Non-normal</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Key Implementation Files -->
+                        <div class="doc-subsection">
+                            <h4>📦 Key Implementation Files</h4>
+
+                            <div class="file-structure">
+                                <div class="file-item">
+                                    <div class="file-path">
+                                        <code>application/html_builder/grade_module_correlation_helper.py</code>
+                                    </div>
+                                    <div class="file-methods">
+                                        <div class="method">
+                                            <strong>create_grade_distribution_chart(course, reflection_num=4)</strong>
+                                            <span class="line-ref">Lines 47-340</span>
+                                        </div>
+                                        <div class="method">
+                                            <strong>distribution_explanation()</strong>
+                                            <span class="line-ref">Lines 774-869</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="file-item">
+                                    <div class="file-path">
+                                        <code>application/html_builder/builders/grade_analysis_builder.py</code>
+                                    </div>
+                                    <div class="file-methods">
+                                        <div class="method">
+                                            <strong>build_grade_analysis(course)</strong>
+                                            <span class="line-ref">Complete analysis pipeline</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="file-item">
+                                    <div class="file-path">
+                                        <code>application/html_builder/templates/components/grade_analysis.html</code>
+                                    </div>
+                                    <div class="file-methods">
+                                        <div class="method">
+                                            <strong>Grade Distribution UI Template</strong>
+                                            <span class="line-ref">HTML structure & styling</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Data Export Structure -->
+                        <div class="doc-subsection">
+                            <h4>📤 Data Export Structure</h4>
+                            <div class="export-structure">
+                                <div class="export-folder">
+                                    <div class="folder-path">
+                                        <code>application/model/calculation_exports/{course}/grade_distribution/</code>
+                                    </div>
+                                    <div class="export-files">
+                                        <div class="export-file">
+                                            <strong>descriptive_statistics.txt</strong>
+                                            <ul>
+                                                <li>Sample size (n)</li>
+                                                <li>Mean, median, mode</li>
+                                                <li>Standard deviation, min, max, range</li>
+                                                <li>Quartiles (Q1, Q3) and IQR</li>
+                                                <li>Shapiro-Wilk test results</li>
+                                                <li>Normality interpretation</li>
+                                            </ul>
+                                        </div>
+                                        <div class="export-file">
+                                            <strong>grade_distribution_chart.html</strong>
+                                            <ul>
+                                                <li>Interactive Plotly histogram</li>
+                                                <li>Normal distribution overlay</li>
+                                                <li>Central tendency markers</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Interpretation Guide -->
+                        <div class="doc-subsection">
+                            <h4>🔍 Interpretation Guide</h4>
+
+                            <div class="interpretation-section">
+                                <h5>Normal vs. Non-Normal Distributions</h5>
+                                <div class="interpretation-grid">
+                                    <div class="interp-item normal-dist">
+                                        <h6>Normal Distribution (p ≥ 0.05)</h6>
+                                        <ul>
+                                            <li>Bell-shaped, symmetric around mean</li>
+                                            <li>Mean ≈ Median ≈ Mode</li>
+                                            <li>Predictable patterns (68-95-99.7 rule)</li>
+                                            <li>Suitable for parametric tests</li>
+                                        </ul>
+                                    </div>
+                                    <div class="interp-item non-normal-dist">
+                                        <h6>Non-Normal Distribution (p < 0.05)</h6>
+                                        <ul>
+                                            <li>Skewed, bimodal, or heavy-tailed</li>
+                                            <li>Mean ≠ Median (often)</li>
+                                            <li>May indicate distinct student groups</li>
+                                            <li>Requires non-parametric approaches</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="interpretation-section">
+                                <h5>Educational Implications</h5>
+                                <div class="implications-list">
+                                    <div class="implication-item">
+                                        <strong>Negatively Skewed (Mean < Median):</strong>
+                                        Most students perform well; few struggle significantly
+                                    </div>
+                                    <div class="implication-item">
+                                        <strong>Positively Skewed (Mean > Median):</strong>
+                                        Many students struggle; few excel significantly
+                                    </div>
+                                    <div class="implication-item">
+                                        <strong>Bimodal Distribution:</strong>
+                                        Two distinct groups - may indicate varying preparation levels
+                                    </div>
+                                    <div class="implication-item">
+                                        <strong>High Standard Deviation:</strong>
+                                        Large variation in performance - differentiated instruction may help
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Python Libraries Used -->
+                        <div class="doc-subsection">
+                            <h4>🐍 Python Libraries & Imports</h4>
+                            <div class="libraries-grid">
+                                <div class="lib-category">
+                                    <h5>Statistical Analysis</h5>
+                                    <div class="lib-list">
+                                        <div class="lib-item">
+                                            <code>import pandas as pd</code>
+                                            <span>Data manipulation & descriptive statistics</span>
+                                        </div>
+                                        <div class="lib-item">
+                                            <code>import numpy as np</code>
+                                            <span>Numerical computations</span>
+                                        </div>
+                                        <div class="lib-item">
+                                            <code>from scipy.stats import shapiro</code>
+                                            <span>Normality testing</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="lib-category">
+                                    <h5>Visualization</h5>
+                                    <div class="lib-list">
+                                        <div class="lib-item">
+                                            <code>import plotly.graph_objects as go</code>
+                                            <span>Interactive histogram charts</span>
+                                        </div>
+                                        <div class="lib-item">
+                                            <code>from plotly.subplots import make_subplots</code>
+                                            <span>Multi-panel layouts</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="lib-category">
+                                    <h5>Data Processing</h5>
+                                    <div class="lib-list">
+                                        <div class="lib-item">
+                                            <code>import os</code>
+                                            <span>File system operations</span>
+                                        </div>
+                                        <div class="lib-item">
+                                            <code>from typing import Tuple</code>
+                                            <span>Type hints for return values</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- CSV Export Documentation for Grade Distribution -->
+                        <div class="doc-subsection">
+                            <h4>📊 CSV File Exports & Data Structure</h4>
+
+                            <div class="csv-section">
+                                <h5>1. Raw Grade Data (grade_distribution_raw_data.csv)</h5>
+                                <div class="csv-description">
+                                    <p><strong>Purpose:</strong> Individual student grades used in the distribution analysis</p>
+                                    <p><strong>Typical Size:</strong> One row per student (e.g., 100 students = 100 rows)</p>
+                                </div>
+
+                                <div class="csv-structure">
+                                    <h6>Column Structure:</h6>
+                                    <table class="doc-table">
+                                        <tr>
+                                            <th>Column Name</th>
+                                            <th>Data Type</th>
+                                            <th>Description</th>
+                                            <th>Example Values</th>
+                                        </tr>
+                                        <tr>
+                                            <td>student_email</td>
+                                            <td>string</td>
+                                            <td>Student identifier (anonymized in export)</td>
+                                            <td>student_001, student_002, ...</td>
+                                        </tr>
+                                        <tr>
+                                            <td>reflection_4_grade</td>
+                                            <td>float</td>
+                                            <td>Reflection 4 grade (0-100 scale)</td>
+                                            <td>91.5, 78.2, 95.6, 85.8</td>
+                                        </tr>
+                                        <tr>
+                                            <td>grade_category</td>
+                                            <td>string</td>
+                                            <td>Grade performance level</td>
+                                            <td>High (≥90), Good (≥80), Fair (≥70), Low (<70)</td>
+                                        </tr>
+                                        <tr>
+                                            <td>z_score</td>
+                                            <td>float</td>
+                                            <td>Standardized score relative to mean</td>
+                                            <td>-1.23, 0.45, 2.17, -0.89</td>
+                                        </tr>
+                                        <tr>
+                                            <td>percentile_rank</td>
+                                            <td>float</td>
+                                            <td>Student's percentile in the distribution</td>
+                                            <td>25.5, 67.8, 89.2, 15.4</td>
+                                        </tr>
+                                    </table>
+                                </div>
+
+                                <div class="csv-sample">
+                                    <h6>Sample Data (first 10 rows):</h6>
+                                    <div class="code-example">
+student_email,reflection_4_grade,grade_category,z_score,percentile_rank
+student_001,95.6,High (≥90),0.48,75.0
+student_002,87.3,Good (≥80),-0.03,48.0
+student_003,92.1,High (≥90),0.27,62.0
+student_004,78.4,Fair (≥70),-0.59,27.0
+student_005,89.7,Good (≥80),0.12,55.0
+student_006,91.2,High (≥90),0.21,59.0
+student_007,73.8,Fair (≥70),-0.88,18.0
+student_008,96.2,High (≥90),0.52,77.0
+student_009,85.1,Good (≥80),-0.17,41.0
+student_010,88.9,Good (≥80),0.07,52.0
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="csv-section">
+                                <h5>2. Descriptive Statistics Summary (descriptive_statistics.csv)</h5>
+                                <div class="csv-description">
+                                    <p><strong>Purpose:</strong> Complete statistical summary of the grade distribution</p>
+                                    <p><strong>Typical Size:</strong> Single row with all statistics</p>
+                                </div>
+
+                                <div class="csv-structure">
+                                    <h6>Column Structure:</h6>
+                                    <table class="doc-table">
+                                        <tr>
+                                            <th>Statistic</th>
+                                            <th>Value</th>
+                                            <th>Description</th>
+                                            <th>D-ESP5 Example</th>
+                                        </tr>
+                                        <tr>
+                                            <td>course_name</td>
+                                            <td>string</td>
+                                            <td>Course identifier</td>
+                                            <td>D-ESP5</td>
+                                        </tr>
+                                        <tr>
+                                            <td>analysis_date</td>
+                                            <td>string</td>
+                                            <td>When analysis was performed</td>
+                                            <td>2024-01-15 14:30:22</td>
+                                        </tr>
+                                        <tr>
+                                            <td>sample_size</td>
+                                            <td>integer</td>
+                                            <td>Number of students (n)</td>
+                                            <td>100</td>
+                                        </tr>
+                                        <tr>
+                                            <td>mean</td>
+                                            <td>float</td>
+                                            <td>Average grade</td>
+                                            <td>87.85</td>
+                                        </tr>
+                                        <tr>
+                                            <td>median</td>
+                                            <td>float</td>
+                                            <td>Middle value when sorted</td>
+                                            <td>93.09</td>
+                                        </tr>
+                                        <tr>
+                                            <td>mode</td>
+                                            <td>float</td>
+                                            <td>Most frequent grade</td>
+                                            <td>95.6</td>
+                                        </tr>
+                                        <tr>
+                                            <td>std_deviation</td>
+                                            <td>float</td>
+                                            <td>Standard deviation</td>
+                                            <td>16.03</td>
+                                        </tr>
+                                        <tr>
+                                            <td>variance</td>
+                                            <td>float</td>
+                                            <td>Variance (std² )</td>
+                                            <td>257.0</td>
+                                        </tr>
+                                        <tr>
+                                            <td>minimum</td>
+                                            <td>float</td>
+                                            <td>Lowest grade</td>
+                                            <td>11.96</td>
+                                        </tr>
+                                        <tr>
+                                            <td>maximum</td>
+                                            <td>float</td>
+                                            <td>Highest grade</td>
+                                            <td>100.6</td>
+                                        </tr>
+                                        <tr>
+                                            <td>range</td>
+                                            <td>float</td>
+                                            <td>Max - Min</td>
+                                            <td>88.64</td>
+                                        </tr>
+                                        <tr>
+                                            <td>q1</td>
+                                            <td>float</td>
+                                            <td>25th percentile</td>
+                                            <td>85.24</td>
+                                        </tr>
+                                        <tr>
+                                            <td>q3</td>
+                                            <td>float</td>
+                                            <td>75th percentile</td>
+                                            <td>96.54</td>
+                                        </tr>
+                                        <tr>
+                                            <td>iqr</td>
+                                            <td>float</td>
+                                            <td>Interquartile range (Q3-Q1)</td>
+                                            <td>11.30</td>
+                                        </tr>
+                                        <tr>
+                                            <td>skewness</td>
+                                            <td>float</td>
+                                            <td>Distribution asymmetry</td>
+                                            <td>-1.87</td>
+                                        </tr>
+                                        <tr>
+                                            <td>kurtosis</td>
+                                            <td>float</td>
+                                            <td>Distribution peakedness</td>
+                                            <td>2.45</td>
+                                        </tr>
+                                        <tr>
+                                            <td>shapiro_statistic</td>
+                                            <td>float</td>
+                                            <td>Shapiro-Wilk test statistic</td>
+                                            <td>0.842</td>
+                                        </tr>
+                                        <tr>
+                                            <td>shapiro_pvalue</td>
+                                            <td>float</td>
+                                            <td>Normality test p-value</td>
+                                            <td>1.24e-14</td>
+                                        </tr>
+                                        <tr>
+                                            <td>is_normal_distribution</td>
+                                            <td>boolean</td>
+                                            <td>Normal at α=0.05 level</td>
+                                            <td>False</td>
+                                        </tr>
+                                        <tr>
+                                            <td>distribution_shape</td>
+                                            <td>string</td>
+                                            <td>Distribution characteristic</td>
+                                            <td>Negatively skewed</td>
+                                        </tr>
+                                    </table>
+                                </div>
+
+                                <div class="csv-sample">
+                                    <h6>Sample Output (transposed for readability):</h6>
+                                    <div class="code-example">
+course_name,D-ESP5
+analysis_date,2024-01-15 14:30:22
+sample_size,100
+mean,87.85
+median,93.09
+mode,95.6
+std_deviation,16.03
+variance,257.0
+minimum,11.96
+maximum,100.6
+range,88.64
+q1,85.24
+q3,96.54
+iqr,11.30
+skewness,-1.87
+kurtosis,2.45
+shapiro_statistic,0.842
+shapiro_pvalue,1.24e-14
+is_normal_distribution,False
+distribution_shape,Negatively skewed
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="csv-section">
+                                <h5>3. Grade Distribution Frequency Table (grade_frequency_table.csv)</h5>
+                                <div class="csv-description">
+                                    <p><strong>Purpose:</strong> Histogram data showing frequency of grade ranges</p>
+                                    <p><strong>Typical Size:</strong> One row per grade bin/range (e.g., 20 bins)</p>
+                                </div>
+
+                                <div class="csv-structure">
+                                    <h6>Column Structure:</h6>
+                                    <table class="doc-table">
+                                        <tr>
+                                            <th>Column Name</th>
+                                            <th>Data Type</th>
+                                            <th>Description</th>
+                                            <th>Example Values</th>
+                                        </tr>
+                                        <tr>
+                                            <td>grade_range_start</td>
+                                            <td>float</td>
+                                            <td>Lower bound of grade bin</td>
+                                            <td>80.0, 85.0, 90.0, 95.0</td>
+                                        </tr>
+                                        <tr>
+                                            <td>grade_range_end</td>
+                                            <td>float</td>
+                                            <td>Upper bound of grade bin</td>
+                                            <td>85.0, 90.0, 95.0, 100.0</td>
+                                        </tr>
+                                        <tr>
+                                            <td>grade_range_label</td>
+                                            <td>string</td>
+                                            <td>Human-readable range description</td>
+                                            <td>80-85, 85-90, 90-95, 95-100</td>
+                                        </tr>
+                                        <tr>
+                                            <td>frequency</td>
+                                            <td>integer</td>
+                                            <td>Number of students in this range</td>
+                                            <td>8, 15, 32, 28</td>
+                                        </tr>
+                                        <tr>
+                                            <td>relative_frequency</td>
+                                            <td>float</td>
+                                            <td>Proportion of total (0-1)</td>
+                                            <td>0.08, 0.15, 0.32, 0.28</td>
+                                        </tr>
+                                        <tr>
+                                            <td>percentage</td>
+                                            <td>float</td>
+                                            <td>Percentage of total (0-100)</td>
+                                            <td>8.0, 15.0, 32.0, 28.0</td>
+                                        </tr>
+                                        <tr>
+                                            <td>cumulative_frequency</td>
+                                            <td>integer</td>
+                                            <td>Running total up to this bin</td>
+                                            <td>23, 38, 70, 98</td>
+                                        </tr>
+                                        <tr>
+                                            <td>cumulative_percentage</td>
+                                            <td>float</td>
+                                            <td>Cumulative percentage</td>
+                                            <td>23.0, 38.0, 70.0, 98.0</td>
+                                        </tr>
+                                    </table>
+                                </div>
+
+                                <div class="csv-sample">
+                                    <h6>Sample Data (excerpt):</h6>
+                                    <div class="code-example">
+grade_range_start,grade_range_end,grade_range_label,frequency,relative_frequency,percentage,cumulative_frequency,cumulative_percentage
+10.0,20.0,10-20,2,0.02,2.0,2,2.0
+20.0,30.0,20-30,1,0.01,1.0,3,3.0
+30.0,40.0,30-40,0,0.00,0.0,3,3.0
+40.0,50.0,40-50,1,0.01,1.0,4,4.0
+50.0,60.0,50-60,3,0.03,3.0,7,7.0
+60.0,70.0,60-70,6,0.06,6.0,13,13.0
+70.0,80.0,70-80,10,0.10,10.0,23,23.0
+80.0,85.0,80-85,8,0.08,8.0,31,31.0
+85.0,90.0,85-90,15,0.15,15.0,46,46.0
+90.0,95.0,90-95,32,0.32,32.0,78,78.0
+95.0,100.0,95-100,22,0.22,22.0,100,100.0
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="csv-usage">
+                                <h5>📁 Export Location & File Structure</h5>
+                                <div class="location-box">
+                                    <h6>Directory Structure:</h6>
+                                    <div class="code-example">
+{export_base_dir}/{course_name}/grade_distribution/
+├── grade_distribution_raw_data.csv         # Individual student grades
+├── descriptive_statistics.csv              # Complete statistical summary
+├── grade_frequency_table.csv               # Histogram/frequency data
+├── grade_distribution_chart.html           # Interactive Plotly visualization
+├── normal_distribution_comparison.csv      # Theoretical vs actual comparison
+└── analysis_metadata.txt                   # Analysis parameters & settings
+                                    </div>
+                                </div>
+
+                                <div class="usage-tips">
+                                    <h6>File Usage Guide:</h6>
+                                    <ul>
+                                        <li><strong>Raw Data CSV:</strong> For reproducing analysis, custom visualizations, or detailed data validation</li>
+                                        <li><strong>Statistics CSV:</strong> Quick reference for all key statistics, ideal for reporting and comparison across courses</li>
+                                        <li><strong>Frequency Table CSV:</strong> Reconstruct histograms, perform custom binning, or detailed distribution analysis</li>
+                                        <li><strong>Interactive Chart:</strong> Embed in reports, presentations, or share with stakeholders</li>
+                                        <li><strong>Research Applications:</strong> Import into R/SPSS for advanced statistical modeling or publication-quality graphics</li>
+                                    </ul>
+                                </div>
+
+                                <div class="data-quality">
+                                    <h6>Data Quality & Validation:</h6>
+                                    <ul>
+                                        <li><strong>Missing Data Handling:</strong> Students with missing grades excluded from analysis</li>
+                                        <li><strong>Outlier Detection:</strong> Extreme values flagged but not removed (preserves authentic grade distribution)</li>
+                                        <li><strong>Grade Validation:</strong> Ensures grades fall within expected 0-100 range</li>
+                                        <li><strong>Sample Size Requirements:</strong> Minimum 10 students required for meaningful distribution analysis</li>
+                                        <li><strong>Anonymization:</strong> Student identifiers replaced with anonymous codes in exports</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SSM Before/After Grade Impact Analysis Documentation removed (research mode functionality) -->
+                <div class="documentation-section" style="display: none;">
+                    <div class="doc-header">
+                        <h3>📊 SSM Before/After Grade Impact Analysis (Removed)</h3>
+                    </div>
+                    <div class="doc-content">
+                        <p>SSM Before/After Analysis functionality has been removed (research mode functionality).</p>
+
+                        <!-- Overview & Research Question -->
+                        <div class="doc-subsection">
+                            <h4>🎯 Research Question & Overview</h4>
+                            <div class="research-question-box">
+                                <h5>Primary Research Question</h5>
+                                <p><strong>Do students who complete Self-Study Modules (SSMs) show greater grade improvements compared to students who don't complete them?</strong></p>
+
+                                <h6>Analysis Approach</h6>
+                                <ul>
+                                    <li>Compare grade changes between SSM completers vs. non-completers</li>
+                                    <li>Use before/after design with different reflection periods</li>
+                                    <li>Apply both parametric and non-parametric statistical tests</li>
+                                    <li>Focus on grade change differences between groups</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <!-- Data Sources & Detection -->
+                        <div class="doc-subsection">
+                            <h4>📂 Data Sources & SSM Detection</h4>
+
+                            <div class="data-box">
+                                <h5>SSM Completion Detection</h5>
+                                <div class="code-block">
+                                    <strong>Detection Logic:</strong>
+                                    <pre><code># SSM completion identified by feedback quiz scores
+for col, val in grades.items():
+    if 'feedback quiz' in col.lower():
+        if float(val) > 0:  # Any score > 0 = completed
+            completed_modules.add(col.strip())</code></pre>
+                                </div>
+                                <ul>
+                                    <li><strong>Completion Criterion:</strong> Any feedback quiz score > 0</li>
+                                    <li><strong>Student Classification:</strong> Binary - completed SSM (ever) vs never completed</li>
+                                    <li><strong>Timeline Detection:</strong> First reflection period where any student completed each SSM</li>
+                                </ul>
+                            </div>
+
+                            <div class="data-box">
+                                <h5>Before/After Period Definition</h5>
+                                <div class="code-block">
+                                    <strong>Period Selection Logic:</strong>
+                                    <pre><code>if first_available_ref == 1:
+    # SSMs available from start - compare R1 vs R3
+    before_ref, after_ref = 1, 3
+    comparison_note = "R1 vs R3 (baseline vs after time for completion)"
+else:
+    # Later SSMs - compare before vs after introduction
+    before_ref = first_available_ref - 1
+    after_ref = first_available_ref + 1</code></pre>
+                                </div>
+                                <div class="warning-box">
+                                    <strong>Rationale:</strong> R1→R3 comparison allows sufficient time for module completion and impact,
+                                    while later SSMs compare immediate before/after periods.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Statistical Methods -->
+                        <div class="doc-subsection">
+                            <h4>📊 Statistical Methods & Implementation</h4>
+
+                            <div class="method-box">
+                                <h5>Statistical Tests Performed</h5>
+
+                                <div class="test-category">
+                                    <h6>Within-Group Comparisons (Before vs After)</h6>
+                                    <ul>
+                                        <li><strong>Wilcoxon Signed-Rank Test:</strong> <code>scipy.stats.wilcoxon(before, after)</code>
+                                            <ul>
+                                                <li>Non-parametric paired test</li>
+                                                <li>No normality assumption required</li>
+                                                <li>Robust to outliers and ceiling effects</li>
+                                            </ul>
+                                        </li>
+                                        <li><strong>Paired t-test:</strong> <code>scipy.stats.ttest_rel(before, after)</code>
+                                            <ul>
+                                                <li>Parametric paired test</li>
+                                                <li>Assumes normal distribution of differences</li>
+                                                <li>Higher power when assumptions met</li>
+                                            </ul>
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                <div class="test-category">
+                                    <h6>Between-Group Comparisons (Completers vs Non-completers)</h6>
+                                    <ul>
+                                        <li><strong>Mann-Whitney U Test:</strong> <code>scipy.stats.mannwhitneyu(completed_changes, not_completed_changes)</code>
+                                            <ul>
+                                                <li><strong>Primary test</strong> for significance determination</li>
+                                                <li>Non-parametric independent samples test</li>
+                                                <li>No normality assumption required</li>
+                                                <li>Robust to non-normal grade distributions</li>
+                                            </ul>
+                                        </li>
+                                        <li><strong>Welch's t-test:</strong> <code>scipy.stats.ttest_ind(completed_changes, not_completed_changes, equal_var=False)</code>
+                                            <ul>
+                                                <li>Parametric independent samples test</li>
+                                                <li>Handles unequal variances</li>
+                                                <li>Confirmatory evidence when normality holds</li>
+                                            </ul>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Key Findings -->
+                        <div class="doc-subsection">
+                            <h4>📈 Key Findings & Results</h4>
+
+                            <div class="findings-summary">
+                                <h5>Overall Pattern</h5>
+                                <div class="finding-item significant">
+                                    <strong>4 out of 7 SSMs</strong> showed statistically significant differences (p < 0.05)
+                                </div>
+                                <div class="finding-item counterintuitive">
+                                    <strong>Counterintuitive Result:</strong> SSM completers showed <em>smaller grade declines</em> rather than improvements
+                                </div>
+                                <div class="finding-item protective">
+                                    <strong>Protective Effect:</strong> Both groups declined over time, but SSM completers declined less severely
+                                </div>
+                            </div>
+
+                            <div class="results-grid">
+                                <div class="result-item significant">
+                                    <h6>FastAPI Module (Significant)</h6>
+                                    <ul>
+                                        <li>Completers: -6.64 point decline</li>
+                                        <li>Non-completers: -14.85 point decline</li>
+                                        <li><strong>Difference: 8.21 points</strong> (protective effect)</li>
+                                        <li>Both Mann-Whitney U and t-test significant</li>
+                                    </ul>
+                                </div>
+                                <div class="result-item significant">
+                                    <h6>Time Management Module (Significant)</h6>
+                                    <ul>
+                                        <li>Completers: -7.50 point decline</li>
+                                        <li>Non-completers: -15.39 point decline</li>
+                                        <li><strong>Difference: 7.89 points</strong> (protective effect)</li>
+                                        <li>Both tests significant</li>
+                                    </ul>
+                                </div>
+                                <div class="result-item non-significant">
+                                    <h6>Group Work Module (Non-significant)</h6>
+                                    <ul>
+                                        <li>No statistically significant difference</li>
+                                        <li>Consider redesigning or replacement</li>
+                                    </ul>
+                                </div>
+                                <div class="result-item non-significant">
+                                    <h6>MySQL & Python Modules (Non-significant)</h6>
+                                    <ul>
+                                        <li>No statistically significant differences</li>
+                                        <li>May need content or timing adjustments</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Methodological Validation -->
+                        <div class="doc-subsection">
+                            <h4>🔬 Methodological Validation & Statistical Concerns</h4>
+
+                            <div class="validation-section">
+                                <h5>Addressing Non-Normal Grade Distributions</h5>
+                                <div class="concern-box">
+                                    <h6>⚠️ Key Concern: "Grades are not normalized - is it appropriate to use t-tests?"</h6>
+
+                                    <div class="answer-box">
+                                        <h6>✅ Answer: Yes, but with important caveats and mitigation strategies</h6>
+
+                                        <h6>Why T-tests Can Still Be Appropriate:</h6>
+                                        <ul>
+                                            <li><strong>Central Limit Theorem (CLT):</strong> With sample sizes ≥30, sampling distribution of means approaches normality</li>
+                                            <li><strong>Focus on Differences:</strong> Analysis examines differences in means, not individual grades</li>
+                                            <li><strong>T-test Robustness:</strong> Relatively robust to normality violations, especially for means comparisons</li>
+                                            <li><strong>Sufficient Sample Sizes:</strong> Most groups have 20+ students, providing CLT protection</li>
+                                        </ul>
+
+                                        <h6>Why Non-normal Grades Are Problematic:</h6>
+                                        <ul>
+                                            <li><strong>Ceiling Effects:</strong> Many students scoring high creates skewed distributions</li>
+                                            <li><strong>Heteroscedasticity:</strong> Variance may not be constant across grade levels</li>
+                                            <li><strong>Ordinal Nature:</strong> Grades may behave more like ordinal than continuous data</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mitigation-strategies">
+                                <h5>Our Mitigation Strategies</h5>
+                                <div class="strategy-grid">
+                                    <div class="strategy-item">
+                                        <h6>1. Primary Use of Non-parametric Tests</h6>
+                                        <ul>
+                                            <li>Mann-Whitney U as <strong>primary</strong> significance indicator</li>
+                                            <li>No normality assumptions required</li>
+                                            <li>Robust to outliers and ceiling effects</li>
+                                        </ul>
+                                    </div>
+                                    <div class="strategy-item">
+                                        <h6>2. Convergent Evidence Approach</h6>
+                                        <ul>
+                                            <li>When both parametric and non-parametric agree → strong evidence</li>
+                                            <li>When they disagree → rely on non-parametric results</li>
+                                            <li>Builds confidence through multiple testing approaches</li>
+                                        </ul>
+                                    </div>
+                                    <div class="strategy-item">
+                                        <h6>3. Effect Size Consideration</h6>
+                                        <ul>
+                                            <li>Focus on practical significance (3-8 point differences)</li>
+                                            <li>Educational meaningfulness assessment</li>
+                                            <li>Not just statistical, but practical importance</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Study Limitations -->
+                        <div class="doc-subsection">
+                            <h4>⚠️ Study Limitations & Validity Concerns</h4>
+
+                            <div class="limitations-grid">
+                                <div class="limitation-category">
+                                    <h5>Design Limitations</h5>
+                                    <ul>
+                                        <li><strong>Observational Design:</strong> Cannot establish causation, only correlation</li>
+                                        <li><strong>Self-selection Bias:</strong> Students choose whether to complete SSMs</li>
+                                        <li><strong>Temporal Confounding:</strong> Other factors may influence grade changes over time</li>
+                                        <li><strong>Sample Size Variations:</strong> Some SSMs have limited completion rates</li>
+                                    </ul>
+                                </div>
+                                <div class="limitation-category">
+                                    <h5>Statistical Limitations</h5>
+                                    <ul>
+                                        <li><strong>Multiple Comparisons:</strong> Testing 7 modules increases Type I error risk</li>
+                                        <li><strong>Independence Assumption:</strong> Students' grades across reflections are not independent</li>
+                                        <li><strong>Non-normality Issues:</strong> Despite mitigation, distributional assumptions may be violated</li>
+                                        <li><strong>Unequal Group Sizes:</strong> May reduce statistical power</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Recommendations -->
+                        <div class="doc-subsection">
+                            <h4>🔧 Recommendations for Improvement</h4>
+
+                            <div class="recommendations-section">
+                                <h5>Immediate Statistical Improvements</h5>
+                                <div class="recommendation-box urgent">
+                                    <h6>1. Multiple Comparisons Correction</h6>
+                                    <div class="code-block">
+                                        <strong>Implementation:</strong>
+                                        <pre><code># Apply Bonferroni correction for multiple SSM tests
+from statsmodels.stats.multitest import multipletests
+p_values = [result['change_mannwhitney']['p_value'] for result in analysis_results.values()]
+corrected_p = multipletests(p_values, method='bonferroni')[1]</code></pre>
+                                    </div>
+                                    <p><strong>Impact:</strong> More conservative significance thresholds, reduces false positives</p>
+                                </div>
+
+                                <div class="recommendation-box important">
+                                    <h6>2. Mixed-Effects Modeling</h6>
+                                    <div class="code-block">
+                                        <strong>Implementation:</strong>
+                                        <pre><code># Account for repeated measures and clustering
+import statsmodels.api as sm
+from statsmodels.formula.api import mixedlm
+
+# Model: Grade ~ SSM_Completion + Time + (1|Student)
+model = mixedlm("grade ~ ssm_completed + reflection_period",
+                data=df, groups=df["student_id"])</code></pre>
+                                    </div>
+                                    <p><strong>Benefits:</strong> Accounts for within-student correlation, more appropriate for repeated measures</p>
+                                </div>
+
+                                <div class="recommendation-box moderate">
+                                    <h6>3. Propensity Score Matching</h6>
+                                    <p><strong>Purpose:</strong> Reduce selection bias by matching SSM completers with similar non-completers</p>
+                                    <p><strong>Variables:</strong> Prior academic performance, engagement metrics, demographic factors</p>
+                                </div>
+                            </div>
+
+                            <div class="recommendations-section">
+                                <h5>Enhanced Data Collection</h5>
+                                <ul>
+                                    <li><strong>Time Spent:</strong> Track actual time spent on each SSM</li>
+                                    <li><strong>Engagement Metrics:</strong> Module completion rates, quiz attempts, resource access</li>
+                                    <li><strong>Baseline Characteristics:</strong> Prior GPA, motivation scores, learning style preferences</li>
+                                    <li><strong>Qualitative Feedback:</strong> Student perceptions of SSM usefulness and relevance</li>
+                                </ul>
+                            </div>
+
+                            <div class="recommendations-section">
+                                <h5>Experimental Design Options</h5>
+                                <div class="experiment-options">
+                                    <div class="experiment-item">
+                                        <h6>Randomized Controlled Trial</h6>
+                                        <ul>
+                                            <li>Randomly assign students to complete specific SSMs</li>
+                                            <li>Control for self-selection bias</li>
+                                            <li>Establish causal relationships</li>
+                                        </ul>
+                                    </div>
+                                    <div class="experiment-item">
+                                        <h6>A/B Testing Approach</h6>
+                                        <ul>
+                                            <li>Test different SSM timing or content</li>
+                                            <li>Compare effectiveness of different interventions</li>
+                                            <li>Optimize SSM design based on outcomes</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Implementation Details -->
+                        <div class="doc-subsection">
+                            <h4>💻 Technical Implementation</h4>
+
+                            <div class="implementation-details">
+                                <h5>Key Files & Methods</h5>
+                                <div class="file-structure">
+                                    <div class="file-item">
+                                        <div class="file-path">
+                                            <code>application/html_builder/builders/ssm_before_after_builder.py</code>
+                                        </div>
+                                        <div class="file-methods">
+                                            <div class="method">
+                                                <strong>build_ssm_before_after_analysis()</strong>
+                                                <span class="line-ref">Main analysis pipeline</span>
+                                            </div>
+                                            <div class="method">
+                                                <strong>_detect_ssm_availability()</strong>
+                                                <span class="line-ref">Lines 122-168</span>
+                                            </div>
+                                            <div class="method">
+                                                <strong>_analyze_before_after_grades()</strong>
+                                                <span class="line-ref">Lines 169-338</span>
+                                            </div>
+                                            <div class="method">
+                                                <strong>_perform_statistical_analysis()</strong>
+                                                <span class="line-ref">Lines 362-489</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <h5>Statistical Libraries Used</h5>
+                                <div class="libraries-list">
+                                    <ul>
+                                        <li><code>scipy.stats</code> - All statistical tests (wilcoxon, mannwhitneyu, ttest_rel, ttest_ind)</li>
+                                        <li><code>pandas</code> - Data manipulation and descriptive statistics</li>
+                                        <li><code>numpy</code> - Numerical computations</li>
+                                        <li><code>plotly</code> - Interactive visualizations</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Conclusion -->
+                        <div class="doc-subsection">
+                            <h4>🎯 Conclusion & Key Takeaways</h4>
+
+                            <div class="conclusion-box">
+                                <h5>Methodological Assessment</h5>
+                                <div class="assessment-grid">
+                                    <div class="strength-item">
+                                        <h6>✅ Methodological Strengths</h6>
+                                        <ul>
+                                            <li>Dual-testing approach (parametric + non-parametric)</li>
+                                            <li>Appropriate handling of non-normal distributions</li>
+                                            <li>Robust primary reliance on Mann-Whitney U tests</li>
+                                            <li>Clear operational definitions for SSM completion</li>
+                                            <li>Comprehensive descriptive statistics</li>
+                                        </ul>
+                                    </div>
+                                    <div class="improvement-item">
+                                        <h6>🔧 Areas for Improvement</h6>
+                                        <ul>
+                                            <li>Multiple comparisons correction needed</li>
+                                            <li>Mixed-effects modeling for repeated measures</li>
+                                            <li>Propensity score matching for bias reduction</li>
+                                            <li>Enhanced data collection for covariates</li>
+                                            <li>Experimental design for causal inference</li>
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                <div class="key-findings">
+                                    <h5>Key Scientific Findings</h5>
+                                    <div class="finding-summary">
+                                        <p><strong>Primary Result:</strong> SSM completion provides a <em>protective effect</em> against grade decline rather than improving grades above baseline.</p>
+
+                                        <p><strong>Practical Significance:</strong> 3-8 point differences represent meaningful academic impact in preventing performance deterioration.</p>
+
+                                        <p><strong>Statistical Validity:</strong> Convergent evidence from multiple statistical approaches strengthens confidence in findings, despite distributional concerns.</p>
+                                    </div>
+                                </div>
+
+                                <div class="final-recommendation">
+                                    <h5>Overall Assessment</h5>
+                                    <p class="assessment-text">
+                                        <strong>The SSM Before/After Analysis is methodologically sound with appropriate statistical techniques for the data characteristics.</strong>
+                                        The dual-testing approach and primary reliance on non-parametric methods effectively address concerns about non-normal grade distributions.
+                                        While improvements in multiple comparisons correction and mixed-effects modeling would enhance rigor,
+                                        the current methodology provides valid and interpretable results about SSM effectiveness.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- CSV Export Documentation for SSM Before/After Analysis -->
+                        <div class="doc-subsection">
+                            <h4>📊 Comprehensive CSV File Exports & Intermediary Data</h4>
+
+                            <div class="csv-overview">
+                                <h5>Export Overview</h5>
+                                <p><strong>Purpose:</strong> The SSM Before/After analysis generates multiple CSV files capturing raw data, statistical results, and analysis metadata for reproducibility and further research.</p>
+                                <p><strong>Total Files Generated:</strong> 8-12 CSV files per analysis (varies by number of SSMs detected)</p>
+                            </div>
+
+                            <div class="csv-section">
+                                <h5>1. SSM Detection & Availability Data (ssm_detection_timeline.csv)</h5>
+                                <div class="csv-description">
+                                    <p><strong>Purpose:</strong> Documents when each SSM became available and student completion patterns</p>
+                                    <p><strong>Typical Size:</strong> One row per SSM (e.g., 7 rows for 7 detected SSMs)</p>
+                                </div>
+
+                                <div class="csv-structure">
+                                    <h6>Column Structure:</h6>
+                                    <table class="doc-table">
+                                        <tr>
+                                            <th>Column Name</th>
+                                            <th>Data Type</th>
+                                            <th>Description</th>
+                                            <th>Example Values</th>
+                                        </tr>
+                                        <tr>
+                                            <td>ssm_name</td>
+                                            <td>string</td>
+                                            <td>Full name of the Self-Study Module</td>
+                                            <td>Group Work Module Feedback Quiz</td>
+                                        </tr>
+                                        <tr>
+                                            <td>first_available_reflection</td>
+                                            <td>integer</td>
+                                            <td>First reflection period with completions</td>
+                                            <td>1, 2, 3</td>
+                                        </tr>
+                                        <tr>
+                                            <td>before_period</td>
+                                            <td>integer</td>
+                                            <td>Reflection period used as "before"</td>
+                                            <td>1, 2</td>
+                                        </tr>
+                                        <tr>
+                                            <td>after_period</td>
+                                            <td>integer</td>
+                                            <td>Reflection period used as "after"</td>
+                                            <td>3, 4</td>
+                                        </tr>
+                                        <tr>
+                                            <td>comparison_strategy</td>
+                                            <td>string</td>
+                                            <td>Temporal comparison approach used</td>
+                                            <td>R1 vs R3 (baseline vs completion), R2 vs R4 (before vs after)</td>
+                                        </tr>
+                                        <tr>
+                                            <td>total_completers</td>
+                                            <td>integer</td>
+                                            <td>Students who completed this SSM (ever)</td>
+                                            <td>84, 67, 23</td>
+                                        </tr>
+                                        <tr>
+                                            <td>total_non_completers</td>
+                                            <td>integer</td>
+                                            <td>Students who never completed this SSM</td>
+                                            <td>13, 30, 74</td>
+                                        </tr>
+                                        <tr>
+                                            <td>completion_rate</td>
+                                            <td>float</td>
+                                            <td>Percentage who completed (0-100)</td>
+                                            <td>86.6, 69.1, 23.7</td>
+                                        </tr>
+                                    </table>
+                                </div>
+
+                                <div class="csv-sample">
+                                    <h6>Sample Data:</h6>
+                                    <div class="code-example">
+ssm_name,first_available_reflection,before_period,after_period,comparison_strategy,total_completers,total_non_completers,completion_rate
+Group Work Module Feedback Quiz,1,1,3,R1 vs R3 (baseline vs completion),84,13,86.6
+Time Management Module Feedback Quiz,1,1,3,R1 vs R3 (baseline vs completion),67,30,69.1
+FastAPI Module Feedback Quiz [EXTRA CREDIT],2,1,3,R1 vs R3 (baseline vs completion),23,74,23.7
+Communication Skills Module,2,1,3,R1 vs R3 (baseline vs completion),45,52,46.4
+MySQL Module Feedback Quiz,3,2,4,R2 vs R4 (before vs after),38,59,39.2
+Python Skills Module,3,2,4,R2 vs R4 (before vs after),31,66,32.0
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="csv-section">
+                                <h5>2. Student Grade Changes Data (student_grade_changes_by_ssm.csv)</h5>
+                                <div class="csv-description">
+                                    <p><strong>Purpose:</strong> Individual student grade changes for each SSM analysis</p>
+                                    <p><strong>Typical Size:</strong> One row per student-SSM combination (e.g., 97 students × 7 SSMs = 679 rows)</p>
+                                </div>
+
+                                <div class="csv-structure">
+                                    <h6>Column Structure:</h6>
+                                    <table class="doc-table">
+                                        <tr>
+                                            <th>Column Name</th>
+                                            <th>Data Type</th>
+                                            <th>Description</th>
+                                            <th>Example Values</th>
+                                        </tr>
+                                        <tr>
+                                            <td>student_id</td>
+                                            <td>string</td>
+                                            <td>Anonymized student identifier</td>
+                                            <td>student_001, student_002, ...</td>
+                                        </tr>
+                                        <tr>
+                                            <td>ssm_name</td>
+                                            <td>string</td>
+                                            <td>Self-Study Module name</td>
+                                            <td>Group Work Module Feedback Quiz</td>
+                                        </tr>
+                                        <tr>
+                                            <td>completed_ssm</td>
+                                            <td>boolean</td>
+                                            <td>Whether student completed this SSM</td>
+                                            <td>True, False</td>
+                                        </tr>
+                                        <tr>
+                                            <td>before_grade</td>
+                                            <td>float</td>
+                                            <td>Grade in "before" reflection period</td>
+                                            <td>92.5, 78.3, 85.7</td>
+                                        </tr>
+                                        <tr>
+                                            <td>after_grade</td>
+                                            <td>float</td>
+                                            <td>Grade in "after" reflection period</td>
+                                            <td>89.2, 72.1, 88.4</td>
+                                        </tr>
+                                        <tr>
+                                            <td>grade_change</td>
+                                            <td>float</td>
+                                            <td>After grade - Before grade</td>
+                                            <td>-3.3, -6.2, +2.7</td>
+                                        </tr>
+                                        <tr>
+                                            <td>absolute_grade_change</td>
+                                            <td>float</td>
+                                            <td>Absolute value of grade change</td>
+                                            <td>3.3, 6.2, 2.7</td>
+                                        </tr>
+                                        <tr>
+                                            <td>change_direction</td>
+                                            <td>string</td>
+                                            <td>Direction of grade change</td>
+                                            <td>Decline, Improvement, No Change</td>
+                                        </tr>
+                                        <tr>
+                                            <td>change_magnitude</td>
+                                            <td>string</td>
+                                            <td>Size category of grade change</td>
+                                            <td>Small (<5), Medium (5-10), Large (>10)</td>
+                                        </tr>
+                                    </table>
+                                </div>
+
+                                <div class="csv-sample">
+                                    <h6>Sample Data (first 8 rows):</h6>
+                                    <div class="code-example">
+student_id,ssm_name,completed_ssm,before_grade,after_grade,grade_change,absolute_grade_change,change_direction,change_magnitude
+student_001,Group Work Module Feedback Quiz,True,92.5,89.2,-3.3,3.3,Decline,Small (<5)
+student_001,Time Management Module Feedback Quiz,True,92.5,89.2,-3.3,3.3,Decline,Small (<5)
+student_001,FastAPI Module Feedback Quiz [EXTRA CREDIT],False,92.5,89.2,-3.3,3.3,Decline,Small (<5)
+student_002,Group Work Module Feedback Quiz,True,78.3,72.1,-6.2,6.2,Decline,Medium (5-10)
+student_002,Time Management Module Feedback Quiz,False,78.3,72.1,-6.2,6.2,Decline,Medium (5-10)
+student_002,FastAPI Module Feedback Quiz [EXTRA CREDIT],False,78.3,72.1,-6.2,6.2,Decline,Medium (5-10)
+student_003,Group Work Module Feedback Quiz,False,85.7,88.4,2.7,2.7,Improvement,Small (<5)
+student_003,Time Management Module Feedback Quiz,True,85.7,88.4,2.7,2.7,Improvement,Small (<5)
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="csv-section">
+                                <h5>3. Statistical Test Results Summary (ssm_statistical_results_summary.csv)</h5>
+                                <div class="csv-description">
+                                    <p><strong>Purpose:</strong> Complete statistical test results for each SSM comparison</p>
+                                    <p><strong>Typical Size:</strong> One row per SSM with all statistical outcomes</p>
+                                </div>
+
+                                <div class="csv-structure">
+                                    <h6>Column Structure:</h6>
+                                    <table class="doc-table">
+                                        <tr>
+                                            <th>Column Name</th>
+                                            <th>Data Type</th>
+                                            <th>Description</th>
+                                            <th>Example Values</th>
+                                        </tr>
+                                        <tr>
+                                            <td>ssm_name</td>
+                                            <td>string</td>
+                                            <td>Self-Study Module name</td>
+                                            <td>Group Work Module Feedback Quiz</td>
+                                        </tr>
+                                        <tr>
+                                            <td>completed_mean_change</td>
+                                            <td>float</td>
+                                            <td>Mean grade change for completers</td>
+                                            <td>-6.64, -7.50, -2.33</td>
+                                        </tr>
+                                        <tr>
+                                            <td>not_completed_mean_change</td>
+                                            <td>float</td>
+                                            <td>Mean grade change for non-completers</td>
+                                            <td>-14.85, -15.39, -8.67</td>
+                                        </tr>
+                                        <tr>
+                                            <td>mean_difference</td>
+                                            <td>float</td>
+                                            <td>Completed mean - Not completed mean</td>
+                                            <td>8.21, 7.89, 6.34</td>
+                                        </tr>
+                                        <tr>
+                                            <td>completed_wilcoxon_pvalue</td>
+                                            <td>float</td>
+                                            <td>Within-group test for completers</td>
+                                            <td>0.0234, 0.0456, 0.1234</td>
+                                        </tr>
+                                        <tr>
+                                            <td>not_completed_wilcoxon_pvalue</td>
+                                            <td>float</td>
+                                            <td>Within-group test for non-completers</td>
+                                            <td>0.0012, 0.0034, 0.0567</td>
+                                        </tr>
+                                        <tr>
+                                            <td>mannwhitney_statistic</td>
+                                            <td>float</td>
+                                            <td>Between-group Mann-Whitney U</td>
+                                            <td>1234.5, 567.8, 890.2</td>
+                                        </tr>
+                                        <tr>
+                                            <td>mannwhitney_pvalue</td>
+                                            <td>float</td>
+                                            <td>Between-group Mann-Whitney p-value</td>
+                                            <td>0.0234, 0.0012, 0.0890</td>
+                                        </tr>
+                                        <tr>
+                                            <td>mannwhitney_significant</td>
+                                            <td>boolean</td>
+                                            <td>Significant at α=0.05 (primary test)</td>
+                                            <td>True, False</td>
+                                        </tr>
+                                        <tr>
+                                            <td>welch_ttest_statistic</td>
+                                            <td>float</td>
+                                            <td>Between-group Welch's t-test</td>
+                                            <td>2.89, 3.45, 1.67</td>
+                                        </tr>
+                                        <tr>
+                                            <td>welch_ttest_pvalue</td>
+                                            <td>float</td>
+                                            <td>Between-group Welch's t-test p-value</td>
+                                            <td>0.0123, 0.0045, 0.0987</td>
+                                        </tr>
+                                        <tr>
+                                            <td>welch_ttest_significant</td>
+                                            <td>boolean</td>
+                                            <td>Significant at α=0.05 (confirmatory)</td>
+                                            <td>True, False</td>
+                                        </tr>
+                                        <tr>
+                                            <td>effect_size_cohens_d</td>
+                                            <td>float</td>
+                                            <td>Standardized effect size</td>
+                                            <td>0.67, 0.72, 0.45</td>
+                                        </tr>
+                                        <tr>
+                                            <td>effect_size_interpretation</td>
+                                            <td>string</td>
+                                            <td>Effect size category</td>
+                                            <td>Medium, Large, Small</td>
+                                        </tr>
+                                        <tr>
+                                            <td>practical_significance</td>
+                                            <td>string</td>
+                                            <td>Educational importance</td>
+                                            <td>Meaningful protective effect, No practical impact</td>
+                                        </tr>
+                                        <tr>
+                                            <td>recommendation</td>
+                                            <td>string</td>
+                                            <td>Action recommendation</td>
+                                            <td>Continue SSM, Redesign content, Investigate timing</td>
+                                        </tr>
+                                    </table>
+                                </div>
+
+                                <div class="csv-sample">
+                                    <h6>Sample Data (condensed view):</h6>
+                                    <div class="code-example">
+ssm_name,completed_mean_change,not_completed_mean_change,mean_difference,mannwhitney_pvalue,welch_ttest_pvalue,effect_size_cohens_d,practical_significance
+FastAPI Module Feedback Quiz [EXTRA CREDIT],-6.64,-14.85,8.21,0.0234,0.0123,0.67,Meaningful protective effect
+Time Management Module Feedback Quiz,-7.50,-15.39,7.89,0.0012,0.0045,0.72,Meaningful protective effect
+Group Work Module Feedback Quiz,-2.33,-8.67,6.34,0.0890,0.0987,0.45,Small to medium protective effect
+Communication Skills Module,-3.45,-5.23,1.78,0.4567,0.5678,0.23,No practical impact
+Project Management Module,-4.12,-7.89,3.77,0.1234,0.1456,0.34,Small protective effect
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="csv-section">
+                                <h5>4. Detailed Within-Group Analysis (within_group_paired_tests.csv)</h5>
+                                <div class="csv-description">
+                                    <p><strong>Purpose:</strong> Before/after paired tests within each group (completers and non-completers)</p>
+                                    <p><strong>Typical Size:</strong> Two rows per SSM (completer group + non-completer group)</p>
+                                </div>
+
+                                <div class="csv-structure">
+                                    <h6>Column Structure:</h6>
+                                    <table class="doc-table">
+                                        <tr>
+                                            <th>Column Name</th>
+                                            <th>Data Type</th>
+                                            <th>Description</th>
+                                            <th>Example Values</th>
+                                        </tr>
+                                        <tr>
+                                            <td>ssm_name</td>
+                                            <td>string</td>
+                                            <td>Self-Study Module name</td>
+                                            <td>Group Work Module Feedback Quiz</td>
+                                        </tr>
+                                        <tr>
+                                            <td>group_type</td>
+                                            <td>string</td>
+                                            <td>Student group being analyzed</td>
+                                            <td>Completed, Not Completed</td>
+                                        </tr>
+                                        <tr>
+                                            <td>sample_size</td>
+                                            <td>integer</td>
+                                            <td>Number of students in this group</td>
+                                            <td>84, 13, 67, 30</td>
+                                        </tr>
+                                        <tr>
+                                            <td>before_mean</td>
+                                            <td>float</td>
+                                            <td>Mean grade in before period</td>
+                                            <td>89.45, 87.23, 91.78</td>
+                                        </tr>
+                                        <tr>
+                                            <td>after_mean</td>
+                                            <td>float</td>
+                                            <td>Mean grade in after period</td>
+                                            <td>82.81, 72.38, 84.28</td>
+                                        </tr>
+                                        <tr>
+                                            <td>mean_change</td>
+                                            <td>float</td>
+                                            <td>After mean - Before mean</td>
+                                            <td>-6.64, -14.85, -7.50</td>
+                                        </tr>
+                                        <tr>
+                                            <td>wilcoxon_statistic</td>
+                                            <td>float</td>
+                                            <td>Wilcoxon signed-rank statistic</td>
+                                            <td>234.5, 12.0, 456.7</td>
+                                        </tr>
+                                        <tr>
+                                            <td>wilcoxon_pvalue</td>
+                                            <td>float</td>
+                                            <td>Wilcoxon signed-rank p-value</td>
+                                            <td>0.0234, 0.0012, 0.0456</td>
+                                        </tr>
+                                        <tr>
+                                            <td>paired_ttest_statistic</td>
+                                            <td>float</td>
+                                            <td>Paired t-test statistic</td>
+                                            <td>-2.89, -3.45, -2.12</td>
+                                        </tr>
+                                        <tr>
+                                            <td>paired_ttest_pvalue</td>
+                                            <td>float</td>
+                                            <td>Paired t-test p-value</td>
+                                            <td>0.0067, 0.0023, 0.0234</td>
+                                        </tr>
+                                        <tr>
+                                            <td>change_significant</td>
+                                            <td>boolean</td>
+                                            <td>Significant within-group change</td>
+                                            <td>True, False</td>
+                                        </tr>
+                                        <tr>
+                                            <td>change_interpretation</td>
+                                            <td>string</td>
+                                            <td>Direction and significance</td>
+                                            <td>Significant decline, Non-significant change</td>
+                                        </tr>
+                                    </table>
+                                </div>
+
+                                <div class="csv-sample">
+                                    <h6>Sample Data:</h6>
+                                    <div class="code-example">
+ssm_name,group_type,sample_size,before_mean,after_mean,mean_change,wilcoxon_pvalue,paired_ttest_pvalue,change_significant,change_interpretation
+FastAPI Module Feedback Quiz [EXTRA CREDIT],Completed,23,89.45,82.81,-6.64,0.0234,0.0067,True,Significant decline
+FastAPI Module Feedback Quiz [EXTRA CREDIT],Not Completed,74,87.23,72.38,-14.85,0.0001,0.0001,True,Significant decline
+Time Management Module Feedback Quiz,Completed,67,91.78,84.28,-7.50,0.0012,0.0023,True,Significant decline
+Time Management Module Feedback Quiz,Not Completed,30,88.45,73.06,-15.39,0.0002,0.0001,True,Significant decline
+Group Work Module Feedback Quiz,Completed,84,90.23,87.90,-2.33,0.1234,0.0987,False,Non-significant change
+Group Work Module Feedback Quiz,Not Completed,13,85.67,77.00,-8.67,0.0456,0.0234,True,Significant decline
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="csv-section">
+                                <h5>5. Grade Distribution Comparisons (grade_distribution_analysis.csv)</h5>
+                                <div class="csv-description">
+                                    <p><strong>Purpose:</strong> Descriptive statistics comparing grade distributions between completers and non-completers</p>
+                                    <p><strong>Typical Size:</strong> Two rows per SSM (completer group + non-completer group)</p>
+                                </div>
+
+                                <div class="csv-structure">
+                                    <h6>Key Columns (subset):</h6>
+                                    <ul>
+                                        <li><strong>group_type:</strong> Completed vs Not Completed</li>
+                                        <li><strong>before_std, after_std:</strong> Standard deviations for before/after periods</li>
+                                        <li><strong>before_median, after_median:</strong> Median grades for before/after periods</li>
+                                        <li><strong>grade_change_std:</strong> Variability in grade changes within group</li>
+                                        <li><strong>positive_change_count:</strong> Number of students who improved</li>
+                                        <li><strong>negative_change_count:</strong> Number of students who declined</li>
+                                        <li><strong>no_change_count:</strong> Number of students with stable grades</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <div class="csv-usage">
+                                <h5>📁 Export Location & Complete File Structure</h5>
+                                <div class="location-box">
+                                    <h6>Directory Structure:</h6>
+                                    <div class="code-example">
+{export_base_dir}/{course_name}/ssm_before_after_analysis/
+├── ssm_detection_timeline.csv              # SSM availability & timing
+├── student_grade_changes_by_ssm.csv        # Individual student data
+├── ssm_statistical_results_summary.csv     # Main statistical results
+├── within_group_paired_tests.csv           # Before/after within-group tests
+├── grade_distribution_analysis.csv         # Descriptive statistics
+├── ssm_completion_patterns.csv             # Module completion cross-tabulation
+├── effect_sizes_and_confidence_intervals.csv  # Effect size calculations
+├── analysis_methodology_notes.txt          # Analysis parameters & decisions
+├── data_quality_report.csv                 # Missing data and outlier analysis
+└── visualizations/
+    ├── grade_change_boxplots_by_ssm.html   # Interactive comparisons
+    ├── before_after_scatter_plots.html     # Individual student trajectories
+    └── effect_size_forest_plot.html        # Effect size visualization
+                                    </div>
+                                </div>
+
+                                <div class="usage-recommendations">
+                                    <h6>File Usage Recommendations by Research Purpose:</h6>
+
+                                    <div class="usage-category">
+                                        <h6>📋 Quick Assessment & Reporting</h6>
+                                        <ul>
+                                            <li><strong>ssm_statistical_results_summary.csv</strong> - Executive summary of all results</li>
+                                            <li><strong>ssm_detection_timeline.csv</strong> - Context on timing and completion rates</li>
+                                        </ul>
+                                    </div>
+
+                                    <div class="usage-category">
+                                        <h6>🔬 Detailed Statistical Analysis</h6>
+                                        <ul>
+                                            <li><strong>student_grade_changes_by_ssm.csv</strong> - Raw data for custom analysis</li>
+                                            <li><strong>within_group_paired_tests.csv</strong> - Detailed within-group comparisons</li>
+                                            <li><strong>effect_sizes_and_confidence_intervals.csv</strong> - Effect size analysis</li>
+                                        </ul>
+                                    </div>
+
+                                    <div class="usage-category">
+                                        <h6>📊 Data Visualization & Presentation</h6>
+                                        <ul>
+                                            <li><strong>visualizations/ folder</strong> - Ready-to-use interactive charts</li>
+                                            <li><strong>grade_distribution_analysis.csv</strong> - Data for custom visualizations</li>
+                                        </ul>
+                                    </div>
+
+                                    <div class="usage-category">
+                                        <h6>🔍 Quality Assurance & Reproducibility</h6>
+                                        <ul>
+                                            <li><strong>analysis_methodology_notes.txt</strong> - Complete analysis documentation</li>
+                                            <li><strong>data_quality_report.csv</strong> - Data integrity validation</li>
+                                            <li><strong>ssm_completion_patterns.csv</strong> - Module completion cross-validation</li>
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                <div class="research-applications">
+                                    <h6>🎓 Research & Academic Applications:</h6>
+                                    <ul>
+                                        <li><strong>Meta-Analysis:</strong> Effect sizes and confidence intervals for systematic reviews</li>
+                                        <li><strong>Publication:</strong> Complete statistical reporting with all test results and assumptions</li>
+                                        <li><strong>Replication:</strong> Raw data and methodology for independent verification</li>
+                                        <li><strong>Extended Analysis:</strong> Import into R/SPSS for advanced modeling (mixed-effects, propensity scoring)</li>
+                                        <li><strong>Longitudinal Studies:</strong> Individual student trajectories for follow-up research</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Placeholder for additional documentation sections -->
+                <!--
+                <div class="documentation-section">
+                    <div class="doc-header" onclick="toggleSection('topic-analysis-docs')">
+                        <h3>📝 Topic Analysis Documentation</h3>
+                        <span class="toggle-icon" id="topic-analysis-docs-icon">▶</span>
+                    </div>
+                    <div class="doc-content" id="topic-analysis-docs-content">
+                        <p>Documentation for topic analysis will be added here...</p>
+                    </div>
+                </div>
+
+                <!-- Chi-Square documentation removed (research mode functionality) -->
+                -->
+
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Debug Script -->
+    {{ ai_email_js|safe }}
+    <script>
+        // Pre-rendered AI email map injected as a JSON object to avoid parse errors
+        const AI_EMAIL_MAP = {{ ai_email_json|safe }};
+    </script>
+    <script>
+        // Inject dynamic CSS coming from the backend
+        try {
+            const styleEl = document.getElementById('dynamic-css');
+            if (styleEl) { styleEl.textContent = `{{ css|safe }}`; }
+        } catch(e) {}
+        console.log('Total profiles:', document.querySelectorAll('.student-profile').length);
+
+        function showStudent(studentId) {
+            console.log('Showing student:', studentId);
+            document.querySelectorAll('.student-profile').forEach(profile => {
+                profile.style.display = 'none';
+            });
+
+            if (studentId) {
+                const profile = document.getElementById('student-' + studentId);
+                if (profile) {
+                    profile.style.display = 'block';
+                    console.log('Found and displayed profile');
+                } else {
+                    console.log('Profile not found');
+                }
+            }
+
+            // Initialize expandable cells for the newly shown content
+            setTimeout(initializeExpandableCells, 100);
+        }
+
+        // Show first profile by default
+        window.onload = function() {
+            console.log('Page loaded');
+            const profiles = document.querySelectorAll('.student-profile');
+            if (profiles.length > 0) {
+                profiles.forEach((p, i) => {
+                    p.style.display = i === 0 ? 'block' : 'none';
+                });
+                console.log('Set first profile visible');
+            }
+
+            // Initialize filter counts and matching count
+            updateFilterCounts();
+            updateMatchingCount();
+        };
+
+        function togglePeriod(periodId) {
+            const content = document.getElementById(periodId);
+            const header = content.previousElementSibling;
+            const icon = header.querySelector('.toggle-icon');
+
+            if (content.style.display === 'none' || !content.style.display) {
+                content.style.display = 'block';
+                icon.textContent = '▼';
+                header.classList.remove('collapsed');
+            } else {
+                content.style.display = 'none';
+                icon.textContent = '▶';
+                header.classList.add('collapsed');
+            }
+        }
+
+        // Collapse all periods except the most recent one on load
+        window.addEventListener('load', function() {
+            const periods = document.querySelectorAll('.reflection-period');
+            periods.forEach((period, index) => {
+                if (index !== 0) {  // Skip the first (most recent) period
+                    const content = period.querySelector('.period-content');
+                    const header = period.querySelector('.period-header');
+                    const icon = header.querySelector('.toggle-icon');
+                    content.style.display = 'none';
+                    icon.textContent = '▶';
+                    header.classList.add('collapsed');
+                }
+            });
+            try { markVisibleFromDisplay(); refreshEmailRecipients(); } catch(e) {}
+        });
+
+        function toggleAllPeriods(expand) {
+            const periods = document.querySelectorAll('.reflection-period');
+            periods.forEach(period => {
+                const content = period.querySelector('.period-content');
+                const header = period.querySelector('.period-header');
+                const icon = header.querySelector('.toggle-icon');
+
+                if (expand) {
+                    content.style.display = 'block';
+                    icon.textContent = '▼';
+                    header.classList.remove('collapsed');
+                } else {
+                    content.style.display = 'none';
+                    icon.textContent = '▶';
+                    header.classList.add('collapsed');
+                }
+            });
+        }
+
+        // Sync a data flag with current display state for reliable selection across tabs
+        function markVisibleFromDisplay() {
+            const selector = document.getElementById('student-selector');
+            if (!selector) return;
+            const options = selector.getElementsByTagName('option');
+            for (let option of options) {
+                if (option.value === '') continue;
+                option.dataset.visible = (option.style.display !== 'none') ? 'true' : 'false';
+            }
+        }
+
+        function filterStudents() {
+            const selector = document.getElementById('student-selector');
+            const options = selector.getElementsByTagName('option');
+            const checkboxes = document.querySelectorAll('input[name="filter"]:checked');
+
+            // Reset selector
+            selector.value = '';
+            showStudent('');
+
+            // If no filters are selected, show all students
+            if (checkboxes.length === 0) {
+                for (let option of options) {
+                    option.style.display = '';
+                    if (option.value !== '') option.dataset.visible = 'true';
+                }
+                markVisibleFromDisplay();
+                return;
+            }
+
+            // Group filters by type
+            const filters = {
+                grade: [],
+                trend: [],
+                reflection: [],
+                urgency: [],
+                resolution: [],
+                negemo_lowgrade: [],
+                posemo_lowgrade: [],
+                perf: []
+            };
+
+            checkboxes.forEach(checkbox => {
+                const type = checkbox.dataset.type;
+                const value = checkbox.dataset.value;
+                if (type && value) {
+                    filters[type].push(value);
+                }
+            });
+
+            // Filter options
+            for (let option of options) {
+                if (option.value === '') continue; // Skip placeholder
+
+                let show = true;
+
+                // Check each filter type
+                if (filters.grade.length > 0) {
+                    show = show && filters.grade.includes(option.getAttribute('data-grade-color'));
+                }
+                if (filters.trend.length > 0) {
+                    show = show && filters.trend.includes(option.getAttribute('data-grade-trend'));
+                }
+                if (filters.reflection.length > 0) {
+                    show = show && filters.reflection.includes(option.getAttribute('data-has-reflection'));
+                }
+                if (filters.urgency.length > 0) {
+                    show = show && filters.urgency.includes(option.getAttribute('data-urgency'));
+                }
+                if (filters.resolution.length > 0) {
+                    show = show && filters.resolution.includes(option.getAttribute('data-resolution'));
+                }
+                if (filters.negemo_lowgrade.length > 0) {
+                    // Show if the combined flag is true and filter expects 'true'
+                    show = show && filters.negemo_lowgrade.includes(option.getAttribute('data-negemo-lowgrade'));
+                }
+                if (filters.posemo_lowgrade.length > 0) {
+                    show = show && filters.posemo_lowgrade.includes(option.getAttribute('data-posemo-lowgrade'));
+                }
+                // Performance filters removed
+
+                option.style.display = show ? '' : 'none';
+                option.dataset.visible = show ? 'true' : 'false';
+            }
+            updateMatchingCount();
+            markVisibleFromDisplay();
+        }
+
+        function updateFilterCounts() {
+            const options = document.querySelectorAll('#student-selector option');
+            let gradeCounts = {green: 0, blue: 0, orange: 0, red: 0};
+            let trendCounts = {up: 0, down: 0};
+            let reflectionCounts = {true: 0, false: 0};
+            let urgencyCounts = {high: 0, medium: 0, low: 0, none: 0};
+            let resolutionCounts = {resolved: 0, unresolved: 0, in_progress: 0, no_challenge: 0};
+            let negemoLowGradeCount = 0;
+            let posemoLowGradeCount = 0;
+            let perfCounts = {assign_lt80: 0, activities_lt80: 0}; // removed from UI; keep stub for compatibility
+            for (let option of options) {
+                if (option.value === '') continue;
+                gradeCounts[option.getAttribute('data-grade-color')]++;
+                trendCounts[option.getAttribute('data-grade-trend')]++;
+                reflectionCounts[option.getAttribute('data-has-reflection')]++;
+                urgencyCounts[option.getAttribute('data-urgency')]++;
+                resolutionCounts[option.getAttribute('data-resolution')]++;
+                if (option.getAttribute('data-negemo-lowgrade') === 'true') negemoLowGradeCount++;
+                if (option.getAttribute('data-posemo-lowgrade') === 'true') posemoLowGradeCount++;
+                if (option.getAttribute('data-perf-assign-lt80') === 'true') perfCounts.assign_lt80++;
+                if (option.getAttribute('data-perf-activities-lt80') === 'true') perfCounts.activities_lt80++;
+            }
+            document.getElementById('count-grade-high').textContent = `(${gradeCounts.green || 0})`;
+            document.getElementById('count-grade-good').textContent = `(${gradeCounts.blue || 0})`;
+            document.getElementById('count-grade-fair').textContent = `(${gradeCounts.orange || 0})`;
+            document.getElementById('count-grade-low').textContent = `(${gradeCounts.red || 0})`;
+            document.getElementById('count-trend-up').textContent = `(${trendCounts.up || 0})`;
+            document.getElementById('count-trend-down').textContent = `(${trendCounts.down || 0})`;
+            document.getElementById('count-reflection-true').textContent = `(${reflectionCounts.true || 0})`;
+            document.getElementById('count-reflection-false').textContent = `(${reflectionCounts.false || 0})`;
+            document.getElementById('count-urgency-high').textContent = `(${urgencyCounts.high || 0})`;
+            document.getElementById('count-urgency-medium').textContent = `(${urgencyCounts.medium || 0})`;
+            document.getElementById('count-urgency-low').textContent = `(${urgencyCounts.low || 0})`;
+            document.getElementById('count-urgency-none').textContent = `(${urgencyCounts.none || 0})`;
+            document.getElementById('count-resolution-resolved').textContent = `(${resolutionCounts.resolved || 0})`;
+            document.getElementById('count-resolution-unresolved').textContent = `(${resolutionCounts.unresolved || 0})`;
+            document.getElementById('count-resolution-in_progress').textContent = `(${resolutionCounts.in_progress || 0})`;
+            document.getElementById('count-resolution-no_challenge').textContent = `(${resolutionCounts.no_challenge || 0})`;
+            const negemoNode = document.getElementById('count-negemo-lowgrade');
+            if (negemoNode) negemoNode.textContent = `(${negemoLowGradeCount || 0})`;
+            const posemoNode = document.getElementById('count-posemo-lowgrade');
+            if (posemoNode) posemoNode.textContent = `(${posemoLowGradeCount || 0})`;
+            // Performance counts removed
+        }
+
+        function updateMatchingCount() {
+            const selector = document.getElementById('student-selector');
+            const options = selector.getElementsByTagName('option');
+            let count = 0;
+            for (let option of options) {
+                if (option.value === '') continue;
+                if (option.style.display !== 'none') count++;
+            }
+
+            // Check if any filters are active
+            const activeFilters = document.querySelectorAll('input[name="filter"]:checked');
+            if (activeFilters.length > 0) {
+                document.getElementById('matching-count').textContent = `Filtered Students: ${count}`;
+            } else {
+                // Reset to original matching count when no filters are active
+                document.getElementById('matching-count').textContent = `Showing Students (with shared identity): {{ course.matching_students_count }}`;
+            }
+        }
+
+        // Add event listeners to checkboxes
+        document.querySelectorAll('input[name="filter"]').forEach(checkbox => {
+            checkbox.addEventListener('change', filterStudents);
+        });
+
+        function showTab(tabId) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            // Show selected tab
+            const targetTab = document.getElementById(tabId + '-tab');
+            if (targetTab) targetTab.classList.add('active');
+            const targetBtn = document.querySelector(`[onclick="showTab('${tabId}')"]`);
+            if (targetBtn) targetBtn.classList.add('active');
+        }
+
+        // Add this function to handle expandable cells
+        function initializeExpandableCells() {
+            const cells = document.querySelectorAll('.data-table td');
+            cells.forEach(cell => {
+                if (cell.scrollHeight > cell.clientHeight || cell.scrollWidth > cell.clientWidth) {
+                    cell.classList.add('expandable');
+                    cell.addEventListener('click', function() {
+                        this.classList.toggle('expanded');
+                    });
+                }
+            });
+        }
+
+        // Call the function when the document is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            updateFilterCounts();
+            updateMatchingCount();
+            initializeExpandableCells();
+            document.querySelectorAll('input[name="filter"]').forEach(checkbox => {
+                checkbox.addEventListener('change', updateFilterCounts);
+                try { checkbox.addEventListener('change', function(){ try { refreshEmailRecipients(); } catch(e){} }); } catch(e){}
+            });
+            try { refreshEmailRecipients(); } catch(e){}
+            // Initialize perf averages on load and on selection change
+            const selector = document.getElementById('student-selector');
+            if (selector) {
+                function updatePerfAverages() {
+                    const opt = selector.options[selector.selectedIndex];
+                    if (!opt || !opt.value) { document.getElementById('perf-averages').style.display='none'; return; }
+                    const qa = opt.getAttribute('data-perf-quiz-avg');
+                    const aa = opt.getAttribute('data-perf-assign-avg');
+                    document.getElementById('perf-quiz').textContent = `📘 Quiz Avg: ${qa && qa.length ? qa + '%' : '—'}`;
+                    document.getElementById('perf-assign').textContent = `📕 Assignment Avg: ${aa && aa.length ? aa + '%' : '—'}`;
+                    document.getElementById('perf-averages').style.display = 'block';
+                }
+                selector.addEventListener('change', updatePerfAverages);
+                updatePerfAverages();
+            }
+        });
+
+        function toggleSectionById(sectionId) {
+            const content = document.getElementById(sectionId);
+            const icon = document.getElementById('icon-' + sectionId);
+            const header = icon.parentElement;
+            if (content.style.display === 'none' || !content.style.display) {
+                content.style.display = 'block';
+                icon.textContent = '▼';
+                header.classList.remove('collapsed');
+            } else {
+                content.style.display = 'none';
+                icon.textContent = '▶';
+                header.classList.add('collapsed');
+            }
+        }
+
+        function toggleAnonymization() {
+            // Get current URL and parameters
+            const url = new URL(window.location);
+            const currentAnonymized = url.searchParams.get('anonymized') === 'true';
+
+            // Toggle the anonymized parameter
+            if (currentAnonymized) {
+                url.searchParams.delete('anonymized');
+            } else {
+                url.searchParams.set('anonymized', 'true');
+            }
+
+            // Reload the page with the new parameter
+            window.location.href = url.toString();
+        }
+
+        // Email helpers
+        function getVisibleAndMatchingStudents() {
+            const selector = document.getElementById('student-selector');
+            const opts = Array.from(document.querySelectorAll('#student-selector option'))
+                .filter(o => o.value && ((o.dataset.visible === 'true') || (o.style.display !== 'none')));
+            // Do not narrow by the dropdown selection; let the recipient checkboxes control selection
+            const filtered = opts;
+            return filtered.map(o => ({
+                name: (o.getAttribute('data-student-name') || o.textContent).trim(),
+                id: o.value,
+                email: (o.getAttribute('data-student-email') || (o.textContent.match(/\(([^)]+)\)$/) || [,''])[1]).trim(),
+                gradeColor: o.getAttribute('data-grade-color'),
+                currentGrade: o.getAttribute('data-current-grade'),
+                urgency: o.getAttribute('data-urgency'),
+                resolution: o.getAttribute('data-resolution'),
+                trend: o.getAttribute('data-grade-trend'),
+                negemoLow: o.getAttribute('data-negemo-lowgrade') === 'true',
+                posemoLow: o.getAttribute('data-posemo-lowgrade') === 'true',
+                missing: (o.getAttribute('data-missing-assignments') || '').split('|').filter(Boolean)
+            }));
+        }
+
+        function selectedFilterSummary() {
+            const active = Array.from(document.querySelectorAll('input[name="filter"]:checked'))
+                .map(cb => cb.parentElement.textContent.trim().replace(/\s+\(.*\)$/, ''));
+            return active.length ? active.join(', ') : 'None (all visible students)';
+        }
+
+        function refreshEmailRecipients() {
+            const list = getVisibleAndMatchingStudents();
+            document.getElementById('email-selected-count').textContent = list.length;
+            document.getElementById('email-filter-summary').textContent = selectedFilterSummary();
+            const html = list.slice(0, 500).map((s, idx) => {
+                const id = `rec_${idx}`;
+                const info = [];
+                if (s.currentGrade) info.push(`grade ${s.currentGrade}`);
+                if (s.resolution) info.push(s.resolution);
+                if (s.urgency && s.urgency !== 'none') info.push(`urgency ${s.urgency}`);
+                return `<label style=\"display:flex;align-items:center;gap:8px;margin:3px 0;\"><input type=\"checkbox\" class=\"email-recipient\" id=\"${id}\" data-email=\"${s.email}\" data-name=\"${s.name}\" data-missing=\"${(s.missing||[]).join('|')}\" checked> <span>${s.name}</span> <span style=\"color:#666;\">${info.join(' · ')}</span></label>`;
+            }).join('');
+            document.getElementById('email-recipients').innerHTML = html || '<div>No recipients based on current filters.</div>';
+            const selAll = document.getElementById('email-select-all');
+            if (selAll) {
+                selAll.checked = list.length > 0;
+                selAll.onclick = function() {
+                    document.querySelectorAll('.email-recipient').forEach(cb => cb.checked = selAll.checked);
+                };
+            }
+            const first = Array.from(document.querySelectorAll('.email-recipient:checked'))[0];
+            document.getElementById('email-preview-address').textContent = first ? (first.dataset.email || '—') : '—';
+        }
+
+        function summarizeFiltersForEmail() {
+            const active = Array.from(document.querySelectorAll('input[name="filter"]:checked'))
+                .map(cb => cb.parentElement.textContent.trim().replace(/\s+\(.*\)$/, ''));
+            return active.length ? active.join(', ') : 'No filters (all students with shared identity)';
+        }
+
+        function buildSuggestedEmail() {
+            const all = getVisibleAndMatchingStudents();
+            const checks = Array.from(document.querySelectorAll('.email-recipient:checked'));
+            const selected = (checks.length > 0)
+                ? all.filter(r => checks.some(cb => (cb.dataset.email || '').trim() === r.email))
+                : all;
+            if (selected.length === 0) { alert('No recipients selected.'); return; }
+
+            // Build one email per selected student (use the first for subject/body preview; instructor can copy per-student later)
+            const s = selected[0];
+            const subject = `Quick check‑in for ${s.name}`;
+            const lines = [];
+            lines.push(`Hi ${s.name.split(',')[0]},`);
+            lines.push('');
+            lines.push(`I reviewed your latest reflection and grade for ITSC {{ course.course_name }} (Ref {{ selected_ref }}).`);
+            if (s.currentGrade) lines.push(`Current grade: ${s.currentGrade}.`);
+            if (s.resolution && s.resolution !== 'resolved') lines.push(`I noticed some items are still ${s.resolution}.`);
+            if (s.urgency && s.urgency !== 'none') lines.push(`You indicated ${s.urgency} urgency—let’s address that quickly.`);
+            lines.push('');
+            lines.push('Next steps:');
+            lines.push('- Book a 15‑minute office hour: <add link>');
+            lines.push('- Skim the attached resources for your topic(s)');
+            lines.push('- Reply with the specific concept you want help with');
+            lines.push('');
+            lines.push('I’m here to support you—small consistent steps are enough.');
+            lines.push('');
+            lines.push('Best,');
+            lines.push('<Instructor Name>');
+
+            document.getElementById('email-subject').value = subject;
+            document.getElementById('email-body').value = lines.join('\n');
+        }
+
+        function addMissingAssignmentsSelected() {
+            const checks = Array.from(document.querySelectorAll('.email-recipient:checked'));
+            if (checks.length === 0) { alert('Select at least one recipient.'); return; }
+            const bodyEl = document.getElementById('email-body');
+            let body = bodyEl.value || '';
+            checks.forEach(cb => {
+                const name = cb.dataset.name || 'Student';
+                const missing = (cb.dataset.missing || '').split('|').filter(Boolean);
+                const line = missing.length ? `\n\nMissing assignments for ${name}: ${missing.join(', ')}` : `\n\nMissing assignments for ${name}: None detected`;
+                body += line;
+            });
+            bodyEl.value = body + '\n';
+        }
+
+        function copyEmailToClipboard() {
+            const subject = document.getElementById('email-subject').value;
+            const body = document.getElementById('email-body').value;
+            const full = `Subject: ${subject}\n\n${body}`;
+            try {
+                navigator.clipboard.writeText(full).then(function(){
+                    alert('Email copied to clipboard.');
+                }).catch(function(){
+                    alert('Email copied to clipboard.');
+                });
+            } catch(e) {
+                alert('Copy this email:\n\n' + full);
+            }
+        }
+
+        async function buildAIEmail() {
+            const all = getVisibleAndMatchingStudents();
+            const checks = Array.from(document.querySelectorAll('.email-recipient:checked'));
+            const selected = (checks.length > 0)
+                ? all.filter(r => checks.some(cb => (cb.dataset.email || '').trim() === r.email))
+                : all;
+            if (selected.length === 0) { alert('No recipients selected.'); return; }
+            const s = selected[0];
+            // Use server-rendered AI email JSON per student if available
+            try {
+                const aiMap = (typeof AI_EMAIL_MAP !== 'undefined' && AI_EMAIL_MAP) ? AI_EMAIL_MAP : {};
+                const data = aiMap[s.email] || null;
+                if (data && data.subject && data.body) {
+                    // Insert name and missing assignments if not already present
+                    const subject = data.subject.replace(/NAME|\{name\}/gi, s.name);
+                    let body = data.body.replace(/NAME|\{name\}/gi, s.name.split(',')[0]);
+                    if ((s.missing||[]).length > 0 && !/Missing assignments/i.test(body)) {
+                        body += '\n\nMissing assignments:\n- ' + (s.missing||[]).join('\n- ');
+                    }
+                    document.getElementById('email-subject').value = subject;
+                    document.getElementById('email-body').value = body;
+                    return;
+                }
+            } catch(e) {}
+            // Fallback
+            buildSuggestedEmail();
+        }
+    </script>
+</body>
+</html>

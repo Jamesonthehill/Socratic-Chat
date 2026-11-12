@@ -1,0 +1,196 @@
+<div class="profile-content">
+    <div class="student-header">
+        <h2>{{ student.name }}</h2>
+        {% if student.section %}
+        <div class="student-section" style="font-size:1.1em;color:#555;margin-bottom:4px;">Section: {{ student.section }}</div>
+        {% endif %}
+        <p class="email">{{ student.email }}</p>
+
+        <!-- Grade Summary -->
+        <div class="grade-summary">
+            <div class="current-grade">
+                <span class="grade-label">Current Grade:</span>
+                <span class="grade-value">{{ "%.1f"|format(ref2_grade) }}%</span>
+            </div>
+            <div class="grade-change {{ 'positive' if grade_change > 0 else 'negative' if grade_change < 0 else '' }}">
+                {% if grade_change != 0 %}
+                    {{ "+" if grade_change > 0 else "" }}{{ "%.1f"|format(grade_change) }}%
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    {% for ref_num, data in student.reflection_data.items()|sort(reverse=True) %}
+    <div class="reflection-period">
+        <div class="period-header" onclick="togglePeriod('period-{{ student.email|replace('@', '-at-') }}-{{ ref_num }}')">
+            <h3>
+                <span class="toggle-icon">▼</span>
+                Reflection Period {{ ref_num }}
+            </h3>
+            <div class="status-indicators">
+                <span class="status-badge {% if data.reflection %}submitted{% else %}missing{% endif %}">
+                    Reflection {% if data.reflection %}✓{% else %}✗{% endif %}
+                </span>
+                <span class="status-badge {% if data.grades %}submitted{% else %}missing{% endif %}">
+                    Grades {% if data.grades %}✓{% else %}✗{% endif %}
+                </span>
+
+                <!-- Missing Assignments Indicator -->
+                {% set period_missing = get_missing_assignments_by_period(student, ref_num) %}
+                {% if period_missing %}
+                    <span class="status-badge missing">
+                        {{ period_missing|length }} Missing
+                    </span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div id="period-{{ student.email|replace('@', '-at-') }}-{{ ref_num }}" class="period-content">
+            <!-- Topic Analysis Summary -->
+            <div class="topic-summary">
+                <h4>Topic Analysis</h4>
+
+                <!-- Show reflection summary once -->
+                {% if data.reflection_summary %}
+                <div class="detail-item full-width">
+                    <span class="label">Reflection Summary:</span>
+                    <span class="value">{{ data.reflection_summary }}</span>
+                </div>
+                {% endif %}
+
+                <!-- Show topics -->
+                {% for topic in data.topic_analysis %}
+                <div class="topic-details">
+                    <div class="detail-item">
+                        <span class="label">Primary Topic:</span>
+                        <span class="value">{{ topic.primary_topic|replace('_', ' ')|title }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">Resolution Status:</span>
+                        <span class="value {{ topic.resolution_status|lower }}">
+                            {{ topic.resolution_status|replace('_', ' ')|title }}
+                        </span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">Urgency Level:</span>
+                        <span class="value urgency-{{ topic.urgency|lower }}">
+                            {{ topic.urgency|title }}
+                        </span>
+                    </div>
+                </div>
+                {% if not loop.last %}<hr>{% endif %}
+                {% endfor %}
+
+                <!-- Show combined instructor suggestions -->
+                {% if data.instructor_suggestions %}
+                <div class="detail-item full-width">
+                    <span class="label">Instructor Suggestions:</span>
+                    <span class="value">{{ data.instructor_suggestions }}</span>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Two Column Grid -->
+            <div class="two-column-grid">
+                <!-- Left Column: Reflections -->
+                <div class="column">
+                    <div class="data-card">
+                        <div class="expandable-section">
+                            <h4 class="section-header" onclick="toggleSection(this)">
+                                <span class="toggle-icon">▼</span>
+                                Reflection Responses
+                            </h4>
+                            <div class="section-content">
+                                {% if data.reflection %}
+                                    <table class="data-table reflection-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Question</th>
+                                                <th>Response</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for q, a in zip(data.reflection.questions, data.reflection.reflections) %}
+                                            <tr>
+                                                <td class="question-cell">{{ q }}</td>
+                                                <td class="response-cell">{{ a }}</td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                {% else %}
+                                    <div class="no-data">No reflection submitted</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Grades and Missing Assignments -->
+                <div class="column">
+                    <div class="data-card">
+                        <h4>Grades</h4>
+                        {% if data.grades %}
+                            <table class="data-table grades-table">
+                                <thead>
+                                    <tr>
+                                        <th>Category</th>
+                                        <th>Current Score</th>
+                                        <th>Change</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for key, value in data.grades.items() %}
+                                        {% if 'current' in key.lower() and 'unposted' not in key.lower() and not isna(value) %}
+                                            {% set prev_value = get_previous_grade(student, ref_num, key) %}
+                                            {% set change_str, change_class = get_grade_change(prev_value, value|float) %}
+                                            <tr>
+                                                <td>{{ key }}</td>
+                                                <td class="grade-cell">{{ "%.1f"|format(value|float) }}</td>
+                                                <td class="change-cell {{ change_class }}">{{ change_str }}</td>
+                                            </tr>
+                                        {% endif %}
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        {% else %}
+                            <div class="no-data">No grades available</div>
+                        {% endif %}
+
+                        <!-- Missing Assignments Section (only instance) -->
+                        {% if period_missing %}
+                            <div class="missing-assignments-section">
+                                <div class="missing-assignments-content">
+                                    <h5>Missing Assignments</h5>
+                                    <ul>
+                                        {% for assignment in period_missing %}
+                                        <li>{{ assignment }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Analysis in separate container -->
+            {% if data.ai_responses and data.ai_responses.summary %}
+            <div class="data-card expandable-section ai-analysis-section">
+                <h4 class="section-header" onclick="toggleSection(this)">
+                    <span class="toggle-icon">▼</span>
+                    AI Analysis
+                </h4>
+                <div class="section-content">
+                    <div class="ai-response-content">
+                        <div class="response-item">
+                            <span class="value">{{ data.ai_responses.summary }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>

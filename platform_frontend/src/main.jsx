@@ -204,7 +204,7 @@ export function App() {
               <Link
                 to="/professor/analytics"
                 aria-current={
-                  ["/professor/analytics", "/professor/reflection-analysis"].includes(pathname) ? "page" : undefined
+                  pathname === "/professor/analytics" ? "page" : undefined
                 }
               >
                 AIducate
@@ -235,10 +235,7 @@ export function App() {
               )
             }
           />
-          <Route
-            path="/professor/reflection-analysis"
-            element={<Navigate to={isProfessor ? { pathname: "/professor/analytics", search } : home} replace />}
-          />
+          <Route path="/professor/reflection-analysis" element={<Navigate to={isProfessor ? { pathname: "/professor/analytics", search } : home} replace />} />
           <Route
             path="/professor/analytics"
             element={
@@ -433,6 +430,8 @@ function AssignmentList({ items, professor, view = "list", highlightId = null, h
           const tool = TOOLS[item.tool];
           const canOpen = !professor || item.can_manage !== false;
           const justPublished = professor && item.id === highlightId;
+          const pastDue = professor && item.status === "published" &&
+            item.due_at && new Date(item.due_at).getTime() < Date.now();
           const professorPath = !tool
             ? `/professor/assignments/${item.id}`
             : item.status === "draft" || item.tool === "self-directed-learning"
@@ -482,12 +481,13 @@ function AssignmentList({ items, professor, view = "list", highlightId = null, h
                     {item.instructions}
                   </p>
                 )}
-                <span className="subtle">
+                <span className={pastDue ? "assignment-due-past" : "subtle"}>
                   {item.due_at ? `Due ${date(item.due_at)}` : "No due date"}
                 </span>
               </div>
               <div className="assignment-state">
                 <Badge value={professor ? item.status : item.progress} />
+                {pastDue && <span className="assignment-past-due-badge">Past due</span>}
                 {professor && item.status !== "draft" && (
                   <small>
                     {item.completed_count} of {item.recipient_count} completed

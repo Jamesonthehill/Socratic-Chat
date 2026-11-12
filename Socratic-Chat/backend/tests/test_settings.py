@@ -3,28 +3,81 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from app import rag, settings
+from app import settings
 
 
 class LlmProviderConfigTests(unittest.TestCase):
-    def test_openai_tutor_override_keeps_other_generation_roles_on_groq(self):
+    def test_only_qualitative_feedback_uses_groq_20b_override(self) -> None:
         with (
-            patch.object(settings, "LLM_PROVIDER", "groq"),
-            patch.object(settings, "SOCRATIC_TUTOR_PROVIDER", "openai"),
-            patch.object(settings, "SOCRATIC_TUTOR_MODEL", "gpt-4.1-mini"),
-            patch.object(settings, "OPENAI_API_KEY", "openai-test"),
-            patch.object(settings, "GROQ_API_KEY", "groq-test"),
+            patch.object(settings, "LLM_PROVIDER", "ollama"),
+            patch.object(settings, "SOCRATIC_FEEDBACK_PROVIDER", "groq"),
+            patch.object(settings, "SOCRATIC_FEEDBACK_MODEL", "openai/gpt-oss-20b"),
+            patch.object(settings, "GROQ_API_KEY", "groq-test-key"),
+            patch.object(settings, "GROQ_MODEL", "openai/gpt-oss-120b"),
+            patch.object(settings, "OLLAMA_MODEL", "qwen3.5:9b-q4_K_M"),
+            patch.object(settings, "OLLAMA_ANSWER_EVALUATION_MODEL", "qwen3.5:9b-q4_K_M"),
         ):
-            tutor = settings.llm_client_config("tutor")
-            self.assertEqual((tutor[0], tutor[1], tutor[3]), ("OpenAI", "openai-test", "gpt-4.1-mini"))
-            for role in ("generation", "classifier", "evaluation"):
-                self.assertEqual(settings.llm_client_config(role)[0], "Groq")
+            self.assertEqual(settings.llm_client_config("qualitative_feedback")[0::3],
+                             ("Groq", "openai/gpt-oss-20b"))
+            self.assertEqual(settings.llm_client_config("evaluation")[0::3],
+                             ("Ollama", "qwen3.5:9b-q4_K_M"))
 
+    def test_only_socratic_tutor_uses_groq_override(self) -> None:
+        with (
+            patch.object(settings, "LLM_PROVIDER", "ollama"),
+            patch.object(settings, "SOCRATIC_TUTOR_PROVIDER", "groq"),
+            patch.object(settings, "SOCRATIC_TUTOR_MODEL", "openai/gpt-oss-20b"),
+            patch.object(settings, "SOCRATIC_CLASSIFIER_PROVIDER", ""),
+            patch.object(settings, "GROQ_API_KEY", "groq-test-key"),
+            patch.object(settings, "OLLAMA_MODEL", "qwen3.5:9b-q4_K_M"),
+            patch.object(settings, "OLLAMA_CLASSIFIER_MODEL", "qwen3.5:9b-q4_K_M"),
+            patch.object(settings, "OLLAMA_ANSWER_EVALUATION_MODEL", "qwen3.5:9b-q4_K_M"),
+        ):
+            self.assertEqual(settings.llm_client_config("tutor")[0::3], ("Groq", "openai/gpt-oss-20b"))
+            for role in ("generation", "classifier", "evaluation"):
+                with self.subTest(role=role):
+                    self.assertEqual(settings.llm_client_config(role)[0::3], ("Ollama", "qwen3.5:9b-q4_K_M"))
+
+    def test_tutor_override_without_groq_key_does_not_silently_use_qwen(self) -> None:
+        with (patch.object(settings, "LLM_PROVIDER", "ollama"),
+              patch.object(settings, "SOCRATIC_TUTOR_PROVIDER", "groq"),
+              patch.object(settings, "GROQ_API_KEY", "")):
+            self.assertIsNone(settings.llm_client_config("tutor"))
+            self.assertEqual(settings.llm_client_config("generation")[0], "Ollama")
+
+    def test_classifier_and_tutor_can_use_groq_20b_while_other_roles_use_qwen(self) -> None:
+        with (
+            patch.object(settings, "LLM_PROVIDER", "ollama"),
+            patch.object(settings, "SOCRATIC_TUTOR_PROVIDER", "groq"),
+            patch.object(settings, "SOCRATIC_TUTOR_MODEL", "openai/gpt-oss-20b"),
+            patch.object(settings, "SOCRATIC_CLASSIFIER_PROVIDER", "groq"),
+            patch.object(settings, "GROQ_CLASSIFIER_MODEL", "openai/gpt-oss-20b"),
+            patch.object(settings, "GROQ_API_KEY", "groq-test-key"),
+            patch.object(settings, "OLLAMA_MODEL", "qwen3.5:9b-q4_K_M"),
+        ):
+            for role in ("classifier", "tutor"):
+                with self.subTest(role=role):
+                    self.assertEqual(settings.llm_client_config(role)[0::3], ("Groq", "openai/gpt-oss-20b"))
+            for role in ("generation", "evaluation"):
+                with self.subTest(role=role):
+                    self.assertEqual(settings.llm_client_config(role)[0::3], ("Ollama", "qwen3.5:9b-q4_K_M"))
+
+    def test_setup_can_use_groq_without_switching_other_local_roles(self) -> None:
+        with (
+            patch.object(settings, "LLM_PROVIDER", "ollama"),
+            patch.object(settings, "SOCRATIC_SETUP_PROVIDER", "groq"),
+            patch.object(settings, "GROQ_API_KEY", "groq-test-key"),
+            patch.object(settings, "GROQ_MODEL", "openai/gpt-oss-20b"),
+            patch.object(settings, "OLLAMA_MODEL", "qwen3.5:9b-q4_K_M"),
+        ):
+            self.assertEqual(settings.llm_client_config("setup")[0::3], ("Groq", "openai/gpt-oss-20b"))
+            self.assertEqual(settings.llm_client_config("generation")[0::3], ("Ollama", "qwen3.5:9b-q4_K_M"))
 
     def test_local_qwen_roles_and_visible_output_parameters(self) -> None:
         with (
             patch.object(settings, "LLM_PROVIDER", "ollama"),
             patch.object(settings, "OLLAMA_MODEL", "qwen3.5:9b-q4_K_M"),
+            patch.object(settings, "SOCRATIC_CLASSIFIER_PROVIDER", ""),
             patch.object(settings, "OLLAMA_CLASSIFIER_MODEL", ""),
             patch.object(settings, "OLLAMA_ANSWER_EVALUATION_MODEL", ""),
         ):
@@ -80,20 +133,6 @@ class LlmProviderConfigTests(unittest.TestCase):
             config,
             ("Groq", "groq-test-key", "https://api.groq.com/openai/v1", "openai/gpt-oss-120b"),
         )
-
-    def test_socratic_tutor_uses_120b_while_other_groq_roles_use_20b(self) -> None:
-        with (
-            patch.object(settings, "LLM_PROVIDER", "groq"),
-            patch.object(settings, "GROQ_API_KEY", "groq-test-key"),
-            patch.object(settings, "GROQ_MODEL", "openai/gpt-oss-20b"),
-            patch.object(settings, "SOCRATIC_TUTOR_PROVIDER", "groq"),
-            patch.object(settings, "SOCRATIC_TUTOR_MODEL", "openai/gpt-oss-120b"),
-            patch.object(settings, "GROQ_CLASSIFIER_MODEL", "openai/gpt-oss-20b"),
-            patch.object(settings, "GROQ_ANSWER_EVALUATION_MODEL", "openai/gpt-oss-20b"),
-        ):
-            self.assertEqual(rag.generation_client_config()[3], "openai/gpt-oss-120b")
-            for role in ("generation", "classifier", "evaluation"):
-                self.assertEqual(settings.llm_client_config(role)[3], "openai/gpt-oss-20b")
 
     def test_groq_120b_is_used_for_each_conversational_role(self) -> None:
         with (

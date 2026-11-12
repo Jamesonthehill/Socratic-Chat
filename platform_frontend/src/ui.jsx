@@ -16,14 +16,14 @@ export function Badge({ value }) {
   return <span className={`badge ${value}`}>{label(value)}</span>;
 }
 
-export function GenerationStatus({ title = "BrainTutor", message, elapsedSeconds, ariaLabel, messageCard = false, fullScreen = false, atomLogo = false }) {
+export function GenerationStatus({ title = "BrainTutor", message, elapsedSeconds, ariaLabel, messageCard = false, fullScreen = false, atomLogo = false, showElapsed = true }) {
   const [localSeconds, setLocalSeconds] = useState(0);
   useEffect(() => {
-    if (elapsedSeconds != null) return undefined;
+    if (elapsedSeconds != null || !showElapsed) return undefined;
     const started = Date.now();
     const timer = window.setInterval(() => setLocalSeconds((Date.now() - started) / 1000), 100);
     return () => window.clearInterval(timer);
-  }, [elapsedSeconds]);
+  }, [elapsedSeconds, showElapsed]);
   const seconds = elapsedSeconds ?? localSeconds;
   const content = (
     <div
@@ -54,7 +54,7 @@ export function GenerationStatus({ title = "BrainTutor", message, elapsedSeconds
       <span className="thinking-copy">
         <strong>{title}</strong>
         <span className="thinking-status">{message}</span>
-        <span className="thinking-elapsed" aria-hidden="true">{Math.floor(seconds)}s elapsed</span>
+        {showElapsed && <span className="thinking-elapsed" aria-hidden="true">{Math.floor(seconds)}s elapsed</span>}
       </span>
       {fullScreen && <p className="generation-status-hint">Please keep this page open. Your result will appear when it’s ready.</p>}
     </div>

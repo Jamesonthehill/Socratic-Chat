@@ -6,7 +6,8 @@ import CourseLearningMaterials from "./CourseLearningMaterials";
 export const defaults = {
   socratic: {
     scope_mode: "assignment",
-    guidance_mode: "basic",
+    guidance_mode: "guided",
+    tutor_mode: "socrates",
     keywords: [],
     optional_keywords: [],
     dismissed_keywords: [],
@@ -69,7 +70,7 @@ export function SocraticConfig({
   canGenerateSetup = false,
 }) {
   const change = (key, next) => onChange({ ...value, [key]: next });
-  const guidanceMode = value.guidance_mode || (value.learning_steps?.length ? "guided" : "basic");
+  const guidanceMode = "guided";
   const draggedStep = useRef(null);
   const [dragOverStep, setDragOverStep] = useState(null);
   const [expandedStep, setExpandedStep] = useState(0);
@@ -109,15 +110,16 @@ export function SocraticConfig({
       <p className="help">
         Students can move among topics supported by the selected documents. Canvas links alone are not indexed; upload the PDF and any source files below.
       </p>
+      <h3>Guided learning path</h3>
       <fieldset className="socratic-guidance-mode">
-        <legend>How should the tutor guide students?</legend>
+        <legend>Tutor style</legend>
         <label>
-          <input type="radio" name="socratic-guidance-mode" value="basic" checked={guidanceMode === "basic"} disabled={frozen} onChange={() => change("guidance_mode", "basic")} />
-          <span><strong>Basic conversation</strong><small>Use the selected documents and your opening question. Students choose where the discussion goes.</small></span>
+          <input type="radio" name="tutor-mode" checked={["jarvis", "javis"].includes(value.tutor_mode)} disabled={frozen} onChange={() => change("tutor_mode", "jarvis")} />
+          <span><strong>Jarvis</strong><small>A friendly, casual tutor who uses slang.</small></span>
         </label>
         <label>
-          <input type="radio" name="socratic-guidance-mode" value="guided" checked={guidanceMode === "guided"} disabled={frozen} onChange={() => change("guidance_mode", "guided")} />
-          <span><strong>Guided learning path</strong><small>Generate and review ordered steps from the selected documents. Students work through them one by one.</small></span>
+          <input type="radio" name="tutor-mode" checked={(value.tutor_mode || "socrates") === "socrates"} disabled={frozen} onChange={() => change("tutor_mode", "socrates")} />
+          <span><strong>Socrates</strong><small>A tutor who uses formal, professional language.</small></span>
         </label>
       </fieldset>
       {!frozen && guidanceMode === "guided" && (
@@ -131,7 +133,7 @@ export function SocraticConfig({
             {generatingSetup ? "Generating setup…" : "Generate setup from selected sources"}
           </button>
           <p className="help">
-            AI drafts a beginning-to-end learning path, one application check per step, an opening question, student/submission instructions, and a completion-message count from the selected indexed documents. Review and edit these before publishing.
+            AI drafts a beginning-to-end learning path, an opening question, student/submission instructions, from the selected indexed documents. Review and edit these before publishing.
           </p>
           {setupError && <p className="publish-inline-error" role="alert">{setupError}</p>}
           {publishIssue?.target === "learning-path" && <p className="publish-inline-error">{publishIssue.message}</p>}
@@ -162,8 +164,17 @@ export function SocraticConfig({
         {guidanceMode === "basic" && !frozen && onGenerateOpening && <p className="help">Generate one opening question from the selected indexed documents, then review or edit it. Other settings stay as they are.</p>}
         {guidanceMode === "guided" && <section className="socratic-learning-steps" aria-label="Learning steps">
           <h3>Learning steps</h3>
+          {!frozen && <button type="button" className="secondary compact"
+            disabled={stepCount >= 10}
+            onClick={() => {
+              setExpandedStep(stepCount);
+              onChange({ ...value, guidance_mode: "guided", learning_steps: [
+                ...(value.learning_steps || []),
+                { title: "", goal: "", scenario: "", question: "", evidence_quote: "", source_chunk_id: "", source_file: "", checks: [] },
+              ] });
+            }}>Add blank step</button>}
           <p className="help">Scan the path below. Select a step to edit its details, or drag a row or use the arrows to change the order. Students can still ask related questions at any point.</p>
-          {!value.learning_steps?.length && <p className="help">No steps generated yet. Generate the guided setup before publishing.</p>}
+          {!value.learning_steps?.length && <p className="help">Generate a learning path or add a blank step to write your own.</p>}
           <ol className="socratic-step-list">
           {(value.learning_steps || []).map((step, index) => {
             const updateStep = (field, next) => change("learning_steps", value.learning_steps.map((item, position) => position === index ? { ...item, [field]: next } : item));
@@ -237,32 +248,13 @@ export function SocraticConfig({
               {isExpanded && <div id={`${openingPromptId}-step-${index}`} className="socratic-step-editor">
                 <label>Step title<input value={step.title} disabled={frozen} onChange={(event) => updateStep("title", event.target.value)} /></label>
                 <label>What the student should reason about<textarea rows={2} value={step.goal} disabled={frozen} onChange={(event) => updateStep("goal", event.target.value)} /></label>
-                <label>{index === 0 ? "First example students will see" : "Detailed scene students will see"}
+                <label>{index === 0 ? "First source context students will see" : "Source context students will see"}
                   <textarea rows={5} maxLength={700} value={step.scenario || ""} disabled={frozen}
                     onChange={(event) => updateStep("scenario", event.target.value)}
-                    placeholder={index === 0 ? "Set a concrete scene from the selected material: who is involved, what they are doing, and what they need to decide." : "Continue the same example: what happened before, what is happening now, and what decision remains?"} />
+                    placeholder="Explain the relevant topic, requirement, or example from this step's selected material." />
                 </label>
-                <p className="help">Give students enough context to picture this step before its question. Continue the same example, use only details supported by this step’s selected material, and leave the answer open.</p>
+                <p className="help">Explain the selected material in plain language before the question. Use its own example when available, and leave the answer open.</p>
                 <label>Question for this step<textarea rows={2} maxLength={500} value={step.question || ""} disabled={frozen} onChange={(event) => updateStep("question", event.target.value)} placeholder="What should the student reason about next?" /></label>
-                {step.checks?.length > 0 ? <div className="socratic-step-check-editor">
-                  <h4>End-of-step application check</h4>
-                  <p className="help">Students find the incorrect answer and explain why. They can try the same question once more if needed.</p>
-                  {step.checks.slice(0, 1).map((check, checkIndex) => {
-                    const updateCheck = (field, next) => updateStep("checks", [{ ...check, [field]: next }]);
-                    return <fieldset key={checkIndex}>
-                      <legend>Application check</legend>
-                      <label>Situation<textarea rows={3} value={check.scenario} disabled={frozen} onChange={(event) => updateCheck("scenario", event.target.value)} /></label>
-                      <label>Question<textarea rows={2} value={check.question} disabled={frozen} onChange={(event) => updateCheck("question", event.target.value)} /></label>
-                      <label>Answer options, one per line<textarea rows={4} value={check.options.join("\n")} disabled={frozen} onChange={(event) => updateCheck("options", event.target.value.split("\n"))} /></label>
-                      <label>Incorrect option
-                        <select value={check.incorrect_option_index} disabled={frozen} onChange={(event) => updateCheck("incorrect_option_index", Number(event.target.value))}>
-                          {check.options.map((option, optionIndex) => <option key={optionIndex} value={optionIndex}>{optionIndex + 1}. {option || "Empty option"}</option>)}
-                        </select>
-                      </label>
-                      <label>Why this option is incorrect<textarea rows={2} value={check.expected_reason} disabled={frozen} onChange={(event) => updateCheck("expected_reason", event.target.value)} /></label>
-                    </fieldset>;
-                  })}
-                </div> : <p className="help">This step was created before application checks were added. Regenerate the setup to include them.</p>}
                 <details className="socratic-step-evidence"><summary>View supporting passage</summary><p>{step.evidence_quote}</p></details>
               </div>}
             </li>;
@@ -270,11 +262,11 @@ export function SocraticConfig({
           </ol>
         </section>}
         {guidanceMode === "guided" && <label>
-          Tutor questions before each step check
+          Tutor questions before continuing
           <input type="number" min={1} max={10}
             value={value.minimum_step_questions ?? 2}
             onChange={(event) => change("minimum_step_questions", Number(event.target.value))} />
-          <small className="help">The first question in each step counts. Repeating the same question does not. Students can take the check after discussing this many questions.</small>
+          <small className="help">The first question in each step counts. Repeating the same question does not. Students can continue after discussing this many questions and reaching a stopping point.</small>
         </label>}
         </section>
       )}

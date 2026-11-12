@@ -55,11 +55,10 @@ def test_setup_retries_when_a_scene_explains_the_answer(monkeypatch):
     ))
     assert len(calls) == 2
     assert requests[0]["temperature"] == 0
-    assert "clearly hypothetical, everyday analogy" in calls[0][0]
-    assert "prefer a familiar activity students can picture immediately" in calls[0][0]
-    assert "Do not copy a software project example from the source merely because it is available" in calls[0][0]
-    assert "Never let a joke replace the reasoning task" in calls[0][0]
-    assert "explain the answer before the student can reason" in calls[1][-1]
+    assert "use that example and preserve its actors, facts, and limits" in calls[0][0]
+    assert "do not invent people, events" in calls[0][0]
+    assert "rather than continuing an invented story" in calls[0][0]
+    assert "answer the question before the student can reason" in calls[1][-1]
     assert result["learning_steps"][0]["scenario"] == scene
     assert "explanatory_steps_needing_review" not in result
 
@@ -70,7 +69,7 @@ def test_explanatory_scene_is_flagged_for_instructor_review():
                       "The instructor explains that requirements change often. Students report that mobile "
                       "signup is frustrating. The team learns from results rather than guessing. "
                       "This means adapting what they do next based on evidence.")},
-        {"scenario": "The instructor explains the concept before anyone tries the task."},
+        {"scenario": "The team responds to the problem. This illustrates adaptation."},
         {"scenario": "Students report a signup problem. What will the team do next?"},
     ]
-    assert socratic_setup.explanatory_step_indices(steps) == [1, 2]
+    assert socratic_setup.explanatory_step_indices(steps) == [2]

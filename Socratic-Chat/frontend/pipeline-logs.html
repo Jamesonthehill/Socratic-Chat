@@ -29,6 +29,9 @@
       .snapshot-panel summary { cursor: pointer; font-weight: 700; }
       .snapshot-panel h3 { font-size: .9rem; margin: 16px 0 6px; }
       .snapshot-panel pre { background: #f0f3f8; border-radius: 8px; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 440px; overflow: auto; font-size: .8rem; }
+      .detail-heading, .snapshot-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .detail-heading h2, .snapshot-heading h3 { margin: 0; }
+      .copy-button { padding: 5px 10px; font-size: .82rem; white-space: nowrap; }
       .empty { color: var(--muted); padding: 24px 0; } .warning { padding: 12px; border-radius: 10px; background: #fff5dc; color: #765000; }
       @media (max-width: 760px) { header, .layout { display: block; } header button { margin-top: 12px; } .card { margin-bottom: 18px; } .event { grid-template-columns: 58px 1fr; } .fields { grid-column: 2; } }
     </style>
@@ -66,6 +69,26 @@
       }
       const esc = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
       const formatValue = (value) => typeof value === "object" ? JSON.stringify(value) : String(value);
+      async function copyText(value, button) {
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(value);
+          } else {
+            const input = document.createElement("textarea");
+            input.value = value;
+            input.style.position = "fixed";
+            input.style.opacity = "0";
+            document.body.append(input);
+            input.select();
+            const copied = document.execCommand("copy");
+            input.remove();
+            if (!copied) throw new Error("Clipboard is unavailable.");
+          }
+          button.textContent = "Copied";
+        } catch {
+          button.textContent = "Copy failed";
+        }
+      }
       function renderList() {
         const list = document.querySelector("#traceList");
         list.innerHTML = state.traces.length ? state.traces.map((trace) => `
@@ -95,10 +118,13 @@
             ["Interpreted classification or evaluation", result.parsed_output],
             ["Reply shown to student", result.final_response],
           ].filter(([, value]) => value !== undefined && value !== null)
-            .map(([title, value]) => `<h3>${esc(title)}</h3><pre>${esc(typeof value === "string" ? value : JSON.stringify(value, null, 2))}</pre>`).join("");
+            .map(([title, value]) => `<div class="snapshot-block"><div class="snapshot-heading"><h3>${esc(title)}</h3><button class="copy-button" type="button" data-copy-block aria-label="Copy ${esc(title)}">Copy</button></div><pre>${esc(typeof value === "string" ? value : JSON.stringify(value, null, 2))}</pre></div>`).join("");
           const expanded = state.expandedSnapshots[state.selected] || [];
           return `<details data-phase="${esc(snapshot.phase)}"${expanded.includes(snapshot.phase) ? " open" : ""}><summary>${esc(label(snapshot.phase))} · ${esc(snapshot.provider || "model")}</summary>${blocks}</details>`;
         }).join("");
+        panel.querySelectorAll("[data-copy-block]").forEach((button) => button.addEventListener("click", () => {
+          copyText(button.closest(".snapshot-block").querySelector("pre").textContent, button);
+        }));
       }
       function rememberExpandedSnapshots() {
         const detail = document.querySelector("#traceDetail");
@@ -134,11 +160,12 @@
         rememberExpandedSnapshots();
         if (!trace) { detail.dataset.trace = ""; detail.innerHTML = '<p class="empty">Select a request to inspect its stages.</p>'; return; }
         detail.dataset.trace = trace.trace_id;
-        detail.innerHTML = `<h2>Trace ${esc(trace.trace_id)}</h2><p class="meta">Conversation: ${esc(trace.conversation_id || "not assigned")} · Started: ${esc(trace.started_at)}</p>` +
+        detail.innerHTML = `<div class="detail-heading"><h2>Trace ${esc(trace.trace_id)}</h2><button class="copy-button" id="copyTrace" type="button">Copy trace</button></div><p class="meta">Conversation: ${esc(trace.conversation_id || "not assigned")} · Started: ${esc(trace.started_at)}</p>` +
           trace.events.map((event) => `<article class="event"><div class="stage">Stage ${esc(event.stage)}<br><small>${esc(event.elapsed_ms)} ms</small></div><div class="event-name">${esc(event.event)}</div><div class="fields">${
             Object.entries(event.fields || {}).map(([key, value]) => `<code>${esc(key)}=${esc(formatValue(value))}</code>`).join("")
           }</div></article>`).join("") +
           '<section class="snapshot-panel"><h2>Model inputs and outputs</h2><p>See the classifier observation, the retrieved evidence inside the tutor prompt, and the reply that reached the student. A classifier label informs retrieval and clarification; it does not prove understanding.</p><button id="loadSnapshots" type="button">Show full model inputs and outputs</button><div id="snapshotPanel"></div></section>';
+        detail.querySelector("#copyTrace").addEventListener("click", (event) => copyText(JSON.stringify(trace, null, 2), event.currentTarget));
         detail.querySelector("#loadSnapshots").addEventListener("click", () => loadSnapshots(trace.trace_id));
         renderSnapshots();
       }

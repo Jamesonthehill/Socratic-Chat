@@ -30,24 +30,24 @@ test("tutorial explanation stays clear of a wide highlighted field", () => {
 test("professor can save edited settings on a published Socratic assignment", async () => {
   const published = {
     id: "published-1", status: "published", tool: "socratic", instructions: "Read the source first.",
-    config: { prompt: "What would you check?", minimum_messages: 1, minimum_step_questions: 1,
+    config: { tutor_mode: "javis", prompt: "What would you check?", minimum_messages: 1, minimum_step_questions: 1,
       learning_steps: [{ title: "Check the example", goal: "Explain the example in context.",
         scenario: "A team reviews a change.", question: "What should it check?" }] },
   };
   const saved = vi.fn();
   api.mockResolvedValueOnce({ ...published, instructions: "Read and discuss the source." });
   render(<PublishedSocraticSettings assignment={published} onSaved={saved} />);
-  expect(screen.getByText(/no saved quiz yet/)).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "generate and save the step checks below" })).toHaveAttribute("href", "#learning-step-checks");
+  expect(screen.getByRole("combobox", { name: "Tutor style" })).toHaveValue("jarvis");
+  expect(screen.getByRole("option", { name: "Jarvis — friendly with slang" })).toBeInTheDocument();
   await userEvent.setup().clear(screen.getByRole("textbox", { name: "Student instructions" }));
   await userEvent.setup().type(screen.getByRole("textbox", { name: "Student instructions" }), "Read and discuss the source.");
-  await userEvent.setup().clear(screen.getByRole("spinbutton", { name: "Tutor questions before each step quiz" }));
-  await userEvent.setup().type(screen.getByRole("spinbutton", { name: "Tutor questions before each step quiz" }), "3");
+  await userEvent.setup().clear(screen.getByRole("spinbutton", { name: "Tutor questions before continuing" }));
+  await userEvent.setup().type(screen.getByRole("spinbutton", { name: "Tutor questions before continuing" }), "3");
   await userEvent.setup().click(screen.getByRole("button", { name: "Save published settings" }));
   await waitFor(() => expect(saved).toHaveBeenCalled());
   expect(screen.getByRole("status")).toHaveTextContent("Published settings saved");
   expect(api).toHaveBeenCalledWith("/platform/assignments/published-1/socratic-settings", expect.objectContaining({
-    method: "PATCH", body: expect.objectContaining({ instructions: "Read and discuss the source.", minimum_step_questions: 3 }),
+    method: "PATCH", body: expect.objectContaining({ tutor_mode: "jarvis", instructions: "Read and discuss the source.", minimum_step_questions: 3 }),
   }));
 });
 
@@ -527,10 +527,10 @@ test("source generation drafts editable opening, submission and completion setti
   );
   expect(screen.getByRole("region", { name: "Learning steps" })).toHaveTextContent("Understand the design");
   const steps = screen.getByRole("region", { name: "Learning steps" });
-  expect(within(steps).getByLabelText("First example students will see")).toHaveValue(
+  expect(within(steps).getByLabelText("First source context students will see")).toHaveValue(
     "A team begins by reviewing its design requirements.",
   );
-  expect(within(steps).getByText(/enough context to picture this step/)).toBeInTheDocument();
+  expect(within(steps).getByText(/Explain the selected material in plain language/)).toBeInTheDocument();
   expect(within(steps).getAllByText("Requirements.pdf")).toHaveLength(2);
   expect(within(steps).getAllByLabelText("Step title")).toHaveLength(1);
   const secondStep = within(steps).getByRole("button", { name: /Step 2.*Submit your design.*What should the team include/ });
@@ -538,7 +538,7 @@ test("source generation drafts editable opening, submission and completion setti
   await user.click(secondStep);
   expect(secondStep).toHaveAttribute("aria-expanded", "true");
   expect(within(steps).getByLabelText("Step title")).toHaveValue("Submit your design");
-  expect(within(steps).getByLabelText("Detailed scene students will see")).toHaveValue("The same team finishes its design and prepares to submit it.");
+  expect(within(steps).getByLabelText("Source context students will see")).toHaveValue("The same team finishes its design and prepares to submit it.");
   expect(within(steps).getByLabelText("Question for this step")).toHaveValue("What should the team include in its submission?");
   expect(within(steps).getAllByLabelText("Step title")).toHaveLength(1);
   await user.clear(screen.getByLabelText("Opening question or prompt"));

@@ -35,6 +35,41 @@ def answering_classification() -> MessageClassification:
 
 
 class AnswerEvaluationTests(unittest.TestCase):
+    def test_confirmation_checks_student_claim_not_previous_tutor_question(self) -> None:
+        payload = {
+            "concept": "Sprint Backlog components",
+            "supported_concepts": ["Sprint Goal", "plan"],
+            "missing_concepts": ["selected Product Backlog items"],
+            "critical_misconception": False,
+            "misconception": None,
+            "feedback": "Mostly right: the Sprint Backlog includes selected Product Backlog items, not the whole Product Backlog.",
+        }
+        complete = AsyncMock(return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload)))],
+        ))
+        classification = MessageClassification(
+            message_role="confirmation_request", dialogue_status="requesting_confirmation",
+            conversation_action="continue", has_substantive_claim=True,
+        )
+        source = Source(document_id="scrum", chunk_id="backlog", title="Scrum guide",
+                        text="The Sprint Backlog includes the Sprint Goal, selected Product Backlog items, and a plan.", score=1)
+        with (
+            patch("app.answer_evaluation.settings.llm_client_config", return_value=("Ollama", "", "http://localhost", "qwen")) as config,
+            patch("app.answer_evaluation.chat_completion", complete),
+            patch("app.answer_evaluation.write_llm_request_snapshot"),
+            patch("app.answer_evaluation.update_llm_request_snapshot"),
+        ):
+            feedback = asyncio.run(assess_student_answer_qualitatively(
+                "So the Sprint Backlog has the Sprint Goal, Product Backlog, and a plan?",
+                [ChatMessage(role="assistant", content="How would you adjust the Sprint Goal for mobile signup?")],
+                [source], classification,
+            ))
+        request = complete.await_args.args[2]
+        config.assert_called_once_with("qualitative_feedback")
+        self.assertIn("student's own claim", request["messages"][0]["content"])
+        self.assertIn("Student claim to verify", request["messages"][1]["content"])
+        self.assertIn("selected Product Backlog items", feedback.feedback)
+
     def test_qualitative_feedback_has_no_score_or_mastery_fields(self) -> None:
         payload = {
             "concept": "resource check",
@@ -52,7 +87,7 @@ class AnswerEvaluationTests(unittest.TestCase):
         source = Source(document_id="pdf", chunk_id="step", title="Sandwich.pdf",
                         text="Check resources before asking for coins.", score=1)
         with (
-            patch("app.answer_evaluation._client_config", return_value=("Ollama", "", "http://localhost", "qwen")),
+            patch("app.answer_evaluation.settings.llm_client_config", return_value=("Ollama", "", "http://localhost", "qwen")),
             patch("app.answer_evaluation.chat_completion", create),
             patch("app.answer_evaluation.write_llm_request_snapshot"),
             patch("app.answer_evaluation.update_llm_request_snapshot"),

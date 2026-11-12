@@ -243,7 +243,7 @@ def test_setup_reports_its_validation_failure_after_retry(monkeypatch, caplog):
     assert "Socratic setup draft failed validation on attempt 2" in caplog.text
 
 
-def test_setup_does_not_mask_step_quiz_failure_as_lesson_validation(monkeypatch):
+def test_setup_no_longer_generates_step_quizzes(monkeypatch):
     monkeypatch.setattr(socratic_setup.settings, "llm_client_config", lambda *_args: ("Groq", "key", "url", "model"))
     monkeypatch.setattr(socratic_setup, "selected_evidence", lambda *_args: (
         "[chunk_id=source] A documented example.", {"source"}, {"source": "lesson.pdf"},
@@ -264,12 +264,12 @@ def test_setup_does_not_mask_step_quiz_failure_as_lesson_validation(monkeypatch)
 
     monkeypatch.setattr(socratic_setup, "chat_completion", complete)
     monkeypatch.setattr(socratic_setup, "add_step_checks", failed_checks)
-    with pytest.raises(ValueError, match="Could not draft an application check for First step"):
-        asyncio.run(socratic_setup.generate_setup([{"id": "file", "filename": "lesson.pdf"}], "Lesson", ""))
+    draft = asyncio.run(socratic_setup.generate_setup([{"id": "file", "filename": "lesson.pdf"}], "Lesson", ""))
+    assert len(draft["learning_steps"]) == 1
     assert len(calls) == 1
 
 
-def test_student_config_hides_answer_key_and_expected_reason():
+def test_student_config_hides_legacy_step_quizzes():
     checks = [_check("first"), _check("second")]
     assignment = {
         "tool": "socratic", "status": "published", "config": {},
@@ -278,10 +278,8 @@ def test_student_config_hides_answer_key_and_expected_reason():
             "source_chunk_id": "chunk-1",
         }]}, "chunks": []},
     }
-    public = routes.public_assignment(assignment)["student_config"]["learning_steps"][0]["checks"]
-    assert public[0] == step_check.public_check(checks[0])
-    assert "incorrect_option_index" not in str(public)
-    assert "expected_reason" not in str(public)
+    public = routes.public_assignment(assignment)["student_config"]["learning_steps"][0]
+    assert "checks" not in public
 
 
 def test_published_checks_can_be_reviewed_and_saved_without_changing_steps(monkeypatch):
@@ -428,9 +426,8 @@ def test_wrong_check_allows_second_chance_on_same_question(monkeypatch):
     assert progress["status"] == "choice"
     assert progress["correct_option_index"] == 1
     assert "should not take coins" in progress["feedback"]
-    with pytest.raises(HTTPException) as error:
-        routes.next_socratic_step(assignment_id, account)
-    assert error.value.status_code == 409
+    result = routes.next_socratic_step(assignment_id, account)
+    assert result["engine_state"]["socratic"]["learning_step_index"] == 1
 
     with pytest.raises(HTTPException):
         routes.socratic_step_check(assignment_id, routes.SocraticStepCheckInput(

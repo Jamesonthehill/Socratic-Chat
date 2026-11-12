@@ -1,0 +1,91 @@
+<!-- Module Analysis Component -->
+<div class="module-analysis-container">
+    <h2>Module Analysis</h2>
+
+    {% set section_id = 'module-completion' %}
+    {% set title = 'Module Completion Rates' %}
+    {% set content = completion_html %}
+    {% include 'components/_collapsible_section.html' %}
+
+    {% set section_id = 'module-grade-correlation' %}
+    {% set title = 'Grade Correlations with Module Completion' %}
+    {% set content = grade_correlation_html %}
+    {% include 'components/_collapsible_section.html' %}
+
+    {% set section_id = 'module-progression' %}
+    {% set title = 'Module Completion Patterns' %}
+    {% set content = progression_html %}
+    {% include 'components/_collapsible_section.html' %}
+
+    {% set section_id = 'module-summary' %}
+    {% set title = 'Module Summary Statistics' %}
+    {% set content = summary_html %}
+    {% include 'components/_collapsible_section.html' %}
+</div>
+
+<style>
+.module-analysis-container {
+    margin: 20px 0;
+    padding: 20px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.module-analysis-container h2 {
+    color: #2c3e50;
+    margin-bottom: 20px;
+    font-size: 1.8em;
+}
+
+.module-analysis-container h3 {
+    color: #34495e;
+    margin: 15px 0;
+    font-size: 1.4em;
+}
+
+.completion-rates-section,
+.grade-correlations-section,
+.module-progression-section,
+.module-summary-section {
+    margin: 20px 0;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 6px;
+}
+
+.module-summary-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+}
+
+.module-summary-table th,
+.module-summary-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.module-summary-table th {
+    background-color: #f1f3f5;
+    font-weight: 600;
+}
+
+.module-summary-table tr:hover {
+    background-color: #f8f9fa;
+}
+
+/* Color coding for completion rates */
+.completion-high {
+    color: #28a745;
+}
+
+.completion-medium {
+    color: #ffc107;
+}
+
+.completion-low {
+    color: #dc3545;
+}
+</style>

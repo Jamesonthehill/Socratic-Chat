@@ -21,11 +21,11 @@ from app.answer_evaluation import (
     mastery_completion_answer,
     with_progress_status,
 )
-from app.classifier import MessageClassification, classify_message, _classification_from_observation
+from app.classifier import MessageClassification, classify_message, is_contextual_meaning_request, _classification_from_observation
 from app.pipeline_logging import begin_trace, debug_preview, end_trace, log_event, log_exception
-from app.schemas import ChatMessage, ClarificationOption, Source
+from app.schemas import ChatMessage, Source
 from app.term_resolution import resolve_term, TOKEN_PATTERN
-from platform_app import debate
+from platform_app import debate, step_check
 from platform_app.reflections_transport import request_reflections
 from platform_app.schemas import ReflectionConfig, TutorConfig, Topic
 
@@ -96,12 +96,14 @@ def publish_snapshot(assignment):
             raise HTTPException(422, "Select indexed assignment materials from this course before publishing. Canvas hyperlinks alone are not indexed.")
         guided = config.get("guidance_mode", "guided" if config.get("learning_steps") else "basic") == "guided"
         if guided and not config.get("learning_steps"):
-            raise HTTPException(422, "Generate and review learning steps before publishing Guided learning path, or choose Basic conversation.")
+            raise HTTPException(422, "Generate or manually add learning steps before publishing.")
         chunks = db.snapshot_document_chunks(str(assignment["course_id"]), sorted(chosen))
         if chosen - {c["document_id"] for c in chunks}:
             raise HTTPException(422, "Some course materials have no indexed content. Re-upload them before publishing.")
         by_chunk = {str(chunk["chunk_id"]): " ".join(str(chunk["text"]).split()) for chunk in chunks}
         for step in (config.get("learning_steps") or []) if guided else []:
+            if not step.get("source_chunk_id") and not step.get("evidence_quote"):
+                continue
             if " ".join(str(step.get("evidence_quote") or "").split()) not in by_chunk.get(str(step.get("source_chunk_id")), ""):
                 raise HTTPException(422, "A learning step no longer matches the selected indexed documents. Regenerate the setup.")
         course = db.get_course(str(assignment["course_id"])) or {}
@@ -133,111 +135,6 @@ def _assignment_keywords(snapshot):
     # Historical keyword labels remain in old snapshots, but no longer gate a
     # student's question or widen the selected-document boundary.
     return ()
-
-
-def _clarify_term_scope(message, history, classification):
-    """Ask which scope a short follow-up means before generating an answer.
-
-    The learner may be asking about a word the tutor just used, either within
-    this assignment or as a general idea. Only interrupt when both readings
-    are plausible; an explicit scope or an unrelated new question proceeds.
-    """
-    if classification.needs_clarification or classification.message_role not in {
-        "learning_question", "follow_up", "support_request",
-    }:
-        return classification
-    if re.search(
-        r"\b(?:in general|generally|outside (?:this|the) assignment|"
-        r"different example|another example|in (?:this|the) assignment|"
-        r"only in (?:this|the) context)\b", message, re.I,
-    ):
-        return classification
-    # The latest tutor reply may paraphrase away the term even though it was
-    # introduced one or two turns earlier. Use the nearby exchange, not only
-    # the immediately preceding assistant message.
-    recent_tutor = "\n".join(item.content for item in history[-8:] if item.role == "assistant")
-    if not recent_tutor or len(message.split()) > 18:
-        return classification
-    first_clause = re.split(r"[?,.!]", message.strip(), maxsplit=1)[0].strip()
-    match = re.fullmatch(
-        r"(?:what(?: is|'s)|what does|define|explain)\s+(?:the\s+|a\s+)?(.+)",
-        first_clause, re.I,
-    )
-    if not match:
-        return classification
-    term = re.sub(r"\s+(?:mean|means|here|in this context)$", "", match.group(1), flags=re.I).strip()
-    if not re.fullmatch(r"[A-Za-z][A-Za-z-]*(?:\s+[A-Za-z][A-Za-z-]*)?", term):
-        return classification
-    if not re.search(rf"\b{re.escape(term)}\b", recent_tutor, re.I):
-        return classification
-    contrast = (
-        " Here, the prompt is the displayed request for input, not the user's order or choice. "
-        "State that difference explicitly."
-        if term.casefold() == "prompt" else ""
-    )
-    options = (
-        ClarificationOption(
-            label="In this assignment",
-            message_role="direct_answer_request",
-            resolved_message=(
-                f"Explain it directly: What does '{term}' mean as used in the current course material? "
-                "Define it first, then connect it briefly to the selected passage. "
-                "If my question compares it with another action or object, explain the difference."
-                + contrast
-            ),
-        ),
-        ClarificationOption(
-            label="Generally, another example",
-            message_role="direct_answer_request",
-            resolved_message=(
-                f"Explain it directly: What does '{term}' mean more generally? "
-                "Use a different, simple hypothetical example. If my question compares it with "
-                "another action or object, explain the difference. Keep course-specific facts "
-                "within the selected material."
-                + contrast
-            ),
-        ),
-    )
-    return replace(_classification_from_observation(
-        message_role="ambiguous",
-        concepts=(term,),
-        missing_context="whether you mean the assignment or a general example",
-        clarification_question=(
-            f"Do you mean '{term}' in this assignment, or would a general explanation "
-            "with a different example help?"
-        ),
-        clarification_options=options,
-        rewritten_query=classification.rewritten_query,
-        source="scope_confirmation",
-    ), keyword_scope_match=classification.keyword_scope_match)
-
-
-def _clarify_uncertain_topic_shift(message, current_focus, classification):
-    """Offer a choice only when the classifier cannot tell which topic is intended."""
-    proposed = (classification.target or next(iter(classification.target_concepts), "") or "").strip()
-    previous = (current_focus or "").strip()
-    if (not classification.needs_clarification or classification.clarification_options
-            or not proposed or not previous or proposed.casefold() == previous.casefold()
-            or proposed.casefold() in {"it", "this", "that", "topic", "question"}):
-        return classification, ()
-    options = (
-        ClarificationOption(
-            label="Explore this topic", message_role="direct_answer_request",
-            resolved_message=f"Continue with my current question about {proposed}: {message}"[:500],
-        ),
-        ClarificationOption(
-            label="Return to earlier topic", message_role="direct_answer_request",
-            resolved_message=f"Return to our earlier topic, {previous}, using the selected assignment materials."[:500],
-        ),
-    )
-    choice = replace(_classification_from_observation(
-        message_role="ambiguous", concepts=(proposed,),
-        clarification_question=f"Explore {proposed}, or return to {previous}?"[:200],
-        clarification_options=options,
-        rewritten_query=classification.rewritten_query,
-        source="topic_choice",
-    ), keyword_scope_match=classification.keyword_scope_match)
-    return choice, (proposed, previous)
 
 
 def assignment_concept_map(chunks):
@@ -671,13 +568,6 @@ async def public_socratic_message(content, history, engine_state, learning_topic
     pending = state.pop("pending_clarification", None)
     if pending:
         query = f"{pending['original_question']} {content}".strip()
-    elif classification.needs_clarification:
-        state["pending_clarification"] = {
-            "original_question": content,
-            "target": classification.target,
-        }
-        answer = classification.clarification_question or "What part would you like to understand more clearly?"
-        return _socratic_result(answer, [], state, classification), topic
     elif classification.direct_answer:
         return _socratic_result(classification.direct_answer, [], state, classification), topic
     else:
@@ -747,6 +637,10 @@ async def _socratic_message(
     if history and history[0].content == "What would you like to explore in the assigned materials?":
         history = history[1:]
     state = dict(attempt["engine_state"].get("socratic") or {})
+    guided_steps = (snapshot.get("config") or {}).get("learning_steps") or []
+    step_index = int(state.get("learning_step_index") or 0)
+    active_step = guided_steps[step_index] if 0 <= step_index < len(guided_steps) else None
+    active_scenario = str((active_step or {}).get("scenario") or "").strip()
     pending_misconception = state.get("pending_misconception")
     if pending_misconception and pending_misconception.get("step_index") != int(state.get("learning_step_index") or 0):
         state.pop("pending_misconception", None)
@@ -817,13 +711,24 @@ async def _socratic_message(
                 state.update({"learning_topic": topic, "stable_concept": topic, "active_concept": topic})
         log_event(1, "assignment_chat_received", assignment_id=assignment["id"], message_chars=len(content), pipeline_version="local-socratic-v1")
         classification = await classify_message(interpreted, history, learning_topic=topic, **scope_options)
-        if assignment_scope and clarification_index is None:
-            classification = _clarify_term_scope(interpreted, history, classification)
-            classification, topic_choices = _clarify_uncertain_topic_shift(
-                interpreted, state.get("learning_topic"), classification,
-            )
-        else:
-            topic_choices = ()
+        # A request to explain a term can interrupt a tutor question without
+        # discarding that question or advancing the instructor's learning step.
+        if (
+            not state.get("learning_detour")
+            and str(state.get("next_thinking_step") or "").strip()
+            and classification.subtopic_request
+        ):
+            state["learning_detour"] = {
+                "question": str(state["next_thinking_step"]).strip(),
+                "scenario": active_scenario or next((
+                    message.content.replace(str(state["next_thinking_step"]), "").strip()
+                    for message in reversed(history) if message.role == "assistant"
+                ), ""),
+                "learning_topic": topic,
+                "step_index": step_index,
+                "stable_concept": state.get("stable_concept"),
+                "active_concept": state.get("active_concept"),
+            }
         if clarification_index is not None:
             selected_concepts = (
                 (topic,) if (pending or {}).get("topic_choices") else
@@ -857,26 +762,13 @@ async def _socratic_message(
         }
         log_event(4, "message_classification_completed", **state["classification"])
         if classification.conversation_action in {"soft_close", "complete"}:
+            state.pop("learning_detour", None)
             state.pop("pending_misconception", None)
             state["conversation_status"] = "paused"
             return _socratic_result(await rag.generate_conversation_transition(content, history, classification), [], state, classification)
         operational = _snapshot_context_answer(snapshot, classification)
         if operational:
             return _socratic_result(operational, [], state, classification)
-        if classification.needs_clarification:
-            choices = [option.model_dump() for option in classification.clarification_options]
-            state["pending_clarification"] = {
-                "original_question": content, "options": choices,
-                "concepts": list(classification.target_concepts),
-                "question": classification.clarification_question or "What would you like me to clarify?",
-                "inline": True,
-                **({"topic_choices": list(topic_choices)} if topic_choices else {}),
-            }
-            state["clarification_options"] = choices
-            # Pause before answer generation. The UI presents this as a compact
-            # choice inside the pending turn, not as a completed tutor message.
-            state["next_thinking_step"] = ""
-            return {"socratic": state, "clarification_only": True}
         if classification.direct_answer:
             return _socratic_result(classification.direct_answer, [], state, classification)
         current_answer = assignment_scope and classification.message_role == "student_answer"
@@ -909,7 +801,9 @@ async def _socratic_message(
             # For implementation questions, put the selected source file ahead
             # of broader requirements while keeping both available as evidence.
             sources.sort(key=lambda source: not str(source.title).lower().endswith((".py", ".js", ".ts", ".java", ".cpp", ".c")))
-        if not sources and assignment_scope:
+        if not sources and assignment_scope and not is_contextual_meaning_request(
+            interpreted, history, active_scenario,
+        ):
             return _socratic_result(
                 "I couldn't find support for that in this assignment's selected materials. "
                 "Try a question about the uploaded PDF or source file, or ask your instructor to add the missing material.",
@@ -935,7 +829,7 @@ async def _socratic_message(
                       critical_misconception=evaluation.critical_misconception)
         state.pop("last_score", None)
         answer_count = int(state.get("answered_question_count") or 0)
-        if evaluation and classification.assessment_candidate:
+        if evaluation and classification.message_role == "student_answer":
             answer_count += 1
             state["answered_question_count"] = answer_count
         should_show_concept_check = (
@@ -950,10 +844,44 @@ async def _socratic_message(
             if pending and not pending.get("topic_choices") else interpreted
         )
         generation_history = [] if general_example_choice else history
-        guided_steps = (snapshot.get("config") or {}).get("learning_steps") or []
-        step_index = int(state.get("learning_step_index") or 0)
-        active_step = guided_steps[step_index] if 0 <= step_index < len(guided_steps) else None
-        misconception_context = _misconception_context(state, evaluation, step_index)
+        if (active_step and sources and classification.message_role == "student_answer"
+                and not state.get("learning_detour")
+                and not pending and not pending_misconception and not state.get("step_readiness")):
+            minimum_questions = int((snapshot.get("config") or {}).get("minimum_step_questions") or 1)
+            questions_shown = step_check.count_step_questions(
+                attempt["messages"], state.get("step_started_at_message_count"),
+            )
+            if questions_shown >= minimum_questions:
+                latest_question = next((
+                    str(message.get("next_thinking_step") or _next_thinking_step(str(message.get("content") or ""))).strip()
+                    for message in reversed(attempt["messages"])
+                    if message.get("role") == "assistant"
+                ), active_step.get("question", ""))
+                try:
+                    log_event(7, "step_readiness_started", step_index=step_index, questions=questions_shown)
+                    ready, observation = await step_check.assess_step_readiness(
+                        active_step, interpreted, latest_question, sources, evaluation,
+                        step_history=attempt["messages"][max(
+                            0, int(state.get("step_started_at_message_count") or 1) - 1,
+                            len(attempt["messages"]) - 16,
+                        ):],
+                    )
+                    log_event(7, "step_readiness_completed", step_index=step_index, ready=ready)
+                except Exception as error:
+                    log_exception(7, "step_readiness_failed", error)
+                    ready, observation = False, ""
+                if ready:
+                    state["step_readiness"] = {"step_index": step_index, "ready": True, "observation": observation}
+                    next_action = (
+                        "Finish the conversation and summarize" if step_index == len(guided_steps) - 1
+                        else "Continue to the next step"
+                    )
+                    answer = f"{observation} This is a good stopping point for this step. {next_action} when you're ready, or ask me to go over anything first."
+                    return _socratic_result(answer, sources, state, classification)
+        misconception_context = (
+            _misconception_context(state, evaluation, step_index)
+            if pending_misconception or classification.message_role == "student_answer" else None
+        )
         generated = await rag.generate_answer(generation_message, generation_history, sources, classification=classification,
             evaluation=evaluation,
             learning_topic=classification.target if general_example_choice else topic,
@@ -964,7 +892,10 @@ async def _socratic_message(
                 else stable
             ),
             term_resolution=(resolution.original_term, resolution.selected_term) if resolution else None,
-            assignment_scope=assignment_scope, active_learning_step=active_step,
+            assignment_scope=assignment_scope,
+            active_learning_step=None if state.get("learning_detour") else active_step,
+            learning_detour=state.get("learning_detour"),
+            tutor_mode=(snapshot.get("config") or {}).get("tutor_mode", "socrates"),
             misconception_context=misconception_context,
             return_misconception_status=bool(pending_misconception), **scope_options)
         answer, resolution_status = generated if isinstance(generated, tuple) else (generated, None)

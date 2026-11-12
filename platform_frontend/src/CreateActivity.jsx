@@ -7,8 +7,8 @@ import LessonPreview from "./LessonPreview";
 import ActivityRail from "./ActivityRail";
 import ActivityIcon from "./ActivityIcon";
 import ActivityTutorial from "./ActivityTutorial";
-import PublishedStepChecks from "./PublishedStepChecks";
 import PublishedSocraticSettings from "./PublishedSocraticSettings";
+import { StepSurveyEditor } from "./StepSurveys";
 import { loadCourseContext } from "./courseContext";
 import CanvasSurveyImport from "./CanvasSurveyImport";
 
@@ -46,13 +46,6 @@ function restoreDraft(item) {
       : "",
   };
 }
-const sdlReviewKey = (draft, selected) => JSON.stringify([
-  draft.course_id, draft.title, [...selected].map(String).sort(),
-  draft.config.prompt || "", draft.config.starting_point || "", draft.config.ending_point || "",
-]);
-const hasSdlReview = item => item?.tool === "self-directed-learning" && !!item.config?.learning_plan?.diagnostic_quiz?.length;
-const restoredStage = item => item && (item.status !== "draft" || (hasSdlReview(item) &&
-  (!item.config.learning_plan.review_input_key || item.config.learning_plan.review_input_key === sdlReviewKey(item, item.config.document_ids || [])))) ? 3 : 1;
 export default function CreateActivity({
   initialActivity = null,
   initialContext = null,
@@ -69,7 +62,7 @@ export default function CreateActivity({
     initialActivity?.config.document_ids || [],
   );
   const [search, setSearch] = useState("");
-  const [stage, setStage] = useState(() => restoredStage(initialActivity));
+  const [stage, setStage] = useState(1);
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -123,7 +116,7 @@ export default function CreateActivity({
           : "",
       });
       setSelected(item.config.document_ids || []);
-      setStage(restoredStage(item));
+      if (item.status !== "draft") setStage(3);
     };
     load()
       .catch((e) => active && setError(e.message))
@@ -151,13 +144,8 @@ export default function CreateActivity({
     };
   }, [draft.course_id]);
   const change = (key, value) => {
-    const keepReview = hasSdlReview(draft) && ["title", "instructions", "due"].includes(key) &&
-      (!draft.config.learning_plan.review_input_key || draft.config.learning_plan.review_input_key === sdlReviewKey(draft, selected));
-    setDraft((d) => {
-      const next = {...d, [key]: value};
-      return keepReview ? {...next, config:{...d.config, learning_plan:{...d.config.learning_plan, review_input_key:sdlReviewKey(next,selected)}}} : next;
-    });
-    setStage(keepReview ? 3 : 1);
+    setDraft((d) => ({ ...d, [key]: value }));
+    setStage(1);
     setPublishIssue(null);
     setError("");
   };
@@ -236,13 +224,11 @@ export default function CreateActivity({
           ? {
               document_ids: selected,
               prompt: draft.config.prompt || "",
-              custom_questions: [],
-              starting_point: draft.config.starting_point || "",
-              ending_point: draft.config.ending_point || "",
+              custom_questions: draft.config.custom_questions || [],
               learning_plan: draft.config.learning_plan || {},
             }
           : draft.tool === "socratic"
-            ? { ...draft.config, guidance_mode: draft.config.guidance_mode || (draft.config.learning_steps?.length ? "guided" : "basic"), learning_steps: draft.config.guidance_mode === "basic" ? [] : (draft.config.learning_steps || []), document_ids: selected }
+            ? { ...draft.config, guidance_mode: "guided", learning_steps: draft.config.learning_steps || [], document_ids: selected }
             : { ...draft.config, document_ids: selected };
     const payload = {
       course_id: draft.course_id,
@@ -273,17 +259,15 @@ export default function CreateActivity({
   const review = () =>
     run(async () => {
       if (draft.tool === "self-directed-learning") {
-        if (Boolean(draft.config.starting_point?.trim()) !== Boolean(draft.config.ending_point?.trim()))
-          throw new Error("Define both the starting point and ending point before reviewing SDL.");
         const saved = await save(false, true);
-        const reviewKey = sdlReviewKey(draft, selected);
-        const prepared = draft.config.learning_plan?.review_input_key === reviewKey
-          ? {learning_plan: draft.config.learning_plan}
-          : await api(`/platform/assignments/${saved.id}/prepare-sdl`, {method: "POST"});
+        const prepared = await api(
+          `/platform/assignments/${saved.id}/prepare-sdl`,
+          { method: "POST" },
+        );
         setDraft((d) => ({
           ...d,
           ...saved,
-          config: { ...saved.config, learning_plan: {...prepared.learning_plan, review_input_key: reviewKey} },
+          config: { ...saved.config, learning_plan: prepared.learning_plan },
         }));
       }
       setStage(3);
@@ -297,17 +281,6 @@ export default function CreateActivity({
         }),
       );
     }, draft.tool === "self-directed-learning" ? "Generating lesson review" : "Preparing activity review");
-  const saveReview = async () => {
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      await save(false, true);
-      setNotice("Review changes saved.");
-    } finally {
-      setBusy(false);
-    }
-  };
   const generateSocraticSetup = () =>
     run(async () => {
       setSetupError("");
@@ -346,10 +319,10 @@ export default function CreateActivity({
       const briefSteps = generated.brief_steps_needing_review || (generated.first_example_needs_review ? [1] : []);
       const explanatorySteps = generated.explanatory_steps_needing_review || [];
       const reviewNotes = [
-        briefSteps.length ? `Steps ${briefSteps.join(", ")} need a more detailed scene.` : "",
+        briefSteps.length ? `Steps ${briefSteps.join(", ")} need more context from the selected material.` : "",
         explanatorySteps.length ? `Steps ${explanatorySteps.join(", ")} explain the answer too early or need a more concrete decision; edit them before publishing.` : "",
       ].filter(Boolean);
-      setNotice(`AI drafted ${(generated.learning_steps || []).length} learning steps from ${(generated.source_files || []).join(", ")}. ${reviewNotes.length ? reviewNotes.join(" ") : "Review each scene and question before publishing."}`);
+      setNotice(`AI drafted ${(generated.learning_steps || []).length} learning steps from ${(generated.source_files || []).join(", ")}. ${reviewNotes.length ? reviewNotes.join(" ") : "Review each source context and question before publishing."}`);
     }, "Generating setup from selected documents");
   const generateSocraticOpening = () =>
     run(async () => {
@@ -495,8 +468,8 @@ export default function CreateActivity({
       !selected.length
     )
       missing.push({ target: "materials", message: "Select at least one indexed course document or upload course materials." });
-    if (draft.tool === "socratic" && draft.config.guidance_mode === "guided" && !(draft.config.learning_steps || []).length)
-      missing.push({ target: "learning-path", message: "Generate a learning path before publishing Guided learning path, or choose Basic conversation." });
+    if (draft.tool === "socratic" && !(draft.config.learning_steps || []).length)
+      missing.push({ target: "learning-path", message: "Generate or add learning steps before publishing." });
     if (
       draft.tool === "debate" &&
       (draft.config.scenario || draft.title).trim().length < 10
@@ -554,7 +527,7 @@ export default function CreateActivity({
       {busy && <GenerationStatus message={busyLabel || "Working on your activity"} fullScreen />}
       {showTutorial && <ActivityTutorial tool={draft.tool} onClose={closeTutorial} />}
       {frozen && <PublishedSocraticSettings assignment={draft} onSaved={(updated) => setDraft((current) => ({ ...current, ...updated }))} />}
-      {frozen && <PublishedStepChecks assignment={draft} onSaved={(updated) => setDraft((current) => ({ ...current, ...updated }))} />}
+      {frozen && ["socratic", "reflections"].includes(draft.tool) && draft.status === "published" && <StepSurveyEditor assignment={draft} />}
       <fieldset className="editor-fieldset" disabled={busy || frozen}>
         <section className="panel">
           <div className="activity-details-heading">
@@ -849,9 +822,25 @@ export default function CreateActivity({
                     placeholder="What should students learn from these materials?"
                   />
                 </label>
-                <label>Starting point<textarea maxLength={2000} rows={3} value={draft.config.starting_point || ""} onChange={e=>setConfig({...draft.config,starting_point:e.target.value})} placeholder="What should students already know?" /></label>
-                <label>Ending point<textarea maxLength={4000} rows={3} value={draft.config.ending_point || ""} onChange={e=>setConfig({...draft.config,ending_point:e.target.value})} placeholder="What should students be able to do by the end?" /></label>
-                <label>Sub-questions<textarea aria-label="Sub-questions" rows={5} value={(draft.config.custom_questions || []).join("\n")} onChange={e=>setConfig({...draft.config,custom_questions:e.target.value.split("\n").map(q=>q.trim()).filter(Boolean)})} placeholder="Optional questions to guide the lesson" /></label>
+                <label>
+                  Sub-questions
+                  <textarea
+                    aria-label="Sub-questions"
+                    rows={5}
+                    value={(draft.config.custom_questions || []).join("\n")}
+                    onChange={(e) =>
+                      setConfig({
+                        ...draft.config,
+                        custom_questions: e.target.value.split("\n"),
+                      })
+                    }
+                    placeholder="Enter one question per line"
+                  />
+                  <span className="help">
+                    These questions guide the generated lesson. Review the
+                    lesson before publishing.
+                  </span>
+                </label>
               </>
             ) : (
               <>
@@ -899,7 +888,7 @@ export default function CreateActivity({
             Save draft
           </button>
           <button
-            className={draft.tool === "self-directed-learning" ? "" : "secondary"}
+            className="secondary"
             disabled={
               !ready ||
               (draft.tool === "self-directed-learning" && !selected.length)
@@ -908,11 +897,11 @@ export default function CreateActivity({
           >
             {busy ? "Preparing…" : "Review activity"}
           </button>
-          {(draft.tool !== "self-directed-learning" || stage !== 3) && <button onClick={publishActivity}>Publish activity</button>}</>}
+          <button onClick={publishActivity}>Publish activity</button></>}
         </div>
         {!connected && (
           <p className="help">
-            AIducate analyzes saved responses from a published Reflection assignment. Choose that assignment in the instructor workspace.
+            AIducate is an instructor analysis workspace. It does not publish a student activity or connect to Canvas Quizzes automatically.
           </p>
         )}
         {draft.tool === "self-directed-learning" && !selected.length && (
@@ -943,7 +932,7 @@ export default function CreateActivity({
                   <dt>Opening question</dt>
                   <dd>{draft.config.prompt || "Generated from course materials"}</dd>
                   {(draft.config.guidance_mode || (draft.config.learning_steps?.length ? "guided" : "basic")) === "guided" && <><dt>Learning path</dt><dd>{draft.config.learning_steps?.length ? draft.config.learning_steps.map((step, index) => `${index + 1}. ${step.title}`).join(" → ") : "No generated steps"}</dd></>}
-                  {(draft.config.guidance_mode || (draft.config.learning_steps?.length ? "guided" : "basic")) === "guided" && <><dt>Tutor questions before each check</dt><dd>{draft.config.minimum_step_questions ?? 2}</dd></>}
+                  {(draft.config.guidance_mode || (draft.config.learning_steps?.length ? "guided" : "basic")) === "guided" && <><dt>Tutor questions before continuing</dt><dd>{draft.config.minimum_step_questions ?? 2}</dd></>}
                 </>
               )}
               <dt>Chat</dt>
@@ -955,12 +944,8 @@ export default function CreateActivity({
             </dl>
             {draft.tool === "self-directed-learning" &&
               draft.config.learning_plan && (
-                <LessonPreview plan={draft.config.learning_plan} onSave={saveReview} onChange={plan=>setDraft(d=>{
-                  const next = {...d,config:{...d.config,starting_point:plan.starting_point,ending_point:plan.ending_point}};
-                  return {...next,config:{...next.config,learning_plan:{...plan,review_input_key:sdlReviewKey(next,selected)}}};
-                })} />
+                <LessonPreview plan={draft.config.learning_plan} />
               )}
-            {draft.tool === "self-directed-learning" && <div className="editor-actions"><button className="secondary" disabled={!ready} onClick={()=>run(()=>save(false))}>Save draft</button><button onClick={publishActivity}>Publish activity</button></div>}
             <p className="help">
               Publishing freezes the activity settings and the current student
               recipient list.

@@ -4,10 +4,9 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
-from app.schemas import ChatMessage, Source
+from app.schemas import Source
 from app.answer_evaluation import QualitativeFeedback
 from app.classifier import MessageClassification, _classification_from_observation
-from app.socratic import choose_socratic_strategy
 from platform_app import engines, shared_rag
 
 
@@ -60,49 +59,7 @@ def test_legacy_keyword_scope_no_longer_rejects_a_supported_subtopic(monkeypatch
     assert "objective_keywords" not in result["socratic"]
 
 
-def test_ambiguous_tutor_term_asks_scope_before_generation():
-    history = [ChatMessage(role="assistant", content="You see the prompt asking what you would like.")]
-    paraphrased_history = [
-        *history,
-        ChatMessage(role="user", content="What is the prompt?"),
-        ChatMessage(role="assistant", content="Imagine the machine asks what you would like."),
-    ]
-    classification = _classification_from_observation(
-        message_role="learning_question", concepts=("prompt",),
-        rewritten_query="definition of prompt",
-    )
-    for message in ("what is the prompt?", "what is the prompt here, its like a step or order?"):
-        clarified = engines._clarify_term_scope(message, history, classification)
-        assert clarified.needs_clarification
-        assert clarified.target_concepts == ("prompt",)
-        assert [option.label for option in clarified.clarification_options] == [
-            "In this assignment", "Generally, another example",
-        ]
-        assert all(option.message_role == "direct_answer_request" for option in clarified.clarification_options)
-        assert engines._clarify_term_scope(message, paraphrased_history, classification).needs_clarification
-    assert not engines._clarify_term_scope(
-        "what is the prompt in general?", history, classification,
-    ).needs_clarification
-    assert not engines._clarify_term_scope(
-        "How many slices of bread are needed?", history, classification,
-    ).needs_clarification
-    selected = engines._clarify_term_scope("what is the prompt?", history, classification).clarification_options[1]
-    decision = choose_socratic_strategy(
-        selected.resolved_message, history, [Source(
-            document_id="pdf", chunk_id="pdf:1", title="Sandwich.pdf",
-            text="Prompt user to choose a sandwich size.", score=1,
-        )], _classification_from_observation(message_role=selected.message_role),
-    )
-    assert decision.mode == "direct"
-    assert choose_socratic_strategy(
-        "What does prompt mean?", [], [Source(
-            document_id="pdf", chunk_id="pdf:1", title="Sandwich.pdf",
-            text="Prompt user to choose a sandwich size.", score=1,
-        )], _classification_from_observation(message_role="direct_answer_request"),
-    ).mode == "direct"
-
-
-def test_scope_confirmation_pauses_then_resumes_with_selected_meaning(monkeypatch):
+def test_course_term_question_uses_assignment_without_scope_confirmation(monkeypatch):
     pdf = _chunk("pdf", "Sandwich.pdf", "Prompt user to choose small, medium, large, off, or report.", "Menu")
     assignment = {
         "id": uuid4(), "tool": "socratic", "title": "Sandwich Maker",
@@ -133,26 +90,13 @@ def test_scope_confirmation_pauses_then_resumes_with_selected_meaning(monkeypatc
         Source(document_id="pdf", chunk_id=pdf["chunk_id"], title=pdf["title"], text=pdf["text"], score=1),
     ])
     monkeypatch.setattr(engines.rag, "generate_answer", answer)
-    first = asyncio.run(engines._socratic_message(assignment, attempt, "what is the prompt?"))
-    assert first["clarification_only"]
-    assert "reply" not in first
-    assert "in this assignment" in first["socratic"]["pending_clarification"]["question"]
-    assert first["socratic"]["pending_clarification"]["inline"]
-    assert len(first["socratic"]["clarification_options"]) == 2
-    assert calls == []  # No answer generation until the learner selects a meaning.
-
-    attempt["engine_state"]["socratic"] = first["socratic"]
-    attempt["messages"].append({"role": "user", "content": "what is the prompt?"})
-    second = asyncio.run(engines._socratic_message(
-        assignment, attempt, "Generally, another example", clarification_index=1,
-    ))
-    assert second["reply"] == "A prompt asks the user for input."
-    assert calls and calls[0][1] == "direct_answer_request"
-    assert "different, simple hypothetical example" in calls[0][0]
-    assert calls[0][2] == []
+    result = asyncio.run(engines._socratic_message(assignment, attempt, "what is the prompt?"))
+    assert result["reply"] == "A prompt asks the user for input."
+    assert calls and calls[0][0] == "what is the prompt?"
+    assert calls[0][1] == "learning_question"
     assert calls[0][3] == "prompt"
-    assert "pending_clarification" not in second["socratic"]
-    assert second["socratic"]["classification"]["target_concepts"] == ["prompt"]
+    assert not result.get("clarification_only")
+    assert "pending_clarification" not in result["socratic"]
 
 
 def test_short_reply_is_not_forced_into_clarification_by_backend(monkeypatch):
@@ -230,24 +174,7 @@ def test_typed_clarification_resumes_the_pending_question(monkeypatch):
     assert exc.value.status_code == 422
 
 
-def test_uncertain_subtopic_offers_a_choice_without_forcing_the_old_focus():
-    classification = _classification_from_observation(
-        message_role="ambiguous", concepts=("payment",),
-        missing_context="whether to continue with payment or return to the prompt",
-    )
-    choice, topics = engines._clarify_uncertain_topic_shift(
-        "What about payment?", "prompt", classification,
-    )
-    assert choice.needs_clarification
-    assert topics == ("payment", "prompt")
-    assert [option.label for option in choice.clarification_options] == [
-        "Explore this topic", "Return to earlier topic",
-    ]
-    assert "payment" in choice.clarification_options[0].resolved_message
-    assert "prompt" in choice.clarification_options[1].resolved_message
-
-
-def test_uncertain_subtopic_choice_continues_the_selected_focus(monkeypatch):
+def test_new_subtopic_continues_without_a_clarification_choice(monkeypatch):
     pdf = _chunk("pdf", "Sandwich.pdf", "Check resources before asking for coins.", "Payment")
     assignment = {
         "id": uuid4(), "tool": "socratic", "title": "Sandwich Maker",
@@ -262,7 +189,7 @@ def test_uncertain_subtopic_choice_continues_the_selected_focus(monkeypatch):
 
     async def classify(message, _history, **_kwargs):
         return _classification_from_observation(
-            message_role="ambiguous" if message == "What about payment?" else "learning_question",
+            message_role="learning_question",
             concepts=("payment",), rewritten_query="payment after resource check",
         )
 
@@ -278,17 +205,10 @@ def test_uncertain_subtopic_choice_continues_the_selected_focus(monkeypatch):
         Source(document_id="pdf", chunk_id=pdf["chunk_id"], title=pdf["title"], text=pdf["text"], score=1),
     ])
     monkeypatch.setattr(engines.rag, "generate_answer", answer)
-    first = asyncio.run(engines._socratic_message(assignment, attempt, "What about payment?"))
-    assert first["clarification_only"]
-    assert first["socratic"]["pending_clarification"]["topic_choices"] == ["payment", "prompt"]
-    attempt["engine_state"]["socratic"] = first["socratic"]
-    attempt["messages"].append({"role": "user", "content": "What about payment?"})
-    second = asyncio.run(engines._socratic_message(
-        assignment, attempt, "Explore this topic", clarification_index=0,
-    ))
-    assert "payment" in second["reply"]
-    assert second["socratic"]["learning_topic"] == "payment"
-    assert "pending_clarification" not in second["socratic"]
+    result = asyncio.run(engines._socratic_message(assignment, attempt, "What about payment?"))
+    assert "payment" in result["reply"]
+    assert result["socratic"]["learning_topic"] == "payment"
+    assert "pending_clarification" not in result["socratic"]
 
 
 def test_student_answer_is_checked_against_latest_tutor_question(monkeypatch):

@@ -52,8 +52,9 @@ const findColumn = (headers, names) => {
   return -1;
 };
 
-export default function CanvasSurveyImport({ onUse }) {
+export default function CanvasSurveyImport({ onUse, initialName = "", useLabel = "Use these responses in this course" }) {
   const input = useRef(null);
+  const [reflectionName, setReflectionName] = useState(initialName);
   const [data, setData] = useState(null), [selected, setSelected] = useState([]), [error, setError] = useState("");
   const [busy, setBusy] = useState(false), [review, setReview] = useState(false);
   const gradeInput = useRef(null);
@@ -84,19 +85,30 @@ export default function CanvasSurveyImport({ onUse }) {
   const responded = data?.rows.filter(r => selected.some(i => r[i].trim())) || [];
   const matches = data && grades && reflectionKey >= 0 && gradeKey >= 0 ? matchStudentGrades(data, grades, reflectionKey, gradeKey) : null;
   const scoreColumns = grades?.headers.map((h, i) => i).filter(i => !metadata.test(grades.headers[i]) || /score/i.test(grades.headers[i])) || [];
-  return <section className="aid-section" aria-label="Canvas survey CSV import">
+  return <section className="aid-section aid-import-panel" aria-label="Canvas survey CSV import">
     <span className="aid-eyebrow">Canvas responses & grades</span><h2>Import Canvas survey CSV</h2>
     <p>Upload reflection responses and, optionally, a grading CSV. Match students by a shared ID, then review grades beside their responses.</p>
-    <p className="help">This preview stays in this browser tab until you leave or clear it. It is not saved to the platform or sent to an AI service.</p>
-    <input ref={input} type="file" accept=".csv,text/csv" aria-label="Canvas survey CSV file" hidden onChange={e => upload(e.target.files?.[0])}/>
-    <div className="editor-actions"><button type="button" disabled={busy} onClick={() => input.current.click()}>{busy ? "Reading CSV…" : "Upload reflection CSV"}</button>
-    <input ref={gradeInput} type="file" accept=".csv,text/csv" aria-label="Grading CSV file" hidden onChange={e => uploadGrades(e.target.files?.[0])}/>
-    <button type="button" disabled={busy} onClick={() => gradeInput.current.click()}>Upload grading CSV</button></div>
-    {error && <p role="alert">{error}</p>}
-    {gradeError && <p role="alert">{gradeError}</p>}
-    {grades && <p><strong>{grades.filename}</strong> · {grades.rows.length} student grading records · {grades.excludedRows} gradebook metadata rows excluded</p>}
+    <p className="help">{onUse ? "Adding a reflection saves your selected responses and grades in this browser." : "This preview stays in this browser tab until you leave or clear it."}</p>
+    {onUse && <label>Reflection name<input type="text" value={reflectionName} onChange={event => setReflectionName(event.target.value)} placeholder="e.g., Reflection 4" maxLength={160} /></label>}
+    <div className="aid-upload-grid">
+      <div className="aid-upload-card" data-ready={Boolean(data)}>
+        <strong>Reflection CSV</strong>
+        <input ref={input} type="file" accept=".csv,text/csv" aria-label="Canvas survey CSV file" hidden onChange={e => upload(e.target.files?.[0])}/>
+        <button type="button" disabled={busy} onClick={() => input.current.click()}>{data ? "Replace reflection CSV" : "Upload reflection CSV"}</button>
+        <p role="status">{data ? <>✓ File loaded · <strong>{data.filename}</strong> · {data.rows.length} records</> : "No reflection file selected"}</p>
+        {error && <p role="alert">{error}</p>}
+      </div>
+      <div className="aid-upload-card" data-ready={Boolean(grades)}>
+        <strong>Grading CSV <small>(optional)</small></strong>
+        <input ref={gradeInput} type="file" accept=".csv,text/csv" aria-label="Grading CSV file" hidden onChange={e => uploadGrades(e.target.files?.[0])}/>
+        <button type="button" disabled={busy} onClick={() => gradeInput.current.click()}>{grades ? "Replace grading CSV" : "Upload grading CSV"}</button>
+        <p role="status">{grades ? <>✓ File loaded · <strong>{grades.filename}</strong> · {grades.rows.length} grading records</> : "No grading file selected"}</p>
+        {grades?.excludedRows > 0 && <small>{grades.excludedRows} gradebook metadata rows excluded</small>}
+        {gradeError && <p role="alert">{gradeError}</p>}
+      </div>
+    </div>
+    {busy && <p role="status">Reading CSV…</p>}
     {data && <>
-      <p><strong>{data.filename}</strong> · {data.rows.length} records</p>
       {grades && <fieldset><legend>Match grading and reflection records</legend>
         <p className="help">Select columns containing the same student identifier. Email addresses are matched using the part before @; capitalization is ignored. Duplicate grading IDs are not joined.</p>
         <label>Reflection student ID<select value={reflectionKey} onChange={e=>{setReflectionKey(Number(e.target.value));setReview(false);}}><option value={-1}>Choose ID column</option>{data.headers.map((h,i)=><option key={i} value={i}>{h}</option>)}</select></label>
@@ -106,21 +118,46 @@ export default function CanvasSurveyImport({ onUse }) {
       </fieldset>}
       <fieldset><legend>Select reflection question columns</legend>{data.headers.map((h, i) => <label key={i} style={{display:"flex",gap:"0.6rem",alignItems:"center",marginBlock:"0.5rem"}}><input style={{width:"auto"}} type="checkbox" checked={selected.includes(i)} onChange={e => { setReview(false); setSelected(e.target.checked ? [...selected, i].sort((a,b)=>a-b) : selected.filter(n => n !== i)); }}/>{h}</label>)}</fieldset>
       <div className="editor-actions"><button type="button" disabled={!selected.length} onClick={() => setReview(true)}>Review imported responses</button><button type="button" className="secondary" onClick={() => {setData(null);setGrades(null);setReview(false);setError("");setGradeError("");}}>Clear imported data</button>{grades && <button type="button" className="secondary" onClick={()=>{setGrades(null);setGradeError("");setReview(false);}}>Remove grading CSV</button>}</div>
-      {review && <div aria-live="polite"><h3>Response overview</h3><p><strong>{responded.length}</strong> records contain responses to the selected questions; <strong>{data.rows.length - responded.length}</strong> have no selected responses. These counts do not establish learning or mastery.</p>
+      {review && <section className="aid-response-preview" aria-label="Response overview">
+        <div className="aid-preview-hero">
+          <h3>Response overview</h3>
+          <p>{responded.length} of {data.rows.length} records contain responses to the selected questions.</p>
+          <div className="aid-preview-metrics">
+            <div><strong>{responded.length}</strong><span>With responses</span></div>
+            <div><strong>{data.rows.length - responded.length}</strong><span>Without responses</span></div>
+            <div><strong>{selected.length}</strong><span>Questions selected</span></div>
+          </div>
+        </div>
         {onUse && <button type="button" onClick={() => {
           const students = data.rows.map((row, n) => {
-            const responses = selected.filter(i => row[i].trim()).map(i => data.headers[i] + " — " + row[i]);
+            const answers = selected.filter(i => row[i].trim()).map(i => ({ question: data.headers[i], response: row[i] }));
+            const responses = answers.map(({ question, response }) => question + " — " + response);
+            const gradeRow = matches?.[n]?.grade;
+            const reportGrades = gradeRow ? Object.fromEntries(grades.headers.flatMap((header, i) => {
+              const score = gradeRow[i]?.trim();
+              return /(?:^| )current score$|\(\d+\)$/i.test(header) && /^-?\d+(?:\.\d+)?%?$/.test(score || "")
+                ? [[header, Number(score.replace(/%$/, ""))]] : [];
+            })) : {};
+            const gradeBreakdown = gradeRow ? scoreColumns.filter(i => /(?:^| )current score$/i.test(grades.headers[i]) && gradeRow[i]?.trim())
+              .map(i => ({ category: grades.headers[i], score: gradeRow[i].trim() })) : [];
+            const missingAssignments = gradeRow ? grades.headers.filter((header, i) =>
+              /\(\d+\)$/.test(header) && /^missing$/i.test(gradeRow[i]?.trim())) : [];
             const grade = gradeColumn >= 0 ? matches?.[n]?.grade?.[gradeColumn]?.trim() : "";
             const gradeLabel = grade ? grades.headers[gradeColumn] + ": " + grade : null;
-            return { gradeLabel, student_id: String(n), name: "Record " + (n + 1), responses, response_count: responses.length, status: responses.length ? "completed" : "not_started" };
+            return { answers, reportGrades, gradeBreakdown, missingAssignments, gradeLabel, student_id: String(n), name: "Record " + (n + 1), responses, response_count: responses.length, status: responses.length ? "completed" : "not_started" };
           });
-          onUse(data.filename, { students, summary: { assigned: students.length, started: responded.length, completed: responded.length, responses: students.reduce((sum, s) => sum + s.response_count, 0) } });
-        }}>Use these responses in this course</button>}
-        {selected.map(i => <details key={i}><summary><strong>{data.headers[i]}</strong> · {data.rows.filter(r=>r[i].trim()).length} responses</summary><ol>{data.rows.map((r,n)=>r[i].trim() ? <li key={n}><strong>Record {n+1}</strong><p style={{whiteSpace:"pre-wrap"}}>{r[i]}</p></li> : null)}</ol></details>)}
-        {grades && matches && gradeColumn >= 0 && <><h3>Grades alongside reflections</h3><p>Grades are shown as provided. Blank grades are missing, not zero. These records do not establish that a grade caused a particular reflection.</p><p><strong>{grades.headers[gradeColumn]}</strong>{grades.points?.[gradeColumn]?.trim() ? ` · Points possible: ${grades.points[gradeColumn]}` : ""}</p>
-          <div style={{overflowX:"auto"}}><table><thead><tr><th>Record</th><th>Match status</th><th>Grade</th>{selected.map(i=><th key={i}>{data.headers[i]}</th>)}</tr></thead><tbody>{data.rows.map((row,n)=><tr key={n}><td>{n+1}</td><td>{matches[n].status}</td><td>{matches[n].grade ? matches[n].grade[gradeColumn]?.trim() || "Not provided" : "Not matched"}</td>{selected.map(i=><td key={i} style={{whiteSpace:"pre-wrap",minWidth:"12rem"}}>{row[i] || "No response"}</td>)}</tr>)}</tbody></table></div>
-        </>}
-      </div>}
+          onUse(reflectionName.trim() || data.filename, { students, summary: { assigned: students.length, started: responded.length, completed: responded.length, responses: students.reduce((sum, s) => sum + s.response_count, 0) } });
+        }}>{useLabel}</button>}
+        <div className="aid-question-list">
+          {selected.map(i => <details className="aid-question-card" key={i}>
+            <summary><strong>{data.headers[i]}</strong><span>{data.rows.filter(row => row[i].trim()).length} responses</span></summary>
+            <ol>{data.rows.map((row, n) => row[i].trim() ? <li key={n}><strong>Record {n + 1}</strong><p>{row[i]}</p></li> : null)}</ol>
+          </details>)}
+        </div>
+        {grades && matches && gradeColumn >= 0 && <div className="aid-preview-grades"><h3>Grades alongside reflections</h3><p>Grades are shown as provided. Blank grades are missing, not zero. These records do not establish that a grade caused a particular reflection.</p><p><strong>{grades.headers[gradeColumn]}</strong>{/^\d+(?:\.\d+)?$/.test(grades.points?.[gradeColumn]?.trim() || "") ? ` · Points possible: ${grades.points[gradeColumn]}` : ""}</p>
+          <div className="aid-preview-table" tabIndex={0} role="region" aria-label="Grades and responses"><table><thead><tr><th>Record</th><th>Match status</th><th>Grade</th>{selected.map(i=><th key={i}>{data.headers[i]}</th>)}</tr></thead><tbody>{data.rows.map((row,n)=><tr key={n}><td>{n+1}</td><td>{matches[n].status}</td><td>{matches[n].grade ? matches[n].grade[gradeColumn]?.trim() || "Not provided" : "Not matched"}</td>{selected.map(i=><td key={i} style={{whiteSpace:"pre-wrap",minWidth:"12rem"}}>{row[i] || "No response"}</td>)}</tr>)}</tbody></table></div>
+        </div>}
+      </section>}
     </>}
   </section>;
 }

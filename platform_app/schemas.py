@@ -17,11 +17,6 @@ from pydantic import (
 )
 
 
-class SelfDirectedResearchChoice(BaseModel):
-    choice: Literal['yes', 'no']
-    notice_version: str = Field(min_length=1, max_length=80)
-
-
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -71,14 +66,16 @@ class SocraticLearningStep(StrictModel):
     goal: str = Field(min_length=8, max_length=500)
     scenario: str = Field(default="", max_length=700)
     question: str = Field(default="", max_length=500)
-    evidence_quote: str = Field(min_length=12, max_length=350)
-    source_chunk_id: str = Field(min_length=1, max_length=150)
+    evidence_quote: str = Field(default="", max_length=350)
+    source_chunk_id: str = Field(default="", max_length=150)
     source_file: str = Field(default="", max_length=255)
     checks: list[SocraticStepCheck] = Field(default_factory=list, max_length=2)
 
 class SocraticConfig(StrictModel):
     scope_mode: Literal["assignment", "keywords"] = "assignment"
-    guidance_mode: Literal["basic", "guided"] = "basic"
+    guidance_mode: Literal["basic", "guided"] = "guided"
+    tutor_mode: Literal["jarvis", "socrates"] = "socrates"
+    step_surveys: dict[str, dict] = Field(default_factory=dict, max_length=100)
     keywords: list[str] = Field(default_factory=list, max_length=8)
     optional_keywords: list[str] = Field(default_factory=list, max_length=48)
     dismissed_keywords: list[str] = Field(default_factory=list, max_length=500)
@@ -94,6 +91,8 @@ class SocraticConfig(StrictModel):
     def infer_legacy_guidance_mode(cls, data):
         if isinstance(data, dict):
             data = {key: value for key, value in data.items() if key != "minimum_messages"}
+            if data.get("tutor_mode") == "javis":
+                data["tutor_mode"] = "jarvis"
             if "guidance_mode" not in data:
                 data["guidance_mode"] = "guided" if data.get("learning_steps") else "basic"
         return data
@@ -145,8 +144,6 @@ class DebateConfig(StrictModel):
 
 
 class SelfDirectedConfig(StrictModel):
-    starting_point: str = Field(default="", max_length=2000)
-    ending_point: str = Field(default="", max_length=4000)
     custom_questions: list[str] = Field(default_factory=list, max_length=50)
     document_ids: list[str] = Field(default_factory=list, max_length=100)
     prompt: str = Field(default="", max_length=10000)
@@ -154,6 +151,7 @@ class SelfDirectedConfig(StrictModel):
 
 
 class ReflectionConfig(StrictModel):
+    step_surveys: dict[str, dict] = Field(default_factory=dict, max_length=100)
     document_ids: list[str] = Field(default_factory=list, max_length=100)
     module_type: Literal["topic_based", "milestone_based"] = "topic_based"
     required_topics: list[str] = Field(default_factory=list, max_length=100)

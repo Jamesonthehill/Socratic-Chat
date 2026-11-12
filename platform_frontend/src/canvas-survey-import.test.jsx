@@ -20,7 +20,7 @@ test("imports the supplied reflection shape, excludes identities, and counts ans
   expect(await screen.findByText("reflection.csv")).toBeInTheDocument();
   expect(screen.getByLabelText("ID")).not.toBeChecked();
   await user.click(screen.getByRole("button", {name:"Review imported responses"}));
-  expect(screen.getByText(/records contain responses/)).toHaveTextContent("1 records contain responses");
+  expect(screen.getByText(/records contain responses/)).toHaveTextContent("1 of 2 records contain responses");
   expect(screen.getByText("Writing code, from scratch")).toBeInTheDocument();
   expect(screen.queryByText("a@example.edu")).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", {name:"Clear imported data"}));

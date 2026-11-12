@@ -10,7 +10,7 @@ from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from psycopg.types.json import Jsonb
 
 from app import auth, db, settings
@@ -19,7 +19,6 @@ from platform_app import canvas_lms, engines, store, evidence_diagram, step_chec
 from platform_app.schemas import (
     ActionInput,
     SelfDirectedStudyInput, SelfDirectedQuizInput, SelfDirectedMessageInput, SelfDirectedTaskInput, SelfDirectedLearningTurn,
-    SelfDirectedResearchChoice,
     AssignmentInput,
     CanvasCourseRequest,
     CanvasCredentials,
@@ -58,10 +57,16 @@ class PublishedStepSettings(BaseModel):
 
 
 class PublishedSocraticSettingsInput(BaseModel):
+    tutor_mode: Literal["jarvis", "socrates"] = "socrates"
     instructions: str = Field(max_length=10000)
     prompt: str = Field(max_length=10000)
     minimum_step_questions: int = Field(ge=1, le=10)
     learning_steps: list[PublishedStepSettings] = Field(min_length=1, max_length=10)
+
+    @field_validator("tutor_mode", mode="before")
+    @classmethod
+    def normalize_legacy_tutor_name(cls, value):
+        return "jarvis" if value == "javis" else value
 
 
 def user(request: Request):
@@ -130,18 +135,7 @@ def socratic_step_source(item, step):
 
 def step_question_count(messages, step_started_at_message_count):
     """Count distinct tutor questions shown in the current guided step."""
-    start = max(0, int(step_started_at_message_count or 1) - 1)
-    questions = set()
-    for message in messages[start:]:
-        if message.get("role") != "assistant":
-            continue
-        question = str(message.get("next_thinking_step") or "").strip()
-        if not question:
-            matches = re.findall(r"[^\n.!?]*\?", str(message.get("content") or ""))
-            question = matches[-1].strip() if matches else ""
-        if question:
-            questions.add(question.casefold())
-    return len(questions)
+    return step_check.count_step_questions(messages, step_started_at_message_count)
 
 
 def public_assignment(item, manage=False):
@@ -173,7 +167,6 @@ def public_assignment(item, manage=False):
                         "title": step["title"], "goal": step["goal"],
                         "source_file": step.get("source_file", ""),
                         "source": socratic_step_source(item, step),
-                        "checks": [step_check.public_check(check) for check in (step.get("checks") or [])],
                     }
                     for step in (cfg.get("learning_steps") or []) if guided
                 ],
@@ -412,8 +405,8 @@ def reflection_analysis(assignment_id: UUID, account=Depends(professor)):
     """A course instructor's read-only view of saved Reflection attempts."""
     with store.connection() as conn:
         assignment = get_assignment(conn, assignment_id, account, manage=True)
-        if assignment["tool"] != "reflections":
-            raise HTTPException(422, "Choose a Reflection assignment to analyze.")
+        if assignment["tool"] not in {"reflections", "socratic"}:
+            raise HTTPException(422, "Choose a Reflection or Socratic assignment to analyze.")
         rows = conn.execute("""SELECT u.id AS student_id, u.display_name, u.username,
                 t.status, t.messages, t.result, t.completed_at
             FROM assignment_recipients_platform r
@@ -608,6 +601,7 @@ def update_published_socratic_settings(assignment_id: UUID, body: PublishedSocra
             raise HTTPException(422, "Keep the published learning path's step count and sources.")
         edited_steps = [{**saved, **edited.model_dump()} for saved, edited in zip(saved_steps, body.learning_steps)]
         updates = {"prompt": body.prompt,
+                   "tutor_mode": body.tutor_mode,
                    "minimum_step_questions": body.minimum_step_questions,
                    "learning_steps": edited_steps}
         updated_snapshot = {**snapshot, "config": {**{k: v for k, v in snapshot_config.items() if k != "minimum_messages"}, **updates}}
@@ -718,6 +712,43 @@ def start(assignment_id: UUID, account=Depends(user)):
         return public_attempt(attempt)
 
 
+@router.post("/assignments/{assignment_id}/resume-question")
+def resume_socratic_question(assignment_id: UUID, account=Depends(user)):
+    """Restore a paused tutor question after a student-led subtopic detour."""
+    with store.locked_attempt(assignment_id, account["user_id"]) as (conn, attempt):
+        assignment = get_assignment(conn, assignment_id, account)
+        if not attempt or assignment["tool"] != "socratic" or attempt["status"] == "completed":
+            raise HTTPException(409, "Start an active Socratic assignment first.")
+        state = dict((attempt.get("engine_state") or {}).get("socratic") or {})
+        detour = state.get("learning_detour") or {}
+        question = str(detour.get("question") or "").strip()
+        if not question or int(detour.get("step_index") or 0) != int(state.get("learning_step_index") or 0):
+            raise HTTPException(409, "There is no paused tutor question to return to.")
+        steps = ((assignment.get("snapshot") or {}).get("config") or {}).get("learning_steps") or []
+        index = int(state.get("learning_step_index") or 0)
+        scenario = str(detour.get("scenario") or (
+            steps[index].get("scenario") if 0 <= index < len(steps) else ""
+        ) or "").strip()
+        scenario_reminder = " ".join(re.split(r"(?<=[.!?])\s+", scenario)[:2])
+        state.pop("learning_detour", None)
+        state["next_thinking_step"] = question
+        for key in ("learning_topic", "stable_concept", "active_concept"):
+            if detour.get(key):
+                state[key] = detour[key]
+            else:
+                state.pop(key, None)
+        attempt["engine_state"]["socratic"] = state
+        attempt["messages"].append({
+            "role": "assistant",
+            "content": "\n\n".join(part for part in (
+                "Okay, let’s apply what you just learned.", scenario_reminder, question,
+            ) if part),
+            "next_thinking_step": question,
+        })
+        store.save_attempt(conn, attempt)
+        return public_attempt(attempt)
+
+
 @router.post("/assignments/{assignment_id}/next-step")
 def next_socratic_step(assignment_id: UUID, account=Depends(user)):
     """Advance the learner's saved path only after they have discussed this step."""
@@ -740,8 +771,6 @@ def next_socratic_step(assignment_id: UUID, account=Depends(user)):
         minimum_questions = int(config.get("minimum_step_questions") or 1)
         if step_question_count(attempt["messages"], since) < minimum_questions:
             raise HTTPException(409, f"Discuss at least {minimum_questions} tutor question(s) in this step before continuing.")
-        if steps[index].get("checks") and (state.get("step_check") or {}).get("status") not in {"passed", "continued_with_support"}:
-            raise HTTPException(409, "Complete the step check or choose Continue to next step after two attempts.")
         index += 1
         step = steps[index]
         state.update({
@@ -752,6 +781,8 @@ def next_socratic_step(assignment_id: UUID, account=Depends(user)):
         state.pop("stable_concept", None)
         state.pop("active_concept", None)
         state.pop("step_check", None)
+        state.pop("step_readiness", None)
+        state.pop("learning_detour", None)
         scenario = str(step.get("scenario") or "").strip()
         question = str(step.get("question") or "").strip()
         if not scenario:
@@ -876,6 +907,18 @@ def apply_state(attempt, state, content=None):
     attempt["engine_state"].update(state)
 
 
+def merge_inline_clarification(attempt, original_question: str, clarification: str) -> bool:
+    """Keep a student's clarification with the question it clarifies in one chat message."""
+    messages = attempt.get("messages") or []
+    if not messages or messages[-1].get("role") != "user":
+        return False
+    original = str(messages[-1].get("content") or "")
+    if original != original_question:
+        return False
+    messages[-1]["content"] = f"{original}\n\nClarification: {clarification.strip()}"
+    return True
+
+
 @router.post("/assignments/{assignment_id}/messages")
 def message(assignment_id: UUID, body: MessageInput, account=Depends(user)):
     with store.locked_attempt(assignment_id, account["user_id"]) as (conn, attempt):
@@ -900,16 +943,22 @@ def message(assignment_id: UUID, body: MessageInput, account=Depends(user)):
             message_options["clarification_text"] = True
         if body.concept_check_option is not None:
             message_options["concept_check_option"] = body.concept_check_option
-        inline_clarification_choice = (
-            body.clarification_index is not None
-            and bool(attempt.get("engine_state", {}).get("socratic", {}).get("pending_clarification", {}).get("inline"))
+        pending_clarification = attempt.get("engine_state", {}).get("socratic", {}).get("pending_clarification") or {}
+        inline_clarification_reply = bool(
+            (body.clarification_index is not None or body.clarification_text)
+            and pending_clarification.get("inline")
         )
         state = engines.message(
             assignment, attempt, body.message, rid, **message_options
         )
         quiz_only = state.pop("quiz_only", False)
         student_message = state.pop("student_message", body.message)
-        apply_state(attempt, state, None if quiz_only or inline_clarification_choice else student_message)
+        merged_clarification = inline_clarification_reply and merge_inline_clarification(
+            attempt, str(pending_clarification.get("original_question") or ""), body.message,
+        )
+        apply_state(attempt, state, None if quiz_only or merged_clarification or (
+            inline_clarification_reply and body.clarification_index is not None
+        ) else student_message)
         attempt["processed_requests"].append(rid)
         store.save_attempt(conn, attempt)
         return public_attempt(attempt)
@@ -1010,8 +1059,6 @@ def socratic_reflection(assignment_id: UUID, body: SocraticReflectionInput, acco
             minimum_questions = int(config.get("minimum_step_questions") or 1)
             if step_question_count(attempt["messages"], state.get("step_started_at_message_count")) < minimum_questions:
                 raise HTTPException(409, f"Discuss at least {minimum_questions} tutor question(s) in the final step before summarizing.")
-            if steps[-1].get("checks") and (state.get("step_check") or {}).get("status") not in {"passed", "continued_with_support"}:
-                raise HTTPException(409, "Finish the final step check before summarizing.")
         rid = str(body.request_id)
         if rid in attempt["processed_requests"] or (attempt["engine_state"].get("socratic") or {}).get("completion_summary"):
             return public_attempt(attempt)
@@ -1067,22 +1114,11 @@ def student(request: Request, account=Depends(user)):
     if int(account["authority_level"]) <= 1:
         raise HTTPException(403, "Student access is required.")
     assignment_id = request.path_params.get("assignment_id")
-    sdl_assignment = None
     if assignment_id:
         with store.connection() as conn:
             linked = conn.execute("SELECT id FROM assignments_platform WHERE id::text=%s", (assignment_id,)).fetchone()
             if linked:
-                item = get_assignment(conn, linked["id"], account)
-                if item["tool"] == "self-directed-learning":
-                    sdl_assignment = str(item["id"])
-    if sdl_assignment:
-        from platform_app import shared_rag
-        # Membership, publication and recipient checks above remain authoritative.
-        # Canvas students can first join a course after the lesson was published.
-        shared_rag.pipeline("POST", f"/internal/platform/lessons/{sdl_assignment}/enroll", json={
-            "id": str(account["user_id"]), "email": account["email"],
-            "display_name": account.get("display_name") or account["username"],
-        })
+                get_assignment(conn, linked["id"], account)
     return account
 
 
@@ -1126,12 +1162,6 @@ def self_directed_assignments(account=Depends(student)):
 def self_directed_learning_turn(assignment_id: str, body: SelfDirectedLearningTurn, account=Depends(student)):
     student_id = self_directed_identity(account)
     return engines.self_directed_call(student_id, "POST", f"/api/student/assignments/{assignment_id}/learning-turn", json=body.model_dump())
-
-
-@router.post('/self-directed/assignments/{assignment_id}/research-choice')
-def self_directed_research_choice(assignment_id: str, body: SelfDirectedResearchChoice, account=Depends(student)):
-    student_id = self_directed_identity(account)
-    return engines.self_directed_call(student_id, 'POST', f'/api/student/assignments/{assignment_id}/research-choice', json=body.model_dump())
 
 
 
@@ -1224,3 +1254,8 @@ def submit_self_directed_task(
         f"/api/student/assignments/{assignment_id}/submit-task",
         json=body.model_dump(),
     )
+
+
+# Surveys are opt-in data collection; they never alter the tutor's readiness or quiz state.
+from platform_app.step_surveys import register_step_surveys
+register_step_surveys(router, get_assignment, professor, user, socratic_step_source)

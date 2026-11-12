@@ -13,28 +13,44 @@ from app.schemas import ChatMessage, ClarificationOption
 
 
 class MessageClassifierTests(unittest.TestCase):
+    def test_named_course_term_defaults_to_assignment_scope(self) -> None:
+        history = [ChatMessage(role="assistant", content="The Sprint Goal guides the team's work.")]
+        ambiguous = classifier._classification_from_observation(
+            message_role="ambiguous",
+            concepts=("sprint goal",),
+            clarification_question="In this assignment or generally?",
+            clarification_options=(
+                ClarificationOption(label="In this assignment", message_role="direct_answer_request",
+                                    resolved_message="Explain the Sprint Goal in this assignment."),
+                ClarificationOption(label="Generally", message_role="direct_answer_request",
+                                    resolved_message="Explain the Sprint Goal generally."),
+            ),
+        )
+        with patch("app.classifier._classify_with_llm", new_callable=AsyncMock, return_value=ambiguous):
+            result = asyncio.run(classify_message("what's the sprint goal?", history))
+        self.assertEqual(result.message_role, "learning_question")
+        self.assertFalse(result.needs_clarification)
+        self.assertEqual(result.target_concepts, ("sprint goal",))
+
     def test_stray_trailing_quote_does_not_turn_ok_into_an_answer(self) -> None:
         history = [ChatMessage(role="assistant", content="What should the reviewer check first?")]
         result = classifier._rule_classification("ok'", history)
         self.assertEqual(result.message_role, "acknowledgement")
 
-    def test_model_can_clarify_an_acknowledgement_after_an_open_question(self) -> None:
+    def test_model_ambiguity_does_not_pause_an_acknowledgement(self) -> None:
         history = [ChatMessage(role="assistant", content="What should the reviewer check first?")]
-        ambiguous = classifier._classification_from_observation(
-            message_role="ambiguous",
-            clarification_question="Are you ready to answer, or would a hint help?",
-            clarification_options=(
-                ClarificationOption(label="Please repeat it", message_role="support_request",
-                                    resolved_message="Please repeat the review question."),
-                ClarificationOption(label="I need a hint", message_role="support_request",
-                                    resolved_message="Please give one hint about the review question."),
-            ),
+        fallback = classifier._rule_classification("ok", history)
+        ambiguous = classifier._validated_llm_classification(
+            {"message_role": "ambiguous", "target_concepts": [],
+             "retrieval_query": "review question", "retrieval_subqueries": [],
+             "operational_request": "none"},
+            "ok", fallback,
         )
         with patch("app.classifier._classify_with_llm", new_callable=AsyncMock, return_value=ambiguous):
             result = asyncio.run(classify_message("ok", history, "Code review"))
-        self.assertTrue(result.needs_clarification)
-        self.assertEqual(result.message_role, "ambiguous")
-        self.assertEqual(len(result.clarification_options), 2)
+        self.assertFalse(result.needs_clarification)
+        self.assertEqual(result.message_role, "acknowledgement")
+        self.assertEqual(result.clarification_options, ())
 
     def test_clarification_options_do_not_add_a_fixed_support_choice(self) -> None:
         options = classifier._validated_clarification_options({"clarification_options": [
@@ -163,7 +179,7 @@ class MessageClassifierTests(unittest.TestCase):
         self.assertFalse(result.needs_clarification)
         self.assertIsNone(result.clarification_question)
 
-    def test_explicitly_ambiguous_question_still_requests_clarification(self) -> None:
+    def test_unclear_legacy_label_continues_as_a_question(self) -> None:
         message = "Can you explain it?"
         result = classifier._validated_llm_classification(
             {
@@ -176,9 +192,9 @@ class MessageClassifierTests(unittest.TestCase):
             message,
             classifier._rule_classification(message, []),
         )
-        self.assertEqual(result.conversation_action, "clarify")
-        self.assertTrue(result.needs_clarification)
-        self.assertEqual(result.clarification_question, "Which course concept do you mean?")
+        self.assertEqual(result.conversation_action, "continue")
+        self.assertFalse(result.needs_clarification)
+        self.assertEqual(result.message_role, "learning_question")
 
     def test_question_about_previous_tutor_wording_is_not_clarified_again(self) -> None:
         message = 'what is the "his original approach meaning" in the context'
@@ -298,11 +314,10 @@ class MessageClassifierTests(unittest.TestCase):
         self.assertEqual(result.target_concepts, ("Git", "GitHub"))
         self.assertNotIn("question_type", classifier.CLASSIFICATION_SCHEMA["properties"])
 
-    def test_short_ambiguous_message_requests_clarification(self) -> None:
+    def test_short_message_continues_to_tutor(self) -> None:
         result = self.classify_with_rules("configuration")
-        self.assertTrue(result.needs_clarification)
-        self.assertEqual(result.route, "unclear")
-        self.assertIn("course concept", result.clarification_question or "")
+        self.assertFalse(result.needs_clarification)
+        self.assertEqual(result.route, "learning")
 
     def test_classifier_keeps_all_relevant_concepts_without_a_topic_list(self) -> None:
         message = "How do energy, water, light, carbon, and temperature interact?"
@@ -492,6 +507,26 @@ class MessageClassifierTests(unittest.TestCase):
         self.assertEqual(result.conversation_action, "continue")
         self.assertTrue(result.has_substantive_claim)
 
+    def test_let_me_get_this_straight_keeps_confirmation_role(self) -> None:
+        message = "so let me get this straight, the sprint backlog contains: sprint goal, product backlog, and plan?"
+        history = [ChatMessage(role="assistant", content="How would you adjust the Sprint Goal for mobile signup?")]
+        fallback = classifier._rule_classification(message, history)
+        result = classifier._validated_llm_classification(
+            {
+                "message_role": "confirmation_request",
+                "target_concepts": ["Sprint Backlog", "Sprint Goal", "Product Backlog", "plan"],
+                "missing_context": None,
+                "clarification_question": None,
+                "clarification_options": [],
+                "retrieval_query": "Sprint Backlog components",
+                "retrieval_subqueries": [],
+                "operational_request": "none",
+            },
+            message, fallback,
+        )
+        self.assertEqual(result.message_role, "confirmation_request")
+        self.assertEqual(result.dialogue_status, "requesting_confirmation")
+
     def test_llm_cannot_treat_plain_student_answer_as_confirmation_request(self) -> None:
         message = "It reduces code conflicts in a team."
         fallback = classifier._rule_classification(
@@ -618,8 +653,9 @@ class MessageClassifierTests(unittest.TestCase):
         self.assertNotIn("student_claim", properties)
         self.assertNotIn("support_level", properties)
         self.assertIn("retrieval_query", properties)
-        self.assertIn("clarification_question", properties)
-        self.assertIn("clarification_options", properties)
+        self.assertNotIn("clarification_question", properties)
+        self.assertNotIn("clarification_options", properties)
+        self.assertNotIn("ambiguous", properties["message_role"]["enum"])
         for controller_field in (
             "route", "conversation_state", "dialogue_status", "conversation_action",
             "needs_clarification", "understanding_level",
@@ -651,7 +687,7 @@ class MessageClassifierTests(unittest.TestCase):
         )
         self.assertTrue(answer.assessment_candidate)
 
-    def test_mixed_uncertainty_and_tentative_answer_can_request_clickable_clarification(self) -> None:
+    def test_mixed_uncertainty_and_tentative_answer_continues_as_support(self) -> None:
         message = "I'm not sure. Perhaps, any updates from me?"
         history = [
             ChatMessage(role="assistant", content="What specific change would you add to the repository?"),
@@ -677,11 +713,9 @@ class MessageClassifierTests(unittest.TestCase):
         with patch("app.classifier._classify_with_llm", new_callable=AsyncMock, return_value=ambiguous):
             result = asyncio.run(classify_message(message, history, learning_topic="What is code review?"))
 
-        self.assertEqual(result.message_role, "ambiguous")
-        self.assertTrue(result.needs_clarification)
-        self.assertEqual([option.message_role for option in result.clarification_options], [
-            "student_answer", "support_request",
-        ])
+        self.assertEqual(result.message_role, "support_request")
+        self.assertFalse(result.needs_clarification)
+        self.assertEqual(result.clarification_options, ())
         self.assertFalse(result.assessment_candidate)
 
     def test_plain_uncertainty_remains_a_support_request(self) -> None:

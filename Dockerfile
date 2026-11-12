@@ -16,6 +16,7 @@ COPY requirements.txt ./
 COPY Socratic-Chat/backend/requirements.txt Socratic-Chat/backend/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 COPY platform_app/ platform_app/
+COPY vendor/reflection_analysis/ vendor/reflection_analysis/
 COPY scripts/ scripts/
 COPY Socratic-Chat/backend/app/ Socratic-Chat/backend/app/
 COPY Socratic-Chat/frontend/ Socratic-Chat/frontend/

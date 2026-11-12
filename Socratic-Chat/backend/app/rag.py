@@ -12,7 +12,7 @@ from time import monotonic
 from typing import Any
 
 from app import db, settings
-from app.llm_client import chat_completion
+from app.llm_client import socratic_chat_completion as chat_completion
 from app.office_documents import OFFICE_SUFFIXES, OfficeDocumentError, parse_office_document
 from app.answer_evaluation import AnswerEvaluation, QualitativeFeedback, evaluation_tutor_instruction
 from app.classifier import MessageClassification, is_contextual_meaning_request

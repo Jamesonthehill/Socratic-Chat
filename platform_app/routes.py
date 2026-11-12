@@ -758,9 +758,9 @@ def learning_journey(assignment_id: UUID, account=Depends(user)):
         assignment = get_assignment(conn, assignment_id, account)
         if assignment["tool"] != "socratic":
             raise HTTPException(404, "Learning journey is not available for this activity.")
-        own = conn.execute("SELECT engine_state FROM assignment_attempts_platform WHERE assignment_id=%s AND student_id=%s",
+        own = conn.execute("SELECT engine_state, status FROM assignment_attempts_platform WHERE assignment_id=%s AND student_id=%s",
                            (assignment_id, account["user_id"])).fetchone()
-        if not own or not ((own["engine_state"] or {}).get("socratic") or {}).get("completion_summary"):
+        if not own or (own["status"] != "completed" and not ((own["engine_state"] or {}).get("socratic") or {}).get("completion_summary")):
             raise HTTPException(409, "Finish your learning summary to view the class comparison.")
         peers = conn.execute("""SELECT t.engine_state FROM assignment_attempts_platform t
             JOIN assignment_recipients_platform r ON r.assignment_id=t.assignment_id AND r.student_id=t.student_id

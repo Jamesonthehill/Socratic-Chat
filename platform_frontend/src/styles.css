@@ -6131,7 +6131,7 @@ html[data-theme="dark"] .learning-step-review .learning-review-header h3 { color
 .journey-chart-live { display: inline-flex; align-items: center; gap: 6px; color: #52697a; font-size: 11px; }
 .journey-chart-live i { width: 6px; height: 6px; background: #15957f; border-radius: 50%; box-shadow: 0 0 0 4px #15957f14; }
 .journey-difficulty > p, .journey-difficulty > small { color: #596a7d; font-size: 12px; line-height: 1.6; }
-.journey-chart-legend { display: flex; gap: 20px; margin: 10px 0; font-size: 12px; }
+.journey-chart-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 10px 0; font-size: 12px; }
 .journey-chart-legend span { display: flex; gap: 7px; align-items: center; }
 .journey-chart-legend i { width: 10px; height: 10px; border-radius: 4px; }
 .journey-chart-grid { display: grid; grid-template-columns: 1fr; gap: 8px; margin: 12px 0; }
@@ -6149,6 +6149,8 @@ html[data-theme="dark"] .learning-step-review .learning-review-header h3 { color
 .journey-chart-bar > .is-your-difficulty { position: relative; box-shadow: inset 0 0 0 2px #6550d8; border-radius: 6px; gap: 5px; }
 .journey-you-marker { font-size: 9px; line-height: 1.3; color: #fff; background: #6550d8; padding: 2px 4px; border-radius: 4px; flex-shrink: 0; }
 .difficulty-easy { background: #88d6bf; }
+.difficulty-somewhat_easy { background: #b8dfa7; }
+.difficulty-somewhat_hard { background: #efb49f; }
 .difficulty-moderate { background: #f3cf7d; }
 .difficulty-hard { background: #c4b0f2; }
 .difficulty-none { background: #e8ecf2; }

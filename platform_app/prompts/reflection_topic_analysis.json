@@ -1,8 +1,8 @@
 {
     "task": "Annotate each reflection with topic labels based on the challenges a student identifies in their reflections. This is a multi-label classification task where you may use multiple labels if mutliple labels are present. However, try to use as few labels as possible, only using multiple if one label is not sufficient. You will also be asked to explain your selections. This task answers the question 'What challenges do students discuss in reflections?'",
-  
+
     "context": "This is a set of reflections taken from an undergraduate computer science course where students are taught the fundamentals of software engineering. In the course, students complete programming assignments, short activities in class, complete a midterm, and a final group project. The course is taught in Python and includes theory like requirements analysis, design patterns, and testing, as well as practical skills like version control, database management, and FastAPI.",
-  
+
     "input_format": "You receive a string list of question-answer reflection pairs. The prompt will be in the format 'Q1: question\nA1: answer\nQ2: question\nA2: answer\n...'",
     "labels_and_descriptions": {
       "instructions": "You will perform a multi-label classification task for student reflections. Select at least one label from the 'primary_labels' category that best represents the main challenge described in the reflection. Even if multiple challenges are mentioned, you may choose more than one label for the 'primary_labels_selected' field.",

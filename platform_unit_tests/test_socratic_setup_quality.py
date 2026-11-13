@@ -55,9 +55,9 @@ def test_setup_retries_when_a_scene_explains_the_answer(monkeypatch):
     ))
     assert len(calls) == 2
     assert requests[0]["temperature"] == 0
-    assert "use that example and preserve its actors, facts, and limits" in calls[0][0]
-    assert "do not invent people, events" in calls[0][0]
-    assert "rather than continuing an invented story" in calls[0][0]
+    assert "preserve its actors, facts, and limits" in calls[0][0]
+    assert "course claims and assignment requirements must be supported" in calls[0][0]
+    assert "keep that setting across steps and introduce a new decision" in calls[0][0]
     assert "answer the question before the student can reason" in calls[1][-1]
     assert result["learning_steps"][0]["scenario"] == scene
     assert "explanatory_steps_needing_review" not in result

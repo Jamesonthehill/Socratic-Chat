@@ -1,3 +1,4 @@
+import { STEP_DIFFICULTY_OPTIONS } from "./stepDifficulty";
 import SocraticLearningSummary from "./SocraticLearningSummary";
 import { Children, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -897,18 +898,40 @@ export function ImprovementConsentDialog({ busy, complete = false, error, onChoo
   </dialog>;
 }
 
-function StepDifficultyDialog({ busy, onChoose, onClose }) {
+function StepDifficultyDialog({ busy, error, stepTitle, onChoose, onClose }) {
   const dialog = useRef(null);
+  const lastRatingIndex = STEP_DIFFICULTY_OPTIONS.length - 1;
+  const [ratingIndex, setRatingIndex] = useState(lastRatingIndex / 2);
+  const rating = STEP_DIFFICULTY_OPTIONS[ratingIndex];
   useEffect(() => { dialog.current.showModal(); }, []);
   return <dialog ref={dialog} className="step-difficulty-dialog" aria-labelledby="step-difficulty-title"
     onClose={onClose} onCancel={event => { if (busy) event.preventDefault(); }}>
-    <h2 id="step-difficulty-title">How difficult was this step for you?</h2>
-    <div className="step-difficulty-options">
-      {[["easy", "Easy"], ["moderate", "Moderate"], ["hard", "Hard"]].map(([value, label]) =>
-        <button key={value} type="button" disabled={busy} onClick={() => onChoose(value)}>{label}</button>)}
+    <header className="step-difficulty-heading">
+      <h2 id="step-difficulty-title">How difficult was this step for you?</h2>
+      {stepTitle && <p>{stepTitle}</p>}
+    </header>
+    <div className={`step-difficulty-gauge is-${rating.value}`} style={{ "--gauge-fill": `${100 * ratingIndex / lastRatingIndex}%` }}>
+      <div className="step-difficulty-readout">
+        <strong>{rating.label}</strong>
+        <p>{rating.description}</p>
+      </div>
+      <input className="step-difficulty-slider" type="range" min={0} max={lastRatingIndex} step={1}
+        value={ratingIndex} disabled={busy} aria-label="Step difficulty" aria-valuetext={rating.label}
+        onChange={event => setRatingIndex(event.currentTarget.valueAsNumber)} />
+      <div className="step-difficulty-scale" aria-hidden="true">
+        {STEP_DIFFICULTY_OPTIONS.map(({ value, label }) => (
+          <span key={value} className={value === rating.value ? "is-current" : undefined}>{label}</span>
+        ))}
+      </div>
     </div>
-    <button className="secondary" type="button" disabled={busy} onClick={() => onChoose("skipped")}>Skip</button>
-    {busy && <p role="status">Saving your response…</p>}
+    <div className="step-difficulty-footer">
+      <div className="step-difficulty-actions">
+        <button className="secondary compact" type="button" disabled={busy} onClick={() => onChoose("skipped")}>Skip</button>
+        <button type="button" disabled={busy} onClick={() => onChoose(rating.value)}>Save rating</button>
+      </div>
+      {busy && <p role="status">Saving your response…</p>}
+      {error && <p role="alert">{error}</p>}
+    </div>
   </dialog>;
 }
 
@@ -1533,7 +1556,9 @@ export default function StudentWorkspace({ user }) {
     assignment.student_config?.module_type === "milestone_based";
   return (
     <>
-      {difficultyOpen && <StepDifficultyDialog busy={busy} onChoose={saveDifficultyAndContinue} onClose={() => setDifficultyOpen(false)} />}
+      {difficultyOpen && <StepDifficultyDialog busy={busy} error={error}
+        stepTitle={assignment.student_config?.learning_steps?.[activeLearningStep]?.title}
+        onChoose={saveDifficultyAndContinue} onClose={() => setDifficultyOpen(false)} />}
       {consentOpen && <ImprovementConsentDialog busy={busy} complete={consentComplete} error={error} onChoose={submitWithConsent} onClose={() => setConsentOpen(false)} />}
       {submitStarFinale && createPortal(<div className="student-submit-finale" role="status" aria-label="All learning stars earned">
         {submitStarFinale.map((star, index) => <span className="student-submit-flying-star" aria-hidden="true" key={index} style={{
@@ -2187,6 +2212,7 @@ export default function StudentWorkspace({ user }) {
               {assignment.tool === "socratic" && (
                 <SocraticLearningSummary
                   assignmentId={assignment.id}
+                  completed={completed}
                   summary={socratic.completion_summary}
                   messages={attempt.messages}
                   steps={assignment.student_config?.learning_steps || []}

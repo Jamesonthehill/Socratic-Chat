@@ -16,6 +16,7 @@ from psycopg.types.json import Jsonb
 from app import auth, db, settings
 from app.pipeline_logging import reset_event_sink, set_event_sink
 from platform_app import canvas_lms, engines, store, evidence_diagram, step_check, step_metrics
+from platform_app.learning_journey import StepDifficulty
 from platform_app.schemas import (
     ActionInput,
     SelfDirectedStudyInput, SelfDirectedQuizInput, SelfDirectedMessageInput, SelfDirectedTaskInput, SelfDirectedLearningTurn,
@@ -774,7 +775,7 @@ def learning_journey(assignment_id: UUID, account=Depends(user)):
 
 class StepDifficultyInput(BaseModel):
     step_index: int = Field(ge=0)
-    difficulty: Literal["easy", "moderate", "hard", "skipped"]
+    difficulty: StepDifficulty
 
 
 @router.post("/assignments/{assignment_id}/step-difficulty")
@@ -819,12 +820,14 @@ def next_socratic_step(assignment_id: UUID, account=Depends(user)):
         index += 1
         step = steps[index]
         previous_step_state = dict(state)
+        # Legacy attempts begin measurement at the first tracked interaction.
         step_metrics.track(previous_step_state)
         state.update({
             "learning_step_index": index,
             "learning_topic": step["title"],
             "step_started_at_message_count": len(attempt["messages"]) + 1,
         })
+        step_metrics.track(state, previous=previous_step_state)
         state.pop("stable_concept", None)
         state.pop("active_concept", None)
         state.pop("step_check", None)
@@ -840,7 +843,6 @@ def next_socratic_step(assignment_id: UUID, account=Depends(user)):
         elif not question.endswith("?"):
             question = f"{question.rstrip('.!')}?"
         state["next_thinking_step"] = question
-        step_metrics.track(state, previous=previous_step_state)
         attempt["engine_state"]["socratic"] = state
         attempt["messages"].append({
             "role": "assistant",

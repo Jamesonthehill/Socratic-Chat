@@ -8,8 +8,15 @@ export function emphasizeFeedbackReason(text = "") {
   return reason ? text.replace(reason, `**${reason}**`) : text;
 }
 
-export default function SocraticLearningSummary({ summary, messages = [], steps = [], metrics = {}, assignmentId, onUpdateFeedback, busy, onViewOriginal, canViewOriginal }) {
-  if (!summary) return null;
+export default function SocraticLearningSummary({ summary, completed, messages = [], steps = [], metrics = {}, assignmentId, onUpdateFeedback, busy, onViewOriginal, canViewOriginal }) {
+  if (!summary) {
+    return completed && assignmentId && steps.length > 0 ? (
+      <section className="socratic-learning-summary" aria-label="Learning summary" tabIndex={0}>
+        <h2>Your learning journey</h2>
+        <LearningDifficultyChart assignmentId={assignmentId} metrics={metrics} />
+      </section>
+    ) : null;
+  }
   const firstTutor = messages.find(message => message.role === "assistant");
   const originalQuestion = firstTutor?.next_thinking_step || steps[0]?.question || summary.original_question;
   const savedReviews = summary.step_reviews || [];
@@ -41,7 +48,6 @@ export default function SocraticLearningSummary({ summary, messages = [], steps 
     <p className="student-reflection-text">{summary.student_reflection}</p>
     {reviews.length > 0 && <div className="learning-review-section-heading"><div><span>LOOK HOW FAR YOU’VE COME</span><h3>Step-by-step feedback</h3></div><b>{reviews.length} steps</b></div>}
     {!savedReviews.length && onUpdateFeedback && <div className="learning-feedback-update"><p>Your saved summary was created before step-by-step feedback was available.</p><button type="button" disabled={busy} onClick={onUpdateFeedback}>Generate step feedback</button></div>}
-    {savedReviews.length > 0 && onUpdateFeedback && <button className="secondary compact" type="button" disabled={busy} onClick={onUpdateFeedback}>Update tutor feedback</button>}
     {reviews.map(review => <section className="learning-step-review" key={review.step_index}>
       <header className="learning-review-header">
         <span className="learning-review-number" aria-hidden="true">{String(review.step_index + 1).padStart(2, "0")}</span>

@@ -122,9 +122,9 @@ def publish_snapshot(assignment):
     if assignment["tool"] == "reflections":
         cfg = ReflectionConfig.model_validate(config)
         cfg.validate_publish()
-        # Shared document selection is platform metadata. The existing Reflections
-        # engine owns its own configuration schema and is unchanged by this adapter.
-        reflection_config = {k: v for k, v in config.items() if k != "document_ids"}
+        # Document selection and step surveys belong to the platform snapshot.
+        # The Reflection engine accepts only its module configuration fields.
+        reflection_config = cfg.model_dump(exclude={"document_ids", "step_surveys"})
         module = call("reflections", "PUT", f"/internal/platform/modules/{assignment['id']}",
                       json={"name": assignment["title"], "course_id": str(assignment["course_id"]), "config": reflection_config})
         return {"config": config, "module_id": module["id"]}

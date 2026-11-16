@@ -1,0 +1,71 @@
+services:
+  - type: web
+    name: courselab-combined-pilot
+    runtime: docker
+    plan: starter
+    branch: main
+    dockerfilePath: ./Dockerfile.combined
+    dockerContext: .
+    healthCheckPath: /health/combined
+    autoDeployTrigger: off
+    envVars:
+      - key: PLATFORM_SERVICE_TOKEN
+        generateValue: true
+      - key: LLM_PROVIDER
+        value: groq
+      - key: GROQ_API_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      - key: SOCRATIC_TUTOR_PROVIDER
+        value: openai
+      - key: SOCRATIC_TUTOR_MODEL
+        value: gpt-4.1-mini
+      - key: GROQ_CLASSIFIER_MODEL
+        value: openai/gpt-oss-20b
+      - key: GROQ_ANSWER_EVALUATION_MODEL
+        value: openai/gpt-oss-20b
+      - key: DATABASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: AUTH_SESSION_SECRET
+        generateValue: true
+      - key: PLATFORM_DB_SCHEMA
+        value: platform
+      - key: SOCRATIC_DB_SCHEMA
+        value: socratic_chat
+      - key: SHARED_RAG_DB_SCHEMA
+        value: shared_rag
+      - key: AUTH_MODE
+        value: open
+      - key: ALLOW_PASSWORD_LOGIN
+        value: "true"
+      - key: ALLOWED_GOOGLE_DOMAINS
+        value: charlotte.edu
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://jamesonthehill.com,https://www.jamesonthehill.com,https://jamesonthehill.github.io
+      - key: LTI_CANVAS_ISSUER
+        value: https://canvaslite.instructure.com
+      - key: CANVAS_API_ORIGIN
+        value: https://canvaslite.instructure.com
+      - key: LTI_PUBLIC_BASE_URL
+        sync: false
+      - key: LTI11_CONSUMER_KEY
+        sync: false
+      - key: LTI11_SHARED_SECRET
+        sync: false
+      - key: EMBEDDING_PROVIDER
+        value: openai
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: EMBEDDING_DIMENSIONS
+        value: "1536"

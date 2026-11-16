@@ -29,6 +29,7 @@ AI_MODE = os.getenv("ADAPTIVE_AI_MODE", LLM_PROVIDER).lower()
 ALLOW_DEMO_FALLBACK = os.getenv("ADAPTIVE_ALLOW_DEMO_FALLBACK", "false").lower() in {"1", "true", "yes"}
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+SDL_AUTHORING_LLM_PROVIDER = os.getenv("SDL_AUTHORING_LLM_PROVIDER", "").strip().lower()
 OPENAI_AUTHORING_MODEL = os.getenv("OPENAI_AUTHORING_MODEL", OPENAI_CHAT_MODEL)
 OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 PDF_CHUNK_MAX_TOKENS = int(os.getenv("PDF_CHUNK_MAX_TOKENS", "512"))

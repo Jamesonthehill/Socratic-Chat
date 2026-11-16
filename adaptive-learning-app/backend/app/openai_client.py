@@ -28,6 +28,7 @@ from .config import (
     OPENAI_CHAT_MODEL,
     OPENAI_AUTHORING_MODEL,
     OPENAI_EMBEDDING_MODEL,
+    SDL_AUTHORING_LLM_PROVIDER,
 )
 
 
@@ -63,6 +64,20 @@ def _chat_settings() -> tuple[str, str, dict[str, str]]:
             "Content-Type": "application/json",
         }
     return OPENAI_BASE, OPENAI_CHAT_MODEL, _headers()
+
+
+def authoring_ai_mode() -> str:
+    if SDL_AUTHORING_LLM_PROVIDER == "openai":
+        return "openai" if OPENAI_API_KEY else "unavailable"
+    return runtime_ai_mode()
+
+
+def _authoring_settings() -> tuple[str, str, dict[str, str]]:
+    if authoring_ai_mode() == "openai":
+        return OPENAI_BASE, OPENAI_AUTHORING_MODEL, _headers()
+    if authoring_ai_mode() == "unavailable":
+        raise ValueError("SDL authoring requires a configured OpenAI API key.")
+    return _chat_settings()
 
 
 # Switch to local demo behavior only when the configuration explicitly allows it.
@@ -135,7 +150,7 @@ _PRACTICE_AUTHORING_REQUIREMENTS = (
 def _post_authoring_request(client, url, *, headers, json):
     """Retry a Groq rate-limited authoring request once after a short cooldown."""
     response = client.post(url, headers=headers, json=json)
-    if runtime_ai_mode() == "groq" and response.status_code == 429:
+    if authoring_ai_mode() == "groq" and response.status_code == 429:
         try:
             delay = float(response.headers.get("retry-after", ""))
         except ValueError:
@@ -178,11 +193,9 @@ def _strict_schema(value):
 # Returned links are suggestions; the resource-discovery layer verifies them before lesson generation.
 def infer_document_context(material: str, filename: str) -> dict:
     """Derive authoring inputs from the uploaded material for instructor review."""
-    if runtime_ai_mode() not in {"openai", "groq"}:
+    if authoring_ai_mode() not in {"openai", "groq"}:
         raise ValueError("A working AI provider is required to prepare the document for review.")
-    base, model, headers = _chat_settings()
-    if runtime_ai_mode() == "openai":
-        model = OPENAI_AUTHORING_MODEL
+    base, model, headers = _authoring_settings()
     with httpx.Client(timeout=45) as client:
         response = _post_authoring_request(client, f"{base}/chat/completions", headers=headers, json={
             "model": model, "temperature": 0.2, "response_format": {"type": "json_object"},
@@ -207,11 +220,9 @@ def generate_learning_plan(topic: str, course_level: str, study_sources: list[di
     from .schemas import LearningPlan
     if not approved_material.strip() or not objective_descriptions:
         raise ValueError("Provide approved teaching material and learning objectives before generation.")
-    if runtime_ai_mode() not in {"openai", "groq"}:
+    if authoring_ai_mode() not in {"openai", "groq"}:
         raise ValueError("AI content generation is unavailable. Use advanced setup to supply a complete lesson, quiz, and rubrics; no unsupported content was generated.")
-    base, model, headers = _chat_settings()
-    if runtime_ai_mode() == "openai":
-        model = OPENAI_AUTHORING_MODEL
+    base, model, headers = _authoring_settings()
     schema = LearningPlan.model_json_schema()
     supplied_fields = {"material_first", "supplemental_reading_note", "bounded_flow", "starting_point", "ending_point", "prerequisite_resources", "topic", "approved_material", "study_resources", "intended_difficulty", "prerequisite_knowledge", "flow_version", "content_approved", "auto_generated"}
     schema["properties"] = {key: value for key, value in schema["properties"].items() if key not in supplied_fields}
@@ -232,13 +243,13 @@ def generate_learning_plan(topic: str, course_level: str, study_sources: list[di
     schema["$defs"]["QuizQuestion"]["properties"]["distractor_misconceptions"].update(minItems=4, maxItems=4)
     schema = _strict_schema(schema)
     # Groq GPT-OSS supports constrained schema output, just like OpenAI.
-    use_schema = runtime_ai_mode() == "openai" or (runtime_ai_mode() == "groq" and model in {"openai/gpt-oss-120b", "openai/gpt-oss-20b"})
+    use_schema = authoring_ai_mode() == "openai" or (authoring_ai_mode() == "groq" and model in {"openai/gpt-oss-120b", "openai/gpt-oss-20b"})
     response_format = {"type": "json_schema", "json_schema": {"name": "lesson_draft", "schema": schema, "strict": True}} if use_schema else {"type": "json_object"}
     request = {"topic": topic, "course_level": course_level, "approved_material": approved_material,
                "learning_objectives": objective_descriptions, "resources": study_resources,
                "intended_difficulty": intended_difficulty, "prerequisite_knowledge": prerequisite_knowledge,
                "supplemental_reading_excerpts": study_sources or [], "output_schema": schema}
-    if runtime_ai_mode() == "groq" and use_schema:
+    if authoring_ai_mode() == "groq" and use_schema:
         request.pop("output_schema")  # Supplied once via response_format.
         # Keep the complete course document; supplemental web readings are optional.
         request["supplemental_reading_excerpts"] = [
@@ -294,9 +305,7 @@ def generate_learning_plan(topic: str, course_level: str, study_sources: list[di
 def repair_learning_plan(plan: dict, issues: list[str]) -> dict:
     """Generate repairs under a schema requiring every quiz concept's practice."""
     from .schemas import LearningPlan, PracticeQuestion
-    base, model, headers = _chat_settings()
-    if runtime_ai_mode() == "openai":
-        model = OPENAI_AUTHORING_MODEL
+    base, model, headers = _authoring_settings()
     quiz = {question["id"]: question for question in plan["diagnostic_quiz"]}
     activity_schema = PracticeQuestion.model_json_schema()
     definitions = activity_schema.pop("$defs", {})
@@ -318,10 +327,10 @@ def repair_learning_plan(plan: dict, issues: list[str]) -> dict:
         "question_repairs": {"type": "object", "properties": {qid: question_schema for qid in quiz}},
         "practice_banks": {"type": "object", "properties": {oid: {"type": "object", "properties": {case: case_schema for case in cases}} for oid, cases in case_mapping.items()}},
     }})
-    use_schema = runtime_ai_mode() == "openai" or (runtime_ai_mode() == "groq" and model in {"openai/gpt-oss-120b", "openai/gpt-oss-20b"})
+    use_schema = authoring_ai_mode() == "openai" or (authoring_ai_mode() == "groq" and model in {"openai/gpt-oss-120b", "openai/gpt-oss-20b"})
     response_format = {"type": "json_schema", "json_schema": {"name": "lesson_repairs", "schema": repair_schema, "strict": True}} if use_schema else {"type": "json_object"}
     request = {"material": plan["approved_material"], "objectives": plan["objectives"], "case_mapping": case_mapping, "repair_schema": repair_schema}
-    if runtime_ai_mode() == "groq" and use_schema:
+    if authoring_ai_mode() == "groq" and use_schema:
         request.pop("repair_schema")  # Supplied once via response_format.
     with httpx.Client(timeout=180) as client:
         response = _post_authoring_request(client, f"{base}/chat/completions", headers=headers, json={

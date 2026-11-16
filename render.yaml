@@ -35,6 +35,14 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
+      - key: SDL_AUTHORING_LLM_PROVIDER
+        value: openai
+      - key: OPENAI_AUTHORING_MODEL
+        value: gpt-4.1-mini
+      - key: REFLECTION_AUTHORING_LLM_PROVIDER
+        value: openai
+      - key: REFLECTION_AUTHORING_OPENAI_MODEL
+        value: gpt-4.1-mini
       - key: GROQ_API_KEY
         sync: false
       - key: AUTH_SESSION_SECRET
@@ -95,6 +103,12 @@ services:
       - fromGroup: cluball-personal-shared
       - key: DATABASE_URL
         sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: REFLECTION_AUTHORING_LLM_PROVIDER
+        value: openai
+      - key: REFLECTION_AUTHORING_OPENAI_MODEL
+        value: gpt-4.1-mini
       - key: GROQ_API_KEY
         sync: false
       - key: PLATFORM_DB_SCHEMA
@@ -121,6 +135,12 @@ services:
       - fromGroup: cluball-personal-shared
       - key: DATABASE_URL
         sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SDL_AUTHORING_LLM_PROVIDER
+        value: openai
+      - key: OPENAI_AUTHORING_MODEL
+        value: gpt-4.1-mini
       - key: GROQ_API_KEY
         sync: false
       - key: SELF_DIRECTED_LEARNING_DB_SCHEMA

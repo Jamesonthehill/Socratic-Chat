@@ -26,7 +26,7 @@ from .db import (
 from .lesson_content import configuration_issues
 from . import lesson_flow
 from .learning_flow import place_student, select_diagnostic_questions
-from .openai_client import assess_response, generate_learning_plan, infer_document_context, repair_learning_plan, runtime_ai_mode, tutor_reply
+from .openai_client import assess_response, authoring_ai_mode, generate_learning_plan, infer_document_context, repair_learning_plan, runtime_ai_mode, tutor_reply
 from .rag import add_document, add_url_document, retrieve, preview_document, preview_url_document
 from .resource_discovery import discover_resources, read_resource_excerpts, verify_resources
 from .schemas import (
@@ -521,7 +521,7 @@ def generate_plan(body: GeneratePlanInput, user=Depends(current_user)):
         topic = body.topic.strip()
         resources = [r.model_dump() for r in body.study_resources]
         generated = generate_learning_plan(topic, body.course_level.strip(),
-            read_resource_excerpts(resources) if runtime_ai_mode() in {"openai", "groq"} else [],
+            read_resource_excerpts(resources) if authoring_ai_mode() in {"openai", "groq"} else [],
             approved_material=body.approved_material, objective_descriptions=body.objective_descriptions,
             study_resources=resources, intended_difficulty=body.intended_difficulty,
             prerequisite_knowledge=body.prerequisite_knowledge)

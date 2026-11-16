@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import ModuleConfig, Module
 from app.schemas import ModuleConfigCreate, ModuleConfigOut, SubtopicGenerateRequest, SubtopicGenerateResponse
-from app.services.llm import get_llm_provider
+from app.services.llm import LLMConfigurationError, get_llm_for_role
 from app.services.prompts import build_subtopic_generation_prompt
 
 router = APIRouter(prefix="/api/modules", tags=["config"])
@@ -100,15 +100,17 @@ def generate_subtopics(body: SubtopicGenerateRequest):
     """Auto-generate sub-topics from main topics using LLM."""
     if not body.main_topics:
         raise HTTPException(400, "main_topics must not be empty")
-    llm = get_llm_provider()
     prompt = build_subtopic_generation_prompt(body.main_topics)
     try:
+        llm = get_llm_for_role("reflection_authoring")
         raw = llm.generate([{"role": "user", "content": prompt}])
         text = re.sub(r"^```[a-z]*\n?", "", raw.strip(), flags=re.MULTILINE).strip("`").strip()
         sub_topics = json.loads(text)
         if not isinstance(sub_topics, list):
             raise ValueError("Not a list")
         sub_topics = [str(t).strip() for t in sub_topics if str(t).strip()]
-    except Exception as e:
-        raise HTTPException(500, f"Failed to generate sub-topics: {str(e)}")
+    except LLMConfigurationError as error:
+        raise HTTPException(503, str(error)) from error
+    except Exception as error:
+        raise HTTPException(502, "Failed to generate reflection subtopics. Try again.") from error
     return SubtopicGenerateResponse(sub_topics=sub_topics)

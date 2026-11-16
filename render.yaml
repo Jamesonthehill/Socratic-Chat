@@ -14,12 +14,12 @@ services:
   - type: web
     name: cluball-platform-personal
     runtime: docker
-    plan: free
+    plan: starter
     branch: main
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: ./Dockerfile.combined
     dockerContext: .
-    dockerCommand: uvicorn platform_app.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health
+    dockerCommand: python -m scripts.run_combined
+    healthCheckPath: /health/combined
     autoDeployTrigger: commit
     envVars:
       - fromGroup: cluball-personal-shared
@@ -46,9 +46,9 @@ services:
       - key: SHARED_RAG_DB_SCHEMA
         value: shared_rag
       - key: REFLECTIONS_URL
-        value: https://cluball-reflections-personal.onrender.com
+        value: http://127.0.0.1:8002
       - key: SELF_DIRECTED_LEARNING_URL
-        value: https://cluball-sdl-personal.onrender.com
+        value: http://127.0.0.1:8100
       - key: AUTH_MODE
         value: open
       - key: ALLOW_PASSWORD_LOGIN

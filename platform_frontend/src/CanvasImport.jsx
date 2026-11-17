@@ -84,7 +84,7 @@ export default function CanvasImport({
             40,
           ),
           title: selected.name.slice(0, 160),
-          description: `Imported from UNC Charlotte Canvas course ${selected.id}.`,
+          description: `Imported from Canvas course ${selected.id}.`,
         },
       });
       onCourseCreated(created);
@@ -93,7 +93,7 @@ export default function CanvasImport({
 
   return (
     <section className="panel canvas-import">
-      <h2>Import from UNC Charlotte Canvas</h2>
+      <h2>Import from Canvas</h2>
       <p>
         Use your Canvas account to read active courses and assignments visible
         to you. Your access token is sent only to this server for the current
@@ -170,7 +170,7 @@ export default function CanvasImport({
                 disabled={busy || !canvasCourseId}
                 onClick={createPlatformCourse}
               >
-                Create CourseLab course from Canvas
+                Create BrainTutor course from Canvas
               </button>
             )}
           </>
@@ -203,13 +203,13 @@ export default function CanvasImport({
       </div>
       {!platformCourseId && (
         <p className="help">
-          Select a destination CourseLab course above, or create one from the
+          Select a destination BrainTutor course above, or create one from the
           selected Canvas course before importing.
         </p>
       )}
       <p className="help">
         Canvas content is copied into a draft. Review it, attach course
-        materials, choose recipients, and publish from CourseLab.
+        materials, choose recipients, and publish from BrainTutor.
       </p>
     </section>
   );

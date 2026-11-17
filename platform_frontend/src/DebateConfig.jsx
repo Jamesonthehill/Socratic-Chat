@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import { Notice } from "./ui";
+import { GenerationStatus, Notice } from "./ui";
 
 export default function DebateConfig({ value, onChange, courseId, frozen }) {
   const [files, setFiles] = useState([]);
@@ -41,7 +41,7 @@ export default function DebateConfig({ value, onChange, courseId, frozen }) {
         </div>
         <div>
           <label>
-            Opening prompt
+            Optional opening prompt
             <textarea
               rows={4}
               maxLength={2000}
@@ -50,6 +50,10 @@ export default function DebateConfig({ value, onChange, courseId, frozen }) {
               placeholder="Take a position and give your strongest reason."
             />
           </label>
+          <p className="help">
+            Leave this blank to start the chat with the scenario above. Add a
+            different first message only if the class needs one.
+          </p>
           <label>
             Messages required before completion
             <input
@@ -103,7 +107,7 @@ export default function DebateConfig({ value, onChange, courseId, frozen }) {
               {uploading ? "Uploading…" : "Upload optional course materials"}
               <input
                 type="file"
-                accept=".txt,.md,.pdf,.tex,.latex,.html,.htm,.doc,.docx"
+                accept=".txt,.md,.pdf,.tex,.latex,.html,.htm,.doc,.docx,.ppt,.pptx"
                 multiple
                 disabled={uploading || !courseId}
                 onChange={async (event) => {
@@ -129,6 +133,7 @@ export default function DebateConfig({ value, onChange, courseId, frozen }) {
               />
             </label>
           )}
+          {uploading && <GenerationStatus message="Uploading and indexing debate materials…" fullScreen />}
         </div>
       </div>
     </>

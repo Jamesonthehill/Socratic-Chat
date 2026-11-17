@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from platform_app import canvas_lms, engines, store
+from platform_app import engines, store
 
 
 def test_shared_login_and_public_frontend(client, roster):
@@ -17,7 +17,7 @@ def test_shared_login_and_public_frontend(client, roster):
     frontend = client.get('/platform/professor')
     if frontend.status_code != 503:  # Backend tests also run before the optional UI build.
         assert frontend.status_code == 200
-        assert 'CourseLab' in frontend.text
+        assert 'BrainTutor' in frontend.text
 
 
 def draft(client, roster, tool='socratic', **changes):
@@ -41,68 +41,47 @@ def test_requires_signed_session_and_professor(client, roster):
     assert client.post('/api/platform/assignments', headers=roster['headers']['student'], json={}).status_code == 403
 
 
-def test_canvas_import_requires_professor_and_creates_socratic_draft(client, roster, monkeypatch):
-    course_calls = []
-    monkeypatch.setattr(canvas_lms, 'list_courses', lambda token: course_calls.append(token) or [
-        {'id': '77', 'name': 'Software Engineering', 'course_code': 'ITSC 3155'}
-    ])
-    assignment = {
-        'id': '88',
-        'name': 'Canvas architecture reflection',
-        'description': 'Explain one architecture tradeoff.',
-        'due_at': '2026-10-01T16:00:00Z',
-        'html_url': 'https://instructure.charlotte.edu/courses/77/assignments/88',
-        'points_possible': 10,
-    }
-    monkeypatch.setattr(canvas_lms, 'get_assignment', lambda course_id, assignment_id, token: assignment)
+def test_professor_catalog_shows_all_courses_but_details_require_membership(client, roster):
+    first, _ = draft(client, roster)
+    other_course = str(uuid4())
+    with store.connection() as conn:
+        conn.execute("INSERT INTO courses_platform(id,course_code,title,instructor_id) VALUES (%s,'SE202','Other course',%s)",
+                     (other_course, roster['other_prof']))
+        conn.execute("""INSERT INTO course_memberships_platform(id,course_id,user_id,course_role,status)
+            VALUES (%s,%s,%s,'instructor','approved')""",
+            (uuid4(), other_course, roster['other_prof']))
+    second = client.post('/api/platform/assignments', headers=roster['headers']['other_prof'], json={
+        'course_id': other_course, 'tool': 'reflections', 'title': 'Other teacher activity',
+        'instructions': 'Reflect.', 'audience': 'course', 'config': {},
+    })
+    assert second.status_code == 201, second.text
+    second_id = second.json()['id']
 
-    credentials = {'access_token': 'canvas-test-token'}
-    assert client.post(
-        '/api/platform/integrations/canvas/courses',
-        headers=roster['headers']['student'],
-        json=credentials,
-    ).status_code == 403
-    courses = client.post(
-        '/api/platform/integrations/canvas/courses',
-        headers=roster['headers']['prof'],
-        json=credentials,
-    )
-    assert courses.status_code == 200
-    assert course_calls == ['canvas-test-token']
+    def listed(role):
+        response = client.get('/api/platform/assignments', headers=roster['headers'][role])
+        assert response.status_code == 200, response.text
+        return {item['id'] for item in response.json()}
 
-    imported = client.post(
-        '/api/platform/integrations/canvas/import',
-        headers=roster['headers']['prof'],
-        json={
-            **credentials,
-            'course_id': 77,
-            'assignment_id': 88,
-            'platform_course_id': roster['course'],
-            'tool': 'socratic',
-        },
-    )
-    assert imported.status_code == 201, imported.text
-    draft = imported.json()
-    assert draft['tool'] == 'socratic'
-    assert draft['status'] == 'draft'
-    assert draft['title'] == assignment['name']
-    assert assignment['html_url'] in draft['instructions']
-    assert draft['config']['document_ids'] == []
+    assert listed('prof') == {first['id'], second_id}
+    assert listed('other_prof') == {first['id'], second_id}
 
-    reflection = client.post(
-        '/api/platform/integrations/canvas/import',
-        headers=roster['headers']['prof'],
-        json={
-            **credentials,
-            'course_id': 77,
-            'assignment_id': 88,
-            'platform_course_id': roster['course'],
-            'tool': 'reflections',
-        },
-    )
-    assert reflection.status_code == 201, reflection.text
-    assert reflection.json()['tool'] == 'reflections'
-    assert reflection.json()['config']['module_type'] == 'topic_based'
+    # Co-instructors can see the same course, regardless of who created an activity.
+    with store.connection() as conn:
+        conn.execute("""INSERT INTO course_memberships_platform(id,course_id,user_id,course_role,status)
+            VALUES (%s,%s,%s,'instructor','approved')""",
+            (uuid4(), roster['course'], roster['other_prof']))
+    assert listed('other_prof') == {first['id'], second_id}
+    assert client.get('/api/platform/assignments', headers=roster['headers']['other_prof'],
+                      params={'course_id': roster['course']}).json()[0]['id'] == first['id']
+
+    with store.connection() as conn:
+        conn.execute("""UPDATE course_memberships_platform SET status='rejected'
+            WHERE course_id=%s AND user_id=%s""", (roster['course'], roster['other_prof']))
+    assert listed('other_prof') == {first['id'], second_id}
+    assert client.get('/api/platform/assignments', headers=roster['headers']['other_prof'],
+                      params={'course_id': roster['course']}).status_code == 403
+    assert client.get(f"/api/platform/assignments/{first['id']}",
+                      headers=roster['headers']['other_prof']).status_code == 403
 
 
 def test_draft_publish_visibility_and_frozen_config(client, roster, monkeypatch):
@@ -121,6 +100,31 @@ def test_draft_publish_visibility_and_frozen_config(client, roster, monkeypatch)
     assert duplicate['status'] == 'draft' and duplicate['id'] != sid
 
 
+def test_concept_check_choice_is_saved_without_adding_chat_messages(client, roster, monkeypatch):
+    item, _ = draft(client, roster)
+    publish(client, roster, item, monkeypatch)
+    path = f"/api/platform/assignments/{item['id']}"
+    started = client.post(path + '/start', headers=roster['headers']['student'])
+    assert started.status_code == 200, started.text
+    before = started.json()['messages']
+    monkeypatch.setattr(engines, 'message', lambda *_args, **_kwargs: {
+        'quiz_only': True,
+        'socratic': {'concept_check_completed': True, 'concept_check_response': {'correct': True}},
+    })
+    request_id = str(uuid4())
+    answer = client.post(path + '/messages', headers=roster['headers']['student'], json={
+        'message': 'Selected quiz option', 'request_id': request_id, 'concept_check_option': 0,
+    })
+    assert answer.status_code == 200, answer.text
+    assert answer.json()['messages'] == before
+    assert answer.json()['engine_state']['socratic']['concept_check_response']['correct'] is True
+    repeat = client.post(path + '/messages', headers=roster['headers']['student'], json={
+        'message': 'Selected quiz option', 'request_id': request_id, 'concept_check_option': 0,
+    })
+    assert repeat.status_code == 200
+    assert repeat.json()['messages'] == before
+
+
 def test_socratic_snapshot_survives_material_changes(client, roster, monkeypatch):
     monkeypatch.setattr(engines.db, 'list_rag_files', lambda **kw: [{'document_id':'doc'}])
     chunks = [{'document_id':'doc','chunk_id':'doc:0','course_id':roster['course'],'title':'Notes','text':'An actor is an external role.','embedding':[1.0, 0.0]}]
@@ -130,7 +134,15 @@ def test_socratic_snapshot_survives_material_changes(client, roster, monkeypatch
     async def answer(*_args, **_kwargs):
         return 'An actor is an external role. What system interaction would you expect?'
     monkeypatch.setattr(engines.rag, 'generate_answer', answer)
-    item, _ = draft(client, roster, config={'document_ids':['doc'], 'minimum_messages':2})
+    objective_id=str(uuid4())
+    monkeypatch.setattr(engines.db, 'get_approved_learning_objective', lambda *_: {
+        'objective_id':objective_id,'objective':'Understand actors.','keywords':['actor'],
+        'diagnostic_question':'What is an actor?','source_chunk_ids':['doc:0']})
+    from app.classifier import MessageClassification
+    async def classify(*args,**kwargs):
+        return MessageClassification(keyword_scope_match=True,source='llm',target_concepts=('actor',))
+    monkeypatch.setattr(engines,'classify_message',classify)
+    item, _ = draft(client, roster, config={'document_ids':['doc'], 'minimum_messages':2,'learning_objective_id':objective_id})
     path=f"/api/platform/assignments/{item['id']}"; h=roster['headers']['student']
     assert client.post(path+'/publish', headers=roster['headers']['prof']).status_code == 200
     chunks.clear()
@@ -144,10 +156,9 @@ def test_socratic_snapshot_survives_material_changes(client, roster, monkeypatch
     assert client.post(path+'/messages',headers=h,json=message).json()['messages']==res.json()['messages']
     assert client.post(path+'/complete',headers=h).status_code==422
     client.post(path+'/messages',headers=h,json={**message,'request_id':str(uuid4())})
-    assert client.post(path+'/complete',headers=h).json()['status']=='completed'
-    assert client.post(path+'/complete',headers=h).json()['status']=='completed'
-    assert client.get(path+'/attempt',headers=h).json()['status']=='completed'
-    assert client.post(path+'/messages',headers=h,json={**message,'request_id':str(uuid4())}).status_code==409
+    # Message count alone is no longer evidence of mastery.
+    assert client.post(path+'/complete',headers=h).status_code == 422
+    assert client.get(path+'/attempt',headers=h).json()['status'] == 'in_progress'
 
 
 def test_cross_course_documents_rejected(client, roster, monkeypatch):
@@ -201,23 +212,21 @@ def test_failed_publish_does_not_expose_draft(client,roster,monkeypatch):
     assert client.get(path,headers=roster['headers']['student']).status_code==404
 
 
-@pytest.mark.parametrize('tool', ['reflections','student-agent'])
-def test_routes_to_correct_engine_and_resumes(client,roster,monkeypatch,tool):
-    topic=engines.topic_templates()[0]
-    item,_=draft(client,roster,tool=tool,config={'topic':topic} if tool=='student-agent' else {'sub_topics':['requirements']})
+def test_routes_to_correct_engine_and_resumes(client,roster,monkeypatch):
+    item,_=draft(client,roster,tool='reflections',config={'sub_topics':['requirements']})
     publish(client,roster,item,monkeypatch)
     calls=[]
     def remote(t,method,path,**kw):
         calls.append((t,path,kw['json']))
         if path.endswith('/start'):
-            return {'messages':[{'role':'assistant','content':'Hello'}],'phase':'reading'} if t=='student-agent' else {'greeting':'Hello','total_questions':1}
-        return {'messages':[{'role':'assistant','content':'Hello'},{'role':'user','content':'My response'},{'role':'assistant','content':'Continue'}],'phase':'complete'} if t=='student-agent' else {'reply':'Continue','question_index':1,'total_questions':1}
+            return {'greeting':'Hello','total_questions':1}
+        return {'reply':'Continue','question_index':1,'total_questions':1}
     monkeypatch.setattr(engines,'call',remote)
     path=f"/api/platform/assignments/{item['id']}"; h=roster['headers']['student']
     started=client.post(path+'/start',headers=h)
     assert started.status_code==200,started.text
-    assert calls[0][0]==tool and calls[0][2]['session_id']==started.json()['id']
-    if tool=='reflections': assert calls[0][2]['student_id']==roster['student']
+    assert calls[0][0]=='reflections' and calls[0][2]['session_id']==started.json()['id']
+    assert calls[0][2]['student_id']==roster['student']
     response=client.post(path+'/messages',headers=h,json={'message':'My response','request_id':str(uuid4())})
     assert response.status_code==200,response.text
     assert client.get(path+'/attempt',headers=h).json()['messages']==response.json()['messages']
@@ -255,3 +264,79 @@ def test_milestone_hides_history_and_completes_on_submission(client,roster,monke
     res=client.post(path+'/messages',headers=h,json={'message':'My reflection','request_id':str(uuid4())})
     assert res.json()['status']=='completed'
     assert res.json()['result']['similar'][0]['solution']=='fix'
+
+
+def test_unassigned_draft_requires_chatbot_before_publishing(client, roster):
+    item, body = draft(client, roster, tool=None)
+    path = f"/api/platform/assignments/{item['id']}"
+    assert item['tool'] is None and item['config'] == {}
+    assert client.get(path, headers=roster['headers']['prof']).status_code == 200
+    assert client.get(path, headers=roster['headers']['student']).status_code == 404
+    blocked = client.post(path + '/publish', headers=roster['headers']['prof'])
+    assert blocked.status_code == 422 and 'chatbot' in blocked.json()['detail']
+    assert client.put(path, headers=roster['headers']['prof'], json={**body, 'config': {'prompt': 'Hidden default'}}).status_code == 422
+
+
+@pytest.mark.parametrize('tool,config', [
+    ('socratic', {'prompt': 'What assumption does the team make?'}),
+    ('reflections', {'sub_topics': ['Explain one design decision']}),
+    ('debate', {'scenario': 'Should this team require every change to receive a review?'}),
+])
+def test_instructor_can_choose_and_change_draft_chatbot(client, roster, monkeypatch, tool, config):
+    item, body = draft(client, roster, tool=None)
+    path = f"/api/platform/assignments/{item['id']}"
+    payload = {**body, 'tool': tool, 'config': config}
+    assert client.put(path, headers=roster['headers']['other_prof'], json=payload).status_code == 403
+    assert client.put(path, headers=roster['headers']['student'], json=payload).status_code == 403
+    chosen = client.put(path, headers=roster['headers']['prof'], json=payload)
+    assert chosen.status_code == 200, chosen.text
+    saved = chosen.json()
+    assert saved['tool'] == tool
+    assert saved['title'] == item['title'] and saved['instructions'] == item['instructions']
+    assert saved['audience'] == 'selected'
+    detail = client.get(path, headers=roster['headers']['prof']).json()
+    assert detail['recipient_ids'] == [roster['student']]
+    # A change of chatbot must supply settings appropriate to the new chatbot.
+    alternate = 'reflections' if tool == 'socratic' else 'socratic'
+    switched = client.put(path, headers=roster['headers']['prof'], json={**body, 'tool': alternate, 'config': {}})
+    assert switched.status_code == 200, switched.text
+    assert switched.json()['tool'] == alternate
+    assert client.put(path, headers=roster['headers']['prof'], json=payload).status_code == 200
+    publish(client, roster, saved, monkeypatch)
+    assert client.put(path, headers=roster['headers']['prof'], json={**body, 'tool': alternate, 'config': {}}).status_code == 409
+
+
+def test_professor_catalog_includes_other_instructors_and_preserves_access(client, roster):
+    # A co-instructor creates an activity in a course owned by someone else.
+    with store.connection() as conn:
+        conn.execute("""INSERT INTO course_memberships_platform
+            (id,course_id,user_id,course_role,status) VALUES (%s,%s,%s,'instructor','approved')""",
+            (uuid4(), roster['course'], roster['other_prof']))
+    response = client.post('/api/platform/assignments', headers=roster['headers']['other_prof'], json={
+        'course_id': roster['course'], 'tool': 'reflections', 'title': 'Co-instructor reflection',
+        'instructions': 'Reflect on your learning.', 'audience': 'course',
+        'config': {'module_type': 'topic_based', 'required_topics': ['Testing'],
+                   'custom_notes': 'Private teaching guidance'},
+    })
+    assert response.status_code == 201, response.text
+    assignment_id = response.json()['id']
+    for role in ('prof', 'other_prof'):
+        listed = client.get('/api/platform/assignments', headers=roster['headers'][role])
+        assert listed.status_code == 200
+        item = next(a for a in listed.json() if a['id'] == assignment_id)
+        assert item['can_manage'] is True
+
+    # Visibility is global for instructors even without membership in this course.
+    with store.connection() as conn:
+        conn.execute("DELETE FROM course_memberships_platform WHERE course_id=%s AND user_id=%s",
+                     (roster['course'], roster['other_prof']))
+    items = client.get('/api/platform/assignments', headers=roster['headers']['other_prof']).json()
+    item = next(a for a in items if a['id'] == assignment_id)
+    assert item['can_manage'] is False
+    assert 'config' not in item and 'snapshot' not in item
+    assert client.get(f'/api/platform/assignments/{assignment_id}', headers=roster['headers']['other_prof']).status_code == 403
+    assert client.post(f'/api/platform/assignments/{assignment_id}/archive', headers=roster['headers']['other_prof']).status_code == 403
+    for role in ('student', 'other_student'):
+        items = client.get('/api/platform/assignments', headers=roster['headers'][role]).json()
+        assert assignment_id not in {a['id'] for a in items}
+    assert client.get('/api/platform/assignments').status_code == 401

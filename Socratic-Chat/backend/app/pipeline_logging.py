@@ -238,6 +238,14 @@ def delete_recent_traces() -> int:
             except OSError as error:
                 LOGGER.warning("Unable to delete pipeline trace file %s: %s", trace_file, error)
                 errors.append(error)
+        prompt_dir = settings.PIPELINE_PROMPT_DIR
+        if prompt_dir and prompt_dir.is_dir():
+            for snapshot_file in prompt_dir.glob("*.json"):
+                try:
+                    snapshot_file.unlink()
+                except OSError as error:
+                    LOGGER.warning("Unable to delete model snapshot %s: %s", snapshot_file, error)
+                    errors.append(error)
         _recent_traces.clear()
         _trace_records.clear()
         if errors:
@@ -277,19 +285,21 @@ def _persist_trace_locked(trace_id: str) -> None:
 
 
 def log_exception(stage: int | str, event: str, error: BaseException, **fields: Any) -> None:
-    trace_id = _trace_id.get()
-    if not trace_id:
-        return
-    values = {
-        "trace_id": trace_id,
-        "conversation_id": _conversation_id.get(),
-        "stage": stage,
-        "event": event,
-        "elapsed_ms": _elapsed_ms(),
-        "error_type": type(error).__name__,
-        **fields,
-    }
-    LOGGER.error(" ".join(f"{key}={_field(value)}" for key, value in values.items()))
+    status_code = getattr(error, "status_code", None)
+    provider_code = getattr(error, "code", None)
+    body = getattr(error, "body", None)
+    if provider_code is None and isinstance(body, dict):
+        detail = body.get("error", body)
+        if isinstance(detail, dict):
+            provider_code = detail.get("code")
+    safe_fields = {"error_type": type(error).__name__, **fields}
+    if isinstance(status_code, int) and 100 <= status_code <= 599:
+        safe_fields["status_code"] = status_code
+    if isinstance(provider_code, str) and re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", provider_code):
+        safe_fields["provider_error_code"] = provider_code
+    # Persist only structured error metadata. Provider messages can contain
+    # student text or a rejected prompt, so they must not enter the trace.
+    log_event(stage, event, level=logging.ERROR, **safe_fields)
 
 
 def debug_digest(label: str, value: str) -> None:
@@ -381,3 +391,18 @@ def update_llm_request_snapshot(phase: str, **result: Any) -> str | None:
     destination.chmod(0o600)
     log_event("debug", "full_model_result_saved", phase=phase, path=str(destination))
     return str(destination)
+
+
+def full_model_snapshots(trace_id: str) -> list[dict[str, Any]]:
+    """Read exact local model requests and results for one diagnostic trace."""
+    if not re.fullmatch(r"[a-f0-9]{32}", trace_id):
+        raise ValueError("Invalid trace ID.")
+    directory = settings.PIPELINE_PROMPT_DIR
+    if not settings.LOG_FULL_PROMPTS or directory is None or not directory.is_dir():
+        return []
+    snapshots = []
+    for path in sorted(directory.glob(f"{trace_id}-*.json")):
+        snapshot = json.loads(path.read_text(encoding="utf-8"))
+        if snapshot.get("trace_id") == trace_id:
+            snapshots.append(snapshot)
+    return snapshots

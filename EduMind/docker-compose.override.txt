@@ -1,0 +1,26 @@
+services:
+  frontend:
+    build:
+        context: ./client
+        dockerfile: Dockerfile.dev
+    command: npm run dev
+    ports:
+      - "5173:5173"
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ./client:/app      
+      - /app/node_modules
+    working_dir: /app
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.dev
+    command: npm run dev
+    environment:
+      - NODE_ENV=development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./server:/app
+      - /app/node_modules

@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urljoin, urlparse
 
 import httpx
 
+from app import settings
 
-CANVAS_ORIGIN = "https://instructure.charlotte.edu"
-CANVAS_API_BASE = f"{CANVAS_ORIGIN}/api/v1"
 MAX_PAGES = 20
 
 
@@ -20,22 +19,35 @@ class CanvasAPIError(RuntimeError):
 
 
 class _TextExtractor(HTMLParser):
-    def __init__(self) -> None:
+    def __init__(self, *, preserve_links: bool = False) -> None:
         super().__init__()
         self.parts: list[str] = []
         self.ignored_depth = 0
+        self.preserve_links = preserve_links
+        self.links: list[tuple[str | None, int]] = []
 
-    def handle_starttag(self, tag: str, _attrs: list[tuple[str, str | None]]) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in {"script", "style"}:
             self.ignored_depth += 1
         elif not self.ignored_depth and tag in {"br", "li", "p", "div", "h1", "h2", "h3", "h4"}:
             self.parts.append("\n")
+        elif not self.ignored_depth and tag == "a" and self.preserve_links:
+            href = dict(attrs).get("href")
+            self.links.append((_safe_link(href), len(self.parts)))
 
     def handle_endtag(self, tag: str) -> None:
         if tag in {"script", "style"} and self.ignored_depth:
             self.ignored_depth -= 1
         elif not self.ignored_depth and tag in {"li", "p", "div"}:
             self.parts.append("\n")
+        elif not self.ignored_depth and tag == "a" and self.preserve_links and self.links:
+            href, start = self.links.pop()
+            if href:
+                label = "".join(self.parts[start:]).strip()
+                if label:
+                    self.parts[start:] = [f"[{_escape_markdown_label(label)}]({href})"]
+                else:
+                    self.parts.append(href)
 
     def handle_data(self, data: str) -> None:
         if not self.ignored_depth:
@@ -46,6 +58,32 @@ def description_text(value: str | None) -> str:
     if not value:
         return ""
     parser = _TextExtractor()
+    parser.feed(value)
+    lines = (" ".join(line.split()) for line in "".join(parser.parts).splitlines())
+    return "\n".join(line for line in lines if line)[:10_000]
+
+
+def _safe_link(href: str | None) -> str | None:
+    if not href or any(ord(character) < 32 for character in href):
+        return None
+    absolute = urljoin(settings.CANVAS_API_ORIGIN.rstrip("/") + "/", href.strip())
+    parsed = urlparse(absolute)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        return None
+    return quote(absolute, safe=":/?#[]@!$&'*+,;=%-._~")
+
+
+def _escape_markdown_label(value: str) -> str:
+    for character in ("\\", "[", "]", "*", "_"):
+        value = value.replace(character, "\\" + character)
+    return value
+
+
+def description_with_links(value: str | None) -> str:
+    """Keep clickable source references; this does not fetch or ingest linked files."""
+    if not value:
+        return ""
+    parser = _TextExtractor(preserve_links=True)
     parser.feed(value)
     lines = (" ".join(line.split()) for line in "".join(parser.parts).splitlines())
     return "\n".join(line for line in lines if line)[:10_000]
@@ -68,9 +106,10 @@ def _next_url(link_header: str | None) -> str | None:
 
 def _validate_canvas_url(url: str) -> None:
     parsed = urlparse(url)
+    configured = urlparse(settings.CANVAS_API_ORIGIN)
     if (
         parsed.scheme != "https"
-        or parsed.netloc != "instructure.charlotte.edu"
+        or parsed.netloc != configured.netloc
         or not parsed.path.startswith("/api/v1/")
     ):
         raise CanvasAPIError(502, "Canvas returned an unsafe pagination URL.")
@@ -96,7 +135,7 @@ def _get_pages(
     params: dict[str, Any] | None = None,
     client: httpx.Client | None = None,
 ) -> list[dict[str, Any]]:
-    url = f"{CANVAS_API_BASE}/{path.lstrip('/')}"
+    url = f"{settings.CANVAS_API_ORIGIN}/api/v1/{path.lstrip('/')}"
     headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
     owned_client = client is None
     active_client = client or httpx.Client(timeout=10.0, follow_redirects=False)
@@ -134,7 +173,7 @@ def _get_one(
     *,
     client: httpx.Client | None = None,
 ) -> dict[str, Any]:
-    url = f"{CANVAS_API_BASE}/{path.lstrip('/')}"
+    url = f"{settings.CANVAS_API_ORIGIN}/api/v1/{path.lstrip('/')}"
     _validate_canvas_url(url)
     headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
     owned_client = client is None
@@ -196,7 +235,7 @@ def list_assignments(
         {
             "id": str(assignment["id"]),
             "name": str(assignment.get("name") or f"Assignment {assignment['id']}"),
-            "description": description_text(assignment.get("description")),
+            "description": description_with_links(assignment.get("description")),
             "due_at": assignment.get("due_at"),
             "html_url": assignment.get("html_url"),
             "points_possible": assignment.get("points_possible"),
@@ -221,7 +260,7 @@ def get_assignment(
     return {
         "id": str(assignment["id"]),
         "name": str(assignment.get("name") or f"Assignment {assignment['id']}"),
-        "description": description_text(assignment.get("description")),
+        "description": description_with_links(assignment.get("description")),
         "due_at": assignment.get("due_at"),
         "html_url": assignment.get("html_url"),
         "points_possible": assignment.get("points_possible"),

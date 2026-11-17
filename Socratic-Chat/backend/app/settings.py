@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextvars import ContextVar
 import os
 import re
 from pathlib import Path
@@ -16,8 +17,15 @@ load_dotenv(ROOT_DIR / ".env")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_API_BASE_URL = os.getenv("OPENAI_API_BASE_URL", "https://api.openai.com/v1")
+SOCRATIC_COMPLETION_MODEL = os.getenv("SOCRATIC_COMPLETION_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"
 RAG_MODEL = os.getenv("RAG_MODEL", "gpt-4.1-mini")
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").strip().lower()
+SOCRATIC_TUTOR_PROVIDER = os.getenv("SOCRATIC_TUTOR_PROVIDER", "").strip().lower()
+SOCRATIC_TUTOR_MODEL = os.getenv("SOCRATIC_TUTOR_MODEL", "openai/gpt-oss-20b").strip()
+SOCRATIC_CLASSIFIER_PROVIDER = os.getenv("SOCRATIC_CLASSIFIER_PROVIDER", "").strip().lower()
+SOCRATIC_SETUP_PROVIDER = os.getenv("SOCRATIC_SETUP_PROVIDER", "").strip().lower()
+SOCRATIC_FEEDBACK_PROVIDER = os.getenv("SOCRATIC_FEEDBACK_PROVIDER", "").strip().lower()
+SOCRATIC_FEEDBACK_MODEL = os.getenv("SOCRATIC_FEEDBACK_MODEL", "openai/gpt-oss-20b").strip()
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "ollama")
 OLLAMA_API_BASE_URL = os.getenv("OLLAMA_API_BASE_URL", "http://127.0.0.1:11434/v1")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b-q4_K_M")
@@ -38,8 +46,12 @@ CLASSIFIER_MAX_HISTORY = int(os.getenv("CLASSIFIER_MAX_HISTORY", "6"))
 ANSWER_EVALUATION_ENABLED = os.getenv("ANSWER_EVALUATION_ENABLED", "true").lower() in {"1", "true", "yes"}
 ANSWER_EVALUATION_MODEL = os.getenv("ANSWER_EVALUATION_MODEL", "").strip()
 ANSWER_EVALUATION_MAX_TOKENS = int(os.getenv("ANSWER_EVALUATION_MAX_TOKENS", "1600"))
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "openai").strip().lower()
+EMBEDDING_MODEL = os.getenv(
+    "EMBEDDING_MODEL", "qwen3-embedding:0.6b" if EMBEDDING_PROVIDER in {"local", "ollama"} else "text-embedding-3-small",
+)
+EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "1024" if EMBEDDING_PROVIDER in {"local", "ollama"} else "1536"))
+EMBEDDING_TIMEOUT_SECONDS = float(os.getenv("EMBEDDING_TIMEOUT_SECONDS", "120"))
 EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "64"))
 RAG_MIN_DENSE_SIMILARITY = float(os.getenv("RAG_MIN_DENSE_SIMILARITY", "0.42"))
 RAG_MIN_SPARSE_SCORE = float(os.getenv("RAG_MIN_SPARSE_SCORE", "0.05"))
@@ -61,35 +73,61 @@ def completion_token_parameters(provider: str, limit: int) -> dict[str, int | st
 
 
 def embedding_client_config() -> tuple[str, str, str, str] | None:
-    """Keep hosted retrieval on the existing OpenAI embedding space."""
+    """Configure document/query embeddings independently of conversational models."""
+    if PORTFOLIO_OPENAI.get():
+        return "OpenAI", OPENAI_API_KEY, OPENAI_API_BASE_URL, "text-embedding-3-small"
+    if EMBEDDING_PROVIDER in {"local", "ollama"}:
+        return "Ollama", OLLAMA_API_KEY or "ollama", OLLAMA_API_BASE_URL, EMBEDDING_MODEL
+    if EMBEDDING_PROVIDER != "openai":
+        raise ValueError("EMBEDDING_PROVIDER must be openai or ollama.")
     if not OPENAI_API_KEY:
         return None
     return "OpenAI", OPENAI_API_KEY, OPENAI_API_BASE_URL, EMBEDDING_MODEL
 
 
 def embedding_model_name() -> str:
-    return EMBEDDING_MODEL
+    return "text-embedding-3-small" if PORTFOLIO_OPENAI.get() else EMBEDDING_MODEL
+
+
+PORTFOLIO_OPENAI = ContextVar("portfolio_openai", default=False)
 
 
 def llm_client_config(role: str = "generation") -> tuple[str, str, str, str] | None:
-    """Return the configured chat provider while leaving embeddings on OpenAI."""
-    if LLM_PROVIDER in {"local", "ollama"}:
+    """Return the configured chat provider, independently of embedding settings."""
+    if PORTFOLIO_OPENAI.get():
+        if not OPENAI_API_KEY:
+            return None
+        return "OpenAI", OPENAI_API_KEY, OPENAI_API_BASE_URL, os.getenv("PORTFOLIO_OPENAI_MODEL", "gpt-4.1-mini")
+    provider_name = (
+        SOCRATIC_TUTOR_PROVIDER if role == "tutor" and SOCRATIC_TUTOR_PROVIDER
+        else SOCRATIC_CLASSIFIER_PROVIDER if role == "classifier" and SOCRATIC_CLASSIFIER_PROVIDER
+        else SOCRATIC_SETUP_PROVIDER if role == "setup" and SOCRATIC_SETUP_PROVIDER
+        else SOCRATIC_FEEDBACK_PROVIDER if role == "qualitative_feedback" and SOCRATIC_FEEDBACK_PROVIDER
+        else LLM_PROVIDER
+    )
+    if provider_name in {"local", "ollama"}:
         role_model = {
             "classifier": OLLAMA_CLASSIFIER_MODEL,
             "evaluation": OLLAMA_ANSWER_EVALUATION_MODEL,
         }.get(role, "")
         return "Ollama", OLLAMA_API_KEY or "ollama", OLLAMA_API_BASE_URL, role_model or OLLAMA_MODEL
-    if LLM_PROVIDER == "groq":
+    if provider_name == "groq":
         if not GROQ_API_KEY:
             return None
         role_model = {
             "classifier": GROQ_CLASSIFIER_MODEL,
             "evaluation": GROQ_ANSWER_EVALUATION_MODEL,
         }.get(role, "")
-        return "Groq", GROQ_API_KEY, GROQ_API_BASE_URL, role_model or GROQ_MODEL
+        model = (
+            SOCRATIC_TUTOR_MODEL if role == "tutor" and SOCRATIC_TUTOR_PROVIDER
+            else SOCRATIC_FEEDBACK_MODEL if role == "qualitative_feedback" and SOCRATIC_FEEDBACK_PROVIDER
+            else role_model or GROQ_MODEL
+        )
+        return "Groq", GROQ_API_KEY, GROQ_API_BASE_URL, model
     if not OPENAI_API_KEY:
         return None
     role_model = {
+        "tutor": SOCRATIC_TUTOR_MODEL if SOCRATIC_TUTOR_PROVIDER == "openai" else "",
         "classifier": CLASSIFIER_MODEL,
         "evaluation": ANSWER_EVALUATION_MODEL,
     }.get(role, "")
@@ -108,6 +146,7 @@ def _schema_name(variable: str, default: str) -> str:
 
 PLATFORM_DB_SCHEMA = _schema_name("PLATFORM_DB_SCHEMA", "platform")
 SOCRATIC_DB_SCHEMA = _schema_name("SOCRATIC_DB_SCHEMA", "socratic_chat")
+SHARED_RAG_DB_SCHEMA = _schema_name("SHARED_RAG_DB_SCHEMA", "shared_rag")
 
 REQUIRE_EMAIL_VERIFICATION = os.getenv("REQUIRE_EMAIL_VERIFICATION", "false").lower() in {"1", "true", "yes"}
 SMTP_HOST = os.getenv("SMTP_HOST", "")
@@ -159,11 +198,8 @@ GITHUB_CALLBACK_URL = os.getenv("GITHUB_CALLBACK_URL", "")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://jamesonthehill.com/Socratic-Chat/")
 
 LTI_CANVAS_ISSUER = os.getenv("LTI_CANVAS_ISSUER", "").strip().rstrip("/")
-LTI_CLIENT_ID = os.getenv("LTI_CLIENT_ID", "").strip()
-LTI_DEPLOYMENT_ID = os.getenv("LTI_DEPLOYMENT_ID", "").strip()
-LTI_PLATFORM_JWKS_URL = os.getenv("LTI_PLATFORM_JWKS_URL", "").strip()
+CANVAS_API_ORIGIN = os.getenv("CANVAS_API_ORIGIN", "https://instructure.charlotte.edu").strip().rstrip("/")
 LTI_PUBLIC_BASE_URL = os.getenv("LTI_PUBLIC_BASE_URL", "").strip().rstrip("/")
-LTI_TOOL_PRIVATE_KEY_B64 = os.getenv("LTI_TOOL_PRIVATE_KEY_B64", "").strip()
-LTI_TOOL_KEY_ID = os.getenv("LTI_TOOL_KEY_ID", "cluball-lti-1").strip()
 LTI11_CONSUMER_KEY = os.getenv("LTI11_CONSUMER_KEY", "").strip()
 LTI11_SHARED_SECRET = os.getenv("LTI11_SHARED_SECRET", "")
+LTI_AUTO_CREATE_ASSIGNMENTS = os.getenv("LTI_AUTO_CREATE_ASSIGNMENTS", "true").lower() in {"1", "true", "yes"}

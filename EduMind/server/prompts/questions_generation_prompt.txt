@@ -1,0 +1,62 @@
+Following text provies instructions to generate {number_of_questions} questions based on the given query.
+The difficulty level should be {difficulty_level} for students pursuing a Bachelor of Science in Computer Science in R1-rated University.
+
+DATA INPUT:
+{data}
+
+TASK:
+By using the given text data, generate **exactly {number_of_questions}** unique questions that adhere to the following guidelines. Each question must be tailored to the specified {difficulty_level} level for Bachelor of Science in Computer Science students.
+Remember to include at least 40% questions based on a small and relevant code sample if the given DATA INPUT permits it. The code question should assess the student's ability to understand the function of the given code sample, rather than focusing on syntax. You are free to either put a code snippet in question or options.
+Each question must include tags and a difficulty level, determined using your reasoning. Tags should denote key concepts, fields, or terms, and the difficulty level should be a number between 1 and 5 (with 1 being the easiest and 5 the most difficult).
+
+GUIDELINES:
+    1. **Distinct and Diverse Content:** Ensure each question addresses a unique aspect of the provided data. Avoid duplicate phrasing or overlapping content.
+    2. **Variety in Question Types:** Use a mix of question types – multiple_choice, true_false, and multiple_response – where each type is best suited to the content.
+    3. **Difficulty Appropriateness:** Frame the questions to challenge students appropriately based on the {difficulty_level} level.
+    4. **Dynamic and Non-Repetitive Phrasing:** Ensure that both the language and structural styles of the questions differ substantially, reflecting a broad spectrum of academic linguistic domains.
+    5. **Accuracy and Relevance:** The questions must reflect the key concepts and details present in the DATA INPUT.
+    6. **Applicability:** Depending on the difficulty level, the questions must focus on evoking critical thinking in students covering deep knowledge of **practical application in real-world** rather than relying on ready-made answers from sources.
+    7. ** Formatting for code lines**: If a code snippet is generated either in question or options, it should be encapsulated in <pre><code> and </code></pre> tags. Additionally, each new line of code should be on a new line, use of \n is prohibited.
+    8. **Tags, Difficulty Level**: As the examples suggest, tags should be generated in a list or array format. Each tag should consist of no more than two words. At most three tags can be generated per question, so you need to select the ones most relevant to the question's context.
+
+QUESTION TYPES & EXAMPLES:
+- **multiple_choice**: This question presents four answer choices, with only one correct response.
+    - Example:
+    {{
+        "question": "What is the time complexity of the binary search algorithm?",
+        "options": ["O(n)", "O(log n)", "O(n log n)", "O(1)"],
+        "correct_options": [1],
+        "difficulty_level": "1",
+        "tags": ["Algorithms", "Asymptotic Runtime", "Binary Search"]
+    }}
+
+- **true_false**: This question provides two options (True/False), with only one correct response.
+    - Example:
+    {{
+        "question": "A stack follows the First In, First Out (FIFO) principle.",
+        "options": ["True", "False"],
+        "correct_options": [1],
+        "difficulty_level" : "2",
+        "tags": ["Data Structures", "Stack", "LIFO"]
+    }}
+
+- **multiple_response**: This question presents four answer choices, with multiple correct responses.
+    - Example:
+    {{
+        "question": "Which of the following are sorting algorithms?",
+        "options": ["Bubble Sort", "Dijkstra’s Algorithm", "Merge Sort", "Quick Sort"],
+        "correct_options": [0, 2, 3],
+        "difficulty_level": "1",
+        "tags": ["Algorithms", "Sorting"]
+    }}
+
+OUTPUT FORMAT:
+The final output must strictly follow the JSON format below and be encapsulated within `<JSON></JSON>` tags. Any response not adhering to this format will be rejected.
+
+<JSON>
+[
+    {{"question": "Your multiple_choice question text here", "options": ["Option A", "Option B", "Option C", "Option D"], "correct_options": [correct index], "difficulty_level": "difficulty level of question", "tags": ["Tag 1", "Tag 2"]}},
+    {{"question": "Your true/false question text here", "options": ["True", "False"], "correct_options": [correct index], "difficulty_level": "difficulty level of question", "tags": ["Tag 1", "Tag 2", "Tag 3"]}},
+    {{"question": "Your multiple_response question text here", "options": ["Option A", "Option B", "Option C", "Option D"], "correct_options": [correct indexes], "difficulty_level": "difficulty level of question", "tags": ["Tag 1"]}}
+]
+</JSON>

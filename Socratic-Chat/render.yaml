@@ -31,9 +31,9 @@ services:
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
       - key: GROQ_CLASSIFIER_MODEL
-        value: openai/gpt-oss-120b
+        value: openai/gpt-oss-20b
       - key: GROQ_ANSWER_EVALUATION_MODEL
-        value: openai/gpt-oss-120b
+        value: openai/gpt-oss-20b
       - key: CLASSIFIER_ENABLED
         value: "true"
       - key: GOOGLE_CLIENT_ID

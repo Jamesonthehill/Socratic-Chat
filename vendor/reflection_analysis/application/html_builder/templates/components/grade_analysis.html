@@ -1,0 +1,93 @@
+<!-- Grade Analysis Component -->
+<div class="grade-analysis-container">
+    <h2>Student Grade Analysis</h2>
+
+    {% set section_id = 'grade-distribution' %}
+    {% set title = 'Grade Distributions' %}
+    {% set content = distribution_html %}
+    {% include 'components/_collapsible_section.html' %}
+
+    {% set section_id = 'grade-trends' %}
+    {% set title = 'Grade Trends' %}
+    {% set content = trends_html %}
+    {% include 'components/_collapsible_section.html' %}
+
+    {% set section_id = 'grade-summary' %}
+    {% set title = 'Grade Summary Statistics' %}
+    {% set content = summary_html %}
+    {% include 'components/_collapsible_section.html' %}
+</div>
+
+<style>
+.grade-analysis-container {
+    margin: 20px 0;
+    padding: 20px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.grade-analysis-container h2 {
+    color: #2c3e50;
+    margin-bottom: 20px;
+    font-size: 1.8em;
+}
+
+.grade-analysis-container h3 {
+    color: #34495e;
+    margin: 15px 0;
+    font-size: 1.4em;
+}
+
+.grade-distribution-section,
+.grade-trends-section,
+.grade-summary-section {
+    margin: 20px 0;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 6px;
+}
+
+.grade-summary-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+}
+
+.grade-summary-table th,
+.grade-summary-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.grade-summary-table th {
+    background-color: #f1f3f5;
+    font-weight: 600;
+}
+
+.grade-summary-table tr:hover {
+    background-color: #f8f9fa;
+}
+
+/* Color coding for grades */
+.grade-a {
+    color: #28a745;
+}
+
+.grade-b {
+    color: #17a2b8;
+}
+
+.grade-c {
+    color: #ffc107;
+}
+
+.grade-d {
+    color: #fd7e14;
+}
+
+.grade-f {
+    color: #dc3545;
+}
+</style>

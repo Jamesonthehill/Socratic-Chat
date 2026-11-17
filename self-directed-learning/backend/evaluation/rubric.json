@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "scale": "Ordinal 0-3; no exact wording matching.",
+  "pass_rule": "All eight dimensions >=2, mean >=2.5, no deterministic failures, no unresolved independent failures.",
+  "negative_cases": "Scores are not applicable for expected safe-rejection/conflict cases. Pass requires explicit evidence that the specific gap/conflict is surfaced and unsupported requirements are not silently fulfilled. Provider outages are not passes.",
+  "dimensions": {
+    "accuracy": {
+      "0": "Central claims or answer keys contradict the source.",
+      "1": "A substantive error or ambiguous correct answer undermines learning.",
+      "2": "Core claims and keys are correct; minor imprecision does not change decisions.",
+      "3": "Claims, keys and explanations are accurate, qualified and internally consistent."
+    },
+    "coverage": {
+      "0": "A major intended competency is absent from teaching and assessment.",
+      "1": "Objectives are mentioned but important reasoning is neither taught nor elicited.",
+      "2": "Every expected competency is taught and elicited across quiz and application, with a minor imbalance.",
+      "3": "Coverage is substantive and balanced; explicit tasks elicit evidence for each intended competency."
+    },
+    "prerequisites": {
+      "0": "Completion requires experience or knowledge explicitly absent from prerequisites.",
+      "1": "Essential context is missing or prerequisites are substantially exceeded.",
+      "2": "Tasks are solvable from prerequisites and lesson, with only minor context gaps.",
+      "3": "Complete hypothetical scenarios scaffold novices appropriately without removing the intended reasoning."
+    },
+    "quiz_quality": {
+      "0": "Incorrect or multiple defensible keys; implausible distractors dominate.",
+      "1": "Mostly recall, obvious elimination or answer-revealing hints.",
+      "2": "One defensible key per item and plausible misconception-based alternatives; one minor weakness.",
+      "3": "All items discriminate understanding with parallel plausible alternatives and non-revealing hints."
+    },
+    "progression": {
+      "0": "Questions repeat the same reasoning without increased demand.",
+      "1": "Difficulty labels change but cognitive work remains essentially the same.",
+      "2": "Foundational understanding advances through discrimination to application; minor unevenness.",
+      "3": "Progression is clear in the decisions and evidence demanded, not length or difficulty labels."
+    },
+    "application": {
+      "0": "Task is unsolvable, requires undisclosed experience, or lacks essential context.",
+      "1": "Prompts are semantically redundant or demand generic reflection rather than decisions.",
+      "2": "One sufficiently specified scenario elicits distinct diagnosis, decision and concrete action.",
+      "3": "Distinct connected steps require evidence-based decisions and justified actions while allowing defensible alternatives."
+    },
+    "rubrics": {
+      "0": "Criteria cannot distinguish subject understanding from empty generic statements.",
+      "1": "Criteria partly match tasks but omit decisive reasoning or reward superficial responses.",
+      "2": "Observable task-specific evidence distinguishes weak, partial and strong reasoning with minor gaps.",
+      "3": "Each criterion aligns with requested reasoning and reliably distinguishes superficial, partial and well-supported answers without exact-phrase dependence."
+    },
+    "grounding": {
+      "0": "Central teaching or assessment relies on invented source claims or unsupported concepts.",
+      "1": "References are real but do not support important answers or explanations.",
+      "2": "Core content and answers follow from supplied source; invented scenarios are distinguishable.",
+      "3": "Source support is precise, important qualifications are preserved, examples are labeled and no invented references appear."
+    }
+  }
+}

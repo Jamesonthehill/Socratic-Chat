@@ -1,0 +1,26 @@
+name: BrainTutor server check
+
+on:
+  schedule:
+    - cron: '7,17,27,37,47,57 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: braintutor-server-check
+  cancel-in-progress: false
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check hosted BrainTutor
+        run: |
+          curl --fail --show-error --silent \
+            --connect-timeout 15 --max-time 90 \
+            --retry 2 --retry-delay 5 --retry-all-errors \
+            --user-agent "BrainTutor-Health-Check" \
+            https://cluball-platform-personal.onrender.com/health

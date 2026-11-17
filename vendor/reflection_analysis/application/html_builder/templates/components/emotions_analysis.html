@@ -1,0 +1,72 @@
+<!-- Emotions Analysis Component -->
+<div class="emotions-analysis-container">
+    <h2>Student Emotions Analysis</h2>
+
+    {% set section_id = 'emotions-bar-chart' %}
+    {% set title = 'Top Emotions' %}
+    {% set content = bar_chart_html %}
+    {% include 'components/_collapsible_section.html' %}
+
+    {% set section_id = 'emotions-table' %}
+    {% set title = 'Emotion Frequencies' %}
+    {% set content = table_html %}
+    {% include 'components/_collapsible_section.html' %}
+
+    {% set section_id = 'emotions-trend' %}
+    {% set title = 'Emotion Trends Across Reflections' %}
+    {% set content = trend_html %}
+    {% include 'components/_collapsible_section.html' %}
+</div>
+
+<style>
+.emotions-analysis-container {
+    margin: 20px 0;
+    padding: 20px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.emotions-analysis-container h2 {
+    color: #2c3e50;
+    margin-bottom: 20px;
+    font-size: 1.8em;
+}
+
+.emotions-analysis-container h3 {
+    color: #34495e;
+    margin: 15px 0;
+    font-size: 1.4em;
+}
+
+.emotions-chart-section,
+.emotions-table-section,
+.emotions-trend-section {
+    margin: 20px 0;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 6px;
+}
+
+.emotions-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+}
+
+.emotions-table th,
+.emotions-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.emotions-table th {
+    background-color: #f1f3f5;
+    font-weight: 600;
+}
+
+.emotions-table tr:hover {
+    background-color: #f8f9fa;
+}
+</style>

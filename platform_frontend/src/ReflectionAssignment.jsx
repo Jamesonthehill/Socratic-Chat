@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Chat from "../../reflections-app/frontend/src/Chat";
 import { api, SESSION_KEY } from "./api";
+import { GenerationStatus } from "./ui";
 
 export default function ReflectionAssignment({ assignmentId }) {
   const [assignment, setAssignment] = useState(null);
@@ -84,7 +85,7 @@ export default function ReflectionAssignment({ assignmentId }) {
             R
           </span>
           <span className="reflection-brand-name">
-            Course<span>Lab</span>
+            Brain<span>Tutor</span>
             <small>Reflections</small>
           </span>
         </span>
@@ -99,9 +100,7 @@ export default function ReflectionAssignment({ assignmentId }) {
         </header>
       )}
       {loading ? (
-        <p className="empty" role="status">
-          Opening your reflection…
-        </p>
+        <GenerationStatus message="Opening your reflection…" fullScreen />
       ) : error ? (
         <div className="page">
           <p role="alert">{error}</p>

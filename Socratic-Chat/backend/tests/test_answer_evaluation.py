@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from app.answer_evaluation import (
+    assess_student_answer_qualitatively,
     answer_evaluation_query,
     concept_coverage,
     evaluate_student_answer,
@@ -22,9 +23,7 @@ from app.schemas import ChatMessage, Source
 
 def answering_classification() -> MessageClassification:
     return MessageClassification(
-        question_type="follow_up",
         target_concepts=("version control",),
-        conversation_state="answering_tutor",
         dialogue_status="answering_tutor",
         conversation_action="continue",
         has_substantive_claim=True,
@@ -36,6 +35,70 @@ def answering_classification() -> MessageClassification:
 
 
 class AnswerEvaluationTests(unittest.TestCase):
+    def test_confirmation_checks_student_claim_not_previous_tutor_question(self) -> None:
+        payload = {
+            "concept": "Sprint Backlog components",
+            "supported_concepts": ["Sprint Goal", "plan"],
+            "missing_concepts": ["selected Product Backlog items"],
+            "critical_misconception": False,
+            "misconception": None,
+            "feedback": "Mostly right: the Sprint Backlog includes selected Product Backlog items, not the whole Product Backlog.",
+        }
+        complete = AsyncMock(return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload)))],
+        ))
+        classification = MessageClassification(
+            message_role="confirmation_request", dialogue_status="requesting_confirmation",
+            conversation_action="continue", has_substantive_claim=True,
+        )
+        source = Source(document_id="scrum", chunk_id="backlog", title="Scrum guide",
+                        text="The Sprint Backlog includes the Sprint Goal, selected Product Backlog items, and a plan.", score=1)
+        with (
+            patch("app.answer_evaluation.settings.llm_client_config", return_value=("Ollama", "", "http://localhost", "qwen")) as config,
+            patch("app.answer_evaluation.chat_completion", complete),
+            patch("app.answer_evaluation.write_llm_request_snapshot"),
+            patch("app.answer_evaluation.update_llm_request_snapshot"),
+        ):
+            feedback = asyncio.run(assess_student_answer_qualitatively(
+                "So the Sprint Backlog has the Sprint Goal, Product Backlog, and a plan?",
+                [ChatMessage(role="assistant", content="How would you adjust the Sprint Goal for mobile signup?")],
+                [source], classification,
+            ))
+        request = complete.await_args.args[2]
+        config.assert_called_once_with("qualitative_feedback")
+        self.assertIn("student's own claim", request["messages"][0]["content"])
+        self.assertIn("Student claim to verify", request["messages"][1]["content"])
+        self.assertIn("selected Product Backlog items", feedback.feedback)
+
+    def test_qualitative_feedback_has_no_score_or_mastery_fields(self) -> None:
+        payload = {
+            "concept": "resource check",
+            "supported_concepts": [],
+            "missing_concepts": ["check ingredients before payment"],
+            "critical_misconception": False,
+            "misconception": None,
+            "feedback": "The assignment checks ingredients before asking for coins.",
+        }
+        response = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload)))],
+        )
+        create = AsyncMock(return_value=response)
+        history = [ChatMessage(role="assistant", content="What happens after choosing small?")]
+        source = Source(document_id="pdf", chunk_id="step", title="Sandwich.pdf",
+                        text="Check resources before asking for coins.", score=1)
+        with (
+            patch("app.answer_evaluation.settings.llm_client_config", return_value=("Ollama", "", "http://localhost", "qwen")),
+            patch("app.answer_evaluation.chat_completion", create),
+            patch("app.answer_evaluation.write_llm_request_snapshot"),
+            patch("app.answer_evaluation.update_llm_request_snapshot"),
+        ):
+            feedback = asyncio.run(assess_student_answer_qualitatively(
+                "It adds my order to a list.", history, [source], answering_classification(),
+            ))
+        self.assertEqual(feedback.concept, "resource check")
+        self.assertFalse(feedback.ready_to_complete)
+        self.assertNotIn("total_score", create.await_args.args[2]["response_format"]["json_schema"]["schema"]["properties"])
+
     def test_openai_gpt_4_1_mini_uses_strict_schema(self) -> None:
         payload = {
             "concept": "version control",
@@ -84,13 +147,11 @@ class AnswerEvaluationTests(unittest.TestCase):
         self.assertEqual(request["model"], "gpt-4.1-mini")
         self.assertNotIn("extra_body", request)
 
-    def test_mastery_requires_repeated_evidence_then_transfer_verification(self) -> None:
-        first = db._mastery_progress_update(None, 85, 4, 2, False)
-        second = db._mastery_progress_update(first, 88, 4, 2, False)
-        final = db._mastery_progress_update(second, 90, 4, 3, False)
-        self.assertEqual(first[2], "developing")
-        self.assertEqual(second[2], "ready_for_verification")
-        self.assertEqual(final[2], "mastered")
+    def test_score_at_least_80_completes_without_an_extra_transfer_turn(self) -> None:
+        strong = db._mastery_progress_update(None, 85, 4, None, False)
+        developing = db._mastery_progress_update(None, 79, 3, None, False)
+        self.assertEqual(strong[2], "mastered")
+        self.assertEqual(developing[2], "developing")
 
     def test_critical_misconception_routes_to_support(self) -> None:
         progress = db._mastery_progress_update((90, 2, "ready_for_verification"), 59, 1, 0, True)
@@ -116,16 +177,6 @@ class AnswerEvaluationTests(unittest.TestCase):
         self.assertFalse(should_evaluate_answer("What is code review?", history, new_topic))
         self.assertFalse(should_evaluate_answer("I understand it now.", history, understanding))
 
-    def test_question_is_not_scored_even_if_classifier_keeps_previous_dialogue_state(self) -> None:
-        history = [ChatMessage(role="assistant", content="Which part of the change is hardest to review?")]
-        self.assertFalse(
-            should_evaluate_answer(
-                "What is the core skill in code review?",
-                history,
-                answering_classification(),
-            )
-        )
-
     def test_evaluation_query_includes_tutor_question_for_elliptical_answer(self) -> None:
         history = [ChatMessage(role="assistant", content="Why might a team use version control?")]
         query = answer_evaluation_query(
@@ -133,6 +184,20 @@ class AnswerEvaluationTests(unittest.TestCase):
         )
         self.assertIn("Why might a team use version control?", query)
         self.assertIn("Because it tracks changes.", query)
+
+    def test_evaluation_query_keeps_original_concept_when_turn_focus_changes(self) -> None:
+        history = [ChatMessage(role="assistant", content="Why should Sam inspect Alex's change?")]
+        classification = MessageClassification(
+            route="learning", dialogue_status="answering_tutor", conversation_action="continue",
+            target_concepts=("maintainability",), target="maintainability",
+            rewritten_query="maintainability naming conventions",
+        )
+        query = answer_evaluation_query(
+            "Sam can understand the fix later.", history, classification, stable_concept="code review",
+        )
+        self.assertTrue(query.startswith("code review "))
+        self.assertIn("Why should Sam inspect Alex's change?", query)
+        self.assertNotIn("maintainability", query)
 
     def test_keyword_coverage_accepts_aliases(self) -> None:
         expected = (
@@ -250,9 +315,9 @@ class AnswerEvaluationTests(unittest.TestCase):
             "version control",
         )
         self.assertEqual(evaluation.total_score, 59.0)
-        self.assertFalse(evaluation.ready_for_verification)
+        self.assertFalse(evaluation.ready_to_complete)
 
-    def test_recorded_high_score_waits_for_persistent_ready_status(self) -> None:
+    def test_high_score_is_ready_to_complete_without_another_check(self) -> None:
         evaluation = validated_evaluation(
             {
                 "concept": "version control",
@@ -273,10 +338,8 @@ class AnswerEvaluationTests(unittest.TestCase):
             "history",
             "version control",
         )
-        developing = with_progress_status(evaluation, "developing")
-        ready = with_progress_status(evaluation, "ready_for_verification")
-        self.assertNotIn("final verification task", evaluation_tutor_instruction(developing))
-        self.assertIn("final verification task", evaluation_tutor_instruction(ready))
+        self.assertTrue(evaluation.ready_to_complete)
+        self.assertIn("no further question", evaluation_tutor_instruction(evaluation))
 
     def test_partial_evaluation_requests_scenario_complication_not_missing_facts(self) -> None:
         evaluation = validated_evaluation(
@@ -304,9 +367,9 @@ class AnswerEvaluationTests(unittest.TestCase):
         )
         developing = with_progress_status(evaluation, "developing")
         instruction = evaluation_tutor_instruction(developing)
-        self.assertIn("observable complication", instruction)
-        self.assertIn("lets the learner infer it", instruction)
-        self.assertIn("Do not begin with an evaluation label", instruction)
+        self.assertIn("If missing concepts are listed", instruction)
+        self.assertIn("ask one question about it", instruction)
+        self.assertIn("Do not select a different hint style", instruction)
 
     def test_complete_answer_below_eighty_advances_instead_of_reasking(self) -> None:
         evaluation = validated_evaluation(
@@ -334,8 +397,73 @@ class AnswerEvaluationTests(unittest.TestCase):
             "version control",
         )
         instruction = evaluation_tutor_instruction(with_progress_status(evaluation, "developing"))
-        self.assertIn("next decision", instruction)
+        self.assertIn("next grounded decision", instruction)
         self.assertNotIn("Convert the most important missing concept", instruction)
+
+    def test_historical_mastery_cannot_complete_a_current_critical_misconception(self) -> None:
+        evaluation = validated_evaluation(
+            {
+                "concept": "code review",
+                "expected_concepts": [
+                    {"name": "snapshot", "accepted_terms": ["patch"]},
+                    {"name": "mail to reviewers", "accepted_terms": ["send to reviewers"]},
+                ],
+                "semantic_alignment": 0.2,
+                "correctness": 1,
+                "completeness": 1,
+                "reasoning": 1,
+                "application": 1,
+                "understanding_improved": False,
+                "supported_concepts": [],
+                "missing_concepts": ["creating a snapshot", "mailing the change to reviewers"],
+                "critical_misconception": True,
+                "misconception": "A meeting is not the required first review step.",
+                "feedback": "Create a patch and description, then mail it to reviewers.",
+                "confidence": 0.95,
+            },
+            "I could make a meeting and practice the presentation.",
+            "code review",
+        )
+
+        instruction = evaluation_tutor_instruction(with_progress_status(evaluation, "mastered"))
+
+        self.assertNotIn("learning objective is complete", instruction)
+        self.assertNotIn("ask no question", instruction)
+        self.assertIn("creating a snapshot", instruction)
+        self.assertIn("Do not advance to review criteria", instruction)
+
+    def test_low_partial_score_requires_visible_evaluator_feedback(self) -> None:
+        evaluation = validated_evaluation(
+            {
+                "concept": "code review",
+                "expected_concepts": [
+                    {"name": "review feedback", "accepted_terms": ["questions", "comments"]},
+                    {"name": "knowledge sharing", "accepted_terms": ["both parties learn"]},
+                ],
+                "semantic_alignment": 0.6,
+                "correctness": 3,
+                "completeness": 2,
+                "reasoning": 2,
+                "application": None,
+                "understanding_improved": None,
+                "supported_concepts": ["review feedback"],
+                "missing_concepts": [],
+                "critical_misconception": False,
+                "misconception": None,
+                "feedback": "The answer identifies reviewer feedback but does not explain how both parties learn.",
+                "confidence": 0.9,
+            },
+            "Reviewers can ask questions or give feedback.",
+            "code review",
+        )
+
+        instruction = evaluation_tutor_instruction(evaluation)
+
+        self.assertIn("Respond naturally", instruction)
+        self.assertIn("does not explain how both parties learn", instruction)
+        self.assertIn("If missing concepts are listed", instruction)
+        self.assertIn("Do not copy it verbatim", instruction)
+        self.assertIn("Do not select a different hint style", instruction)
 
 
 if __name__ == "__main__":

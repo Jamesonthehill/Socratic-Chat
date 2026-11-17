@@ -19,8 +19,10 @@ class PipelineLoggingTests(unittest.TestCase):
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.trace_file = Path(directory.name) / "traces.json"
+        self.prompt_dir = Path(directory.name) / "prompts"
         for replacement in (
             patch.object(pipeline_logging.settings, "PIPELINE_TRACE_FILE", self.trace_file),
+            patch.object(pipeline_logging.settings, "PIPELINE_PROMPT_DIR", self.prompt_dir),
             patch.object(db.settings, "DATABASE_URL", ""),
             patch.object(pipeline_logging, "_recent_traces", deque(maxlen=100)),
             patch.object(pipeline_logging, "_trace_records", {}),
@@ -64,6 +66,23 @@ class PipelineLoggingTests(unittest.TestCase):
         self.assertEqual(event["event"], "message_classification_completed")
         self.assertEqual(event["fields"]["question_type"], "what")
         self.assertEqual(event["fields"]["target_concepts"], "core skill|code review")
+
+    def test_provider_failure_persists_safe_error_metadata(self) -> None:
+        class ProviderError(Exception):
+            status_code = 429
+            body = {"error": {"code": "rate_limit_exceeded", "message": "Private student text"}}
+
+        tokens = pipeline_logging.begin_trace("trace-provider-error", "conversation-456")
+        try:
+            pipeline_logging.log_exception(8, "llm_request_failed", ProviderError(), provider="Groq")
+        finally:
+            pipeline_logging.end_trace(tokens)
+
+        trace = next(item for item in pipeline_logging.recent_traces() if item["trace_id"] == "trace-provider-error")
+        event = trace["events"][0]
+        self.assertEqual(event["fields"]["status_code"], 429)
+        self.assertEqual(event["fields"]["provider_error_code"], "rate_limit_exceeded")
+        self.assertNotIn("Private student text", json.dumps(trace))
 
     def test_debug_logging_uses_digest_instead_of_content(self) -> None:
         sensitive_text = "student@example.edu asked a private question"
@@ -137,6 +156,36 @@ class PipelineLoggingTests(unittest.TestCase):
             self.assertIn('"raw_response": "Model draft"', snapshot)
             self.assertIn('"final_response": "Model answer"', snapshot)
             self.assertIn('"latency_ms": 1234', snapshot)
+
+    def test_full_model_snapshots_read_one_trace_without_path_traversal(self) -> None:
+        trace_id = "a" * 32
+        with TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            (directory / f"{trace_id}-classifier.json").write_text(json.dumps({
+                "trace_id": trace_id, "phase": "classifier", "request": {"messages": []},
+                "result": {"parsed_output": {"model_observation": {"message_role": "acknowledgement"}}},
+            }), encoding="utf-8")
+            (directory / f"{'b' * 32}-classifier.json").write_text(json.dumps({
+                "trace_id": "b" * 32, "phase": "classifier",
+            }), encoding="utf-8")
+            with (
+                patch.object(pipeline_logging.settings, "LOG_FULL_PROMPTS", True),
+                patch.object(pipeline_logging.settings, "PIPELINE_PROMPT_DIR", directory),
+            ):
+                snapshots = pipeline_logging.full_model_snapshots(trace_id)
+                self.assertEqual(len(snapshots), 1)
+                self.assertEqual(snapshots[0]["result"]["parsed_output"]["model_observation"]["message_role"], "acknowledgement")
+                with self.assertRaises(ValueError):
+                    pipeline_logging.full_model_snapshots("../other")
+
+    def test_delete_traces_also_deletes_full_model_snapshots(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            snapshot = directory / ("a" * 32 + "-classifier.json")
+            snapshot.write_text("{}", encoding="utf-8")
+            with patch.object(pipeline_logging.settings, "PIPELINE_PROMPT_DIR", directory):
+                pipeline_logging.delete_recent_traces()
+            self.assertFalse(snapshot.exists())
 
     def test_completed_trace_is_persisted_for_refresh_and_restart(self) -> None:
         with TemporaryDirectory() as temporary_directory:

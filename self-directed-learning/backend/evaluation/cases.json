@@ -1,0 +1,609 @@
+{
+  "dataset_version": 1,
+  "status": "candidate",
+  "notice": "Initial synthetic cases require subject-matter review before freezing. These are not ideal lessons or an authoritative gold standard.",
+  "cases": [
+    {
+      "id": "scrum",
+      "review_status": "candidate",
+      "educational_level": "Undergraduate introductory software engineering",
+      "learning_focus": "Plan, execute, inspect and adapt work during a Sprint",
+      "specific_concepts": [
+        "Sprint Goal and Sprint Planning",
+        "self-management and accountabilities",
+        "inspection, adaptation and quality"
+      ],
+      "prerequisite_knowledge": "Basic software development knowledge; no Scrum or practical team-project experience.",
+      "expected_learning_outcomes": [
+        "Explain how Sprint Planning establishes a goal and plan.",
+        "Decide how Developers adapt work while preserving quality.",
+        "Distinguish Daily Scrum, Sprint Review and Retrospective."
+      ],
+      "additional_constraints": "Target level: Undergraduate introductory software engineering. Use supplied hypothetical scenarios; do not require personal project experience.",
+      "source_fixture": "sources/scrum.md",
+      "source_kind": "synthetic candidate, not authoritative gold standard",
+      "expected_objective_coverage": [
+        "Explain how Sprint Planning establishes a goal and plan.",
+        "Decide how Developers adapt work while preserving quality.",
+        "Distinguish Daily Scrum, Sprint Review and Retrospective."
+      ],
+      "important_factual_concepts": [
+        "Self-management does not mean absence of accountability.",
+        "Daily Scrum, Review and Retrospective have different inspection purposes.",
+        "Scope can be renegotiated without lowering quality."
+      ],
+      "misconceptions": [
+        "Scrum Master assigns tasks",
+        "Daily Scrum is managerial reporting",
+        "Review and Retrospective are interchangeable"
+      ],
+      "known_failure_modes": [
+        "missing objective coverage",
+        "recognition-only quiz",
+        "weak distractors",
+        "redundant application prompts",
+        "unmeasurable rubric",
+        "unsupported source citation"
+      ],
+      "expected_behavior": "lesson"
+    },
+    {
+      "id": "git",
+      "review_status": "candidate",
+      "educational_level": "First-year university computing",
+      "learning_focus": "Reason about local changes and collaborative history",
+      "specific_concepts": [
+        "working tree, index and commits",
+        "fetch versus pull",
+        "merge conflict resolution"
+      ],
+      "prerequisite_knowledge": "Can edit text files; no Git use or collaborative project experience.",
+      "expected_learning_outcomes": [
+        "Predict which changes a commit records.",
+        "Explain what fetch changes and what it leaves untouched.",
+        "Choose a safe conflict-resolution sequence."
+      ],
+      "additional_constraints": "Target level: First-year university computing. Use supplied hypothetical scenarios; do not require personal project experience.",
+      "source_fixture": "sources/git.md",
+      "source_kind": "synthetic candidate, not authoritative gold standard",
+      "expected_objective_coverage": [
+        "Predict which changes a commit records.",
+        "Explain what fetch changes and what it leaves untouched.",
+        "Choose a safe conflict-resolution sequence."
+      ],
+      "important_factual_concepts": [
+        "Commits capture staged content.",
+        "Fetch and integration are distinct operations.",
+        "Resolving conflicts requires reasoning about intended content."
+      ],
+      "misconceptions": [
+        "commit includes all edits",
+        "fetch merges automatically",
+        "conflicts imply corruption"
+      ],
+      "known_failure_modes": [
+        "missing objective coverage",
+        "recognition-only quiz",
+        "weak distractors",
+        "redundant application prompts",
+        "unmeasurable rubric",
+        "unsupported source citation"
+      ],
+      "expected_behavior": "lesson"
+    },
+    {
+      "id": "sql",
+      "review_status": "candidate",
+      "educational_level": "Undergraduate database introduction",
+      "learning_focus": "Reason about row selection, grouping and missing matches",
+      "specific_concepts": [
+        "LEFT JOIN",
+        "WHERE versus HAVING",
+        "NULL and COUNT"
+      ],
+      "prerequisite_knowledge": "Understands tables and basic SELECT; no joins or aggregation experience.",
+      "expected_learning_outcomes": [
+        "Predict unmatched rows in a LEFT JOIN.",
+        "Distinguish filtering rows from filtering groups.",
+        "Explain COUNT(*) versus COUNT(column) with NULLs."
+      ],
+      "additional_constraints": "Target level: Undergraduate database introduction. Use supplied hypothetical scenarios; do not require personal project experience.",
+      "source_fixture": "sources/sql.md",
+      "source_kind": "synthetic candidate, not authoritative gold standard",
+      "expected_objective_coverage": [
+        "Predict unmatched rows in a LEFT JOIN.",
+        "Distinguish filtering rows from filtering groups.",
+        "Explain COUNT(*) versus COUNT(column) with NULLs."
+      ],
+      "important_factual_concepts": [
+        "ON and WHERE can differ for outer joins.",
+        "HAVING filters groups.",
+        "COUNT(column) ignores NULL values."
+      ],
+      "misconceptions": [
+        "WHERE and HAVING interchangeable",
+        "COUNT(*) ignores NULL rows",
+        "NULL equals NULL"
+      ],
+      "known_failure_modes": [
+        "missing objective coverage",
+        "recognition-only quiz",
+        "weak distractors",
+        "redundant application prompts",
+        "unmeasurable rubric",
+        "unsupported source citation"
+      ],
+      "expected_behavior": "lesson"
+    },
+    {
+      "id": "rest",
+      "review_status": "candidate",
+      "educational_level": "Undergraduate web development",
+      "learning_focus": "Make HTTP API decisions using method semantics",
+      "specific_concepts": [
+        "safe versus idempotent",
+        "PUT and POST",
+        "status codes"
+      ],
+      "prerequisite_knowledge": "Can read HTTP requests and JSON; has not built an API.",
+      "expected_learning_outcomes": [
+        "Distinguish safe from idempotent methods.",
+        "Choose PUT or POST for a specified resource operation.",
+        "Interpret successful creation and missing-resource responses."
+      ],
+      "additional_constraints": "Target level: Undergraduate web development. Use supplied hypothetical scenarios; do not require personal project experience.",
+      "source_fixture": "sources/rest.md",
+      "source_kind": "synthetic candidate, not authoritative gold standard",
+      "expected_objective_coverage": [
+        "Distinguish safe from idempotent methods.",
+        "Choose PUT or POST for a specified resource operation.",
+        "Interpret successful creation and missing-resource responses."
+      ],
+      "important_factual_concepts": [
+        "Safe and idempotent describe different properties.",
+        "Idempotent effects do not imply identical responses.",
+        "Creation can use 201 with Location."
+      ],
+      "misconceptions": [
+        "all idempotent methods safe",
+        "POST always creates at known URI",
+        "DELETE status must be identical"
+      ],
+      "known_failure_modes": [
+        "missing objective coverage",
+        "recognition-only quiz",
+        "weak distractors",
+        "redundant application prompts",
+        "unmeasurable rubric",
+        "unsupported source citation"
+      ],
+      "expected_behavior": "lesson"
+    },
+    {
+      "id": "testing",
+      "review_status": "candidate",
+      "educational_level": "Undergraduate software engineering",
+      "learning_focus": "Choose tests that expose boundary and interaction faults",
+      "specific_concepts": [
+        "equivalence partitions",
+        "boundary values",
+        "unit versus integration tests"
+      ],
+      "prerequisite_knowledge": "Can read a function and if statements; no testing employment or project experience.",
+      "expected_learning_outcomes": [
+        "Select representative valid and invalid partitions.",
+        "Choose boundary tests for an inclusive range.",
+        "Distinguish an isolated unit check from an integration check."
+      ],
+      "additional_constraints": "Target level: Undergraduate software engineering. Use supplied hypothetical scenarios; do not require personal project experience.",
+      "source_fixture": "sources/testing.md",
+      "source_kind": "synthetic candidate, not authoritative gold standard",
+      "expected_objective_coverage": [
+        "Select representative valid and invalid partitions.",
+        "Choose boundary tests for an inclusive range.",
+        "Distinguish an isolated unit check from an integration check."
+      ],
+      "important_factual_concepts": [
+        "Boundary tests target edge errors.",
+        "Unit and integration tests provide different evidence.",
+        "Passing tests cannot prove no defects."
+      ],
+      "misconceptions": [
+        "more cases always better",
+        "mock database proves real database integration",
+        "tests prove absence of bugs"
+      ],
+      "known_failure_modes": [
+        "missing objective coverage",
+        "recognition-only quiz",
+        "weak distractors",
+        "redundant application prompts",
+        "unmeasurable rubric",
+        "unsupported source citation"
+      ],
+      "expected_behavior": "lesson"
+    },
+    {
+      "id": "probability",
+      "review_status": "candidate",
+      "educational_level": "Upper secondary mathematics",
+      "learning_focus": "Interpret conditional probability and test results",
+      "specific_concepts": [
+        "conditional probability",
+        "base rates",
+        "independence"
+      ],
+      "prerequisite_knowledge": "Can use fractions and percentages; no probability coursework.",
+      "expected_learning_outcomes": [
+        "Distinguish P(A given B) from P(B given A).",
+        "Compute a positive-test interpretation using natural frequencies.",
+        "Explain why sensitivity alone is insufficient."
+      ],
+      "additional_constraints": "Target level: Upper secondary mathematics. Use supplied hypothetical scenarios; do not require personal project experience.",
+      "source_fixture": "sources/probability.md",
+      "source_kind": "synthetic candidate, not authoritative gold standard",
+      "expected_objective_coverage": [
+        "Distinguish P(A given B) from P(B given A).",
+        "Compute a positive-test interpretation using natural frequencies.",
+        "Explain why sensitivity alone is insufficient."
+      ],
+      "important_factual_concepts": [
+        "Conditioning changes the reference population.",
+        "Base rates affect positive predictive value.",
+        "Independence differs from mutual exclusivity."
+      ],
+      "misconceptions": [
+        "sensitivity equals positive predictive value",
+        "reverse condition unchanged",
+        "mutually exclusive means independent"
+      ],
+      "known_failure_modes": [
+        "missing objective coverage",
+        "recognition-only quiz",
+        "weak distractors",
+        "redundant application prompts",
+        "unmeasurable rubric",
+        "unsupported source citation"
+      ],
+      "expected_behavior": "lesson"
+    },
+    {
+      "id": "biology",
+      "review_status": "candidate",
+      "educational_level": "Upper secondary biology",
+      "learning_focus": "Explain cell-volume changes across a membrane",
+      "specific_concepts": [
+        "diffusion",
+        "osmosis and tonicity",
+        "equilibrium"
+      ],
+      "prerequisite_knowledge": "Knows cells have membranes; no lab experience.",
+      "expected_learning_outcomes": [
+        "Predict water movement with an impermeable solute.",
+        "Explain effects on an animal cell.",
+        "Distinguish dynamic equilibrium from stopped movement."
+      ],
+      "additional_constraints": "Target level: Upper secondary biology. Use supplied hypothetical scenarios; do not require personal project experience.",
+      "source_fixture": "sources/biology.md",
+      "source_kind": "synthetic candidate, not authoritative gold standard",
+      "expected_objective_coverage": [
+        "Predict water movement with an impermeable solute.",
+        "Explain effects on an animal cell.",
+        "Distinguish dynamic equilibrium from stopped movement."
+      ],
+      "important_factual_concepts": [
+        "Water moves toward higher nonpenetrating-solute concentration in the stated model.",
+        "Dynamic equilibrium retains molecular motion.",
+        "Tonicity depends on membrane permeability."
+      ],
+      "misconceptions": [
+        "equilibrium means molecules stop",
+        "water moves toward less solute",
+        "animal and plant cells behave identically"
+      ],
+      "known_failure_modes": [
+        "missing objective coverage",
+        "recognition-only quiz",
+        "weak distractors",
+        "redundant application prompts",
+        "unmeasurable rubric",
+        "unsupported source citation"
+      ],
+      "expected_behavior": "lesson"
+    },
+    {
+      "id": "physics",
+      "review_status": "candidate",
+      "educational_level": "Upper secondary physics",
+      "learning_focus": "Use forces to explain changes in motion",
+      "specific_concepts": [
+        "net force",
+        "velocity versus acceleration",
+        "action-reaction pairs"
+      ],
+      "prerequisite_knowledge": "Knows distance and time; can use basic algebra; no mechanics labs.",
+      "expected_learning_outcomes": [
+        "Relate net force to acceleration for constant mass.",
+        "Explain motion when net force is zero.",
+        "Identify third-law forces acting on different bodies."
+      ],
+      "additional_constraints": "Target level: Upper secondary physics. Use supplied hypothetical scenarios; do not require personal project experience.",
+      "source_fixture": "sources/physics.md",
+      "source_kind": "synthetic candidate, not authoritative gold standard",
+      "expected_objective_coverage": [
+        "Relate net force to acceleration for constant mass.",
+        "Explain motion when net force is zero.",
+        "Identify third-law forces acting on different bodies."
+      ],
+      "important_factual_concepts": [
+        "Zero net force allows constant nonzero velocity.",
+        "Net force determines acceleration, not velocity.",
+        "Third-law pairs act on different objects."
+      ],
+      "misconceptions": [
+        "motion requires net forward force",
+        "zero force means stationary",
+        "third-law forces cancel on one body"
+      ],
+      "known_failure_modes": [
+        "missing objective coverage",
+        "recognition-only quiz",
+        "weak distractors",
+        "redundant application prompts",
+        "unmeasurable rubric",
+        "unsupported source citation"
+      ],
+      "expected_behavior": "lesson"
+    },
+    {
+      "id": "economics",
+      "review_status": "candidate",
+      "educational_level": "Introductory undergraduate economics",
+      "learning_focus": "Reason about price controls and supply-demand shifts",
+      "specific_concepts": [
+        "demand versus quantity demanded",
+        "binding price ceiling",
+        "shortage versus equilibrium"
+      ],
+      "prerequisite_knowledge": "Can read a graph; no economics coursework.",
+      "expected_learning_outcomes": [
+        "Distinguish movement along demand from a demand shift.",
+        "Predict a binding price ceiling shortage.",
+        "State the ceteris paribus assumptions of a prediction."
+      ],
+      "additional_constraints": "Target level: Introductory undergraduate economics. Use supplied hypothetical scenarios; do not require personal project experience.",
+      "source_fixture": "sources/economics.md",
+      "source_kind": "synthetic candidate, not authoritative gold standard",
+      "expected_objective_coverage": [
+        "Distinguish movement along demand from a demand shift.",
+        "Predict a binding price ceiling shortage.",
+        "State the ceteris paribus assumptions of a prediction."
+      ],
+      "important_factual_concepts": [
+        "Own-price changes move along demand.",
+        "A below-equilibrium ceiling can create a shortage.",
+        "Model assumptions constrain real-world inference."
+      ],
+      "misconceptions": [
+        "price fall shifts demand",
+        "ceiling above equilibrium always binds",
+        "shortage equals demand shift"
+      ],
+      "known_failure_modes": [
+        "missing objective coverage",
+        "recognition-only quiz",
+        "weak distractors",
+        "redundant application prompts",
+        "unmeasurable rubric",
+        "unsupported source citation"
+      ],
+      "expected_behavior": "lesson"
+    },
+    {
+      "id": "cybersecurity",
+      "review_status": "candidate",
+      "educational_level": "Introductory professional training",
+      "learning_focus": "Protect a hypothetical web account system",
+      "specific_concepts": [
+        "authentication versus authorization",
+        "least privilege",
+        "parameterized queries"
+      ],
+      "prerequisite_knowledge": "Can use a browser and read simple pseudocode; no security job or production-system access.",
+      "expected_learning_outcomes": [
+        "Distinguish identity verification from permission checks.",
+        "Choose a least-privilege authorization rule.",
+        "Explain why parameterization separates query structure from data."
+      ],
+      "additional_constraints": "Target level: Introductory professional training. Use supplied hypothetical scenarios; do not require personal project experience.",
+      "source_fixture": "sources/cybersecurity.md",
+      "source_kind": "synthetic candidate, not authoritative gold standard",
+      "expected_objective_coverage": [
+        "Distinguish identity verification from permission checks.",
+        "Choose a least-privilege authorization rule.",
+        "Explain why parameterization separates query structure from data."
+      ],
+      "important_factual_concepts": [
+        "Authentication does not establish authorization.",
+        "Server-side resource permissions enforce least privilege.",
+        "Parameterization addresses query injection, not every security risk."
+      ],
+      "misconceptions": [
+        "logged in means authorized",
+        "hidden buttons enforce access",
+        "parameterization replaces permissions"
+      ],
+      "known_failure_modes": [
+        "missing objective coverage",
+        "recognition-only quiz",
+        "weak distractors",
+        "redundant application prompts",
+        "unmeasurable rubric",
+        "unsupported source citation"
+      ],
+      "expected_behavior": "lesson"
+    },
+    {
+      "id": "sql-missing-evidence",
+      "review_status": "candidate",
+      "educational_level": "Undergraduate database introduction",
+      "learning_focus": "Reason about row selection, grouping and missing matches",
+      "specific_concepts": [
+        "LEFT JOIN",
+        "WHERE versus HAVING",
+        "NULL and COUNT"
+      ],
+      "prerequisite_knowledge": "Understands tables and basic SELECT; no joins or aggregation experience.",
+      "expected_learning_outcomes": [
+        "Predict unmatched rows in a LEFT JOIN.",
+        "Distinguish filtering rows from filtering groups.",
+        "Explain COUNT(*) versus COUNT(column) with NULLs."
+      ],
+      "additional_constraints": "Target level: Undergraduate database introduction. Use supplied hypothetical scenarios; do not require personal project experience.",
+      "source_fixture": "sources/sql-incomplete.md",
+      "source_kind": "synthetic candidate, not authoritative gold standard",
+      "expected_objective_coverage": [
+        "Predict unmatched rows in a LEFT JOIN.",
+        "Distinguish filtering rows from filtering groups.",
+        "Explain COUNT(*) versus COUNT(column) with NULLs."
+      ],
+      "important_factual_concepts": [
+        "ON and WHERE can differ for outer joins.",
+        "HAVING filters groups.",
+        "COUNT(column) ignores NULL values."
+      ],
+      "misconceptions": [
+        "WHERE and HAVING interchangeable",
+        "COUNT(*) ignores NULL rows",
+        "NULL equals NULL"
+      ],
+      "known_failure_modes": [
+        "inventing joins or aggregation support from a SELECT-only source"
+      ],
+      "expected_behavior": "flag_insufficient_evidence"
+    },
+    {
+      "id": "git-conflicting-instructions",
+      "review_status": "candidate",
+      "educational_level": "First-year university computing",
+      "learning_focus": "Reason about local changes and collaborative history",
+      "specific_concepts": [
+        "working tree, index and commits",
+        "fetch versus pull",
+        "merge conflict resolution"
+      ],
+      "prerequisite_knowledge": "Can edit text files; no Git use or collaborative project experience.",
+      "expected_learning_outcomes": [
+        "Predict which changes a commit records.",
+        "Explain what fetch changes and what it leaves untouched.",
+        "Choose a safe conflict-resolution sequence."
+      ],
+      "additional_constraints": "Every application must require reflection on the student's real Git project. Students explicitly have no Git or project experience. Do not introduce a hypothetical substitute without flagging this conflict.",
+      "source_fixture": "sources/git.md",
+      "source_kind": "synthetic candidate, not authoritative gold standard",
+      "expected_objective_coverage": [
+        "Predict which changes a commit records.",
+        "Explain what fetch changes and what it leaves untouched.",
+        "Choose a safe conflict-resolution sequence."
+      ],
+      "important_factual_concepts": [
+        "Commits capture staged content.",
+        "Fetch and integration are distinct operations.",
+        "Resolving conflicts requires reasoning about intended content."
+      ],
+      "misconceptions": [
+        "commit includes all edits",
+        "fetch merges automatically",
+        "conflicts imply corruption"
+      ],
+      "known_failure_modes": [
+        "silently assuming practical experience",
+        "silently ignoring contradictory instructions"
+      ],
+      "expected_behavior": "flag_constraint_conflict"
+    },
+    {
+      "id": "biology-weak-source",
+      "review_status": "candidate",
+      "educational_level": "Upper secondary biology",
+      "learning_focus": "Explain cell-volume changes across a membrane",
+      "specific_concepts": [
+        "diffusion",
+        "osmosis and tonicity",
+        "equilibrium"
+      ],
+      "prerequisite_knowledge": "Knows cells have membranes; no lab experience.",
+      "expected_learning_outcomes": [
+        "Predict water movement with an impermeable solute.",
+        "Explain effects on an animal cell.",
+        "Distinguish dynamic equilibrium from stopped movement."
+      ],
+      "additional_constraints": "Target level: Upper secondary biology. Use supplied hypothetical scenarios; do not require personal project experience.",
+      "source_fixture": "sources/biology-weak.md",
+      "source_kind": "synthetic candidate, not authoritative gold standard",
+      "expected_objective_coverage": [
+        "Predict water movement with an impermeable solute.",
+        "Explain effects on an animal cell.",
+        "Distinguish dynamic equilibrium from stopped movement."
+      ],
+      "important_factual_concepts": [
+        "Water moves toward higher nonpenetrating-solute concentration in the stated model.",
+        "Dynamic equilibrium retains molecular motion.",
+        "Tonicity depends on membrane permeability."
+      ],
+      "misconceptions": [
+        "equilibrium means molecules stop",
+        "water moves toward less solute",
+        "animal and plant cells behave identically"
+      ],
+      "known_failure_modes": [
+        "inventing teaching material from a topic-only note"
+      ],
+      "expected_behavior": "flag_insufficient_evidence"
+    },
+    {
+      "id": "scrum-study-guide",
+      "review_status": "candidate",
+      "educational_level": "Undergraduate introductory software engineering",
+      "learning_focus": "Understand how Scrum teams plan, execute, inspect, and adapt their work during a Sprint, with emphasis on self-management, accountability, and practical decision-making in software development.",
+      "specific_concepts": [
+        "Sprint Goal and Sprint Planning",
+        "self-management and accountabilities",
+        "inspection, adaptation and quality"
+      ],
+      "prerequisite_knowledge": "Basic software development knowledge; no Scrum or practical team-project experience.",
+      "expected_learning_outcomes": [
+        "Explain how Sprint Planning establishes a goal and plan.",
+        "Decide how Developers adapt work while preserving quality.",
+        "Distinguish Daily Scrum, Sprint Review and Retrospective."
+      ],
+      "additional_constraints": "Undergraduate Introduction to Software Engineering. Use hypothetical software-development scenarios. Students have basic software-development knowledge and little or no Scrum or practical project experience. Distinguish framework rules from optional practices and authored examples.",
+      "source_fixture": "sources/scrum-study-guide.md",
+      "source_kind": "Extracted from the actual user-supplied Scrum Essentials RAG Study Guide; selected pages and PDF hash in sources/scrum-study-guide.provenance.json",
+      "expected_objective_coverage": [
+        "Explain how Sprint Planning establishes a goal and plan.",
+        "Decide how Developers adapt work while preserving quality.",
+        "Distinguish Daily Scrum, Sprint Review and Retrospective."
+      ],
+      "important_factual_concepts": [
+        "Self-management does not mean absence of accountability.",
+        "Daily Scrum, Review and Retrospective have different inspection purposes.",
+        "Scope can be renegotiated without lowering quality."
+      ],
+      "misconceptions": [
+        "Scrum Master assigns tasks",
+        "Daily Scrum is managerial reporting",
+        "Review and Retrospective are interchangeable"
+      ],
+      "known_failure_modes": [
+        "missing objective coverage",
+        "recognition-only quiz",
+        "weak distractors",
+        "redundant application prompts",
+        "unmeasurable rubric",
+        "unsupported source citation"
+      ],
+      "expected_behavior": "lesson"
+    }
+  ]
+}

@@ -409,7 +409,18 @@ export default function Chat({ assignmentSession = null }) {
                         ))}
                     </div>
                 ))}
-                {loading && <div className="message assistant" style={{ opacity: 0.5 }}>Thinking…</div>}
+                {loading && (
+                    <div className="message assistant reflection-thinking" role="status" aria-label="Reflection tutor is generating a response">
+                        <span className="reflection-thinking-icon" aria-hidden="true">
+                            <svg viewBox="0 0 44 44" focusable="false">
+                                <circle cx="22" cy="22" r="16" fill="none" stroke="currentColor" strokeDasharray="3 5" />
+                                <circle cx="22" cy="6" r="3" fill="currentColor" />
+                                <circle cx="22" cy="22" r="9" fill="currentColor" opacity="0.18" />
+                            </svg>
+                        </span>
+                        <span>Thinking through your reflection…</span>
+                    </div>
+                )}
                 <div ref={bottomRef} />
             </div>
 

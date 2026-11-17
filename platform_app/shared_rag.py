@@ -1,0 +1,207 @@
+"""Course-scoped ingestion and retrieval through the SDL document pipeline."""
+import os
+import logging
+from threading import Lock
+import time
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from uuid import uuid4
+
+import httpx
+from fastapi import HTTPException
+from app import db, settings
+from app.chunking import CHUNKING_VERSION, chunk_document
+from app.office_documents import OFFICE_SUFFIXES, OfficeDocumentError, OfficeParserUnavailable, parse_office_document
+from app.rag import EmbeddingError, chunk_text, create_embeddings, read_pdf_pages
+
+
+_readiness_lock = Lock()
+_service_ready_until = {}
+
+
+def _wait_for_service(client, base, timeout=90):
+    # Wake a sleeping Render instance with a read, before sending course content
+    # or starting a write. Concurrent lesson/open requests share the same probe.
+    with _readiness_lock:
+        if _service_ready_until.get(base, 0) > time.monotonic():
+            return
+        deadline = time.monotonic() + timeout
+        while (remaining := deadline - time.monotonic()) > 0:
+            try:
+                health = client.get(base + "/api/health", timeout=min(10, remaining))
+                if health.status_code == 200 and health.json().get("status") == "ok":
+                    if len(_service_ready_until) >= 16:
+                        _service_ready_until.clear()
+                    _service_ready_until[base] = time.monotonic() + 60
+                    return
+                if health.status_code == 404:
+                    raise HTTPException(503, "The shared document service URL points to a service without the SDL health endpoint. Check SELF_DIRECTED_LEARNING_URL.")
+            except (httpx.HTTPError, ValueError, AttributeError):
+                pass
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(2, remaining))
+    raise HTTPException(503, "Self-Directed Learning is still starting. Please wait a moment and try again.")
+
+
+def pipeline(method, path, **kwargs):
+    token = os.getenv("PLATFORM_SERVICE_TOKEN", "")
+    if not token:
+        raise HTTPException(503, "Configure the shared document service credentials.")
+    preparing_lesson = method.upper() == 'POST' and path == '/internal/platform/lessons/prepare'
+    timeout = httpx.Timeout(180, connect=15, read=480) if preparing_lesson else 180
+    started = time.monotonic()
+    try:
+        base = os.getenv("SELF_DIRECTED_LEARNING_URL", "http://127.0.0.1:8100").rstrip("/")
+        with httpx.Client(timeout=timeout, headers={"X-Platform-Service": token}) as client:
+            _wait_for_service(client, base)
+            response = client.request(method, base + path, **kwargs)
+        if response.status_code in {502, 503, 504} and "json" not in response.headers.get("content-type", "").lower():
+            _service_ready_until.pop(base, None)
+            # Never replay a write whose response may have been lost.
+            raise HTTPException(503, "Self-Directed Learning became temporarily unavailable. Please try again; the next request will wait for it to restart.")
+        if response.is_error:
+            if response.status_code in {401, 403}:
+                raise HTTPException(503, "The shared document service credentials are not configured correctly.")
+            try:
+                detail = response.json().get("detail")
+            except (AttributeError, ValueError):
+                detail = None
+            raise HTTPException(response.status_code if response.status_code < 500 else 502, detail or "The shared document service could not complete this action.")
+        return response.json()
+    except httpx.TimeoutException as exc:
+        logging.getLogger('uvicorn.error').warning('SDL bridge timeout path=%s elapsed_s=%.2f', path, time.monotonic()-started)
+        if preparing_lesson:
+            raise HTTPException(504, 'SDL lesson generation exceeded its response window. Your draft inputs and document selection are retained. No automatic retry was made.') from exc
+        raise HTTPException(504, "The shared document service timed out while processing the file. Your selection has been retained. Retry, or ask an administrator to check the document service logs.") from exc
+    except httpx.ConnectError as exc:
+        raise HTTPException(503, "Could not connect to the shared document service. Your selection has been retained. Ask an administrator to check that the SDL service is running and its connection URL is correct.") from exc
+    except httpx.RemoteProtocolError as exc:
+        raise HTTPException(502, "The shared document service closed the connection before finishing the file. Your selection has been retained. Ask an administrator to check the document service for a parser crash or restart.") from exc
+    except ValueError as exc:
+        raise HTTPException(502, "The shared document service returned an unreadable response. Your selection has been retained. Ask an administrator to check the document service logs.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(503, "The request to the shared document service failed. Your selection has been retained. Please retry or ask an administrator to check the service connection.") from exc
+
+
+def embedding_options():
+    return {"model": settings.embedding_model_name(), "dimensions": settings.EMBEDDING_DIMENSIONS}
+
+
+def _parse_pdf(filename, content):
+    with TemporaryDirectory() as directory:
+        path = Path(directory) / ("document" + Path(filename).suffix.lower())
+        path.write_bytes(content)
+        chunks = []
+        for page_number, page_text in read_pdf_pages(path):
+            chunks.extend(
+                {
+                    "text": f"Page {page_number}: {text}",
+                    "position": len(chunks),
+                    "page_number": page_number,
+                    "metadata": {"page_numbers": [page_number]},
+                }
+                for text in chunk_text(page_text)
+            )
+    if not chunks:
+        raise HTTPException(422, "This PDF has no extractable text. Upload a text-based PDF or use OCR for scanned pages.")
+    return chunks
+
+
+def _parse_html(filename, content):
+    # Uploaded HTML already has a semantic, section-aware parser in Socratic Chat.
+    # Parse it here so indexing does not depend on the separate SDL service.
+    document = content.decode("utf-8-sig", errors="replace")
+    chunks = [
+        {
+            "text": chunk.text,
+            "position": position,
+            "metadata": {
+                "section_path": list(chunk.section_path),
+                "assignment_number": chunk.assignment_number,
+                "chunk_profile": chunk.profile,
+                "approximate_token_count": chunk.token_count,
+                "chunking_version": CHUNKING_VERSION,
+            },
+        }
+        for position, chunk in enumerate(chunk_document(filename, document, source_format=Path(filename).suffix))
+    ]
+    if not chunks:
+        raise HTTPException(422, "This HTML file has no readable text to index.")
+    return chunks
+
+
+def _parse_python(filename, content):
+    """Index source as text; never execute uploaded instructor code."""
+    source = content.decode("utf-8-sig", errors="replace")
+    chunks = [
+        {"text": text, "position": position, "metadata": {"source_type": "python"}}
+        for position, text in enumerate(chunk_text(source, filename))
+    ]
+    if not chunks:
+        raise HTTPException(422, "This Python file has no readable source to index.")
+    return chunks
+
+
+def _parse_office(filename, content):
+    with TemporaryDirectory() as directory:
+        path = Path(directory) / ("document" + Path(filename).suffix.lower())
+        path.write_bytes(content)
+        try:
+            sections = parse_office_document(path)
+        except OfficeDocumentError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except OfficeParserUnavailable as exc:
+            raise HTTPException(503, str(exc)) from exc
+    chunks = []
+    for section in sections:
+        for text in chunk_text(section.text, filename):
+            chunks.append({
+                "text": f"Slide {section.slide}: {text}" if section.slide else text,
+                "position": len(chunks),
+                "metadata": {"source_type": Path(filename).suffix.lower().lstrip("."),
+                             **({"slide": section.slide} if section.slide else {})},
+            })
+    if not chunks:
+        raise HTTPException(422, "No readable text was found in this Office file.")
+    return chunks
+
+
+def ingest(course_id, account, filename, content_type, content):
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".pdf":
+        chunks = _parse_pdf(filename, content)
+    elif suffix in {".html", ".htm"}:
+        chunks = _parse_html(filename, content)
+    elif suffix == ".py":
+        chunks = _parse_python(filename, content)
+    elif suffix in OFFICE_SUFFIXES:
+        chunks = _parse_office(filename, content)
+    else:
+        chunks = pipeline("POST", "/internal/platform/rag/parse", files={"file": (filename, content, content_type)})["chunks"]
+    try:
+        vectors = create_embeddings([c["text"] for c in chunks])
+    except EmbeddingError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    document_id = str(uuid4())
+    # Persist only after successful parsing and embedding. Clean up a failed index write.
+    file_id = db.save_rag_file(filename, content_type, content, user_id=str(account["user_id"]), course_id=str(course_id), document_id=document_id)
+    try:
+        db.replace_document_chunks(file_id, document_id, filename, chunks, vectors, settings.embedding_model_name(), course_id=str(course_id))
+    except Exception:
+        with db.get_connection() as conn:
+            conn.execute("DELETE FROM documents WHERE id=%s", (file_id,))
+        raise
+    return {"id": file_id, "file_id": file_id, "document_id": document_id, "name": filename, "size": len(content), "chunk_count": len(chunks)}
+
+
+def course_chunks(course_id, document_ids):
+    available = {str(f["document_id"]) for f in db.list_rag_files(limit=100000, course_id=str(course_id)) if f.get("document_id")}
+    if not set(document_ids).issubset(available):
+        raise HTTPException(422, "Select documents belonging to this course.")
+    return db.snapshot_document_chunks(str(course_id), document_ids) if document_ids else []
+
+
+def search(course_id, document_ids, query, limit):
+    chunks = course_chunks(course_id, document_ids)
+    return pipeline("POST", "/internal/platform/rag/search", json={"query": query, "chunks": chunks, "limit": limit, **embedding_options()})

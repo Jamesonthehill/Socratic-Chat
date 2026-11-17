@@ -27,17 +27,18 @@ LLM_PROVIDER=groq
 GROQ_API_KEY=your-groq-key
 GROQ_API_BASE_URL=https://api.groq.com/openai/v1
 GROQ_MODEL=openai/gpt-oss-120b
-GROQ_CLASSIFIER_MODEL=openai/gpt-oss-120b
-GROQ_ANSWER_EVALUATION_MODEL=openai/gpt-oss-120b
+GROQ_TUTOR_MODEL=openai/gpt-oss-120b
+GROQ_CLASSIFIER_MODEL=openai/gpt-oss-20b
+GROQ_ANSWER_EVALUATION_MODEL=openai/gpt-oss-20b
 ```
 
 Document ingestion and query retrieval continue to use
 `text-embedding-3-small` with 1,536 dimensions. Restart the service after
 changing these variables.
 
-The classifier, answer evaluator, and tutor generator all use Groq's
-`openai/gpt-oss-120b` model
-while document embeddings remain on OpenAI. To switch conversational roles back
+The tutor generator uses Groq's `openai/gpt-oss-120b` model. The classifier and
+answer evaluator use `openai/gpt-oss-20b`, while document embeddings remain on
+OpenAI. To switch conversational roles back
 to OpenAI, set:
 
 ```env
@@ -59,7 +60,7 @@ course questions rather than lowering it simply to force results.
 
 Each learning message passes through a hybrid interpretation stage before RAG
 retrieval. Session commands, access checks, and safe fallbacks remain
-deterministic. The configured classifier (Groq `openai/gpt-oss-120b` by default) returns validated labels
+deterministic. The configured classifier (Groq `openai/gpt-oss-20b` by default) returns validated labels
 for the student's intent, question type, target concepts, current demonstrated
 understanding, required support level, dialogue status, next conversation action,
 and focused retrieval queries. The status distinguishes

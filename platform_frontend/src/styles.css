@@ -208,6 +208,141 @@ html[data-theme="dark"] .activity-selected-indicator { color: #86efac; }
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.panel.activity-review {
+  --review-accent: var(--brand-indigo);
+  padding: 0;
+  overflow: hidden;
+  border-radius: 20px;
+  box-shadow: 0 14px 38px color-mix(in srgb, var(--review-accent) 8%, transparent);
+}
+.activity-review-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  padding: clamp(18px, 4vw, 34px);
+  background: linear-gradient(115deg,
+    color-mix(in srgb, var(--review-accent) 12%, var(--surface)),
+    var(--surface-subtle));
+  border-bottom: 1px solid var(--line);
+}
+.activity-review-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--review-accent);
+}
+.activity-review-icon svg {
+  width: 27px;
+  height: 27px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.activity-review-header h2 {
+  margin: 0 0 6px;
+  color: var(--review-accent);
+  font-size: 0.875rem;
+}
+.activity-review-header .activity-review-name {
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(1.2rem, 3vw, 1.85rem);
+  font-weight: 800;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.activity-review-header .activity-review-course {
+  margin: 6px 0 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.activity-review-body {
+  display: grid;
+  gap: 20px;
+  padding: clamp(16px, 4vw, 30px);
+}
+.activity-review-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+  gap: 10px;
+  margin: 0;
+}
+.activity-review-facts > div {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-subtle);
+}
+.activity-review-facts dt {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.activity-review-facts dd {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.activity-review-body h3 {
+  margin: 0 0 7px;
+  font-size: 1rem;
+}
+.activity-review-description p,
+.activity-review-opening p,
+.activity-review-path p {
+  margin: 0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.activity-review-opening {
+  padding: 14px 17px;
+  border-inline-start: 3px solid var(--review-accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--review-accent) 7%, var(--surface));
+}
+.activity-review-path ol {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.activity-review-path li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: var(--surface-subtle);
+  color: var(--ink);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.activity-review-path li span {
+  display: grid;
+  place-items: center;
+  min-height: 28px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--review-accent) 13%, var(--surface));
+  color: var(--review-accent);
+  font-size: 0.8rem;
+}
+.activity-review-note {
+  margin: 0;
+  padding-block-start: 13px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
 :root {
   color-scheme: light;
   font-family: "DM Sans", sans-serif;

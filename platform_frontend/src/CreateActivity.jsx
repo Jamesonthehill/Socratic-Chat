@@ -504,6 +504,8 @@ export default function CreateActivity({
     else review();
   };
   const course = courses.find((c) => c.course_id === draft.course_id);
+  const learningSteps = draft.config.learning_steps || [];
+  const guidedReview = (draft.config.guidance_mode || (learningSteps.length ? "guided" : "basic")) === "guided";
   return (
     <>
       <Link className="back" to="/professor">
@@ -908,57 +910,71 @@ export default function CreateActivity({
           </p>
         )}
         {stage === 3 && (
-          <section className="panel activity-review" ref={reviewRef}>
-            <h2>Review and publish</h2>
-            <dl className="activity-summary">
-              <dt>Activity</dt>
-              <dd>{draft.title}</dd>
-              <dt>Course</dt>
-              <dd>
-                {course?.course_code} — {course?.title}
-              </dd>
-              <dt>Due date</dt>
-              <dd>{draft.due ? date(draft.due) : "No due date"}</dd>
-              <dt>Description</dt>
-              <dd>{draft.instructions || "No description"}</dd>
+          <section className="panel activity-review" ref={reviewRef} aria-labelledby="activity-review-title">
+            <header className="activity-review-header">
+              <span className="activity-review-icon"><ActivityIcon tool={draft.tool} /></span>
+              <div>
+                <h2 id="activity-review-title">Review and publish</h2>
+                <p className="activity-review-name">{draft.title}</p>
+                <p className="activity-review-course">{course?.course_code} — {course?.title}</p>
+              </div>
+            </header>
+            <div className="activity-review-body">
+              <dl className="activity-review-facts">
+                <div><dt>Activity type</dt><dd>{TOOLS[draft.tool].name}</dd></div>
+                <div><dt>Due date</dt><dd>{draft.due ? date(draft.due) : "No due date"}</dd></div>
+                <div><dt>Materials</dt><dd>{selected.length} selected {selected.length === 1 ? "document" : "documents"}</dd></div>
+                <div><dt>Assigned to</dt><dd>All currently enrolled students</dd></div>
+              </dl>
+              <section className="activity-review-description">
+                <h3>Description</h3>
+                <p>{draft.instructions || "No description"}</p>
+              </section>
               {draft.tool === "socratic" && (
                 <>
-                  <dt>Teaching scope</dt>
-                  <dd>Entire selected assignment materials</dd>
-                  <dt>Tutor guidance</dt>
-                  <dd>{(draft.config.guidance_mode || (draft.config.learning_steps?.length ? "guided" : "basic")) === "guided" ? "Guided learning path" : "Basic conversation"}</dd>
-                  <dt>Opening question</dt>
-                  <dd>{draft.config.prompt || "Generated from course materials"}</dd>
-                  {(draft.config.guidance_mode || (draft.config.learning_steps?.length ? "guided" : "basic")) === "guided" && <><dt>Learning path</dt><dd>{draft.config.learning_steps?.length ? draft.config.learning_steps.map((step, index) => `${index + 1}. ${step.title}`).join(" → ") : "No generated steps"}</dd></>}
-                  {(draft.config.guidance_mode || (draft.config.learning_steps?.length ? "guided" : "basic")) === "guided" && <><dt>Tutor questions before continuing</dt><dd>{draft.config.minimum_step_questions ?? 2}</dd></>}
+                  <dl className="activity-review-facts">
+                    <div><dt>Teaching scope</dt><dd>Entire selected assignment materials</dd></div>
+                    <div><dt>Tutor guidance</dt><dd>{guidedReview ? "Guided learning path" : "Basic conversation"}</dd></div>
+                    {guidedReview && <div><dt>Tutor questions before continuing</dt><dd>{draft.config.minimum_step_questions ?? 2}</dd></div>}
+                  </dl>
+                  <section className="activity-review-opening">
+                    <h3>Opening question</h3>
+                    <p>{draft.config.prompt || "Generated from course materials"}</p>
+                  </section>
+                  {guidedReview && (
+                    <section className="activity-review-path">
+                      <h3>Learning path</h3>
+                      {learningSteps.length ? (
+                        <ol>
+                          {learningSteps.map((step, index) => (
+                            <li key={index}><span aria-hidden="true">{index + 1}</span>{step.title}</li>
+                          ))}
+                        </ol>
+                      ) : <p>No generated steps</p>}
+                    </section>
+                  )}
                 </>
               )}
-              <dt>Chat</dt>
-              <dd>{TOOLS[draft.tool].name}</dd>
-              <dt>Materials</dt>
-              <dd>{selected.length} selected documents</dd>
-              <dt>Assigned to</dt>
-              <dd>All currently enrolled students</dd>
-            </dl>
-            {draft.tool === "self-directed-learning" &&
-              draft.config.learning_plan && (
-                <LessonPreview plan={draft.config.learning_plan} />
-              )}
-            <p className="help">
-              Publishing freezes the activity settings and the current student
-              recipient list.
-            </p>
-            {!connected && (
-              <Notice>
-                This chat must be connected before publishing. Your draft can be
-                saved now.
-              </Notice>
-            )}
-            {draft.tool === "socratic" && !selected.length && (
-              <p className="help">
-                Select at least one indexed document before publishing Socratic.
+              {draft.tool === "self-directed-learning" &&
+                draft.config.learning_plan && (
+                  <LessonPreview plan={draft.config.learning_plan} />
+                )}
+              <p className="activity-review-note">
+                Publishing freezes the activity settings and the current student
+                recipient list.
               </p>
-            )}
+              {!connected && (
+                <Notice>
+                  This chat must be connected before publishing. Your draft can be
+                  saved now.
+                </Notice>
+              )}
+              {draft.tool === "socratic" && !selected.length && (
+                <p className="help">
+                  Select at least one indexed document before publishing Socratic.
+                </p>
+              )}
+            </div>
           </section>
         )}
       </fieldset>

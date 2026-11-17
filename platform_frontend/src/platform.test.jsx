@@ -80,7 +80,6 @@ function mockApi(role = "instructor", override = {}) {
     ],
     [`/api/courses/${course}/documents`]: { files: [] },
     [`/api/courses/${course}/learning-objectives`]: { objectives: [] },
-    "/api/platform/topic-templates": [],
     "/api/platform/assignments/assignment-1": assignment,
     "/api/platform/assignments/assignment-1/materials": { materials: [] },
     "/api/platform/assignments/assignment-1/attempt": null,

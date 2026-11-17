@@ -10,7 +10,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    HttpUrl,
     SecretStr,
     StrictInt,
     model_validator,
@@ -19,30 +18,6 @@ from pydantic import (
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-
-class Resource(StrictModel):
-    title: str = Field(min_length=1, max_length=300)
-    url: HttpUrl
-
-
-class PracticeStage(StrictModel):
-    label: str = Field(min_length=1, max_length=200)
-    focus: str = Field(min_length=1, max_length=3000)
-
-
-class Topic(StrictModel):
-    id: str = Field(min_length=1, pattern=r"^[a-zA-Z0-9_-]+$")
-    name: str = Field(min_length=1, max_length=200)
-    resource: Resource
-    alt_resource: Resource
-    practice_label: str = Field(min_length=1, max_length=300)
-    practice_prompt: str = Field(min_length=1, max_length=10000)
-    practice_stages: list[PracticeStage] = Field(min_length=1, max_length=20)
-    practice_options: list[str] = Field(default_factory=list, max_length=20)
-    check_questions: list[str] = Field(default_factory=list, max_length=50)
-    final_example: str = Field(min_length=1, max_length=20000)
-    number: int = 100
 
 
 class SocraticStepCheck(StrictModel):
@@ -177,12 +152,6 @@ class ReflectionConfig(StrictModel):
                 raise ValueError("Historical CSV must contain at least one complete row.")
 
 
-class TutorConfig(StrictModel):
-    topic: Topic | None = None
-    provider: Literal["openai", "groq"] = "openai"
-    personality: str = "confused"
-
-
 class ActivityDraftConfig(StrictModel):
     document_ids: list[str] = Field(default_factory=list, max_length=100)
     prompt: str = Field(default="", max_length=10000)
@@ -196,7 +165,6 @@ CONFIG_MODELS = {
     "aiducate": ActivityDraftConfig,
     "socratic": SocraticConfig,
     "reflections": ReflectionConfig,
-    "student-agent": TutorConfig,
 }
 
 
@@ -205,7 +173,6 @@ class AssignmentInput(StrictModel):
     tool: Literal[
         "socratic",
         "reflections",
-        "student-agent",
         "self-directed-learning",
         "debate",
         "aiducate",
@@ -251,11 +218,6 @@ class ActionInput(StrictModel):
     request_id: UUID
 
 
-class GenerateTopicInput(StrictModel):
-    name: str = Field(min_length=1, max_length=200)
-    provider: Literal["openai", "groq"] = "openai"
-
-
 class GenerateSubtopicsInput(StrictModel):
     main_topics: list[str] = Field(min_length=1, max_length=50)
 
@@ -279,7 +241,7 @@ class CanvasCourseRequest(CanvasCredentials):
 class CanvasImportRequest(CanvasCourseRequest):
     assignment_id: int = Field(gt=0)
     platform_course_id: UUID
-    tool: Literal["socratic", "reflections", "student-agent", "debate"] = "socratic"
+    tool: Literal["socratic", "reflections", "debate"] = "socratic"
 
 
 class SelfDirectedMessageInput(StrictModel):

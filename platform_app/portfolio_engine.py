@@ -25,7 +25,7 @@ from app.classifier import MessageClassification, classify_message, is_contextua
 from app.pipeline_logging import begin_trace, debug_preview, end_trace, log_event, log_exception
 from app.schemas import ChatMessage, Source
 from app.term_resolution import resolve_term, TOKEN_PATTERN
-from platform_app import debate, portfolio_step_check as step_check
+from platform_app import debate, step_check
 from platform_app.reflections_transport import request_reflections
 from platform_app.schemas import ReflectionConfig
 

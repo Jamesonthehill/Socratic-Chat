@@ -190,9 +190,11 @@ def test_same_call_plans_from_original_inputs_and_requires_all_three_slots(monke
         assert set(slots['required'])==set(SHORT_OBJECTIVES)
         assert slots['additionalProperties'] is False
         for index,objective_id in enumerate(SHORT_OBJECTIVES):
-            fields=slots['properties'][objective_id]['properties']
+            assert slots['properties'][objective_id] == {'$ref':'#/$defs/EduMindQuestion'}
+            fields=schema['$defs']['EduMindQuestion']['properties']
             assert 'objective_id' not in fields
-            assert fields['difficulty_level']['enum']==[SHORT_LEVELS[index]]
+            assert fields['difficulty_level']['enum']==SHORT_LEVELS
+            assert context['objective_slots'][objective_id]==SHORT_LEVELS[index]
             assert fields['question']['maxLength']+fields['scenario']['maxLength']+2<=2000
             assert fields['options']['minItems']==fields['options']['maxItems']==4
             assert fields['correct_options']['minItems']==fields['correct_options']['maxItems']==1
@@ -230,3 +232,90 @@ def test_real_instructor_inputs_are_forwarded_through_lesson_generation(client,m
     raw_focus='A complete instructor focus.\nInstructor sub-questions to address:\nFirst concept\nSecond concept\nFifth important concept'
     main._document_plan(lesson()['approved_material'],'course.pdf',starting_point='Basic programming',ending_point='Evaluate and justify decisions',learning_focus=raw_focus,allow_course_material_fallback=True)
     assert captured['instructor_inputs']=={'learning_focus':'A complete instructor focus.','concepts_and_subquestions':['First concept','Second concept','Fifth important concept'],'prior_knowledge':'Basic programming','intended_learning_outcomes':'Evaluate and justify decisions'}
+
+
+def test_budget_selection_keeps_every_objective_and_original_citations():
+    passages={'S1':'irrelevant appendix '*100, 'S2':'alpha mechanisms '*30,
+              'S3':'beta relationships '*30, 'S4':'gamma decisions '*30}
+    selected=edumind_quiz._budget_passages(passages, {'A':'alpha','B':'beta','C':'gamma'}, 1800)
+    assert set(selected)=={'S2','S3','S4'}
+    assert all(selected[key]==passages[key] for key in selected)
+    with pytest.raises(ValueError,match='every objective'):
+        edumind_quiz._budget_passages(passages, {'A':'missing subject'},1800)
+    with pytest.raises(ValueError,match='every quiz objective'):
+        edumind_quiz._budget_passages(passages, {'A':'alpha','B':'beta','C':'gamma'},100)
+
+
+def test_quiz_rejects_citation_not_sent_to_provider():
+    with pytest.raises(ValueError,match='passage'):
+        edumind_quiz.adapt_questions(generated_quiz(), {'OBJ1':'Requirements'},
+                                    lesson()['approved_material'], allowed_source_ids={'S2'})
+
+
+@pytest.mark.parametrize('schema_mode',[True,False])
+def test_size_rejection_retries_smaller_with_all_objectives_and_validates(monkeypatch,schema_mode):
+    monkeypatch.setattr(openai_client,'runtime_ai_mode',lambda:'groq')
+    monkeypatch.setattr(openai_client,'_chat_settings',lambda:('https://provider.test', 'openai/gpt-oss-120b' if schema_mode else 'other', {}))
+    monkeypatch.setenv('SDL_QUIZ_REQUEST_BUDGET_BYTES','100000')
+    material='\n\n'.join(f'Requirements evidence group {i}: behavior and quality constraints matter. '*8 for i in range(12))
+    requests=[]
+    def provider(self,url,**kwargs):
+        payload=kwargs['json'];requests.append(payload)
+        if len(requests)==1:
+            return httpx.Response(413,request=httpx.Request('POST',url))
+        context=json.loads(payload['messages'][1]['content'])
+        assert context['objectives']=={'OBJ1':'Requirements'}
+        result=generated_quiz()
+        for q in result['questions']:q['source_id']=next(iter(context['source_passages']))
+        return httpx.Response(200,request=httpx.Request('POST',url),json={'choices':[{'finish_reason':'stop','message':{'content':json.dumps(result)}}]})
+    monkeypatch.setattr(httpx.Client,'post',provider)
+    quiz=edumind_quiz.generate_quiz('Requirements','Undergraduate',material,{'OBJ1':'Requirements'},'Undergraduate','None')
+    assert len(requests)==2
+    assert edumind_quiz._request_bytes(requests[1])<edumind_quiz._request_bytes(requests[0])
+    assert len(quiz)==5
+    assert material.startswith('Requirements evidence group 0')
+
+
+def test_budgeted_request_preserves_late_objective_evidence(monkeypatch):
+    monkeypatch.setattr(openai_client,'runtime_ai_mode',lambda:'openai')
+    monkeypatch.setenv('SDL_QUIZ_REQUEST_BUDGET_BYTES','17000')
+    objectives={'OBJ1':'alpha mechanisms','OBJ2':'beta relationships','OBJ3':'gamma decisions'}
+    material='\n\n'.join(['Appendix irrelevant background. '*25]*35+['alpha mechanisms '*30,'beta relationships '*30,'gamma decisions '*30])
+    calls=[]
+    def provider(self,url,**kwargs):
+        payload=kwargs['json'];calls.append(payload)
+        context=json.loads(payload['messages'][1]['content'])
+        source=' '.join(context['source_passages'].values())
+        assert all(term in source for term in ['alpha','beta','gamma'])
+        assert edumind_quiz._request_bytes(payload)<=17000
+        result=keyed_quiz()
+        for oid,q in result['questions'].items():
+            term=objectives[oid].split()[0]
+            q['source_id']=next(key for key,text in context['source_passages'].items() if term in text)
+        return httpx.Response(200,request=httpx.Request('POST',url),json={'choices':[{'finish_reason':'stop','message':{'content':json.dumps(result)}}]})
+    monkeypatch.setattr(httpx.Client,'post',provider)
+    assert len(edumind_quiz.generate_quiz('Topic','Undergraduate',material,objectives,'Undergraduate','None',levels=SHORT_LEVELS,distinct_objectives=True))==3
+    assert len(calls)==1
+
+
+def test_schema_compaction_preserves_fields_named_title_and_description():
+    schema=edumind_quiz._compact_schema({'title':'Display title','type':'object','properties':{
+        'title':{'type':'string','title':'Title'}, 'description':{'type':'string','description':'Help'}},
+        'required':['title','description']})
+    assert schema['properties']=={'title':{'type':'string'},'description':{'type':'string'}}
+    assert schema['required']==['title','description']
+
+
+def test_persistent_413_is_bounded_and_does_not_expose_provider_body(monkeypatch):
+    monkeypatch.setattr(openai_client,'runtime_ai_mode',lambda:'groq')
+    monkeypatch.setenv('SDL_QUIZ_REQUEST_BUDGET_BYTES','100000')
+    material='\n\n'.join(f'Requirements evidence {i} about behavior and quality. '*10 for i in range(10))
+    calls=[]
+    def provider(self,url,**kwargs):
+        calls.append(kwargs['json'])
+        return httpx.Response(413,request=httpx.Request('POST',url),text='PRIVATE SOURCE DATA')
+    monkeypatch.setattr(httpx.Client,'post',provider)
+    with pytest.raises(ValueError,match='request size after request compaction') as caught:
+        edumind_quiz.generate_quiz('Requirements','Undergraduate',material,{'OBJ1':'Requirements'},'Undergraduate','None')
+    assert len(calls)==2
+    assert 'PRIVATE SOURCE DATA' not in str(caught.value)

@@ -17,3 +17,33 @@ The coverage table is a declared mapping for instructor review. Structural valid
 ## Verification
 
 97 targeted mocked-provider/backend checks passed, including quiz and practice composition, requirement preservation, publication rejection, equivalent evidence, legacy compatibility, and authoring input separation. Frontend regression: 171 passed with 13 existing skips; production build passed.
+
+
+## Quiz request sizing
+
+The quiz call shares one question schema across the three required objective slots.
+The original same-call planning template remains; duplicated system instructions and
+schema display metadata are removed. Slot-to-level assignments are supplied explicitly
+and validated by the server, along with all existing answer, feedback, hint, count and
+citation checks.
+
+`SDL_QUIZ_REQUEST_BUDGET_BYTES` defaults to 24000 serialized UTF-8 bytes. This is an
+application request budget, not an exact token count or a promised provider limit.
+When the request exceeds it, the quiz selects original passages in rounds across
+objectives and instructor coverage requirements. Original citation IDs and text remain
+unchanged, and the full approved document is retained for lesson authoring. Source IDs
+not sent in the quiz request are rejected even if present elsewhere in the document.
+Selection uses lexical relevance, not semantic proof of coverage; instructor review
+and the existing coverage validation remain required. If any target cannot be matched
+or fit, generation stops rather than silently omitting that target.
+
+A provider HTTP 413 permits one retry with approximately half the selected evidence
+budget. Other failures do not enter this size-retry path. Logs include only request
+bytes and passage counts, never source text or credentials. If even the reduced request
+cannot fit, the error identifies provider capacity/configuration rather than asking
+for a smaller document. No provider switch, synthetic quiz, or approval bypass occurs.
+
+The original failing uploaded document and live provider credentials were unavailable
+in the local checkout. Automated regression tests exercise large sources, late-document
+objective evidence, strict-schema and JSON-object requests, persistent size rejection,
+and rejection of unseen citations; live validation is still required before release.

@@ -22,7 +22,7 @@ test("published assignment opens summary and KPIs with navigation to Analytics",
  expect(screen.getByText("Average grade").parentElement).toHaveTextContent("80%");
  expect(screen.queryByRole("heading",{name:"Select activity"})).not.toBeInTheDocument();
  await userEvent.setup().click(screen.getByRole("link",{name:"Detailed Insights →"}));
- expect(await screen.findByRole("heading",{name:"AIducate dashboard"})).toBeInTheDocument();
+ expect(await screen.findByRole("heading",{name:"Dashboard"})).toBeInTheDocument();
 });
 test("instructor selects a Reflection assignment and opens saved responses",async()=>{
  render(<MemoryRouter><AnalyticsPage/></MemoryRouter>);
@@ -31,8 +31,8 @@ test("instructor selects a Reflection assignment and opens saved responses",asyn
  await user.click(screen.getByRole("button",{name:/Project check-in/}));
  await user.click(screen.getByRole("button",{name:"Run analysis"}));
  await user.click(await screen.findByRole("tab",{name:"Students"}));
- expect(screen.getByRole("heading",{name:"Student reflections"})).toBeInTheDocument();
- await user.click(screen.getByText("Student One"));
+ expect(screen.getByRole("heading",{name:"Student Profiles"})).toBeInTheDocument();
+ await user.click(screen.getByRole("button", {name:"View reflections for Student One"}));
  expect(screen.getByText("I want to study campus transit.")).toBeInTheDocument();
 });
 test("published assignment can preview the student start without creating an attempt",async()=>{

@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import "./sdl-teaching-ui.css";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, TOOLS, date } from "./api";
 import { SocraticConfig, ReflectionConfig, defaults } from "./ToolConfig";
 import { GenerationStatus, Notice } from "./ui";
+import SdlLessonSetup from "./SdlLessonSetup";
 import LessonPreview from "./LessonPreview";
 import ActivityRail from "./ActivityRail";
 import ActivityIcon from "./ActivityIcon";
@@ -45,6 +47,17 @@ function restoreDraft(item) {
       : "",
   };
 }
+const sdlReviewKey = (draft, selected) => JSON.stringify([
+  draft.course_id, draft.title, [...selected].map(String).sort(),
+  draft.config.prompt || "", draft.config.custom_questions || [],
+  draft.config.starting_point || "", draft.config.ending_point || "", draft.config.additional_instructions || "",
+  draft.config.material_expansion || "", !!draft.config.expansion_approved,
+  draft.config.expansion_source_hash || "",
+]);
+const restoredStage = item => item && (item.status !== "draft" || (
+  item.tool === "self-directed-learning" && item.config?.learning_plan?.diagnostic_quiz?.length &&
+  (!item.config.learning_plan.review_input_key || item.config.learning_plan.review_input_key === sdlReviewKey(item, item.config.document_ids || []))
+)) ? 3 : 1;
 export default function CreateActivity({
   initialActivity = null,
   initialContext = null,
@@ -61,7 +74,8 @@ export default function CreateActivity({
     initialActivity?.config.document_ids || [],
   );
   const [search, setSearch] = useState("");
-  const [stage, setStage] = useState(1);
+  const [stage, setStage] = useState(() => restoredStage(initialActivity));
+  const [boundarySuggestions, setBoundarySuggestions] = useState(null);
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -79,6 +93,9 @@ export default function CreateActivity({
   const settingsRef = useRef(null);
   const reviewRef = useRef(null);
   const feedbackRef = useRef(null);
+  useEffect(() => { setBoundarySuggestions(null); }, [draft.course_id, draft.title,
+    (draft.config.prompt || ""), (draft.config.starting_point || ""), (draft.config.ending_point || ""),
+    (draft.config.additional_instructions || ""), JSON.stringify(draft.config.custom_questions || []), JSON.stringify(selected)]);
   useEffect(() => {
     if (initialActivity && initialContext && initialActivity.id === id) return;
     // Saving a new draft already loaded this item; do not overwrite later chat selections.
@@ -115,7 +132,7 @@ export default function CreateActivity({
           : "",
       });
       setSelected(item.config.document_ids || []);
-      if (item.status !== "draft") setStage(3);
+      setStage(restoredStage(item));
     };
     load()
       .catch((e) => active && setError(e.message))
@@ -143,6 +160,7 @@ export default function CreateActivity({
     };
   }, [draft.course_id]);
   const change = (key, value) => {
+    setBoundarySuggestions(null);
     setDraft((d) => ({ ...d, [key]: value }));
     setStage(1);
     setPublishIssue(null);
@@ -164,7 +182,13 @@ export default function CreateActivity({
     setCoursePickerOpen(false);
   };
   const setConfig = (value) => {
-    setDraft((d) => ({ ...d, config: value }));
+    setBoundarySuggestions(null);
+    setDraft((d) => {
+      const changed = ["starting_point", "ending_point", "prompt"].some(key => (d.config[key] || "") !== (value[key] || ""));
+      const authoringChanged = changed || (d.config.additional_instructions || "") !== (value.additional_instructions || "") || JSON.stringify(d.config.custom_questions || []) !== JSON.stringify(value.custom_questions || []);
+      const next = authoringChanged ? {...value, learning_plan:{}} : value;
+      return {...d, config: changed && value.material_expansion ? {...next, expansion_approved:false, expansion_source_hash:""} : next};
+    });
     setStage(2);
     setPublishIssue(null);
     setError("");
@@ -224,7 +248,13 @@ export default function CreateActivity({
               document_ids: selected,
               prompt: draft.config.prompt || "",
               custom_questions: draft.config.custom_questions || [],
+              starting_point: draft.config.starting_point || "",
+              ending_point: draft.config.ending_point || "",
+              additional_instructions: draft.config.additional_instructions || "",
               learning_plan: draft.config.learning_plan || {},
+              material_expansion: draft.config.material_expansion || "",
+              expansion_approved: !!draft.config.expansion_approved,
+              expansion_source_hash: draft.config.expansion_source_hash || "",
             }
           : draft.tool === "socratic"
             ? { ...draft.config, guidance_mode: "guided", learning_steps: draft.config.learning_steps || [], document_ids: selected }
@@ -255,10 +285,45 @@ export default function CreateActivity({
     }
     return saved;
   };
+  const saveReview = async () => {
+    setBusy(true);
+    setBusyLabel("Saving review changes");
+    setError("");
+    setNotice("");
+    try {
+      await save(false, true);
+      setNotice("Review changes saved.");
+    } finally {
+      setBusy(false);
+      setBusyLabel("");
+    }
+  };
+  const requestBoundarySuggestions = async (saved) => {
+    const suggestions = await api(`/platform/assignments/${saved.id}/suggest-sdl-boundaries`, {method: "POST"});
+    setBoundarySuggestions(suggestions);
+    setStage(2);
+    setNotice("Review and confirm the suggested details before generating the lesson.");
+    requestAnimationFrame(() => settingsRef.current?.scrollIntoView({behavior:"smooth",block:"start"}));
+  };
+  const suggestBoundaries = () => run(async () => {
+    const saved = await save(false, true);
+    await requestBoundarySuggestions(saved);
+  }, "Drafting suggested lesson details");
+  const confirmBoundaries = () => {
+    setConfig({...draft.config,
+      starting_point: draft.config.starting_point?.trim() ? draft.config.starting_point : boundarySuggestions.starting_point.trim(),
+      ending_point: draft.config.ending_point?.trim() ? draft.config.ending_point : boundarySuggestions.ending_point.trim(),
+    });
+    setNotice("Lesson details confirmed. Select Review activity to generate your lesson.");
+  };
   const review = () =>
     run(async () => {
       if (draft.tool === "self-directed-learning") {
         const saved = await save(false, true);
+        if (!saved.config.starting_point?.trim() || !saved.config.ending_point?.trim()) {
+          await requestBoundarySuggestions(saved);
+          return;
+        }
         const prepared = await api(
           `/platform/assignments/${saved.id}/prepare-sdl`,
           { method: "POST" },
@@ -504,8 +569,9 @@ export default function CreateActivity({
     else review();
   };
   const course = courses.find((c) => c.course_id === draft.course_id);
+  const EditorShell = draft.tool === "self-directed-learning" ? "div" : Fragment;
   return (
-    <>
+    <EditorShell {...(draft.tool === "self-directed-learning" ? {className: "sdl-teaching-ui sdl-instructor-ui"} : {})}>
       <Link className="back" to="/professor">
         ← All assignments
       </Link>
@@ -530,7 +596,7 @@ export default function CreateActivity({
         <section className="panel">
           <div className="activity-details-heading">
             <h2>Activity details</h2>
-            <button ref={tutorialButton} type="button" className="compact" aria-label="Open assignment tutorial" onClick={() => setShowTutorial(true)}>Tutorial</button>
+            {draft.tool !== "self-directed-learning" && <button ref={tutorialButton} type="button" className="compact" aria-label="Open assignment tutorial" onClick={() => setShowTutorial(true)}>Tutorial</button>}
           </div>
           {!id && !draft.id && <div className="activity-course-choice">
             <div>
@@ -774,7 +840,7 @@ export default function CreateActivity({
         </section>
         {draft.tool && (
           <section className="panel activity-settings" ref={settingsRef} data-activity-tutorial="settings">
-            <h2>{TOOLS[draft.tool].name} settings</h2>
+            {draft.tool !== "self-directed-learning" && <h2>{TOOLS[draft.tool].name} settings</h2>}
             {draft.tool === "socratic" ? (
               <SocraticConfig
                 value={{ ...draft.config, document_ids: selected }}
@@ -809,36 +875,10 @@ export default function CreateActivity({
               <ReflectionConfig value={draft.config} onChange={setConfig} publishIssue={publishIssue} />
             ) : draft.tool === "self-directed-learning" ? (
               <>
-                <label>
-                  Learning focus
-                  <textarea
-                    rows={3}
-                    value={draft.config.prompt || ""}
-                    onChange={(e) =>
-                      setConfig({ ...draft.config, prompt: e.target.value })
-                    }
-                    placeholder="What should students learn from these materials?"
-                  />
-                </label>
-                <label>
-                  Sub-questions
-                  <textarea
-                    aria-label="Sub-questions"
-                    rows={5}
-                    value={(draft.config.custom_questions || []).join("\n")}
-                    onChange={(e) =>
-                      setConfig({
-                        ...draft.config,
-                        custom_questions: e.target.value.split("\n"),
-                      })
-                    }
-                    placeholder="Enter one question per line"
-                  />
-                  <span className="help">
-                    These questions guide the generated lesson. Review the
-                    lesson before publishing.
-                  </span>
-                </label>
+                <SdlLessonSetup value={draft.config} onChange={setConfig} disabled={busy || frozen}
+                  canSuggest={!!selected.length && !busy && !frozen} onSuggest={suggestBoundaries}
+                  suggestions={boundarySuggestions} onSuggestionsChange={setBoundarySuggestions}
+                  onConfirmSuggestions={confirmBoundaries}/>
               </>
             ) : (
               <>
@@ -942,8 +982,15 @@ export default function CreateActivity({
             </dl>
             {draft.tool === "self-directed-learning" &&
               draft.config.learning_plan && (
-                <LessonPreview plan={draft.config.learning_plan} />
+                <LessonPreview plan={draft.config.learning_plan} onSave={saveReview} onChange={frozen ? undefined : plan => setDraft(d => {
+                  const next = {...d, config: {...d.config, starting_point: plan.starting_point ?? d.config.starting_point, ending_point: plan.ending_point ?? d.config.ending_point}};
+                  return {...next, config: {...next.config, learning_plan: {...plan, review_input_key: sdlReviewKey(next, selected)}}};
+                })} />
               )}
+            {draft.tool === "self-directed-learning" && !frozen && <div className="editor-actions">
+              <button className="secondary" disabled={!ready} onClick={() => run(() => save(false))}>Save draft</button>
+              <button onClick={publishActivity}>Publish activity</button>
+            </div>}
             <p className="help">
               Publishing freezes the activity settings and the current student
               recipient list.
@@ -962,6 +1009,6 @@ export default function CreateActivity({
           </section>
         )}
       </fieldset>
-    </>
+    </EditorShell>
   );
 }

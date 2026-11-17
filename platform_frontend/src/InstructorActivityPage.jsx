@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { api, cachedAssignmentView, pendingAssignmentDetail, date, TOOLS } from "./api";
 import { Notice, Badge } from "./ui";
@@ -6,6 +6,7 @@ import { loadCourseContext, cachedCourseContext } from "./courseContext";
 import CreateActivity from "./CreateActivity";
 import { StudentActivityPreview } from "./StudentActivityPreview";
 import AiducateWorkspace from "./AiducateWorkspace";
+import ApplicationInterviewReports from './ApplicationInterviewReports';
 
 export function progressMetrics(students = []) {
   const assigned = students.length;
@@ -56,7 +57,8 @@ export default function InstructorActivityPage() {
   const metrics=progressMetrics(item.students);
   const config=item.config || {};
   const progressValue=value=>item.progress_unavailable ? "Not available" : value;
-  return <>
+  const DetailShell = item.tool === 'self-directed-learning' ? 'div' : Fragment;
+  return <DetailShell {...(item.tool === 'self-directed-learning' ? {className:'sdl-teaching-ui sdl-instructor-ui'} : {})}>
     <div className="activity-detail-nav"><Link className="back" to="/professor">← All assignments</Link><button type="button" className="secondary" aria-expanded={showPreview} aria-controls="student-activity-preview" onClick={()=>setShowPreview(value=>!value)}>{showPreview ? "Hide student preview" : "Preview as student"}</button></div>
     <div className="page-heading"><div><p className="context">{TOOLS[item.tool]?.name || item.tool}</p><h1>{item.title}</h1></div><Badge value={item.status}/></div>
     {showPreview && <StudentActivityPreview item={item} files={files}/>}
@@ -70,7 +72,8 @@ export default function InstructorActivityPage() {
     {config.learning_plan?.objectives?.length>0 && <><h3>Learning objectives</h3><ul>{config.learning_plan.objectives.map(o=><li key={o.id}>{o.title}</li>)}</ul></>}
     <h3>Course materials</h3>{files.length ? <ul>{files.map(f=><li key={f.file_id}>{f.filename} · {Math.ceil((f.file_size || 0)/1024)} KB</li>)}</ul> : <p className="help">No selected documents attached.</p>}</section>
 
-  </>;
+    {item.tool === 'self-directed-learning' && <ApplicationInterviewReports key={id} assignmentId={id}/>}
+  </DetailShell>;
 }
 
 export function AnalyticsPage() {

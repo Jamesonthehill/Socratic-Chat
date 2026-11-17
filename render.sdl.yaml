@@ -4,8 +4,8 @@ services:
     name: cluball-sdl
     runtime: docker
     plan: free
-    dockerfilePath: ./adaptive-learning-app/backend/Dockerfile
-    dockerContext: ./adaptive-learning-app/backend
+    dockerfilePath: ./self-directed-learning/backend/Dockerfile
+    dockerContext: ./self-directed-learning/backend
     healthCheckPath: /api/health
     autoDeployTrigger: commit
     envVars:

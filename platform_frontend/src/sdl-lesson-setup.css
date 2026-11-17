@@ -1,0 +1,106 @@
+.sdl-teaching-ui.sdl-teaching-ui .sdl-lesson-setup {
+  display: grid;
+  gap: 24px;
+  max-width: 900px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-lesson-setup-intro h2 {
+  font-size: 25px;
+  letter-spacing: -0.025em;
+  margin: 0 0 8px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-lesson-setup-intro p {
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0;
+  max-width: 660px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-lesson-setup fieldset {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  min-width: 0;
+  background: var(--surface);
+}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-lesson-setup legend {
+  padding: 0 8px;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.5;
+  color: var(--text);
+}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-lesson-setup legend > span:first-child {
+  display: inline-grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--primary, #6155d8) 10%, var(--surface));
+  color: var(--primary, #6155d8);
+  font-size: 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-lesson-setup label {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 550;
+}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-lesson-setup textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  line-height: 1.6;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 400;
+}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-lesson-setup .sdl-optional {
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--muted);
+}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-lesson-setup .help {
+  margin: 0;
+  font-size: 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-lesson-review-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-lesson-setup .sr-only {
+  position: absolute;
+}
+@media (max-width: 640px) {
+  .sdl-teaching-ui.sdl-teaching-ui .sdl-lesson-setup fieldset {
+    padding: 16px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .sdl-lesson-setup legend {
+    font-size: 15px;
+  }
+}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-boundary-review {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--primary, #6155d8);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--primary, #6155d8) 4%, var(--surface));
+}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-boundary-review h3,
+.sdl-teaching-ui.sdl-teaching-ui .sdl-boundary-review p {
+  margin: 0;
+  line-height: 1.6;
+}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-boundary-review button {
+  justify-self: start;
+}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-suggestion-label {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--primary, #6155d8);
+}

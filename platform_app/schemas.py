@@ -16,6 +16,19 @@ from pydantic import (
 )
 
 
+class SelfDirectedResearchChoice(BaseModel):
+    choice: Literal['yes', 'no']
+    notice_version: str = Field(min_length=1, max_length=80)
+
+
+class ApplicationInterviewTurn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal['start', 'answer', 'stop']
+    turn_id: str = Field(min_length=1, max_length=100)
+    question_id: str | None = Field(default=None, max_length=80)
+    content: str = Field(default='', max_length=8000)
+
+
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -119,10 +132,16 @@ class DebateConfig(StrictModel):
 
 
 class SelfDirectedConfig(StrictModel):
+    additional_instructions: str = Field(default="", max_length=10000)
+    starting_point: str = Field(default="", max_length=2000)
+    ending_point: str = Field(default="", max_length=4000)
     custom_questions: list[str] = Field(default_factory=list, max_length=50)
     document_ids: list[str] = Field(default_factory=list, max_length=100)
     prompt: str = Field(default="", max_length=10000)
     learning_plan: dict = Field(default_factory=dict)
+    material_expansion: str = Field(default="", max_length=12000)
+    expansion_approved: bool = False
+    expansion_source_hash: str = Field(default="", max_length=64)
 
 
 class ReflectionConfig(StrictModel):

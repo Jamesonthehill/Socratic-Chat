@@ -20,6 +20,8 @@ from platform_app.learning_journey import StepDifficulty
 from platform_app.schemas import (
     ActionInput,
     SelfDirectedStudyInput, SelfDirectedQuizInput, SelfDirectedMessageInput, SelfDirectedTaskInput, SelfDirectedLearningTurn,
+    SelfDirectedResearchChoice,
+    ApplicationInterviewTurn,
     AssignmentInput,
     CanvasCourseRequest,
     CanvasCredentials,
@@ -1231,6 +1233,32 @@ def self_directed_assignments(account=Depends(student)):
 def self_directed_learning_turn(assignment_id: str, body: SelfDirectedLearningTurn, account=Depends(student)):
     student_id = self_directed_identity(account)
     return engines.self_directed_call(student_id, "POST", f"/api/student/assignments/{assignment_id}/learning-turn", json=body.model_dump())
+
+
+@router.post('/self-directed/assignments/{assignment_id}/research-choice')
+def self_directed_research_choice(assignment_id: str, body: SelfDirectedResearchChoice, account=Depends(student)):
+    student_id = self_directed_identity(account)
+    return engines.self_directed_call(student_id, 'POST', f'/api/student/assignments/{assignment_id}/research-choice', json=body.model_dump())
+
+
+@router.post('/self-directed/assignments/{assignment_id}/application-interview')
+def self_directed_application_interview(assignment_id: str, body: ApplicationInterviewTurn, account=Depends(student)):
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account)
+        if item['tool'] != 'self-directed-learning':
+            raise HTTPException(404, 'SDL assignment not found.')
+    student_id = self_directed_identity(account)
+    return engines.self_directed_call(student_id, 'POST', f'/api/student/assignments/{assignment_id}/application-interview', json=body.model_dump())
+
+
+@router.get('/assignments/{assignment_id}/application-interviews')
+def instructor_application_interviews(assignment_id: str, account=Depends(professor)):
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account, manage=True)
+        if item['tool'] != 'self-directed-learning':
+            raise HTTPException(404, 'SDL assignment not found.')
+    from platform_app.shared_rag import pipeline
+    return pipeline('GET', f'/internal/platform/lessons/{assignment_id}/application-interviews')
 
 
 

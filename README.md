@@ -267,7 +267,7 @@ platform_app/             Shared assignment API, authorization, engine adapters
 platform_frontend/       Shared React UI and separate tool configuration screens
 Socratic-Chat/            Existing identity, courses, documents, RAG engine
 reflections-app/          Existing reflection graphs, analytics and recommendations
-adaptive-learning-app/   SDL engine, shared ingestion pipeline and embedded lesson UI
+self-directed-learning/   SDL engine, shared ingestion pipeline and embedded lesson UI
 scripts/                 Local runner, role bootstrap, database initialization
 platform_tests/          Assignment integration tests
 compose.yaml             One public origin and private learning services

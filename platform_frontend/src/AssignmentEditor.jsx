@@ -12,7 +12,6 @@ import ChatbotPicker from "./ChatbotPicker";
 import {
   SocraticConfig,
   ReflectionConfig,
-  TutorConfig,
   defaults,
 } from "./ToolConfig";
 
@@ -173,7 +172,6 @@ export default function AssignmentEditor() {
     socratic: SocraticConfig,
     debate: DebateConfig,
     reflections: ReflectionConfig,
-    "student-agent": TutorConfig,
   }[item.tool];
   return (
     <>

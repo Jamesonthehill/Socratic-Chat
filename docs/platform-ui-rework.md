@@ -12,7 +12,7 @@ Copy `.env.example` to a private `.env`. Configure independent `AUTH_SESSION_SEC
 docker compose up --build
 ```
 
-Open `http://localhost:8000`. The platform connects to private SDL and Reflections services. The SDL service uses `ADAPTIVE_PLATFORM_ONLY=true`; its API requires the platform service token. Do not expose that service's port publicly. The legacy tutor is optional via `--profile legacy-tutor`.
+Open `http://localhost:8000`. The platform connects to private SDL and Reflections services. The SDL service uses `ADAPTIVE_PLATFORM_ONLY=true`; its API requires the platform service token. Do not expose that service's port publicly.
 
 For native development, install root `requirements.txt` in the platform environment and `adaptive-learning-app/backend/requirements.txt` in a separate SDL environment. Build `platform_frontend` with `npm ci && npm run build`. Start the gateway with `python -m uvicorn platform_app.main:app --host 127.0.0.1 --port 8000` from the repository root. Start SDL with `python -m uvicorn app.main:app --host 127.0.0.1 --port 8100` from `adaptive-learning-app/backend`, supplying the same database and service token and setting `ADAPTIVE_PLATFORM_ONLY=true`. Reflections retains its separate environment and service setup.
 

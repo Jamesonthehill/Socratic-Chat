@@ -212,23 +212,21 @@ def test_failed_publish_does_not_expose_draft(client,roster,monkeypatch):
     assert client.get(path,headers=roster['headers']['student']).status_code==404
 
 
-@pytest.mark.parametrize('tool', ['reflections','student-agent'])
-def test_routes_to_correct_engine_and_resumes(client,roster,monkeypatch,tool):
-    topic=engines.topic_templates()[0]
-    item,_=draft(client,roster,tool=tool,config={'topic':topic} if tool=='student-agent' else {'sub_topics':['requirements']})
+def test_routes_to_correct_engine_and_resumes(client,roster,monkeypatch):
+    item,_=draft(client,roster,tool='reflections',config={'sub_topics':['requirements']})
     publish(client,roster,item,monkeypatch)
     calls=[]
     def remote(t,method,path,**kw):
         calls.append((t,path,kw['json']))
         if path.endswith('/start'):
-            return {'messages':[{'role':'assistant','content':'Hello'}],'phase':'reading'} if t=='student-agent' else {'greeting':'Hello','total_questions':1}
-        return {'messages':[{'role':'assistant','content':'Hello'},{'role':'user','content':'My response'},{'role':'assistant','content':'Continue'}],'phase':'complete'} if t=='student-agent' else {'reply':'Continue','question_index':1,'total_questions':1}
+            return {'greeting':'Hello','total_questions':1}
+        return {'reply':'Continue','question_index':1,'total_questions':1}
     monkeypatch.setattr(engines,'call',remote)
     path=f"/api/platform/assignments/{item['id']}"; h=roster['headers']['student']
     started=client.post(path+'/start',headers=h)
     assert started.status_code==200,started.text
-    assert calls[0][0]==tool and calls[0][2]['session_id']==started.json()['id']
-    if tool=='reflections': assert calls[0][2]['student_id']==roster['student']
+    assert calls[0][0]=='reflections' and calls[0][2]['session_id']==started.json()['id']
+    assert calls[0][2]['student_id']==roster['student']
     response=client.post(path+'/messages',headers=h,json={'message':'My response','request_id':str(uuid4())})
     assert response.status_code==200,response.text
     assert client.get(path+'/attempt',headers=h).json()['messages']==response.json()['messages']
@@ -282,7 +280,6 @@ def test_unassigned_draft_requires_chatbot_before_publishing(client, roster):
 @pytest.mark.parametrize('tool,config', [
     ('socratic', {'prompt': 'What assumption does the team make?'}),
     ('reflections', {'sub_topics': ['Explain one design decision']}),
-    ('student-agent', {'personality': 'curious'}),
     ('debate', {'scenario': 'Should this team require every change to receive a review?'}),
 ])
 def test_instructor_can_choose_and_change_draft_chatbot(client, roster, monkeypatch, tool, config):

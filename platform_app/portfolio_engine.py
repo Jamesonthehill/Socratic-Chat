@@ -27,7 +27,7 @@ from app.schemas import ChatMessage, Source
 from app.term_resolution import resolve_term, TOKEN_PATTERN
 from platform_app import debate, portfolio_step_check as step_check
 from platform_app.reflections_transport import request_reflections
-from platform_app.schemas import ReflectionConfig, TutorConfig, Topic
+from platform_app.schemas import ReflectionConfig
 
 ROOT = Path(__file__).resolve().parents[1]
 

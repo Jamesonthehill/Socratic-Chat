@@ -24,7 +24,6 @@ from platform_app.schemas import (
     CanvasCredentials,
     CanvasImportRequest,
     GenerateSubtopicsInput,
-    GenerateTopicInput,
     MessageInput,
     SocraticReflectionInput,
     SocraticStepCheck,
@@ -250,7 +249,6 @@ def tools(account=Depends(user)):
     return [
         {"id": "socratic", "name": "Socratic Chat", "description": "Explore questions grounded in your course materials."},
         {"id": "reflections", "name": "Reflections", "description": "Guide students through topics or milestone reflections."},
-        {"id": "student-agent", "name": "Student Agent Bot", "description": "Read, check understanding, and practice with a tutor."},
         {"id": "debate", "name": "Debate", "description": "Build and defend an argument against focused AI challenges."},
     ]
 
@@ -271,16 +269,6 @@ def reflection_launch(assignment_id: UUID, account=Depends(user)):
             (hashlib.sha256(code.encode()).hexdigest(), account["user_id"], assignment["course_id"]),
         )
     return {"code": code}
-
-
-@router.get("/topic-templates")
-def templates(account=Depends(professor)):
-    return engines.topic_templates()
-
-
-@router.post("/generate-topic")
-def generate_topic(body: GenerateTopicInput, account=Depends(professor)):
-    return engines.call("student-agent", "POST", "/api/topics/generate", json=body.model_dump())
 
 
 @router.post("/generate-subtopics")

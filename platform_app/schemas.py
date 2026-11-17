@@ -78,7 +78,8 @@ class SocraticConfig(StrictModel):
     @classmethod
     def infer_legacy_guidance_mode(cls, data):
         if isinstance(data, dict):
-            data = {key: value for key, value in data.items() if key != "minimum_messages"}
+            # Discard the SDL-only plan when it appears in a Socratic draft.
+            data = {key: value for key, value in data.items() if key not in {"minimum_messages", "learning_plan"}}
             if data.get("tutor_mode") == "javis":
                 data["tutor_mode"] = "jarvis"
             if "guidance_mode" not in data:

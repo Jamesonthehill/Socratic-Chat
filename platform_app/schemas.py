@@ -130,6 +130,15 @@ class DebateConfig(StrictModel):
     scenario: str = Field(min_length=10, max_length=10000)
     opening_prompt: str = Field(default="", max_length=2000)
     minimum_messages: int = Field(default=3, ge=1, le=100)
+    reflection_prompt: str = Field(
+        default=(
+            "What changed or became more nuanced in your thinking, which "
+            "counterargument or tradeoff mattered most, and what would you "
+            "revise in your final position?"
+        ),
+        min_length=10,
+        max_length=2000,
+    )
 
 
 class SelfDirectedConfig(StrictModel):

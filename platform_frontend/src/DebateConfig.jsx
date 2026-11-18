@@ -69,6 +69,20 @@ export default function DebateConfig({ value, onChange, courseId, frozen }) {
           <p className="help">
             Students can mark the assignment complete after this many responses.
           </p>
+          <label>
+            Final reflection prompt
+            <textarea
+              rows={4}
+              required
+              minLength={10}
+              maxLength={2000}
+              value={value.reflection_prompt}
+              onChange={(event) => change("reflection_prompt", event.target.value)}
+            />
+          </label>
+          <p className="help">
+            Students must answer this after the debate before they can submit.
+          </p>
         </div>
         <div>
           <h3>Optional course materials</h3>

@@ -910,6 +910,30 @@ export default function CreateActivity({
                       ? "Select course materials above. Review activity generates the adaptive lesson for you to check before publishing."
                       : "Students discuss this scenario with the Debate chatbot."}
                 </p>
+                {draft.tool === "debate" && <>
+                  <label>
+                    Optional opening prompt
+                    <textarea rows={3} maxLength={2000}
+                      value={draft.config.opening_prompt || ""}
+                      onChange={(event) => setConfig({...draft.config, opening_prompt:event.target.value})}
+                      placeholder="Take a position and explain your strongest reason."/>
+                  </label>
+                  <p className="help">Leave blank to open with the scenario itself.</p>
+                  <label>
+                    Debate responses required
+                    <input type="number" min={1} max={100}
+                      value={draft.config.minimum_messages ?? 3}
+                      onChange={(event) => setConfig({...draft.config, minimum_messages:Number(event.target.value)})}/>
+                  </label>
+                  <p className="help">After this many responses, the required final reflection opens.</p>
+                  <label>
+                    Final reflection prompt
+                    <textarea rows={3} minLength={10} maxLength={2000}
+                      value={draft.config.reflection_prompt || ""}
+                      onChange={(event) => setConfig({...draft.config, reflection_prompt:event.target.value})}/>
+                  </label>
+                  <p className="help">Students answer this required reflection after completing the debate turns.</p>
+                </>}
               </>
             )}
           </section>

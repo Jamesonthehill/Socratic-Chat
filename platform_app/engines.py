@@ -347,7 +347,14 @@ def start(assignment, attempt):
             "Take a position on the scenario and explain your strongest reason.",
         }:
             opening = ""
-        return {"messages": [{"role": "assistant", "content": opening or config["scenario"]}]}
+        return {
+            "messages": [{"role": "assistant", "content": opening or config["scenario"]}],
+            "debate": {
+                "phase": "debating",
+                "stage": "take_a_position",
+                "student_turns": 0,
+            },
+        }
     if assignment["tool"] == "socratic":
         prompt = config.get("prompt", "").strip()
         state = {"pipeline_version": "local-socratic-v1", "phase": "teaching", "learning_topic": prompt or None}
@@ -1002,8 +1009,21 @@ async def _socratic_reflection(assignment, attempt, reflection):
 
 
 def reflect(assignment, attempt, reflection):
+    if assignment["tool"] == "debate":
+        state = dict((attempt.get("engine_state") or {}).get("debate") or {})
+        if state.get("phase") != "awaiting_reflection":
+            raise HTTPException(409, "Finish the debate before writing your final reflection.")
+        state.update({
+            "phase": "ready_to_submit",
+            "stage": "final_reflection_complete",
+            "student_reflection": reflection,
+        })
+        return {
+            "debate": state,
+            "reply": "Your final reflection is saved and will be shared with your instructor. Review it, then submit the assignment.",
+        }
     if assignment["tool"] != "socratic":
-        raise HTTPException(422, "This assignment does not use a Socratic learning summary.")
+        raise HTTPException(422, "This assignment does not use a learning summary.")
     return asyncio.run(_socratic_reflection(assignment, attempt, reflection))
 
 def message(
@@ -1017,8 +1037,6 @@ def message(
 ):
     tool = assignment["tool"]
     cfg = assignment["snapshot"]["config"]
-    if tool == "debate":
-        return {"reply": asyncio.run(debate.generate_reply(cfg["scenario"], attempt["messages"], content))}
     if tool == "socratic":
         return asyncio.run(
             _socratic_message(
@@ -1031,18 +1049,41 @@ def message(
             )
         )
     if tool == "debate":
+        debate_state = dict((attempt.get("engine_state") or {}).get("debate") or {})
+        if debate_state.get("phase") == "awaiting_reflection":
+            raise HTTPException(409, "Submit your final reflection before continuing.")
+        if debate_state.get("phase") == "ready_to_submit":
+            raise HTTPException(409, "Your debate is ready to submit.")
+        next_turn = sum(message.get("role") == "user" for message in attempt["messages"]) + 1
         chunks = assignment["snapshot"].get("chunks") or []
         sources = rag.retrieve_snapshot(
             f"{cfg['scenario']}\n\nStudent argument: {content}", chunks, top_k=4
         ) if chunks else []
-        reply = asyncio.run(
-            debate.generate_reply(
-                cfg["scenario"], attempt["messages"], content, sources=sources
+        if next_turn >= cfg["minimum_messages"]:
+            reply = (
+                "You have completed the debate portion. Before submitting, write a final reflection. "
+                + cfg.get("reflection_prompt", "What changed in your thinking, and what would you revise?")
+                + " Your response will be shared with your instructor."
             )
-        )
+            phase = "awaiting_reflection"
+            stage = "final_reflection"
+        else:
+            reply = asyncio.run(
+                debate.generate_reply(
+                    cfg["scenario"], attempt["messages"], content, sources=sources
+                )
+            )
+            phase = "debating"
+            stage = "respond_to_challenge" if next_turn > 1 else "test_your_position"
         return {
             "reply": reply,
             "sources": [source.model_dump() for source in sources],
+            "debate": {
+                **debate_state,
+                "phase": phase,
+                "stage": stage,
+                "student_turns": next_turn,
+            },
         }
     if tool == "reflections":
         if cfg["module_type"] == "milestone_based":
@@ -1063,12 +1104,16 @@ def complete(assignment, attempt):
         return {"message_count": count, "completion_summary": state["completion_summary"], "student_reflection": state.get("student_reflection", "")}
     if tool == "debate":
         minimum = assignment["snapshot"]["config"]["minimum_messages"]
-        if count < minimum:
+        state = attempt["engine_state"].get("debate") or {}
+        debate_turns = int(state.get("student_turns") or count)
+        if debate_turns < minimum:
             raise HTTPException(
                 422,
                 f"Send at least {minimum} message(s) before completing this assignment.",
             )
-        return {"message_count": count}
+        if state.get("phase") != "ready_to_submit" or not state.get("student_reflection"):
+            raise HTTPException(422, "Write your final reflection before submitting this assignment.")
+        return {"message_count": debate_turns, "student_reflection": state["student_reflection"]}
     if tool == "reflections":
         if assignment["snapshot"]["config"]["module_type"] == "milestone_based":
             raise HTTPException(422, "Submit your reflection to complete this assignment.")

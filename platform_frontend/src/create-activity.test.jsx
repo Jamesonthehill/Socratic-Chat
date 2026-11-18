@@ -729,6 +729,11 @@ test("SDL review prepares a lesson before showing publish", async () => {
 test("Debate can proceed to publish", async () => {
   const user = await open();
   await user.click(screen.getByRole("button", { name: /Debate/ }));
+  expect(screen.getByLabelText("Optional opening prompt")).toHaveValue("");
+  expect(screen.getByLabelText("Debate responses required")).toHaveValue(3);
+  expect(screen.getByLabelText("Final reflection prompt").value).toContain("changed");
+  await user.clear(screen.getByLabelText("Debate responses required"));
+  await user.type(screen.getByLabelText("Debate responses required"), "4");
   await user.click(screen.getByRole("button", { name: "Review activity" }));
   expect(
     screen.getByRole("button", { name: "Publish activity" }),

@@ -35,7 +35,7 @@ The existing authentication and Canvas launch exchange remain in use. Canvas sup
 | Socratic | Existing pipeline; publishing snapshots selected shared document chunks. |
 | Reflections | Existing external service adapter and original student UI. Shared document IDs are platform metadata; the Reflections owner must integrate retrieval if desired. |
 | SDL | Preparation, publication, recipient identity, saved lesson state and progress use the SDL service. |
-| Debate | Native scenario-based provider adapter and common student conversation. Uploaded documents are not automatically inserted into Debate replies. |
+| Debate | Native staged conversation and required final reflection. Published assignments can optionally retrieve relevant passages from their frozen, instructor-selected document snapshot; scenario-only Debate remains supported. |
 | AIducate | Draft storage only; publishing reports that its backend is missing. |
 
 No chat-specific Socratic or Reflections engine source is redesigned. Student Agent is absent from the new choices and lists; this change does not erase historical assignments or their stored data.

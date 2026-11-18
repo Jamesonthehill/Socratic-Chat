@@ -1058,6 +1058,43 @@ test("Debate shows the instructor scenario once when the student starts", async 
   expect(screen.getByLabelText("Your message")).toBeInTheDocument();
 });
 
+test("Debate requires and saves a final reflection before submission", async () => {
+  const scenario = "Should teams require code review before merging a change?";
+  const awaiting = {
+    ...attempt,
+    engine_state: { debate: { phase: "awaiting_reflection", stage: "final_reflection", student_turns: 2 } },
+    messages: [
+      { role: "assistant", content: scenario },
+      { role: "user", content: "Yes, because review catches defects." },
+      { role: "assistant", content: "What tradeoff matters most?" },
+    ],
+  };
+  const ready = {
+    ...awaiting,
+    engine_state: { debate: { phase: "ready_to_submit", stage: "final_reflection_complete", student_turns: 2, student_reflection: "I would revise my view to allow emergency merges." } },
+  };
+  mockApi("student", {
+    "/api/platform/assignments/assignment-1": {
+      ...assignment, tool: "debate", title: "Code review debate",
+      student_config: { scenario, minimum_messages: 2, reflection_required: true },
+    },
+    "/api/platform/assignments/assignment-1/attempt": awaiting,
+    "POST /api/platform/assignments/assignment-1/reflection": ready,
+    "POST /api/platform/assignments/assignment-1/complete": { ...ready, status: "completed", result: { message_count: 2, student_reflection: ready.engine_state.debate.student_reflection } },
+  });
+  open("/student/assignments/assignment-1");
+  const user = userEvent.setup();
+  const reflection = await screen.findByLabelText("Write your final reflection");
+  expect(screen.getByRole("button", { name: "Mark assignment complete" })).toBeDisabled();
+  await user.type(reflection, "I would revise my view to allow emergency merges.");
+  await user.click(screen.getByRole("button", { name: "Save final reflection" }));
+  expect(await screen.findByText(/Your reflection is saved/)).toBeInTheDocument();
+  const complete = screen.getByRole("button", { name: "Mark assignment complete" });
+  expect(complete).toBeEnabled();
+  await user.click(complete);
+  expect(await screen.findByText("Assignment complete")).toBeInTheDocument();
+});
+
 test("Canvas student landing shows assignments without course selection or enrollment controls", async () => {
   mockApi("student");
   open("/student");

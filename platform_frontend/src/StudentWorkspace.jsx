@@ -1496,6 +1496,7 @@ export default function StudentWorkspace({ user }) {
     completed = attempt?.status === "completed",
     state = attempt?.engine_state || {};
   const socratic = state.socratic || {};
+  const debate = state.debate || {};
   const learningDetour = socratic.learning_detour?.question ? socratic.learning_detour : null;
   const inlineClarification = socratic.pending_clarification?.inline
     ? socratic.pending_clarification
@@ -1723,9 +1724,11 @@ export default function StudentWorkspace({ user }) {
                 </>
               )}
               <p className="help">
-                Defend your position across at least{" "}
-                {assignment.student_config.minimum_messages} response(s), then
-                mark the assignment complete.
+                Stage: {debate.stage === "take_a_position" ? "Take a position" :
+                  debate.stage === "test_your_position" ? "Test your position" :
+                    debate.stage === "respond_to_challenge" ? "Respond to counterarguments" :
+                      debate.stage === "final_reflection" ? "Final reflection" :
+                        debate.stage === "final_reflection_complete" ? "Ready to submit" : "Debate"} · {debate.student_turns || 0} of {assignment.student_config.minimum_messages} required responses
               </p>
             </>
           )}
@@ -1771,7 +1774,9 @@ export default function StudentWorkspace({ user }) {
                     busy ||
                     Boolean(submitStarFinale) ||
                     (assignment.tool === "socratic" &&
-                      socratic.phase !== "ready_to_submit")
+                      socratic.phase !== "ready_to_submit") ||
+                    (assignment.tool === "debate" &&
+                      debate.phase !== "ready_to_submit")
                   }
                   onClick={() => assignment.tool === "socratic" ? setConsentOpen(true) : perform("complete")}
                 >
@@ -2288,6 +2293,17 @@ export default function StudentWorkspace({ user }) {
                 <p className="notice">
                   Review your learning summary, then select Submit assignment.
                 </p>
+              ) : assignment.tool === "debate" && debate.phase === "awaiting_reflection" ? (
+                <form className="composer learning-reflection-form" onSubmit={finishLearningSummary}>
+                  <label htmlFor="student-debate-reflection">Write your final reflection</label>
+                  <p className="help">Explain what changed or became more nuanced in your thinking. Your response will be shared with your instructor.</p>
+                  <textarea id="student-debate-reflection" ref={summaryInputRef}
+                    value={studentReflection} minLength={1} maxLength={4000} rows={5}
+                    disabled={busy} onChange={(event)=>setStudentReflection(event.target.value)}/>
+                  <button disabled={busy || !studentReflection.trim()}>Save final reflection</button>
+                </form>
+              ) : assignment.tool === "debate" && debate.phase === "ready_to_submit" ? (
+                <p className="notice">Your reflection is saved. Review your work, then select Submit assignment.</p>
               ) : conceptCheck || inlineClarification ? null : (
                 <form className="composer" onSubmit={send}>
                   <label className="sr-only" htmlFor="reply">

@@ -156,7 +156,10 @@ def public_assignment(item, manage=False):
         if item["tool"] == "reflections":
             result["student_config"] = {k: cfg[k] for k in ("module_type", "milestone_prompt")}
         elif item["tool"] == "debate":
-            result["student_config"] = {k: cfg[k] for k in ("scenario", "minimum_messages")}
+            result["student_config"] = {
+                **{k: cfg[k] for k in ("scenario", "minimum_messages")},
+                "reflection_required": True,
+            }
         elif item["tool"] == "socratic":
             guided = cfg.get("guidance_mode", "guided" if cfg.get("learning_steps") else "basic") == "guided"
             result["student_config"] = {
@@ -426,6 +429,45 @@ def reflection_analysis(assignment_id: UUID, account=Depends(professor)):
                     "started": sum(student["status"] != "not_started" for student in students),
                     "completed": sum(student["status"] == "completed" for student in students),
                     "responses": sum(student["response_count"] for student in students)},
+        "students": students,
+    }
+
+
+@router.get("/assignments/{assignment_id}/debate-review")
+def debate_review(assignment_id: UUID, account=Depends(professor)):
+    """Return Debate progress and saved work only to an instructor for this course."""
+    with store.connection() as conn:
+        assignment = get_assignment(conn, assignment_id, account, manage=True)
+        if assignment["tool"] != "debate":
+            raise HTTPException(422, "Choose a Debate assignment to review.")
+        rows = conn.execute("""SELECT u.id AS student_id, u.display_name, u.username,
+                t.status, t.messages, t.engine_state, t.result, t.completed_at
+            FROM assignment_recipients_platform r
+            JOIN users_platform u ON u.id=r.student_id
+            LEFT JOIN assignment_attempts_platform t
+                ON t.assignment_id=r.assignment_id AND t.student_id=r.student_id
+            WHERE r.assignment_id=%s ORDER BY u.display_name, u.username""",
+            (assignment_id,)).fetchall()
+    students = []
+    for row in rows:
+        state = (row["engine_state"] or {}).get("debate") or {}
+        students.append({
+            "student_id": row["student_id"],
+            "name": row["display_name"] or row["username"],
+            "status": row["status"] or "not_started",
+            "stage": state.get("stage") or "not_started",
+            "student_turns": int(state.get("student_turns") or 0),
+            "messages": row["messages"] or [],
+            "student_reflection": state.get("student_reflection") or (row["result"] or {}).get("student_reflection"),
+            "completed_at": row["completed_at"],
+        })
+    return {
+        "assignment": {"id": assignment["id"], "title": assignment["title"], "course_id": assignment["course_id"]},
+        "summary": {
+            "assigned": len(students),
+            "started": sum(student["status"] != "not_started" for student in students),
+            "completed": sum(student["status"] == "completed" for student in students),
+        },
         "students": students,
     }
 
@@ -1091,22 +1133,26 @@ async def message_stream(assignment_id: UUID, body: MessageInput, account=Depend
 def socratic_reflection(assignment_id: UUID, body: SocraticReflectionInput, account=Depends(user)):
     reflection = body.summary.strip()
     if not reflection:
-        raise HTTPException(422, "Write your own learning summary first.")
+        raise HTTPException(422, "Write your own final reflection first.")
     with store.locked_attempt(assignment_id, account["user_id"]) as (conn, attempt):
         assignment = get_assignment(conn, assignment_id, account)
         if not attempt or (attempt["status"] == "completed" and not body.regenerate_feedback):
-            raise HTTPException(409, "Start an unfinished Socratic assignment first.")
-        if assignment["tool"] != "socratic":
-            raise HTTPException(422, "This assignment does not use a Socratic learning summary.")
+            raise HTTPException(409, "Start an unfinished assignment first.")
+        if assignment["tool"] not in {"socratic", "debate"}:
+            raise HTTPException(422, "This assignment does not use a final learning summary.")
+        if assignment["tool"] == "debate" and body.regenerate_feedback:
+            raise HTTPException(422, "Debate reflections cannot regenerate feedback.")
         config = ((assignment.get("snapshot") or {}).get("config") or {})
         steps = config.get("learning_steps") or []
-        state = (attempt.get("engine_state") or {}).get("socratic") or {}
-        if not body.regenerate_feedback and steps and int(state.get("learning_step_index") or 0) == len(steps) - 1:
+        state_key = "debate" if assignment["tool"] == "debate" else "socratic"
+        state = (attempt.get("engine_state") or {}).get(state_key) or {}
+        if assignment["tool"] == "socratic" and not body.regenerate_feedback and steps and int(state.get("learning_step_index") or 0) == len(steps) - 1:
             minimum_questions = int(config.get("minimum_step_questions") or 1)
             if step_question_count(attempt["messages"], state.get("step_started_at_message_count")) < minimum_questions:
                 raise HTTPException(409, f"Discuss at least {minimum_questions} tutor question(s) in the final step before summarizing.")
         rid = str(body.request_id)
-        if rid in attempt["processed_requests"] or (state.get("completion_summary") and not body.regenerate_feedback):
+        already_saved = state.get("student_reflection") if assignment["tool"] == "debate" else state.get("completion_summary")
+        if rid in attempt["processed_requests"] or (already_saved and not body.regenerate_feedback):
             return public_attempt(attempt)
         target = attempt
         if body.regenerate_feedback:

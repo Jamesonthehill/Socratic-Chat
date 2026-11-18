@@ -1,5 +1,6 @@
 """Course-scoped ingestion and retrieval through the SDL document pipeline."""
 import os
+import logging
 from threading import Lock
 import time
 from pathlib import Path
@@ -47,10 +48,12 @@ def pipeline(method, path, **kwargs):
     token = os.getenv("PLATFORM_SERVICE_TOKEN", "")
     if not token:
         raise HTTPException(503, "Configure the shared document service credentials.")
-    base_url = os.getenv("SELF_DIRECTED_LEARNING_URL", "http://127.0.0.1:8100").rstrip("/")
+    preparing_lesson = method.upper() == 'POST' and path == '/internal/platform/lessons/prepare'
+    timeout = httpx.Timeout(180, connect=15, read=480) if preparing_lesson else 180
+    started = time.monotonic()
     try:
         base = os.getenv("SELF_DIRECTED_LEARNING_URL", "http://127.0.0.1:8100").rstrip("/")
-        with httpx.Client(timeout=180, headers={"X-Platform-Service": token}) as client:
+        with httpx.Client(timeout=timeout, headers={"X-Platform-Service": token}) as client:
             _wait_for_service(client, base)
             response = client.request(method, base + path, **kwargs)
         if response.status_code in {502, 503, 504} and "json" not in response.headers.get("content-type", "").lower():
@@ -67,6 +70,9 @@ def pipeline(method, path, **kwargs):
             raise HTTPException(response.status_code if response.status_code < 500 else 502, detail or "The shared document service could not complete this action.")
         return response.json()
     except httpx.TimeoutException as exc:
+        logging.getLogger('uvicorn.error').warning('SDL bridge timeout path=%s elapsed_s=%.2f', path, time.monotonic()-started)
+        if preparing_lesson:
+            raise HTTPException(504, 'SDL lesson generation exceeded its response window. Your draft inputs and document selection are retained. No automatic retry was made.') from exc
         raise HTTPException(504, "The shared document service timed out while processing the file. Your selection has been retained. Retry, or ask an administrator to check the document service logs.") from exc
     except httpx.ConnectError as exc:
         raise HTTPException(503, "Could not connect to the shared document service. Your selection has been retained. Ask an administrator to check that the SDL service is running and its connection URL is correct.") from exc

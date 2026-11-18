@@ -29,7 +29,7 @@ def main():
     configs = [
         (ROOT, sys.executable, 'platform_app.main:app', '8000', os.environ.copy()),
         (ROOT / 'reflections-app/backend', os.getenv('REFLECTIONS_PYTHON', sys.executable), 'app.main:app', '8002', {**os.environ, 'DATABASE_URL': os.environ['REFLECTIONS_DATABASE_URL']}),
-        (ROOT / 'adaptive-learning-app/backend', os.getenv('SDL_PYTHON', sys.executable), 'app.main:app', '8100', os.environ.copy()),
+        (ROOT / 'self-directed-learning/backend', os.getenv('SDL_PYTHON', sys.executable), 'app.main:app', '8100', os.environ.copy()),
     ]
     processes = []
     def stop(*_):

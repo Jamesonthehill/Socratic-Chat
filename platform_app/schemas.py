@@ -16,6 +16,19 @@ from pydantic import (
 )
 
 
+class SelfDirectedResearchChoice(BaseModel):
+    choice: Literal['yes', 'no']
+    notice_version: str = Field(min_length=1, max_length=80)
+
+
+class ApplicationInterviewTurn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal['start', 'answer', 'stop']
+    turn_id: str = Field(min_length=1, max_length=100)
+    question_id: str | None = Field(default=None, max_length=80)
+    content: str = Field(default='', max_length=8000)
+
+
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -65,7 +78,8 @@ class SocraticConfig(StrictModel):
     @classmethod
     def infer_legacy_guidance_mode(cls, data):
         if isinstance(data, dict):
-            data = {key: value for key, value in data.items() if key != "minimum_messages"}
+            # Discard the SDL-only plan when it appears in a Socratic draft.
+            data = {key: value for key, value in data.items() if key not in {"minimum_messages", "learning_plan"}}
             if data.get("tutor_mode") == "javis":
                 data["tutor_mode"] = "jarvis"
             if "guidance_mode" not in data:
@@ -116,13 +130,28 @@ class DebateConfig(StrictModel):
     scenario: str = Field(min_length=10, max_length=10000)
     opening_prompt: str = Field(default="", max_length=2000)
     minimum_messages: int = Field(default=3, ge=1, le=100)
+    reflection_prompt: str = Field(
+        default=(
+            "What changed or became more nuanced in your thinking, which "
+            "counterargument or tradeoff mattered most, and what would you "
+            "revise in your final position?"
+        ),
+        min_length=10,
+        max_length=2000,
+    )
 
 
 class SelfDirectedConfig(StrictModel):
+    additional_instructions: str = Field(default="", max_length=10000)
+    starting_point: str = Field(default="", max_length=2000)
+    ending_point: str = Field(default="", max_length=4000)
     custom_questions: list[str] = Field(default_factory=list, max_length=50)
     document_ids: list[str] = Field(default_factory=list, max_length=100)
     prompt: str = Field(default="", max_length=10000)
     learning_plan: dict = Field(default_factory=dict)
+    material_expansion: str = Field(default="", max_length=12000)
+    expansion_approved: bool = False
+    expansion_source_hash: str = Field(default="", max_length=64)
 
 
 class ReflectionConfig(StrictModel):

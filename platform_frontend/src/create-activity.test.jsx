@@ -272,6 +272,7 @@ test("publishing returns to the dashboard with the new assignment highlighted", 
   await user.type(await screen.findByLabelText("Assignment title"), "Compare design choices");
   await user.click(await screen.findByRole("checkbox", { name: /Requirements.pdf/ }));
   await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
+  await user.click(screen.getByRole("button", { name: "Generate setup from selected sources" }));
   await user.click(screen.getByRole("button", { name: "Publish activity" }));
   await screen.findByRole("heading", { name: "Review and publish" });
   await user.click(screen.getByRole("button", { name: "Publish activity" }));
@@ -283,6 +284,7 @@ test("new Socratic activities use selected assignment materials without requirin
   await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
   expect(screen.getByText(/Teaching scope:/).closest("p")).toHaveTextContent("Selected assignment materials");
   expect(screen.queryByRole("region", { name: "Approved keywords" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Generate setup from selected sources" }));
   await user.click(screen.getByRole("button", { name: "Publish activity" }));
   await screen.findByRole("heading", { name: "Review and publish" });
   await user.click(screen.getByRole("button", { name: "Publish activity" }));
@@ -318,8 +320,8 @@ test("activity choices include AIducate; Socratic settings follow Next and revie
   expect(
     screen.getByLabelText("Opening question or prompt"),
   ).toBeInTheDocument();
-  expect(screen.getByRole("radio", { name: /Basic conversation/ })).toBeChecked();
-  expect(screen.queryByRole("button", { name: "Generate setup from selected sources" })).not.toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Guided learning path" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Generate setup from selected sources" })).toBeInTheDocument();
   expect(screen.queryByLabelText("Messages required before completion")).not.toBeInTheDocument();
   expect(screen.queryByRole("region", { name: "Optional keywords" })).not.toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Course documents" })).not.toBeInTheDocument();
@@ -511,7 +513,6 @@ test("source generation drafts editable opening, submission and completion setti
   const user = await open();
   await user.click(await screen.findByRole("checkbox", { name: /Requirements.pdf/ }));
   await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
-  await user.click(screen.getByRole("radio", { name: /Guided learning path/ }));
   await user.click(screen.getByRole("button", { name: "Generate setup from selected sources" }));
   await waitFor(() => expect(api).toHaveBeenCalledWith(
     "/courses/course-1/socratic-setup/generate",
@@ -558,7 +559,6 @@ test("source generation shows a failed request beside its button", async () => {
   const user = await open();
   await user.click(await screen.findByRole("checkbox", { name: /Requirements.pdf/ }));
   await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
-  await user.click(screen.getByRole("radio", { name: /Guided learning path/ }));
   await user.click(screen.getByRole("button", { name: "Generate setup from selected sources" }));
   const generator = document.querySelector(".socratic-source-generation");
   expect(await within(generator).findByRole("alert")).toHaveTextContent("The model could not finish the setup.");
@@ -574,7 +574,6 @@ test("source generation identifies a scene that explains its answer", async () =
   const user = await open();
   await user.click(await screen.findByRole("checkbox", { name: /Requirements.pdf/ }));
   await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
-  await user.click(screen.getByRole("radio", { name: /Guided learning path/ }));
   await user.click(screen.getByRole("button", { name: "Generate setup from selected sources" }));
   expect(await screen.findByText(/Steps 1 explain the answer too early or need a more concrete decision; edit them before publishing/)).toBeInTheDocument();
 });
@@ -583,7 +582,6 @@ test("guided Socratic setup has no timer setting or duration in review", async (
   const user = await open();
   await user.click(await screen.findByRole("checkbox", { name: /Requirements.pdf/ }));
   await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
-  await user.click(screen.getByRole("radio", { name: /Guided learning path/ }));
   expect(screen.queryByRole("spinbutton", { name: "Total learning-path time (minutes)" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Generate setup from selected sources" }));
   expect(screen.queryByRole("spinbutton", { name: "Total learning-path time (minutes)" })).not.toBeInTheDocument();
@@ -599,7 +597,6 @@ test("generated steps can be dragged, moved with buttons, and removed", async ()
   const user = await open();
   await user.click(await screen.findByRole("checkbox", { name: /Requirements.pdf/ }));
   await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
-  await user.click(screen.getByRole("radio", { name: /Guided learning path/ }));
   await user.click(screen.getByRole("button", { name: "Generate setup from selected sources" }));
   const steps = await screen.findByRole("region", { name: "Learning steps" });
   const cards = () => [...steps.querySelectorAll(".socratic-learning-step")];
@@ -630,53 +627,34 @@ test("generated steps can be dragged, moved with buttons, and removed", async ()
   expect(cards()).toHaveLength(1);
 });
 
-test("guided mode cannot publish an empty path and basic mode keeps the professor's question", async () => {
+test("guided setup requires steps and preserves an authored opening question", async () => {
   const user = await open();
   await user.click(await screen.findByRole("checkbox", { name: /Requirements.pdf/ }));
   await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
   await user.type(screen.getByLabelText("Opening question or prompt"), "What would you test first?");
-  await user.click(screen.getByRole("radio", { name: /Guided learning path/ }));
   await user.click(screen.getByRole("button", { name: "Publish activity" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent(/Generate a learning path before publishing/);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Generate or add learning steps before publishing.");
   await waitFor(() => expect(screen.getByRole("button", { name: "Generate setup from selected sources" })).toHaveFocus());
   expect(api).not.toHaveBeenCalledWith("/platform/assignments", expect.objectContaining({ method: "POST" }));
-  await user.click(screen.getByRole("radio", { name: /Basic conversation/ }));
   expect(screen.getByLabelText("Opening question or prompt")).toHaveValue("What would you test first?");
-  expect(screen.queryByRole("region", { name: "Learning steps" })).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "Publish activity" }));
-  await screen.findByText("Review the activity below, then select Publish activity to confirm.");
-  await user.click(screen.getByRole("button", { name: "Publish activity" }));
-  await waitFor(() => expect(api).toHaveBeenCalledWith("/platform/assignments", expect.objectContaining({
-    body: expect.objectContaining({ config: expect.objectContaining({ guidance_mode: "basic", learning_steps: [] }) }),
-  })));
+  expect(screen.queryByRole("radio", {name: /Basic conversation/})).not.toBeInTheDocument();
 });
 
-test("basic conversation generates only the opening question", async () => {
+test("guided setup generates source-grounded steps rather than an opening-only request", async () => {
   const user = await open();
   await user.click(await screen.findByRole("checkbox", { name: /Requirements.pdf/ }));
   await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
-  const opening = screen.getByLabelText("Opening question or prompt");
-  await user.type(opening, "An instructor's original question?");
-  const generate = screen.getByRole("button", { name: "Generate opening question" });
-  expect(generate).toBeEnabled();
-  await user.click(generate);
-  await waitFor(() => expect(opening).toHaveValue("A team must choose a design. What would you examine first?"));
-  expect(api).toHaveBeenCalledWith(
-    "/courses/course-1/socratic-opening/generate",
-    expect.objectContaining({ method: "POST", body: expect.objectContaining({ document_ids: ["d1"] }) }),
-  );
-  expect(api).not.toHaveBeenCalledWith("/courses/course-1/socratic-setup/generate", expect.anything());
-  expect(screen.queryByLabelText("Messages required before completion")).not.toBeInTheDocument();
-  expect(screen.queryByRole("region", { name: "Learning steps" })).not.toBeInTheDocument();
-  await user.click(screen.getByRole("radio", { name: /Guided learning path/ }));
   expect(screen.queryByRole("button", { name: "Generate opening question" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Generate setup from selected sources" }));
+  expect(await screen.findByLabelText("Opening question or prompt")).toHaveValue("Imagine a team choosing a design. Which choice would you test first?");
+  expect(screen.getByRole("region", {name: "Learning steps"})).toHaveTextContent("Understand the design");
+  expect(api).not.toHaveBeenCalledWith("/courses/course-1/socratic-opening/generate", expect.anything());
 });
 
 test("source generation shows animated progress until the model finishes", async () => {
   const user = await open();
   await user.click(await screen.findByRole("checkbox", { name: /Requirements.pdf/ }));
   await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
-  await user.click(screen.getByRole("radio", { name: /Guided learning path/ }));
   const original = api.getMockImplementation();
   let finishGeneration;
   api.mockImplementation((path, options) =>
@@ -703,7 +681,6 @@ test("uploading an indexed document activates source-based setup generation", as
   courseFiles = [];
   const user = await open();
   await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
-  await user.click(screen.getByRole("radio", { name: /Guided learning path/ }));
   const generate = await screen.findByRole("button", {
     name: "Generate setup from selected sources",
   });
@@ -737,18 +714,26 @@ test("SDL review prepares a lesson before showing publish", async () => {
   await user.click(
     screen.getByRole("button", { name: /Self Directed Learning/ }),
   );
+  await user.type(screen.getByLabelText("What do students already know?"), "Basic programming");
+  await user.type(screen.getByLabelText("What should students be able to do by the end?"), "Apply requirements to a campus system");
   await user.click(screen.getByRole("button", { name: "Review activity" }));
   expect(await screen.findByText("Prepared lesson")).toBeInTheDocument();
+  expect(api).toHaveBeenCalledWith("/platform/assignments", expect.objectContaining({body: expect.objectContaining({config: expect.objectContaining({starting_point: "Basic programming", ending_point: "Apply requirements to a campus system"})})}));
   expect(api).toHaveBeenCalledWith("/platform/assignments/a1/prepare-sdl", {
     method: "POST",
   });
   expect(
-    screen.getByRole("button", { name: "Publish activity" }),
+    within(document.querySelector(".activity-review")).getByRole("button", { name: "Publish activity" }),
   ).toBeEnabled();
 });
 test("Debate can proceed to publish", async () => {
   const user = await open();
   await user.click(screen.getByRole("button", { name: /Debate/ }));
+  expect(screen.getByLabelText("Optional opening prompt")).toHaveValue("");
+  expect(screen.getByLabelText("Debate responses required")).toHaveValue(3);
+  expect(screen.getByLabelText("Final reflection prompt").value).toContain("changed");
+  await user.clear(screen.getByLabelText("Debate responses required"));
+  await user.type(screen.getByLabelText("Debate responses required"), "4");
   await user.click(screen.getByRole("button", { name: "Review activity" }));
   expect(
     screen.getByRole("button", { name: "Publish activity" }),
@@ -760,7 +745,7 @@ test("SDL selection immediately exposes sub-questions without a course picker", 
   await user.click(
     screen.getByRole("button", { name: /Self Directed Learning/ }),
   );
-  expect(screen.getByLabelText("Sub-questions")).toBeInTheDocument();
+  expect(screen.getByLabelText("What specific concepts should the lesson cover?")).toBeInTheDocument();
   expect(screen.queryByLabelText("Course")).not.toBeInTheDocument();
 });
 
@@ -778,7 +763,7 @@ test("draft chat choices remain available and preserve settings while switching"
   await user.click(
     screen.getByRole("button", { name: /Self Directed Learning/ }),
   );
-  expect(screen.getByLabelText("Sub-questions")).toBeInTheDocument();
+  expect(screen.getByLabelText("What specific concepts should the lesson cover?")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Debate/ })).toBeEnabled();
   await user.click(screen.getByRole("button", { name: /Debate/ }));
   expect(screen.getByLabelText("Debate topic or scenario")).toHaveValue(
@@ -908,9 +893,79 @@ test("a server-side publishing requirement moves back to the affected materials"
   const user = await open();
   await user.click(screen.getByRole("checkbox", { name: /Requirements.pdf/ }));
   await user.click(screen.getByRole("button", { name: /Socratic Chat/ }));
+  await user.click(screen.getByRole("button", { name: "Generate setup from selected sources" }));
   await user.click(screen.getByRole("button", { name: "Publish activity" }));
   await screen.findByRole("heading", { name: "Review and publish" });
   await user.click(screen.getByRole("button", { name: "Publish activity" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("no indexed content");
   await waitFor(() => expect(screen.getByRole("checkbox", { name: /Requirements.pdf/ })).toHaveFocus());
+});
+
+
+test("saved SDL review keeps section editing, persists edits and publishes from the bottom", async () => {
+  const user = userEvent.setup();
+  const plan = {title: "Scrum lesson", study_message: "Study the Scrum accountabilities.",
+    starting_point: "Basic teamwork", ending_point: "Apply Scrum", study_resources: [],
+    diagnostic_quiz: [{id: "q1", question: "Who adapts the Sprint Backlog?", options: ["Developers", "Sponsor", "Manager", "Nobody"], correct_index: 0}],
+    required_task: {title: "Sprint risk", submission_prompt: "Explain your response to an API failure."}};
+  const item = {id: "sdl-edit", course_id: "course-1", title: "Scrum", instructions: "Apply Scrum", status: "draft", tool: "self-directed-learning",
+    config: {document_ids: ["d1"], starting_point: "Basic teamwork", ending_point: "Apply Scrum", learning_plan: plan}};
+  const original = api.getMockImplementation();
+  api.mockImplementation(async (path, options) => {
+    if (path === "/platform/assignments/sdl-edit" && options?.method === "PUT") return {...item, ...options.body};
+    if (path === "/platform/assignments/sdl-edit/publish") return {status: "published"};
+    return original(path, options);
+  });
+  render(<MemoryRouter initialEntries={["/professor/activities/sdl-edit"]}><Routes>
+    <Route path="/professor/activities/:id" element={<CreateActivity initialActivity={item} initialContext={course}/>} />
+    <Route path="/professor" element={<p>Published destination</p>} />
+  </Routes></MemoryRouter>);
+  expect(await screen.findByRole("heading", {name: "Review and publish"})).toBeInTheDocument();
+  const review = document.querySelector(".activity-review");
+  for (const section of ["Prerequisites", "Study", "Quiz", "Application"])
+    expect(within(review).getByRole("button", {name: `Edit ${section}`})).toBeEnabled();
+  expect(within(review).getByRole("button", {name: "Publish activity"})).toBeEnabled();
+  await user.click(within(review).getByRole("button", {name: "Edit Study"}));
+  await user.clear(within(review).getByLabelText("Study message"));
+  await user.type(within(review).getByLabelText("Study message"), "Developers adapt their plan toward the Sprint Goal.");
+  await user.click(within(review).getByRole("button", {name: "Save Study"}));
+  await waitFor(() => expect(within(review).getByRole("button", {name: "Edit Study"})).toBeEnabled());
+  expect(api).toHaveBeenCalledWith("/platform/assignments/sdl-edit", expect.objectContaining({method: "PUT", body: expect.objectContaining({config: expect.objectContaining({learning_plan: expect.objectContaining({study_message: "Developers adapt their plan toward the Sprint Goal."})})})}));
+  expect(api.mock.calls.some(([path]) => path.endsWith("/prepare-sdl"))).toBe(false);
+  await user.click(within(review).getByRole("button", {name: "Publish activity"}));
+  expect(await screen.findByText("Published destination")).toBeInTheDocument();
+});
+
+test('SDL missing details require explicit review before lesson generation',async()=>{
+ const user=await open();
+ const base=api.getMockImplementation();
+ api.mockImplementation(async(path,options)=>{
+  if(path.endsWith('/suggest-sdl-boundaries')) return {starting_point:'Basic teamwork',ending_point:'Apply Scrum to a Sprint risk'};
+  if(path==='/platform/assignments/a1' && options?.method==='PUT') return {...options.body,id:'a1',status:'draft'};
+  return base(path,options);
+ });
+ await user.click(await screen.findByRole('checkbox',{name:/Requirements.pdf/}));
+ await user.click(screen.getByRole('button',{name:/Self Directed Learning/}));
+ await user.type(screen.getByLabelText('Learning focus'),'Scrum Sprint planning');
+ await user.type(screen.getByLabelText('Additional instructions'),'Use campus project examples.');
+ await user.click(screen.getByRole('button',{name:'Review activity'}));
+ expect(await screen.findByLabelText('Suggested prior knowledge')).toHaveValue('Basic teamwork');
+ expect(screen.getByLabelText('What do students already know?')).toHaveValue('');
+ expect(api.mock.calls.some(([path])=>path.endsWith('/prepare-sdl'))).toBe(false);
+ await user.clear(screen.getByLabelText('Suggested prior knowledge'));
+ await user.type(screen.getByLabelText('Suggested prior knowledge'),'Basic software development');
+ await user.click(screen.getByRole('button',{name:'Confirm lesson details'}));
+ expect(screen.getByLabelText('What do students already know?')).toHaveValue('Basic software development');
+ expect(api.mock.calls.some(([path])=>path.endsWith('/prepare-sdl'))).toBe(false);
+ await user.click(screen.getByRole('button',{name:'Review activity'}));
+ expect(await screen.findByText('Prepared lesson')).toBeInTheDocument();
+ expect(api).toHaveBeenCalledWith('/platform/assignments/a1',expect.objectContaining({body:expect.objectContaining({instructions:'',config:expect.objectContaining({starting_point:'Basic software development',ending_point:'Apply Scrum to a Sprint risk',additional_instructions:'Use campus project examples.'})})}));
+});
+
+test('SDL instructor form does not offer optional material expansion',async()=>{
+ const user=await open();
+ await user.click(screen.getByRole('button',{name:/Self Directed Learning/}));
+ expect(screen.queryByRole('heading',{name:'Expand this material (optional)'})).not.toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Expand this material'})).not.toBeInTheDocument();
+ expect(screen.getByRole('heading',{name:'Create a learning lesson'})).toBeInTheDocument();
 });

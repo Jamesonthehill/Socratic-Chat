@@ -9,12 +9,20 @@ const label = (key) =>
     topic_introduction: "Opening study message",
     introductory_example: "Worked example",
     submission_prompt: "Typed response prompt",
+    coverage_requirements: "Assessment coverage",
+    assessment_ids: "Assessed by",
   })[key] || key.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
 const hidden = new Set([
   "id",
   "objective_id",
   "flow_version",
   "bounded_flow",
+  "assessment_version",
+  "assessment_grounding_version",
+  "instructional_quality_version",
+  "instructional_review",
+  "generation_quality_version",
+  "instructor_requirements",
   "material_first",
   "auto_generated",
   "content_approved",
@@ -231,10 +239,10 @@ export default function LessonPreview({ plan, onChange, onSave }) {
         />
       ));
   const prerequisiteMessage =
-    plan.prerequisite_message ||
+    (editing.Prerequisites && plan.prerequisite_message === "") ? "" : plan.prerequisite_message ||
     `Today we are learning ${plan.topic}.\n\nStarting point: ${plan.starting_point}\n\nBy the end: ${plan.ending_point}\n\nPrerequisites: ${plan.prerequisite_knowledge}\n\n${plan.prerequisite_resources?.length ? "Read the prerequisite links below if needed. " : "Review these prerequisite assumptions with your course material or instructor if needed. "}Confirm you are familiar with these prerequisites to continue.`;
   const studyMessage =
-    plan.study_message ||
+    (editing.Study && plan.study_message === "") ? "" : plan.study_message ||
     `Let's study ${plan.topic}.\n\n${plan.topic_introduction}\n\nWorked example: ${plan.introductory_example}\n\nExplore the topic readings below. Ask for examples, or start the quiz when ready.`;
   return (
     <section className="sdl-review" aria-label="Full SDL lesson preview">
@@ -243,6 +251,9 @@ export default function LessonPreview({ plan, onChange, onSave }) {
         Review the student messages, readings, quiz, and application task. Use
         each pencil to edit the section before publishing.
       </p>
+      {plan.instructional_review?.passed && <p className="notice" role="status">AI-assisted draft checks completed for coverage, source support, question progression, and rubric alignment. Publishing rechecks the current lesson, including edits. Review the content for accuracy.</p>}
+      {plan.instructional_review && plan.instructional_review.passed === false && <div className="notice error" role="alert"><strong>Address these instructional issues before publishing.</strong><ul>{(plan.instructional_review.issues || []).map((issue,index)=><li key={index}>{issue}</li>)}</ul><p>You can edit and save this draft. Publishing will rerun the checks.</p></div>}
+      {plan.instructional_review?.notes?.length > 0 && <p className="help">{plan.instructional_review.notes.join(" ")}</p>}
       {saveError && <p className="notice error" role="alert">{saveError}</p>}
       {[
         [
@@ -294,6 +305,7 @@ export default function LessonPreview({ plan, onChange, onSave }) {
               />
               <details>
                 <summary>Teaching material and learning outcomes</summary>
+                {!!plan.coverage_requirements?.length && <p className="help">Check that each linked quiz or application task actually asks students to demonstrate the listed requirement. A coverage link alone does not establish understanding.</p>}
                 {fields(
                   [
                     "title",
@@ -302,7 +314,9 @@ export default function LessonPreview({ plan, onChange, onSave }) {
                     "introductory_example",
                     "intended_difficulty",
                     "objectives",
+                    "coverage_requirements",
                     "approved_material",
+                    "supplemental_material",
                     "supplemental_reading_note",
                   ],
                   enabled,
@@ -360,7 +374,7 @@ export default function LessonPreview({ plan, onChange, onSave }) {
                         )?.worked_example ||
                         "",
                       explanation: question.explanation,
-                      material_reference: question.material_reference,
+                      ...(enabled ? { material_reference: question.material_reference } : {}),
                     }}
                     editing={enabled}
                     onChange={(next) =>
@@ -372,6 +386,11 @@ export default function LessonPreview({ plan, onChange, onSave }) {
                       )
                     }
                   />
+                  {question.material_reference && <details>
+                    <summary>Source: {plan.study_resources?.find((resource) => !resource.url)?.title || "Selected course material"}</summary>
+                    <p>Supporting passage from the selected material. Use it to check the answer and explanation.</p>
+                    <blockquote style={{whiteSpace:"pre-wrap"}}>{question.material_reference.replace(/^S\d+:\s*/, "")}</blockquote>
+                  </details>}
                   <details>
                     <summary>Additional feedback and assessment</summary>
                     <Field
@@ -409,7 +428,7 @@ export default function LessonPreview({ plan, onChange, onSave }) {
         [
           "Application",
           (enabled) => (
-            <><p className="help">Students answer in a text box. Ask for a written response; file uploads are not available.</p>{fields(["required_task", "application_rubric"], enabled)}</>
+            <><p className="help">Students answer in a text box. Ask for a written response; file uploads are not available.</p>{fields(["required_task", "application_sections", "application_rubric"], enabled)}</>
           ),
         ],
       ].map(([title, content]) => (

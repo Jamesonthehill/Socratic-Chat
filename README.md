@@ -150,7 +150,7 @@ access. Due dates are informational; late work remains allowed.
 The student dashboard stacks **New**, **In progress**, **Completed**, and **All assignments** sections. Icon-only controls switch between cards and the compact list, remembering the browser's preference. Students open the instructor-assigned chat without choosing its configuration.
 
 - Socratic uses the selected, frozen course chunks and its existing questioning pipeline.
-- Debate uses the configured scenario and live AI provider; completion requires the configured message count.
+- Debate uses the configured scenario and live AI provider, optional frozen course evidence, staged argument challenges, and a required final reflection before submission.
 - SDL opens inside the platform and resumes the existing adaptive lesson, including study, diagnostic questions, practice and reflection. Its workflow remains owned by the SDL service; it does not use the common Debate attempt table.
 - Reflections retains its existing student UI and private backend adapter.
 - AIducate supports draft storage only.
@@ -267,7 +267,7 @@ platform_app/             Shared assignment API, authorization, engine adapters
 platform_frontend/       Shared React UI and separate tool configuration screens
 Socratic-Chat/            Existing identity, courses, documents, RAG engine
 reflections-app/          Existing reflection graphs, analytics and recommendations
-adaptive-learning-app/   SDL engine, shared ingestion pipeline and embedded lesson UI
+self-directed-learning/   SDL engine, shared ingestion pipeline and embedded lesson UI
 scripts/                 Local runner, role bootstrap, database initialization
 platform_tests/          Assignment integration tests
 compose.yaml             One public origin and private learning services

@@ -1,0 +1,351 @@
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace {
+  align-items: start;
+  gap: 28px;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace
+  .lesson-chat {
+  height: auto;
+  max-height: none;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 20px #0f172a06;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace
+  .messages {
+  height: auto;
+  max-height: none;
+  min-height: 0;
+  overflow: visible;
+  padding: 0;
+  display: block;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace
+  .sdl-current-turn {
+  min-height: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace
+  .sdl-message-group {
+  margin: 0 0 20px;
+  gap: 6px;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace
+  .sdl-speaker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted, #64748b);
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace
+  .message.sdl-bubble {
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  margin: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace
+  .message.sdl-bubble
+  p {
+  font-size: 15px;
+  line-height: 1.65;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace
+  .sdl-message-body {
+  display: grid;
+  gap: 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace
+  .student
+  .sdl-message-body {
+  background: color-mix(in srgb, var(--text, #182233) 5%, var(--surface, #fff));
+  border-left: 3px solid var(--line, #cbd5e1);
+  padding: 12px 16px;
+  border-radius: 6px;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace
+  .sdl-feedback-success {
+  padding: 14px 16px;
+  border-left: 3px solid #22a06b;
+  background: color-mix(in srgb, #22a06b 7%, var(--surface, #fff));
+  border-radius: 6px;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace
+  .sdl-feedback-review {
+  padding: 14px 16px;
+  border-left: 3px solid #c68b24;
+  background: color-mix(in srgb, #c68b24 7%, var(--surface, #fff));
+  border-radius: 6px;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-scenario-card {
+  padding: 20px;
+  border: 1px solid var(--line, #dbe3ef);
+  border-left: 3px solid #6385bc;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text, #182233) 3%, var(--surface, #fff));
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-scenario-card
+  h3 {
+  font-size: 18px;
+  margin: 4px 0 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-scenario-card
+  p,
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-active-question
+  p,
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-history-question
+  p {
+  white-space: pre-wrap;
+  line-height: 1.65;
+  margin: 8px 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-activity-progress
+  > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-activity-progress
+  ol {
+  list-style: none;
+  display: flex;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-activity-progress
+  li {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-bottom: 2px solid var(--line, #e2e8f0);
+  color: var(--muted, #64748b);
+  font-size: 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-activity-progress
+  li
+  span {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 23px;
+  height: 23px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text, #182233) 5%, var(--surface, #fff));
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-activity-progress
+  li[data-status="current"] {
+  border-color: #547bc2;
+  color: var(--text);
+  font-weight: 700;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-activity-progress
+  li[data-status="complete"] {
+  border-color: #22a06b;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-history-question {
+  padding: 12px 16px;
+  border-left: 2px solid var(--line, #e2e8f0);
+  margin-bottom: 8px;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace
+  .composer {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 20px;
+  margin: 0;
+  border: 1px solid var(--line, #dbe3ef);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--text, #182233) 3%, var(--surface, #fff));
+  gap: 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-active-question
+  h3 {
+  font-size: 21px;
+  line-height: 1.3;
+  margin: 4px 0 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-active-question
+  small {
+  color: var(--muted, #64748b);
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-response-label {
+  font-size: 13px;
+  font-weight: 650;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace
+  .composer
+  textarea {
+  min-height: 120px;
+  resize: vertical;
+  line-height: 1.6;
+  padding: 14px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  border: 1px solid var(--line, #cbd5e1);
+  border-radius: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace
+  .composer
+  textarea:focus {
+  outline: 2px solid #6385bc;
+  outline-offset: 2px;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace
+  .composer
+  > button {
+  align-self: flex-end;
+  min-height: 42px;
+  padding: 10px 20px;
+  border-radius: 8px;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace
+  .composer
+  > small {
+  grid-column: auto;
+  color: var(--muted, #64748b);
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+    .platform-sdl
+    .sdl-learning-workspace {
+    grid-template-columns: 1fr;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+    .platform-sdl
+    .sdl-learning-workspace
+    .lesson-chat {
+    padding: 16px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+    .platform-sdl
+    .sdl-activity-progress
+    ol {
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui
+  .platform-sdl
+  .sdl-learning-workspace
+  .lesson-stages
+  li
+  > span {
+  background: color-mix(in srgb, var(--text, #182233) 5%, var(--surface, #fff));
+  color: var(--text);
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui .platform-sdl .sdl-learning-workspace .message.sdl-bubble p + p {margin-top:10px;}
+/* Student turns are compact blue bubbles; tutor teaching content stays structured. */
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui .platform-sdl .sdl-learning-workspace .sdl-message-group.student {
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:6px;
+  margin:16px 0 22px;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui .platform-sdl .sdl-learning-workspace .student .sdl-speaker {
+  color:var(--muted,#64748b);
+  padding-right:4px;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui .platform-sdl .sdl-learning-workspace .student .sdl-message-body {
+  width:fit-content;
+  max-width:min(82%,640px);
+  padding:12px 17px;
+  border:1px solid #356de3;
+  border-radius:16px 16px 4px 16px;
+  background:#2563eb;
+  color:#fff;
+  box-shadow:0 2px 6px #1d4ed818;
+  overflow-wrap:anywhere;
+  box-sizing:border-box;
+}
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui .platform-sdl .sdl-learning-workspace .student .message.sdl-bubble,
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui .platform-sdl .sdl-learning-workspace .student .message.sdl-bubble p {
+  background:transparent;
+  color:inherit;
+}
+@media(max-width:640px) {
+  .sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui .platform-sdl .sdl-learning-workspace .student .sdl-message-body {max-width:92%;}
+}

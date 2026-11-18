@@ -139,21 +139,73 @@ def chunks(body: ChunksInput, account=Depends(user)):
             "total": len(rows), "next_offset": following if following < len(rows) else None}
 
 
+@router.post('/assignments/{assignment_id}/expand-sdl-material')
+def expand_sdl_material(assignment_id: UUID, account=Depends(professor)):
+    from .sdl_material import expansion_source_hash
+    from psycopg.types.json import Jsonb
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account, manage=True, lock=True)
+        if item['tool'] != 'self-directed-learning' or item['status'] != 'draft':
+            raise HTTPException(409, 'Expand material for an SDL draft before publishing.')
+        config = item['config']
+        rows = shared_rag.course_chunks(item['course_id'], config['document_ids'])
+        material = '\n\n'.join(row['text'] for row in rows)[:30000]
+        if len(material.strip()) < 3:
+            raise HTTPException(422, 'Select indexed material with a readable topic before expanding.')
+        result = shared_rag.pipeline('POST', '/internal/platform/lessons/expand', json={
+            'material': material, 'filename': item['title'], 'focus': config.get('prompt', ''),
+            'starting_point': config.get('starting_point', ''), 'ending_point': config.get('ending_point', '')})
+        additions = result.get('material_expansion')
+        if not isinstance(additions, str) or not additions.strip() or len(additions) > 12000:
+            raise HTTPException(502, 'The expansion was invalid. Your existing material is unchanged.')
+        config = {**config, 'material_expansion': additions.strip(), 'expansion_approved': False,
+                  'expansion_source_hash': expansion_source_hash(material, config), 'learning_plan': {}}
+        conn.execute('UPDATE assignments_platform SET config=%s,updated_at=now() WHERE id=%s', (Jsonb(config), assignment_id))
+    return {key: config[key] for key in ('material_expansion', 'expansion_approved', 'expansion_source_hash')}
+
+
+@router.post("/assignments/{assignment_id}/suggest-sdl-boundaries")
+def suggest_sdl_boundaries(assignment_id: UUID, account=Depends(professor)):
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account, manage=True)
+        if item["tool"] != "self-directed-learning" or item["status"] != "draft":
+            raise HTTPException(409, "Suggest details for an SDL draft before publishing.")
+        config = item['config']
+        rows = shared_rag.course_chunks(item['course_id'], config['document_ids'])
+        material = "\n\n".join(row['text'] for row in rows)[:30000]
+        if len(material.strip()) < 30:
+            raise HTTPException(422, "Select readable, indexed course materials first.")
+    # Suggestions are returned for review, never persisted or silently approved.
+    return shared_rag.pipeline("POST", "/internal/platform/lessons/suggest-boundaries", json={
+        'material': material, 'filename': item['title'], 'focus': config.get('prompt', ''),
+        'concepts': config.get('custom_questions', []),
+        'starting_point': config.get('starting_point', ''), 'ending_point': config.get('ending_point', ''),
+        'additional_instructions': config.get('additional_instructions', ''),
+    })
+
+
 @router.post("/assignments/{assignment_id}/prepare-sdl")
 def prepare_sdl(assignment_id: UUID, account=Depends(professor)):
+    from .sdl_material import checked_expansion
     with store.connection() as conn:
         item = get_assignment(conn, assignment_id, account, manage=True, lock=True)
         if item["tool"] != "self-directed-learning" or item["status"] != "draft":
             raise HTTPException(409, "Prepare an SDL draft before publishing.")
         rows = shared_rag.course_chunks(item["course_id"], item["config"]["document_ids"])
         material = "\n\n".join(row["text"] for row in rows)[:30000]
-        if len(material.strip()) < 30:
+        try:
+            additions = checked_expansion(material, item['config'])
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        if len(material.strip()) < 30 and not additions:
             raise HTTPException(422, "Select readable, indexed documents before preparing the lesson.")
+        if not item['config'].get('starting_point', '').strip() or not item['config'].get('ending_point', '').strip():
+            raise HTTPException(422, "Review and confirm prior knowledge and the end goal before generating the lesson.")
         focus = item["config"].get("prompt", "")
         questions = [q.strip() for q in item["config"].get("custom_questions", []) if q.strip()]
         if questions:
             focus += "\nInstructor sub-questions to address:\n" + "\n".join(questions)
-        plan = shared_rag.pipeline("POST", "/internal/platform/lessons/prepare", json={"material": material, "filename": item["title"], "focus": focus, "starting_point": item["config"].get("starting_point", ""), "ending_point": item["config"].get("ending_point", "")})
+        plan = shared_rag.pipeline("POST", "/internal/platform/lessons/prepare", json={"material": material, "filename": item["title"], "focus": focus, "instructional_quality": True, "additional_instructions": item['config'].get('additional_instructions', ''), "supplemental_material": additions, "starting_point": item["config"].get("starting_point", ""), "ending_point": item["config"].get("ending_point", "")})
         config = {**item["config"], "learning_plan": plan}
         from psycopg.types.json import Jsonb
         conn.execute("UPDATE assignments_platform SET config=%s,updated_at=now() WHERE id=%s", (Jsonb(config), assignment_id))
@@ -161,6 +213,12 @@ def prepare_sdl(assignment_id: UUID, account=Depends(professor)):
 
 
 def publish_sdl(conn, item, account):
+    from .sdl_material import checked_expansion
+    rows = shared_rag.course_chunks(item['course_id'], item['config']['document_ids'])
+    try:
+        additions = checked_expansion('\n\n'.join(row['text'] for row in rows)[:30000], item['config'], item['config'].get('learning_plan') or {})
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     students = conn.execute("""SELECT u.id AS user_id,u.email,u.display_name,u.username FROM users_platform u
         JOIN assignment_recipients_platform r ON r.student_id=u.id WHERE r.assignment_id=%s""", (item["id"],)).fetchall()
     # SDL uses its own lesson engine and tables; the shared assignment UUID links them.

@@ -4737,6 +4737,11 @@ input[type="file"][hidden] {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
+.debate-review-list { display: grid; gap: 12px; }
+.debate-review-list details { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.debate-review-list summary { cursor: pointer; }
+.debate-review-transcript { display: grid; gap: 10px; margin: 16px 0; padding-left: 24px; }
+.debate-review-transcript li { white-space: pre-wrap; }
 .activity-kpi {
   border: 1px solid var(--line);
   border-radius: 13px;

@@ -1,0 +1,6 @@
+# Scrum: a Sprint decision guide
+Sprint Planning addresses why the Sprint is valuable, what can be Done, and how the chosen work will get done. The whole Scrum Team collaborates. The Product Owner orders the Product Backlog; Developers select work through discussion with the Product Owner and create the Sprint Backlog. Developers self-manage who does what, when and how. The Scrum Master helps establish Scrum and supports team effectiveness rather than assigning daily tasks.
+
+During a Sprint, Developers inspect progress toward the Sprint Goal at the Daily Scrum and adapt their plan. The Daily Scrum is not a status report to a manager. Scope may be clarified and renegotiated with the Product Owner as more is learned, without endangering the Sprint Goal. Quality does not decrease. Work is part of an Increment only when it meets the Definition of Done. Acceptance criteria for an item do not replace this shared quality commitment.
+
+The Sprint Review inspects the outcome with stakeholders and considers future adaptations. The Retrospective plans improvements to quality and effectiveness. An urgent defect calls for assessing its effect on the goal, collaborating on scope and adapting the plan; it does not automatically justify abandoning the goal or lowering quality.

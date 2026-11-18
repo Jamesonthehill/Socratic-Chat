@@ -9,8 +9,8 @@ Create a **Web Service** in Render using this repository and branch `platform-ui
 | Setting | Value |
 | --- | --- |
 | Root Directory | Leave empty |
-| Dockerfile Path | `adaptive-learning-app/backend/Dockerfile` |
-| Docker Build Context Directory | `adaptive-learning-app/backend` |
+| Dockerfile Path | `self-directed-learning/backend/Dockerfile` |
+| Docker Build Context Directory | `self-directed-learning/backend` |
 | Docker Command | Leave empty; the image respects Render's `PORT` |
 | Health Check Path | `/api/health` |
 

@@ -798,8 +798,9 @@ function ToolDashboard() {
       .catch((e) => setCourseError(e.message));
   }, []);
   if (!TOOLS[tool]) return <Navigate to="/professor" replace />;
+  const ToolShell = tool === "self-directed-learning" ? "div" : React.Fragment;
   return (
-    <>
+    <ToolShell {...(tool === "self-directed-learning" ? {className: "sdl-teaching-ui sdl-instructor-ui"} : {})}>
       <Link className="back" to="/professor">
         ← All tools
       </Link>
@@ -859,7 +860,7 @@ function ToolDashboard() {
           <p>Loading assignments…</p>
         )}
       </section>
-    </>
+    </ToolShell>
   );
 }
 

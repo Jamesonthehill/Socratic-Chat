@@ -64,7 +64,7 @@ Example responsibilities in a university project
 • Scrum Master: facilitate collaboration when a team is blocked by unclear responsibilities or recurring
  coordination problems.
 • Developers: design, implement, test, and integrate a working event-registration feature.
-
+ 
 Common misconception
 A daily task board may show individual assignments, but Scrum does not make the Product Owner or
 Scrum Master the mandatory dispatcher of all technical work.
@@ -131,7 +131,7 @@ Example: campus event registration
  • Sprint Backlog plan: implement a registration endpoint, add eligibility checks, build the registration
  interface, write tests, and integrate with the event page.
 • Increment: a working, tested registration flow that meets the team’s Definition of Done.
-
+ 
 One-sentence distinction
 Product Backlog = evolving possibilities and priorities; Sprint Backlog = this Sprint’s goal and working
 plan; Increment = useful product work demonstrably complete to the agreed standard.
@@ -278,14 +278,14 @@ Initial Product Backlog, ordered by expected value
  • PBI-3: Receive a visible registration confirmation.
  • PBI-4: Cancel a registration.
  • PBI-5: Filter events by category.
-
+ 
 Example user story and acceptance criteria
 Story: As a student, I want to register for an event, so that I can reserve my place without contacting the
 organizer.
  • A student may register only when capacity remains.
  • Submitting a valid registration increases the registration count once.
  • A full event displays a clear explanation and does not accept the registration.
-
+ 
 Sprint 1 plan
 Sprint Goal: a student can find an event and successfully register. Selected items: PBI-1 and PBI-2; PBI-3
 if capacity allows. Developer plan: create event data structures, listing UI, registration API, integration

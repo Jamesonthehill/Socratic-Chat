@@ -46,22 +46,23 @@ function replyParagraphs(content) {
 }
 
 function StudyResourceCard({ resource, recommended, compact = false }) {
-  const body = compact ? (
-    <><strong>{resource.title}</strong><span>{resource.description}</span>{recommended && <small>{recommended}</small>}</>
-  ) : (
-    <div>
-      <small>{resource.provider}</small>
-      {recommended && <small>{recommended}</small>}
-      <strong>{resource.title}</strong>
-      <p>{resource.description}</p>
-      <p><b>Focus:</b> {resource.focus}</p>
-    </div>
-  );
-  const className = compact ? (resource.url ? "" : "local-reading") : "resource-card lesson-resource";
-  if (!resource.url) {
-    return <div className={className}>{body}{!compact && <small>Included in this lesson</small>}</div>;
+  if (compact) {
+    const body = <><strong>{resource.title}</strong><span>{resource.description}</span>{recommended && <small>{recommended}</small>}</>;
+    return resource.url
+      ? <a href={resource.url} target="_blank" rel="noopener noreferrer">{body}</a>
+      : <div className="local-reading">{body}</div>;
   }
-  return <a className={className} href={resource.url} target="_blank" rel="noopener noreferrer">{body}{!compact && <b>↗</b>}</a>;
+  return (
+    <section className="resource-card lesson-resource">
+      {resource.provider && <p className="eyebrow">{resource.provider}</p>}
+      <h3>{resource.url
+        ? <a href={resource.url} target="_blank" rel="noopener noreferrer">{resource.title}</a>
+        : resource.title}</h3>
+      {recommended && <small>{recommended}</small>}
+      {resource.description && <p>{resource.description}</p>}
+      {resource.focus && <p><strong>Focus:</strong> {resource.focus}</p>}
+    </section>
+  );
 }
 
 // CURRENT V2: student interactions submit to the learning-turn endpoint.
@@ -623,29 +624,20 @@ export default function LessonWorkspace({
                         <div className="resource-cards">
                           {(
                             lesson.learning_plan.prerequisite_resources || []
-                          ).map((resource) => (
-                            <a
-                              className="resource-card"
-                              key={resource.url}
-                              href={resource.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              <strong>{resource.title}</strong>
-                              <p>{resource.description}</p>
-                              {resource.focus && <p><b>Focus:</b> {resource.focus}</p>}
-                            </a>
+                          ).map((resource, index) => (
+                            <StudyResourceCard key={`${resource.url}:${index}`} resource={resource} />
                           ))}
                           {!(lesson.learning_plan.prerequisite_resources || [])
                             .length && materialLinks}
-                          <button
-                            disabled={busy}
-                            onClick={() =>
-                              submitLessonTurn({ action: "continue" })
-                            }
-                          >
-                            I’m familiar with the prerequisites · continue
-                          </button>
+                          <div className="learning-choices" aria-label="Prerequisite actions">
+                            <button
+                              className="primary"
+                              disabled={busy}
+                              onClick={() => submitLessonTurn({ action: "continue" })}
+                            >
+                              I’m familiar with the prerequisites · continue
+                            </button>
+                          </div>
                         </div>
                       )}
                       {state.bounded_flow && stage === 'completed' && (
@@ -967,6 +959,7 @@ export default function LessonWorkspace({
 
 function ChatMessage({ message, bounded, verdict, presentation }) {
   const student = message.role === "student";
+  const completion = presentation?.completion;
   let content = presentation ? presentation.text : message.content;
   if (student) {
     content = (
@@ -988,12 +981,18 @@ function ChatMessage({ message, bounded, verdict, presentation }) {
           .replace(/You have one submission, followed by feedback\./g, "");
   }
   const paragraphs = student ? [content] : replyParagraphs(content);
-  if (!content && !presentation?.questions.length && !message.sources?.length) return null;
+  if (!content && !completion && !presentation?.questions.length && !message.sources?.length) return null;
   return (
     <div className={`sdl-message-group ${student ? "student" : "assistant"}`}>
       <span className="sdl-speaker">{student ? "You" : "Tutor"}</span>
       <div className={`sdl-message-body ${verdict === true ? 'sdl-feedback-success' : verdict === false ? 'sdl-feedback-review' : ''}`}>
       {verdict !== undefined && <strong className="sdl-feedback-label">{verdict ? 'You’re on the right track' : 'Let’s build on your reasoning'}</strong>}
+      {completion && (
+        <header className="sdl-active-question">
+          <p className="eyebrow">Lesson complete</p>
+          <h3>Application and interview feedback</h3>
+        </header>
+      )}
       {content && <article className={`message sdl-bubble ${student ? "student" : "assistant"}`}>
       {paragraphs.filter(Boolean).map((paragraph, index) => (
           <p key={index}>
@@ -1013,6 +1012,19 @@ function ChatMessage({ message, bounded, verdict, presentation }) {
           </p>
       ))}
       </article>}
+      {completion && (
+        <section className="sdl-history-question" aria-label="Lesson completion details">
+          {completion.outcomes.length > 0 && (
+            <details>
+              <summary>Learning outcomes</summary>
+              <ul>
+                {completion.outcomes.map((outcome) => <li key={outcome}>{outcome}</li>)}
+              </ul>
+            </details>
+          )}
+          <p>{completion.note}</p>
+        </section>
+      )}
       </div>
       {presentation?.questions.map((question, index) => <section className="sdl-history-question" key={index}><strong>{question.title}</strong><p>{question.prompt}</p></section>)}
       {message.sources?.length > 0 && (

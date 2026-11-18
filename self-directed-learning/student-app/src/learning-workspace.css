@@ -349,3 +349,16 @@
 @media(max-width:640px) {
   .sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui .platform-sdl .sdl-learning-workspace .student .sdl-message-body {max-width:92%;}
 }
+.sdl-learning-workspace .lesson-resource > * {
+  margin: 0;
+}
+
+.sdl-learning-workspace .lesson-resource > * + * {
+  margin-top: 8px;
+}
+
+.sdl-learning-workspace .lesson-resource h3 {
+  font-size: 1em;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}

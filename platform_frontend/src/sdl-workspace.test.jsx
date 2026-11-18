@@ -136,7 +136,7 @@ test('resumes interview questions, preserves Socratic prose, and reaches complet
   if(path.endsWith('/learning-turn')) {
    expect(options.body).toMatchObject({action:'answer',question_id:`interview-${index+1}`,content:'My reasoning.'});
    messages.push({id:`s${index}`,role:'student',content:'My reasoning.'}); index++;
-   messages.push({id:`t${index}`,role:'assistant',content:index<2?`Saved.\n\nInterview question 2 of 2\n\n${prompts[1]}\n\nOne or two sentences is enough.`:'Application and interview feedback: You explained the tradeoff.\n\nConsider how you would inspect the result.'});
+   messages.push({id:`t${index}`,role:'assistant',content:index<2?`Saved.\n\nInterview question 2 of 2\n\n${prompts[1]}\n\nOne or two sentences is enough.`:'Application and interview feedback: You explained the tradeoff.\n\nConsider how you would inspect the result.\n\nIntended outcome: Protect the Sprint Goal.\nApply the Definition of Done.\n\nLesson complete. Completion records participation; feedback describes the evidence of understanding.'});
    return attempt();
   }
   return path.endsWith('/start')?attempt():path.endsWith('/materials')?{files:[]}:{title:'Interview activity',learning_plan:{topic:'Scrum',study_resources:[]}};
@@ -148,6 +148,9 @@ test('resumes interview questions, preserves Socratic prose, and reaches complet
   fireEvent.click(screen.getByRole('button',{name:i===0?'Save answer & continue':'Submit & view feedback'}));
  }
  expect(await screen.findByText('Consider how you would inspect the result.')).toBeInTheDocument();
+ expect(screen.getByRole('heading',{name:'Application and interview feedback'})).toBeInTheDocument();
+ fireEvent.click(screen.getByText('Learning outcomes'));
+ expect(screen.getByText('Apply the Definition of Done.')).toBeVisible();
  expect(screen.queryByLabelText('Your reply')).not.toBeInTheDocument();
  expect(screen.getByRole('progressbar',{name:'Lesson progress'})).toHaveAttribute('value','100');
  prompts.forEach(prompt=>expect(screen.getAllByText(prompt)).toHaveLength(1));

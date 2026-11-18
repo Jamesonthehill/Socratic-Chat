@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1750" viewBox="0 0 1800 1750" role="img" aria-labelledby="title desc">
+<title id="title">AIducate instructor analysis algorithm</title><desc id="desc">Instructor selects published Reflection results or imports a CSV. Published results are read for participation; imported responses may be sent in bounded batches for validated topic annotations. The instructor reviews findings and exports a report.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#587184"/></marker></defs>
+<rect width="1800" height="1750" fill="#fbfcfd"/><rect width="1800" height="145" fill="#e8f0f6"/>
+<text x="900" y="64" font-family="Arial, Helvetica, sans-serif" font-size="40" font-weight="700" text-anchor="middle" fill="#1b3348">AIducate Instructor Analysis — Algorithm</text>
+<text x="900" y="106" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="middle" fill="#1b3348">Reflection analysis and reporting • instructor-only workspace</text>
+<text x="900" y="170" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="middle" fill="#587184">AIducate analyzes completed or in-progress responses; it does not run a student assignment.</text>
+<rect x="420" y="205" width="960" height="120" rx="17" fill="#ffffff" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="217" width="150" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="238" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">INSTRUCTOR</text>
+<text x="447" y="280" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Choose a course and reflection set</text>
+<text x="447" y="304" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Select a published Reflection assignment or import a CSV file.</text>
+<path d="M900 325 V352" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M900 352 L1200 410 L900 468 L600 410 Z" fill="#ffffff" stroke="#587184" stroke-width="2.5"/>
+<text x="900" y="402" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#1b3348">Which source</text>
+<text x="900" y="430" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#1b3348">of responses?</text>
+<path d="M600 410 H455 V472" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M1200 410 H1345 V472" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<text x="275" y="455" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="start" fill="#587184">Published assignment</text>
+<text x="1440" y="455" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="start" fill="#587184">Imported CSV</text>
+<rect x="85" y="480" width="750" height="150" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="107" y="492" width="164" height="30" rx="15" fill="#cfdfeb"/>
+<text x="124" y="513" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">PLATFORM API</text>
+<text x="112" y="555" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Read authorized attempts</text>
+<text x="112" y="579" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Check instructor access to the course;</text>
+<text x="112" y="602" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">return participation counts and saved</text>
+<text x="112" y="625" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">student messages without changing them.</text>
+<rect x="965" y="480" width="750" height="150" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="987" y="492" width="175" height="30" rx="15" fill="#cfdfeb"/>
+<text x="1004" y="513" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">IMPORT PARSER</text>
+<text x="992" y="555" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Map reflection columns</text>
+<text x="992" y="579" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Preview headers; select student ID and</text>
+<text x="992" y="602" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">response columns; validate rows and</text>
+<text x="992" y="625" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">save imported set in browser storage.</text>
+<path d="M460 630 V675" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M1340 630 V675" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<rect x="85" y="682" width="750" height="150" rx="17" fill="#edf3ee" stroke="#587184" stroke-width="2"/>
+<rect x="107" y="694" width="252" height="30" rx="15" fill="#cfdfeb"/>
+<text x="124" y="715" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">INSTRUCTOR WORKSPACE</text>
+<text x="112" y="757" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Review participation and responses</text>
+<text x="112" y="781" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Show assigned, started, completed, and</text>
+<text x="112" y="804" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">response counts. Original student text</text>
+<text x="112" y="827" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">remains available for inspection.</text>
+<rect x="965" y="682" width="750" height="150" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="987" y="694" width="164" height="30" rx="15" fill="#cfdfeb"/>
+<text x="1004" y="715" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">ANALYSIS API</text>
+<text x="992" y="757" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Annotate imported responses</text>
+<text x="992" y="781" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Send batches of at most 50 records;</text>
+<text x="992" y="804" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">validate model labels, resolution status,</text>
+<text x="992" y="827" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">urgency, summary, and suggestions.</text>
+<path d="M1340 832 V875" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<rect x="965" y="882" width="750" height="155" rx="17" fill="#edf3ee" stroke="#587184" stroke-width="2"/>
+<rect x="987" y="894" width="241" height="30" rx="15" fill="#cfdfeb"/>
+<text x="1004" y="915" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">ANALYSIS AGGREGATOR</text>
+<text x="992" y="957" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Collect validated findings</text>
+<text x="992" y="981" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Keep per-record failures visible; count</text>
+<text x="992" y="1004" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">topics and unresolved challenges;</text>
+<text x="992" y="1027" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">save results in instructor browser storage.</text>
+<path d="M460 832 V1115 H900 M1340 1037 V1115 H900" fill="none" stroke="#587184" stroke-width="3.4"/>
+<path d="M900 1115 V1140" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<rect x="420" y="1147" width="960" height="137" rx="17" fill="#ffffff" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="1159" width="150" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="1180" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">INSTRUCTOR</text>
+<text x="447" y="1222" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Review the analysis</text>
+<text x="447" y="1246" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Inspect participation, individual responses, and any model findings.</text>
+<text x="447" y="1269" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">AI output requires instructor judgment.</text>
+<path d="M900 1284 V1312" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<rect x="420" y="1319" width="960" height="137" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="1331" width="186" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="1352" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">REPORT BUILDER</text>
+<text x="447" y="1394" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Generate instructor report</text>
+<text x="447" y="1418" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Build HTML from supplied records and findings; return a preview</text>
+<text x="447" y="1441" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">and let the instructor download the report.</text>
+<rect x="130" y="1520" width="1540" height="167" rx="17" fill="#fff3e5" stroke="#587184" stroke-width="2"/>
+<text x="165" y="1560" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" text-anchor="start" fill="#1b3348">STORAGE BOUNDARY</text>
+<text x="165" y="1599" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" text-anchor="start" fill="#1b3348">Published responses stay in platform attempts. Imported sets and saved results live in browser local storage.</text>
+<text x="165" y="1635" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" text-anchor="start" fill="#1b3348">The analysis endpoint handles each batch per request; it does not create a server-side analysis table.</text>
+</svg>

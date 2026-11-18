@@ -25,6 +25,7 @@ from platform_app.schemas import (
     AssignmentInput,
     CanvasCourseRequest,
     CanvasCredentials,
+    CanvasDeleteRequest,
     CanvasImportRequest,
     GenerateSubtopicsInput,
     MessageInput,
@@ -331,18 +332,31 @@ def import_canvas_assignment(body: CanvasImportRequest, account=Depends(professo
             )[:10000].strip(),
             "minimum_messages": 3,
         }
-    return create_assignment(
-        AssignmentInput(
-            course_id=body.platform_course_id,
-            tool=body.tool,
-            title=canvas_assignment["name"][:200],
-            instructions=instructions,
-            due_at=canvas_assignment.get("due_at"),
-            audience="course",
-            config=config,
-        ),
-        account,
+    draft = AssignmentInput(
+        course_id=body.platform_course_id,
+        tool=body.tool,
+        title=canvas_assignment["name"][:200],
+        instructions=instructions,
+        due_at=canvas_assignment.get("due_at"),
+        audience="course",
+        config=config,
     )
+    validate_activity_documents(draft)
+    with store.connection() as conn:
+        conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))',
+                     (f'canvas-import:{body.course_id}:{body.assignment_id}',))
+        if conn.execute('''SELECT 1 FROM canvas_assignment_targets_platform
+                           WHERE canvas_course_id=%s AND canvas_assignment_id=%s''',
+                        (body.course_id, body.assignment_id)).fetchone():
+            raise HTTPException(409, 'This Canvas assignment is already linked to BrainTutor.')
+        created = _insert_assignment(conn, draft, account)
+        conn.execute(
+            '''INSERT INTO canvas_assignment_targets_platform
+               (assignment_id, canvas_course_id, canvas_assignment_id, source)
+               VALUES (%s,%s,%s,'import')''',
+            (created['id'], body.course_id, body.assignment_id),
+        )
+    return created
 
 
 @router.get("/assignments")
@@ -354,12 +368,14 @@ def assignments(course_id: UUID | None = None, account=Depends(user)):
     with store.connection() as conn:
         if is_prof:
             rows = conn.execute("""SELECT a.*, c.title AS course_title, c.course_code,
+                t.canvas_course_id, t.canvas_assignment_id,
                 (SELECT count(*) FROM assignment_recipients_platform WHERE assignment_id=a.id) AS recipient_count,
                 (SELECT count(*) FROM assignment_attempts_platform WHERE assignment_id=a.id AND status='completed') AS completed_count
                 , EXISTS(SELECT 1 FROM course_memberships_platform m
                     WHERE m.course_id=a.course_id AND m.user_id=%s
                     AND m.course_role='instructor' AND m.status='approved') AS can_manage
                 FROM assignments_platform a JOIN courses_platform c ON c.id=a.course_id
+                LEFT JOIN canvas_assignment_targets_platform t ON t.assignment_id=a.id
                 ORDER BY a.created_at DESC""", (account["user_id"],)).fetchall()
         else:
             rows = conn.execute("""SELECT a.*, c.title AS course_title, c.course_code,
@@ -484,17 +500,21 @@ def validate_activity_documents(body):
             raise HTTPException(422, "Select indexed documents from this course only.")
 
 
+def _insert_assignment(conn, body, account):
+    assignment_id = uuid4()
+    row = conn.execute("""INSERT INTO assignments_platform(id, course_id, creator_id, tool, title, instructions, due_at, audience, config)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""", (assignment_id, body.course_id, account["user_id"], body.tool,
+        body.title, body.instructions, body.due_at, body.audience, Jsonb(body.config))).fetchone()
+    recipients(conn, assignment_id, body)
+    return public_assignment(row, True)
+
+
 @router.post("/assignments", status_code=201)
 def create_assignment(body: AssignmentInput, account=Depends(professor)):
     manage_course(body.course_id, account)
     validate_activity_documents(body)
-    assignment_id = uuid4()
     with store.connection() as conn:
-        row = conn.execute("""INSERT INTO assignments_platform(id, course_id, creator_id, tool, title, instructions, due_at, audience, config)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""", (assignment_id, body.course_id, account["user_id"], body.tool,
-            body.title, body.instructions, body.due_at, body.audience, Jsonb(body.config))).fetchone()
-        recipients(conn, assignment_id, body)
-    return public_assignment(row, True)
+        return _insert_assignment(conn, body, account)
 
 
 @router.get("/assignments/{assignment_id}/material-reference")
@@ -705,6 +725,48 @@ def archive(assignment_id: UUID, account=Depends(professor)):
         get_assignment(conn, assignment_id, account, manage=True, lock=True)
         conn.execute("UPDATE assignments_platform SET status='archived', updated_at=now() WHERE id=%s", (assignment_id,))
     return {"status": "archived"}
+
+
+@router.post("/assignments/{assignment_id}/delete-in-canvas")
+def delete_in_canvas(assignment_id: UUID, body: CanvasDeleteRequest, account=Depends(professor)):
+    """Remove the exact linked Canvas assignment, then archive its local record."""
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account, manage=True, lock=True)
+        if item['status'] == 'archived':
+            raise HTTPException(409, 'This BrainTutor assignment is already archived.')
+        target = conn.execute(
+            '''SELECT canvas_course_id, canvas_assignment_id
+               FROM canvas_assignment_targets_platform WHERE assignment_id=%s''',
+            (assignment_id,),
+        ).fetchone()
+        if not target:
+            raise HTTPException(409, 'This assignment has no verified Canvas assignment ID.')
+        known_course = target['canvas_course_id']
+        if known_course and body.course_id and known_course != body.course_id:
+            raise HTTPException(422, 'The Canvas course ID does not match this assignment link.')
+        canvas_course_id = known_course or body.course_id
+        if not canvas_course_id:
+            raise HTTPException(422, 'Enter the Canvas course ID for this older assignment link.')
+        token = body.access_token.get_secret_value()
+        canvas_item = canvas_result(lambda: canvas_lms.get_assignment(
+            canvas_course_id, target['canvas_assignment_id'], token,
+        ))
+        if (canvas_item['id'] != str(target['canvas_assignment_id'])
+                or canvas_item.get('course_id', str(canvas_course_id)) != str(canvas_course_id)):
+            raise HTTPException(409, 'Canvas returned a different assignment or course; nothing was deleted.')
+        canvas_result(lambda: canvas_lms.delete_assignment(
+            canvas_course_id, target['canvas_assignment_id'], token,
+        ))
+        conn.execute(
+            "UPDATE assignments_platform SET status='archived', updated_at=now() WHERE id=%s",
+            (assignment_id,),
+        )
+        if not known_course:
+            conn.execute(
+                'UPDATE canvas_assignment_targets_platform SET canvas_course_id=%s WHERE assignment_id=%s',
+                (canvas_course_id, assignment_id),
+            )
+    return {'status': 'archived', 'canvas_deleted': True}
 
 
 @router.post("/assignments/{assignment_id}/duplicate", status_code=201)

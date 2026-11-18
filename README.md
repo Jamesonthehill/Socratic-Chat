@@ -99,8 +99,10 @@ to your Canvas account. Set `CANVAS_API_ORIGIN` to the same Canvas origin used b
    date, and assigned chatbot, configure the selected learning experience, choose
    recipients, and publish.
 
-The connector is read-only and is restricted to
-`${CANVAS_API_ORIGIN}/api/v1`. The access token is held in browser
+Canvas import uses read-only requests and is restricted to
+`${CANVAS_API_ORIGIN}/api/v1`. The separate **Delete in Canvas** action
+requires an explicit instructor confirmation and uses Canvas's assignment
+deletion endpoint. The access token is held in browser
 memory only for the current page and sent to the ClubALL backend only for the
 requested Canvas operation. It is not written to PostgreSQL, browser storage,
 application logs, assignment configuration, or source files. Importing copies a

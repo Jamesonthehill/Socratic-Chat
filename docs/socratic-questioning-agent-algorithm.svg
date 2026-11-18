@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="2200" viewBox="0 0 1800 2200" role="img" aria-labelledby="title desc">
+<title id="title">Socratic Questioning Agent algorithm for published assignments</title>
+<desc id="desc">Flowchart showing instructor snapshot, opening question, learner input, classification, routing, retrieval, evidence gate, qualitative answer evaluation, guided-step readiness, response generation, saving, and learner summary.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#587184"/></marker></defs>
+<rect width="1800" height="2200" fill="#fbfcfd"/>
+<rect width="1800" height="145" fill="#e8f0f6"/>
+<text x="900" y="65" font-family="Arial, Helvetica, sans-serif" font-size="40" font-weight="700" text-anchor="middle" fill="#1b3348">Socratic Questioning Agent — Algorithm</text>
+<text x="900" y="108" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="middle" fill="#1b3348">Published assignment • one learner turn at a time</text>
+<text x="900" y="169" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="middle" fill="#587184">Labels identify functional agents in the platform process, not separate services.</text>
+<rect x="420" y="200" width="960" height="116" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="448" y="211" width="286" height="32" rx="15" fill="#cfdfeb" stroke="none" stroke-width="0"/>
+<text x="465" y="234" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">INSTRUCTOR + PLATFORM</text>
+<text x="448" y="270" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start" fill="#1b3348">Publish the assignment</text>
+<text x="448" y="296" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Freeze selected course passages; store guided learning steps if configured.</text>
+<path d="M900 316 V350" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" />
+<rect x="420" y="355" width="960" height="116" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="448" y="366" width="262" height="32" rx="15" fill="#cfdfeb" stroke="none" stroke-width="0"/>
+<text x="465" y="389" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">PLATFORM CONTROLLER</text>
+<text x="448" y="425" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start" fill="#1b3348">Start an attempt</text>
+<text x="448" y="451" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Show the assignment prompt or Step 1 scenario and opening question.</text>
+<path d="M900 471 V505" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" />
+<rect x="420" y="510" width="960" height="116" rx="17" fill="#ffffff" stroke="#587184" stroke-width="2"/>
+<rect x="448" y="521" width="155" height="32" rx="15" fill="#cfdfeb" stroke="none" stroke-width="0"/>
+<text x="465" y="544" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">LEARNER</text>
+<text x="448" y="580" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start" fill="#1b3348">Send a message or choose a clarification</text>
+<text x="448" y="606" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">The controller loads the saved conversation and active step state.</text>
+<path d="M900 626 V660" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" />
+<rect x="420" y="665" width="960" height="132" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="448" y="676" width="250" height="32" rx="15" fill="#cfdfeb" stroke="none" stroke-width="0"/>
+<text x="465" y="699" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">MESSAGE CLASSIFIER</text>
+<text x="448" y="735" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start" fill="#1b3348">Interpret the learner’s turn</text>
+<text x="448" y="761" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Return role, target concept, action, and retrieval queries;</text>
+<text x="448" y="785" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">validate labels and use rule fallback if classification fails.</text>
+<path d="M900 797 V829" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" />
+<path d="M900 828 L1215 885 L900 942 L585 885 Z" fill="#ffffff" stroke="#587184" stroke-width="2.5"/>
+<text x="900" y="879" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#1b3348">Learning-related</text>
+<text x="900" y="907" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#1b3348">turn?</text>
+<path d="M1215 885 H1400" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" />
+<rect x="1410" y="808" width="335" height="158" rx="17" fill="#fff3e5" stroke="#587184" stroke-width="2"/>
+<text x="1435" y="846" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="start" fill="#1b3348">Controller handles</text>
+<text x="1435" y="880" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#1b3348">Pause / close, course info,</text>
+<text x="1435" y="907" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#1b3348">direct reply, or clarification.</text>
+<text x="1435" y="934" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#1b3348">Return to learner input.</text>
+<text x="1258" y="867" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#587184">Other</text>
+<text x="1010" y="970" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#587184">Learning path</text>
+<path d="M900 942 V980" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" />
+<rect x="420" y="985" width="960" height="132" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="448" y="996" width="334" height="32" rx="15" fill="#cfdfeb" stroke="none" stroke-width="0"/>
+<text x="465" y="1019" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">TERM RESOLVER + RETRIEVER</text>
+<text x="448" y="1055" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start" fill="#1b3348">Find assignment evidence</text>
+<text x="448" y="1081" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Resolve course terms; search only frozen passages with</text>
+<text x="448" y="1105" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">semantic + text retrieval; merge and rerank up to four sources.</text>
+<path d="M900 1117 V1144" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" />
+<path d="M900 1143 L1215 1200 L900 1257 L585 1200 Z" fill="#ffffff" stroke="#587184" stroke-width="2.5"/>
+<text x="900" y="1194" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#1b3348">Relevant evidence</text>
+<text x="900" y="1222" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#1b3348">or contextual meaning?</text>
+<path d="M1215 1200 H1400" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" />
+<rect x="1410" y="1140" width="335" height="134" rx="17" fill="#fff3e5" stroke="#587184" stroke-width="2"/>
+<text x="1435" y="1178" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="start" fill="#1b3348">No source: boundary reply</text>
+<text x="1435" y="1212" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#1b3348">Ask for a supported topic or</text>
+<text x="1435" y="1239" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#1b3348">more instructor material.</text>
+<text x="1435" y="1266" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#1b3348">Return to learner input.</text>
+<text x="1258" y="1183" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#587184">No</text>
+<text x="990" y="1281" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#587184">Yes</text>
+<path d="M900 1257 V1290" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" />
+<rect x="420" y="1295" width="960" height="132" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="448" y="1306" width="226" height="32" rx="15" fill="#cfdfeb" stroke="none" stroke-width="0"/>
+<text x="465" y="1329" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">ANSWER EVALUATOR</text>
+<text x="448" y="1365" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start" fill="#1b3348">Check the learner’s reasoning when eligible</text>
+<text x="448" y="1391" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Compare substantive answers with sources; record supported ideas,</text>
+<text x="448" y="1415" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">missing ideas, and misconceptions. No numeric score is used.</text>
+<path d="M900 1427 V1460" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" />
+<rect x="420" y="1465" width="960" height="132" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="448" y="1476" width="322" height="32" rx="15" fill="#cfdfeb" stroke="none" stroke-width="0"/>
+<text x="465" y="1499" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">STEP READINESS EVALUATOR</text>
+<text x="448" y="1535" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start" fill="#1b3348">Check the current guided step</text>
+<text x="448" y="1561" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">After required questions, decide whether the learner has applied</text>
+<text x="448" y="1585" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">the step goal with a reason and no unresolved contradiction.</text>
+<path d="M1380 1531 H1400" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" />
+<rect x="1410" y="1443" width="335" height="157" rx="17" fill="#edf3ee" stroke="#587184" stroke-width="2"/>
+<text x="1435" y="1481" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="start" fill="#1b3348">If ready: pause teaching</text>
+<text x="1435" y="1515" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#1b3348">Offer next step or summary.</text>
+<text x="1435" y="1542" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#1b3348">The learner chooses when to</text>
+<text x="1435" y="1569" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#1b3348">continue; steps do not advance</text>
+<text x="1435" y="1596" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#1b3348">automatically.</text>
+<text x="1060" y="1632" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#587184">Not ready / basic mode</text>
+<path d="M900 1597 V1645" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" />
+<rect x="420" y="1650" width="960" height="132" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="448" y="1661" width="322" height="32" rx="15" fill="#cfdfeb" stroke="none" stroke-width="0"/>
+<text x="465" y="1684" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">TUTOR RESPONSE GENERATOR</text>
+<text x="448" y="1720" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start" fill="#1b3348">Compose and check the next turn</text>
+<text x="448" y="1746" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Use selected evidence, active step, history, and feedback;</text>
+<text x="448" y="1770" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">produce a structured reply with a focused follow-up if useful.</text>
+<path d="M900 1782 V1815" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" />
+<rect x="420" y="1820" width="960" height="108" rx="17" fill="#edf3ee" stroke="#587184" stroke-width="2"/>
+<rect x="448" y="1831" width="262" height="32" rx="15" fill="#cfdfeb" stroke="none" stroke-width="0"/>
+<text x="465" y="1854" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">PLATFORM CONTROLLER</text>
+<text x="448" y="1890" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start" fill="#1b3348">Save the turn and wait</text>
+<text x="448" y="1916" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Store response, sources, and state; return to the learner.</text>
+<path d="M420 1874 H335 V568 H410" fill="none" stroke="#587184" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" stroke-dasharray="9 7"/>
+<text x="349" y="1250" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="start" fill="#587184">Next turn</text>
+<rect x="105" y="1980" width="1590" height="168" rx="20" fill="#f3f6f3" stroke="#587184" stroke-width="2"/>
+<text x="145" y="2022" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" text-anchor="start" fill="#1b3348">LEARNER-INITIATED COMPLETION</text>
+<text x="145" y="2060" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="start" fill="#1b3348">After discussion, the learner writes a summary.</text>
+<text x="145" y="2097" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="400" text-anchor="start" fill="#1b3348">Summary generator uses course evidence and step conversation for final feedback.</text>
+<text x="145" y="2128" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="400" text-anchor="start" fill="#1b3348">Controller enables Submit only after final feedback is saved.</text>
+</svg>

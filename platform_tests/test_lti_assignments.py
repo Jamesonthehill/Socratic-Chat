@@ -151,6 +151,52 @@ def test_archived_and_selected_assignments_are_not_exposed_to_unassigned_student
     assert assignment_launch(client, student_params).status_code == 409
 
 
+def test_delete_in_canvas_requires_exact_link_and_archives_only_after_canvas_success(
+    client, configured_lti11, monkeypatch,
+):
+    teacher = exchange(client, assignment_launch(client, {
+        'context_id': str(uuid4()), 'resource_link_id': 'delete-linked',
+        'custom_canvas_course_id': '7', 'custom_canvas_assignment_id': '42',
+    }))
+    aid = teacher['assignment_id']
+    headers = {'Authorization': 'Bearer ' + teacher['access_token']}
+    calls = []
+    monkeypatch.setattr('platform_app.canvas_lms.get_assignment',
+                        lambda course, assignment, token: calls.append(('get', course, assignment, token)) or {'id': '42'})
+    monkeypatch.setattr('platform_app.canvas_lms.delete_assignment',
+                        lambda course, assignment, token: calls.append(('delete', course, assignment, token)))
+    path = f'/api/platform/assignments/{aid}/delete-in-canvas'
+    body = {'access_token': 'instructor-token'}
+    mismatch = client.post(path, headers=headers, json={**body, 'course_id': 8})
+    assert mismatch.status_code == 422
+    assert calls == []
+    result = client.post(path, headers=headers, json=body)
+    assert result.status_code == 200, result.text
+    assert result.json() == {'status': 'archived', 'canvas_deleted': True}
+    assert calls == [('get', 7, 42, 'instructor-token'), ('delete', 7, 42, 'instructor-token')]
+    with store.connection() as conn:
+        assert assignment(conn, aid)['status'] == 'archived'
+
+
+def test_failed_canvas_delete_keeps_braintutor_assignment_active(client, configured_lti11, monkeypatch):
+    from platform_app.canvas_lms import CanvasAPIError
+
+    teacher = exchange(client, assignment_launch(client, {
+        'context_id': str(uuid4()), 'resource_link_id': 'delete-failure',
+        'custom_canvas_course_id': '7', 'custom_canvas_assignment_id': '43',
+    }))
+    aid = teacher['assignment_id']
+    headers = {'Authorization': 'Bearer ' + teacher['access_token']}
+    monkeypatch.setattr('platform_app.canvas_lms.get_assignment', lambda *_: {'id': '43'})
+    monkeypatch.setattr('platform_app.canvas_lms.delete_assignment',
+                        lambda *_: (_ for _ in ()).throw(CanvasAPIError(403, 'No Canvas permission.')))
+    result = client.post(f'/api/platform/assignments/{aid}/delete-in-canvas',
+                         headers=headers, json={'access_token': 'instructor-token'})
+    assert result.status_code == 403
+    with store.connection() as conn:
+        assert assignment(conn, aid)['status'] == 'draft'
+
+
 def test_setting_can_disable_assignment_creation(client, configured_lti11, monkeypatch):
     monkeypatch.setattr(settings, 'LTI_AUTO_CREATE_ASSIGNMENTS', False)
     result = exchange(client, assignment_launch(client))

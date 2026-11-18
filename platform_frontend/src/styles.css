@@ -835,12 +835,30 @@ small,
 }
 .assignment-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 20px;
   padding: 21px 23px;
   border-bottom: 1px solid var(--line);
   transition: background 160ms ease;
 }
+.canvas-delete-form {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 100%;
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.canvas-delete-form label {
+  display: grid;
+  gap: 5px;
+  max-width: 420px;
+}
+.canvas-delete-form .help { margin: 0; }
 .assignment-row:hover {
   background: color-mix(in srgb, var(--surface) 95%, var(--brand-indigo));
 }

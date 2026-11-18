@@ -182,6 +182,32 @@ test("professor dashboard highlights a freshly published assignment and offers i
   expect(screen.getByText("Activity published.")).toBeInTheDocument();
 });
 
+test("professor confirms Canvas deletion and archives the linked assignment", async () => {
+  let deleted = false;
+  const linked = { ...assignment, can_manage: true, canvas_course_id: 7, canvas_assignment_id: 42 };
+  const fetch = mockApi("instructor", {
+    "/api/platform/assignments": () => [{ ...linked, status: deleted ? "archived" : "published" }],
+    "POST /api/platform/assignments/assignment-1/delete-in-canvas": (options) => {
+      expect(JSON.parse(options.body)).toEqual({ access_token: "teacher-canvas-token" });
+      deleted = true;
+      return { status: "archived", canvas_deleted: true };
+    },
+  });
+  open("/professor");
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Delete in Canvas" }));
+  expect(screen.getByText("Canvas assignment ID: 42")).toBeInTheDocument();
+  expect(screen.queryByLabelText(/Canvas course ID/)).not.toBeInTheDocument();
+  const submit = screen.getByRole("button", { name: "Delete from Canvas and archive" });
+  expect(submit).toBeDisabled();
+  await user.type(screen.getByLabelText("Instructor Canvas access token"), "teacher-canvas-token");
+  await user.type(screen.getByLabelText("Type DELETE to confirm"), "DELETE");
+  await user.click(submit);
+  await waitFor(() => expect(fetch.mock.calls.some(([url]) => url.endsWith("/delete-in-canvas"))).toBe(true));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Delete in Canvas" })).not.toBeInTheDocument());
+  expect(screen.getByText("Archived")).toBeInTheDocument();
+});
+
 test("AIducate opens the course selected in the activity form", async () => {
   mockApi("instructor", {
     "/api/platform/assignments": [{ ...assignment, tool: "reflections", title: "Project check-in" }],

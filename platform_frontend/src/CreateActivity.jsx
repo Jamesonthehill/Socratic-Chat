@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import "./sdl-teaching-ui.css";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, TOOLS, date } from "./api";
+import { ACTIVITY_TYPES, api, TOOLS, date } from "./api";
 import { SocraticConfig, ReflectionConfig, defaults } from "./ToolConfig";
 import { GenerationStatus, Notice } from "./ui";
 import SdlLessonSetup from "./SdlLessonSetup";
@@ -21,13 +21,6 @@ const initial = {
   tool: "",
   config: {},
 };
-const ACTIVITY_TYPES = [
-  "socratic",
-  "reflections",
-  "self-directed-learning",
-  "debate",
-  "aiducate",
-];
 const configFor = (tool) =>
   structuredClone(
     defaults[tool] ||

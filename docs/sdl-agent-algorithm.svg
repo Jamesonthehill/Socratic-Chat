@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1880" viewBox="0 0 1800 1880" role="img" aria-labelledby="title desc">
+<title id="title">Self-Directed Learning — Algorithm</title>
+<desc id="desc">Published V2 lesson • bounded and standard paths</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#587184"/></marker></defs>
+<rect width="1800" height="1880" fill="#fbfcfd"/>
+<rect width="1800" height="145" fill="#e8f0f6"/>
+<text x="900.0" y="64" font-family="Arial, Helvetica, sans-serif" font-size="40" font-weight="700" text-anchor="middle" fill="#1b3348">Self-Directed Learning — Algorithm</text>
+<text x="900.0" y="106" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="middle" fill="#1b3348">Published V2 lesson • bounded and standard paths</text>
+<text x="900.0" y="170" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="middle" fill="#587184">The SDL service owns the lesson state machine; the platform supplies identity and access.</text>
+<rect x="420" y="200" width="960" height="120" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="212" width="285" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="233" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">AUTHORING + SDL SERVICE</text>
+<text x="447" y="275" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Prepare and publish a reviewed lesson</text>
+<text x="447" y="299" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Validate a reviewed plan from selected materials, questions, keys, and rubrics.</text>
+<path d="M900 320 V347" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="420" y="355" width="960" height="110" rx="17" fill="#edf3ee" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="367" width="186" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="388" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">SDL CONTROLLER</text>
+<text x="447" y="430" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Start or resume an attempt</text>
+<text x="447" y="454" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Load the frozen lesson plan and saved student stage.</text>
+<path d="M900 465 V492" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M900 492 L1200 550 L900 608 L600 550 Z" fill="#ffffff" stroke="#587184" stroke-width="2.5"/>
+<text x="900" y="542" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#1b3348">Starting and ending</text>
+<text x="900" y="570" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#1b3348">outcomes configured?</text>
+<path d="M600 550 H480 V615" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M1200 550 H1320 V615" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="260" y="603" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" text-anchor="start" fill="#587184">Yes • bounded flow</text>
+<text x="1480" y="603" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" text-anchor="start" fill="#587184">No • standard flow</text>
+<rect x="75" y="625" width="760" height="134" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="97" y="637" width="186" height="30" rx="15" fill="#cfdfeb"/>
+<text x="114" y="658" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">SDL CONTROLLER</text>
+<text x="102" y="700" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Confirm prerequisites</text>
+<text x="102" y="724" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Show starting point, outcomes, and readings.</text>
+<text x="102" y="747" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Learner confirms familiarity before study.</text>
+<rect x="965" y="625" width="760" height="134" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="987" y="637" width="186" height="30" rx="15" fill="#cfdfeb"/>
+<text x="1004" y="658" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">SDL CONTROLLER</text>
+<text x="992" y="700" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Ask familiarity</text>
+<text x="992" y="724" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Self-report adjusts support and emphasis;</text>
+<text x="992" y="747" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">it does not assign an ability level.</text>
+<path d="M455 759 V787" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M1345 759 V787" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="75" y="795" width="760" height="134" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="97" y="807" width="175" height="30" rx="15" fill="#cfdfeb"/>
+<text x="114" y="828" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">STUDY SUPPORT</text>
+<text x="102" y="870" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Study approved resources</text>
+<text x="102" y="894" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Answer clarification requests from lesson assets</text>
+<text x="102" y="917" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">and selected course excerpts.</text>
+<rect x="965" y="795" width="760" height="134" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="987" y="807" width="175" height="30" rx="15" fill="#cfdfeb"/>
+<text x="1004" y="828" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">STUDY SUPPORT</text>
+<text x="992" y="870" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Study at learner’s pace</text>
+<text x="992" y="894" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Offer approved readings, explanations, and</text>
+<text x="992" y="917" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">examples until the learner starts the quiz.</text>
+<path d="M455 929 V957" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M1345 929 V957" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="75" y="965" width="760" height="134" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="97" y="977" width="197" height="30" rx="15" fill="#cfdfeb"/>
+<text x="114" y="998" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">QUIZ CONTROLLER</text>
+<text x="102" y="1040" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Run five authored questions</text>
+<text x="102" y="1064" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Use fixed answer keys, up to three attempts,</text>
+<text x="102" y="1087" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">hints/readings, and first-attempt score.</text>
+<rect x="965" y="965" width="760" height="134" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="987" y="977" width="252" height="30" rx="15" fill="#cfdfeb"/>
+<text x="1004" y="998" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">DIAGNOSTIC EVALUATOR</text>
+<text x="992" y="1040" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Run five authored questions</text>
+<text x="992" y="1064" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Check choices, confidence, and later reasoning;</text>
+<text x="992" y="1087" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">select concept needs and learning paths.</text>
+<path d="M455 1099 V1127" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M1345 1099 V1127" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="75" y="1135" width="760" height="134" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="97" y="1147" width="219" height="30" rx="15" fill="#cfdfeb"/>
+<text x="114" y="1168" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">TARGETED PRACTICE</text>
+<text x="102" y="1210" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Offer optional review</text>
+<text x="102" y="1234" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">For missed first attempts, offer a worked</text>
+<text x="102" y="1257" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">example and a fresh practice question.</text>
+<rect x="965" y="1135" width="760" height="134" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="987" y="1147" width="241" height="30" rx="15" fill="#cfdfeb"/>
+<text x="1004" y="1168" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">ADAPTIVE CONTROLLER</text>
+<text x="992" y="1210" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Let learner choose a format</text>
+<text x="992" y="1234" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Simpler explanation, worked example, fresh</text>
+<text x="992" y="1257" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">practice, challenge, or recap.</text>
+<path d="M455 1269 V1297" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M1345 1269 V1297" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="75" y="1305" width="760" height="134" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="97" y="1317" width="263" height="30" rx="15" fill="#cfdfeb"/>
+<text x="114" y="1338" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">APPLICATION EVALUATOR</text>
+<text x="102" y="1380" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Assess the final task</text>
+<text x="102" y="1404" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Use the published rubric and course material;</text>
+<text x="102" y="1427" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">return strengths, errors, and improvements.</text>
+<rect x="965" y="1305" width="760" height="134" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="987" y="1317" width="230" height="30" rx="15" fill="#cfdfeb"/>
+<text x="1004" y="1338" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">PRACTICE EVALUATOR</text>
+<text x="992" y="1380" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Assess reasoning on fresh cases</text>
+<text x="992" y="1404" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Use the configured rubric; support revisions</text>
+<text x="992" y="1427" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">and track independent concept evidence.</text>
+<path d="M455 1439 V1467" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M1345 1439 V1467" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="75" y="1475" width="760" height="134" rx="17" fill="#edf3ee" stroke="#587184" stroke-width="2"/>
+<rect x="97" y="1487" width="186" height="30" rx="15" fill="#cfdfeb"/>
+<text x="114" y="1508" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">SDL CONTROLLER</text>
+<text x="102" y="1550" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Mark lesson complete</text>
+<text x="102" y="1574" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Save the application response, feedback,</text>
+<text x="102" y="1597" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">completion state, and code.</text>
+<rect x="965" y="1475" width="760" height="134" rx="17" fill="#edf3ee" stroke="#587184" stroke-width="2"/>
+<rect x="987" y="1487" width="241" height="30" rx="15" fill="#cfdfeb"/>
+<text x="1004" y="1508" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">REFLECTION + CHOICE</text>
+<text x="992" y="1550" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Reflect, then choose what is next</text>
+<text x="992" y="1574" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Save the learner’s reflection; return to a</text>
+<text x="992" y="1597" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">study or practice choice. Pause is available.</text>
+<rect x="75" y="1665" width="1650" height="160" rx="20" fill="#ffffff" stroke="#587184" stroke-width="2"/>
+<text x="110" y="1705" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" text-anchor="start" fill="#1b3348">SHARED CONTROL RULES</text>
+<text x="110" y="1742" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="400" text-anchor="start" fill="#1b3348">The published snapshot controls questions, answer keys, and rubrics.</text>
+<text x="110" y="1780" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="400" text-anchor="start" fill="#1b3348">Each turn is saved atomically; repeated turn IDs return the saved result. Pause and resume preserve stage.</text>
+</svg>

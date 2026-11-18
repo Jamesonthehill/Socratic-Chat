@@ -404,7 +404,35 @@ function useCourses() {
   return { courses, error, reload };
 }
 
-function AssignmentList({ items, professor, view = "list", highlightId = null, highlightRef = null }) {
+function AssignmentList({ items, professor, view = "list", highlightId = null, highlightRef = null, onChanged }) {
+  const [deleteId, setDeleteId] = useState(null);
+  const [canvasToken, setCanvasToken] = useState("");
+  const [canvasCourseId, setCanvasCourseId] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  async function deleteCanvasAssignment(item) {
+    setDeleteBusy(true);
+    setDeleteError("");
+    try {
+      await api(`/platform/assignments/${item.id}/delete-in-canvas`, {
+        method: "POST",
+        body: {
+          access_token: canvasToken,
+          ...(!item.canvas_course_id ? { course_id: Number(canvasCourseId) } : {}),
+        },
+      });
+      setDeleteId(null);
+      setCanvasToken("");
+      setCanvasCourseId("");
+      setDeleteConfirm("");
+      await onChanged?.();
+    } catch (error) {
+      setDeleteError(error.message);
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
   if (!items.length)
     return (
       <div className="empty">
@@ -507,7 +535,31 @@ function AssignmentList({ items, professor, view = "list", highlightId = null, h
                       Preview as student
                     </Link>
                   )}
+                  {professor && item.canvas_assignment_id && item.status !== "archived" && (
+                    <button type="button" className="secondary compact" onClick={() => {
+                      setDeleteId(item.id);
+                      setCanvasToken("");
+                      setCanvasCourseId("");
+                      setDeleteConfirm("");
+                      setDeleteError("");
+                    }}>Delete in Canvas</button>
+                  )}
                 </div>
+              )}
+              {professor && deleteId === item.id && (
+                <form className="canvas-delete-form" onSubmit={(event) => { event.preventDefault(); deleteCanvasAssignment(item); }}>
+                  <strong>Delete “{item.title}” permanently from Canvas?</strong>
+                  <p className="help">Canvas submissions and grades for this assignment may also be removed. BrainTutor will archive the activity and retain its student records.</p>
+                  <p className="help">Canvas assignment ID: {item.canvas_assignment_id}</p>
+                  {!item.canvas_course_id && <label>Canvas course ID (number after /courses/ in the Canvas URL)<input type="number" min="1" required value={canvasCourseId} onChange={(event) => setCanvasCourseId(event.target.value)} /></label>}
+                  <label>Instructor Canvas access token<input type="password" autoComplete="off" required minLength="10" value={canvasToken} onChange={(event) => setCanvasToken(event.target.value)} /></label>
+                  <label>Type DELETE to confirm<input required value={deleteConfirm} onChange={(event) => setDeleteConfirm(event.target.value)} /></label>
+                  <Notice error={deleteError} />
+                  <div className="assignment-row-actions">
+                    <button type="submit" disabled={deleteBusy || deleteConfirm !== "DELETE" || canvasToken.length < 10 || (!item.canvas_course_id && !canvasCourseId)}>{deleteBusy ? "Deleting…" : "Delete from Canvas and archive"}</button>
+                    <button type="button" className="secondary" disabled={deleteBusy} onClick={() => { setDeleteId(null); setCanvasToken(""); setDeleteError(""); }}>Cancel</button>
+                  </div>
+                </form>
               )}
             </article>
           );
@@ -774,7 +826,7 @@ function Dashboard({ professor = false }) {
         <Notice>{navigationState?.notice}</Notice>
         <Notice error={error} />
         {items ? (
-          <AssignmentList items={filtered} professor={professor} highlightId={highlightId} highlightRef={highlightedRowRef} />
+          <AssignmentList items={filtered} professor={professor} highlightId={highlightId} highlightRef={highlightedRowRef} onChanged={reload} />
         ) : (
           !error && <p role="status">Loading assignments…</p>
         )}

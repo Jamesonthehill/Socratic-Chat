@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="2030" viewBox="0 0 1800 2030" role="img" aria-labelledby="title desc">
+<title id="title">Reflections Agent — Algorithm</title>
+<desc id="desc">Topic-based chat and milestone reflection • published assignment</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#587184"/></marker></defs>
+<rect width="1800" height="2030" fill="#fbfcfd"/>
+<rect width="1800" height="145" fill="#e8f0f6"/>
+<text x="900.0" y="64" font-family="Arial, Helvetica, sans-serif" font-size="40" font-weight="700" text-anchor="middle" fill="#1b3348">Reflections Agent — Algorithm</text>
+<text x="900.0" y="106" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="middle" fill="#1b3348">Topic-based chat and milestone reflection • published assignment</text>
+<text x="900.0" y="170" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="middle" fill="#587184">Boxes identify roles in the Reflections service; LangGraph checkpoints the topic-based path.</text>
+<rect x="420" y="200" width="960" height="120" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="212" width="263" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="233" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">INSTRUCTOR + PLATFORM</text>
+<text x="447" y="275" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Publish a private module</text>
+<text x="447" y="299" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Save required topics, subtopics, depth, probing style, and application rule.</text>
+<path d="M900 320 V347" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M900 348 L1210 405 L900 462 L590 405 Z" fill="#ffffff" stroke="#587184" stroke-width="2.5"/>
+<text x="900" y="397" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#1b3348">Which module</text>
+<text x="900" y="425" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#1b3348">type?</text>
+<path d="M1210 405 H1390" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="1300" y="389" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#587184">Milestone</text>
+<rect x="1400" y="335" width="355" height="265" rx="17" fill="#fff3e5" stroke="#587184" stroke-width="2"/>
+<rect x="1422" y="347" width="197" height="30" rx="15" fill="#cfdfeb"/>
+<text x="1439" y="368" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">MILESTONE ROUTE</text>
+<text x="1427" y="410" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" text-anchor="start" fill="#1b3348">One reflection</text>
+<text x="1427" y="434" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#1b3348">Show instructor prompt.</text>
+<text x="1427" y="457" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#1b3348">Student submits reflection.</text>
+<text x="1427" y="480" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#1b3348">Similarity engine compares</text>
+<text x="1427" y="503" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#1b3348">historical challenges and</text>
+<text x="1427" y="526" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#1b3348">solutions; attempt completes.</text>
+<text x="1025" y="487" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#587184">Topic-based</text>
+<path d="M900 462 V492" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="420" y="500" width="960" height="120" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="512" width="175" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="533" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">CONTEXT AGENT</text>
+<text x="447" y="575" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Load reflection context</text>
+<text x="447" y="599" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Read module configuration and up to three prior sessions’ weak areas.</text>
+<path d="M900 620 V648" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="420" y="655" width="960" height="120" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="667" width="175" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="688" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">PLANNER AGENT</text>
+<text x="447" y="730" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Generate the question sequence</text>
+<text x="447" y="754" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Create one question per subtopic; use a topic fallback if parsing fails.</text>
+<path d="M900 775 V803" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="420" y="810" width="960" height="120" rx="17" fill="#edf3ee" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="822" width="175" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="843" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">SESSION AGENT</text>
+<text x="447" y="885" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Open the checkpointed conversation</text>
+<text x="447" y="909" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Build the tutor instruction and show the first question.</text>
+<path d="M900 930 V958" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="420" y="965" width="960" height="112" rx="17" fill="#ffffff" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="977" width="150" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="998" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">LEARNER</text>
+<text x="447" y="1040" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Answer the current question</text>
+<text x="447" y="1064" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Platform forwards the reply to the Reflections service.</text>
+<path d="M900 1077 V1105" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="420" y="1112" width="960" height="120" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="1124" width="175" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="1145" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">CONTEXT AGENT</text>
+<text x="447" y="1187" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Tag the active question</text>
+<text x="447" y="1211" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Add question number and prompt, or the bonus-phase context.</text>
+<path d="M900 1232 V1260" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="420" y="1267" width="960" height="120" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="1279" width="153" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="1300" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">TUTOR AGENT</text>
+<text x="447" y="1342" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Respond to the reflection</text>
+<text x="447" y="1366" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Generate a reply from the conversation and configured probing style.</text>
+<path d="M900 1387 V1415" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="420" y="1422" width="960" height="132" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="1434" width="241" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="1455" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">EVALUATOR + PLANNER</text>
+<text x="447" y="1497" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Update question progress</text>
+<text x="447" y="1521" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Parse the tutor’s adequacy result. Adequate: advance;</text>
+<text x="447" y="1544" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">otherwise retain the question and record its weak subtopic.</text>
+<path d="M900 1554 V1582" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M900 1585 L1200 1642 L900 1699 L600 1642 Z" fill="#ffffff" stroke="#587184" stroke-width="2.5"/>
+<text x="900" y="1634" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#1b3348">All required</text>
+<text x="900" y="1662" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#1b3348">questions passed?</text>
+<path d="M1200 1642 H1390" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="1400" y="1567" width="355" height="155" rx="17" fill="#fff3e5" stroke="#587184" stroke-width="2"/>
+<rect x="1422" y="1579" width="175" height="30" rx="15" fill="#cfdfeb"/>
+<text x="1439" y="1600" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">PLANNER AGENT</text>
+<text x="1427" y="1642" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" text-anchor="start" fill="#1b3348">Start bonus phase</text>
+<text x="1427" y="1666" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#1b3348">Introduce weak areas or deeper</text>
+<text x="1427" y="1689" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#1b3348">topics; ask a bonus question.</text>
+<text x="1050" y="1731" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#587184">No / bonus continues</text>
+<path d="M900 1699 V1738" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="420" y="1745" width="960" height="112" rx="17" fill="#edf3ee" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="1757" width="230" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="1778" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">SESSION CONTROLLER</text>
+<text x="447" y="1820" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Save state and wait for the next reply</text>
+<text x="447" y="1844" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Persist messages and progress in the PostgreSQL checkpoint.</text>
+<path d="M420 1803 H335 V1021 H410" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)" stroke-dasharray="9 7"/>
+<rect x="110" y="1900" width="1580" height="102" rx="20" fill="#edf3ee" stroke="#587184" stroke-width="2"/>
+<text x="145" y="1938" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" text-anchor="start" fill="#1b3348">WHEN THE LEARNER ENDS THE TOPIC SESSION</text>
+<text x="145" y="1976" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="400" text-anchor="start" fill="#1b3348">Session agent formats the transcript → evaluator produces analytics → service stores the result.</text>
+</svg>

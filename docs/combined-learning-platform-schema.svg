@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1630" viewBox="0 0 2200 1630" role="img" aria-labelledby="title desc">
+<title id="title">Combined learning platform architecture schema</title>
+<desc id="desc">Canvas and the shared frontend connect to the platform FastAPI gateway. Socratic Chat, Debate, and AIducate run in the platform process. SDL and Reflections are private FastAPI services called with a service token. Each tool has a distinct state owner, with shared RAG, PostgreSQL schema boundaries, and configured AI provider APIs below.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#5a7182"/></marker></defs>
+<rect x="0" y="0" width="2200" height="1630" rx="0" fill="#fbfcfd" stroke="none" stroke-width="0"/>
+<rect x="0" y="0" width="2200" height="142" rx="0" fill="#e8f0f6" stroke="none" stroke-width="0"/>
+<text x="1100" y="65" font-family="Arial, Helvetica, sans-serif" font-size="43" font-weight="700" text-anchor="middle" fill="#1b3348">Combined Learning Platform — Architecture Schema</text>
+<text x="1100" y="108" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="middle" fill="#1b3348">Socratic Chat • Self Directed Learning • Reflections • AIducate • Debate</text>
+<text x="1100" y="176" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="middle" fill="#5a7182">Repository implementation • November 17, 2026</text>
+<rect x="105" y="212" width="575" height="150" rx="18" fill="#ffffff" stroke="#5a7182" stroke-width="2"/>
+<rect x="123" y="226" width="168" height="32" rx="16" fill="#d3e3ed" stroke="none" stroke-width="0"/>
+<text x="141" y="249" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">SIGNED LAUNCH</text>
+<text x="129" y="298" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start" fill="#1b3348">Canvas LTI 1.1</text>
+<text x="129" y="338" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" text-anchor="start" fill="#1b3348">Course and user context</text>
+<rect x="1520" y="212" width="575" height="150" rx="18" fill="#ffffff" stroke="#5a7182" stroke-width="2"/>
+<rect x="1538" y="226" width="178" height="32" rx="16" fill="#d3e3ed" stroke="none" stroke-width="0"/>
+<text x="1556" y="249" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">USER INTERFACE</text>
+<text x="1544" y="298" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start" fill="#1b3348">Shared React / Vite frontend</text>
+<text x="1544" y="338" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" text-anchor="start" fill="#1b3348">Instructor and student workspaces</text>
+<path d="M393 362 V382 H780 V402" fill="none" stroke="#5a7182" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M1807 362 V382 H1420 V402" fill="none" stroke="#5a7182" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="638" y="375" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#5a7182">Signed POST</text>
+<text x="1563" y="375" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#5a7182">Authenticated API</text>
+<rect x="570" y="408" width="1060" height="145" rx="18" fill="#eaf2f7" stroke="#5a7182" stroke-width="2"/>
+<rect x="588" y="422" width="178" height="32" rx="16" fill="#d3e3ed" stroke="none" stroke-width="0"/>
+<text x="606" y="445" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">PUBLIC GATEWAY</text>
+<text x="594" y="494" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700" text-anchor="start" fill="#1b3348">Platform FastAPI service</text>
+<text x="594" y="534" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="400" text-anchor="start" fill="#1b3348">Authentication, course access, assignments, routing, and adapters</text>
+<rect x="45" y="650" width="1245" height="589" rx="22" fill="#f6f9fb" stroke="#cddbe4" stroke-width="1.5"/>
+<rect x="1310" y="650" width="845" height="589" rx="22" fill="#f4faf9" stroke="#c9e0da" stroke-width="1.5"/>
+<text x="70" y="677" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="start" fill="#5a7182">LOCAL MODULES IN THE PLATFORM PROCESS</text>
+<text x="1340" y="677" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="start" fill="#5a7182">PRIVATE FASTAPI SERVICES</text>
+<path d="M1100 553 V613" fill="none" stroke="#5a7182" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M250 613 H1950" fill="none" stroke="#5a7182" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M250 613 V704" fill="none" stroke="#5a7182" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M675 613 V704" fill="none" stroke="#5a7182" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M1100 613 V704" fill="none" stroke="#5a7182" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M1525 613 V704" fill="none" stroke="#5a7182" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M1950 613 V704" fill="none" stroke="#5a7182" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="600" y="646" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#5a7182">Local call</text>
+<text x="1600" y="646" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#5a7182">Service token</text>
+<rect x="60" y="712" width="380" height="235" rx="18" fill="#eaf2f7" stroke="#5a7182" stroke-width="2"/>
+<rect x="78" y="726" width="148" height="32" rx="16" fill="#d3e3ed" stroke="none" stroke-width="0"/>
+<text x="96" y="749" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">LOCAL TUTOR</text>
+<text x="84" y="798" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Socratic Chat</text>
+<text x="84" y="838" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Classify and retrieve frozen</text>
+<text x="84" y="867" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">course evidence; evaluate</text>
+<text x="84" y="896" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">answers and guide next step</text>
+<rect x="485" y="712" width="380" height="235" rx="18" fill="#eaf2f7" stroke="#5a7182" stroke-width="2"/>
+<rect x="503" y="726" width="148" height="32" rx="16" fill="#d3e3ed" stroke="none" stroke-width="0"/>
+<text x="521" y="749" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">LOCAL TUTOR</text>
+<text x="509" y="798" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Debate</text>
+<text x="509" y="838" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Use scenario and recent turns;</text>
+<text x="509" y="867" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">model chooses argument</text>
+<text x="509" y="896" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">challenge or brief support</text>
+<rect x="910" y="712" width="380" height="235" rx="18" fill="#fff3e5" stroke="#5a7182" stroke-width="2"/>
+<rect x="928" y="726" width="188" height="32" rx="16" fill="#d3e3ed" stroke="none" stroke-width="0"/>
+<text x="946" y="749" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">INSTRUCTOR ONLY</text>
+<text x="934" y="798" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">AIducate</text>
+<text x="934" y="838" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Read Reflection responses or</text>
+<text x="934" y="867" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">import CSV for topic analysis;</text>
+<text x="934" y="896" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">build instructor reports</text>
+<rect x="1335" y="712" width="380" height="235" rx="18" fill="#e8f4f2" stroke="#5a7182" stroke-width="2"/>
+<rect x="1353" y="726" width="188" height="32" rx="16" fill="#d3e3ed" stroke="none" stroke-width="0"/>
+<text x="1371" y="749" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">PRIVATE SERVICE</text>
+<text x="1359" y="798" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Self Directed Learning</text>
+<text x="1359" y="838" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Run reviewed lesson plan</text>
+<text x="1359" y="867" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">through saved study, quiz,</text>
+<text x="1359" y="896" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">practice and application</text>
+<rect x="1760" y="712" width="380" height="235" rx="18" fill="#e8f4f2" stroke="#5a7182" stroke-width="2"/>
+<rect x="1778" y="726" width="188" height="32" rx="16" fill="#d3e3ed" stroke="none" stroke-width="0"/>
+<text x="1796" y="749" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">PRIVATE SERVICE</text>
+<text x="1784" y="798" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Reflections</text>
+<text x="1784" y="838" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Run topic LangGraph session</text>
+<text x="1784" y="867" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">or milestone similarity;</text>
+<text x="1784" y="896" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">checkpoint conversation</text>
+<path d="M250 947 V1024" fill="none" stroke="#5a7182" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M675 947 V1024" fill="none" stroke="#5a7182" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M1100 947 V1024" fill="none" stroke="#5a7182" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M1525 947 V1024" fill="none" stroke="#5a7182" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M1950 947 V1024" fill="none" stroke="#5a7182" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="60" y="1032" width="380" height="188" rx="18" fill="#edf3ee" stroke="#5a7182" stroke-width="2"/>
+<rect x="78" y="1046" width="188" height="32" rx="16" fill="#d3e3ed" stroke="none" stroke-width="0"/>
+<text x="96" y="1069" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">PLATFORM SCHEMA</text>
+<text x="84" y="1118" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="start" fill="#1b3348">Socratic attempt</text>
+<text x="84" y="1158" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Messages + engine state</text>
+<text x="84" y="1187" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Published chunk snapshot</text>
+<rect x="485" y="1032" width="380" height="188" rx="18" fill="#edf3ee" stroke="#5a7182" stroke-width="2"/>
+<rect x="503" y="1046" width="188" height="32" rx="16" fill="#d3e3ed" stroke="none" stroke-width="0"/>
+<text x="521" y="1069" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">PLATFORM SCHEMA</text>
+<text x="509" y="1118" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="start" fill="#1b3348">Debate attempt</text>
+<text x="509" y="1158" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Messages + completion state</text>
+<text x="509" y="1187" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Optional chunks are not used in replies</text>
+<rect x="910" y="1032" width="380" height="188" rx="18" fill="#edf3ee" stroke="#5a7182" stroke-width="2"/>
+<rect x="928" y="1046" width="218" height="32" rx="16" fill="#d3e3ed" stroke="none" stroke-width="0"/>
+<text x="946" y="1069" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">PLATFORM + BROWSER</text>
+<text x="934" y="1118" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="start" fill="#1b3348">AIducate analysis</text>
+<text x="934" y="1158" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Authorized Reflection read</text>
+<text x="934" y="1187" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Imported sets/results in browser</text>
+<rect x="1335" y="1032" width="380" height="188" rx="18" fill="#edf3ee" stroke="#5a7182" stroke-width="2"/>
+<rect x="1353" y="1046" width="148" height="32" rx="16" fill="#d3e3ed" stroke="none" stroke-width="0"/>
+<text x="1371" y="1069" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">SDL SCHEMA</text>
+<text x="1359" y="1118" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="start" fill="#1b3348">SDL lesson state</text>
+<text x="1359" y="1158" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Plan + attempts + messages</text>
+<text x="1359" y="1187" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Saved state machine stage</text>
+<rect x="1760" y="1032" width="380" height="188" rx="18" fill="#edf3ee" stroke="#5a7182" stroke-width="2"/>
+<rect x="1778" y="1046" width="218" height="32" rx="16" fill="#d3e3ed" stroke="none" stroke-width="0"/>
+<text x="1796" y="1069" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">REFLECTIONS SCHEMA</text>
+<text x="1784" y="1118" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="start" fill="#1b3348">Reflection session</text>
+<text x="1784" y="1158" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Module + checkpoints + analytics</text>
+<text x="1784" y="1187" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Platform also saves exchange</text>
+<text x="1100" y="1284" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" text-anchor="middle" fill="#5a7182">SHARED INFRASTRUCTURE AND EXTERNAL DEPENDENCIES</text>
+<rect x="80" y="1315" width="620" height="216" rx="18" fill="#ffffff" stroke="#5a7182" stroke-width="2"/>
+<rect x="98" y="1329" width="148" height="32" rx="16" fill="#d3e3ed" stroke="none" stroke-width="0"/>
+<text x="116" y="1352" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">SHARED RAG</text>
+<text x="104" y="1401" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Course documents and chunks</text>
+<text x="104" y="1441" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Indexed once for course use; selected evidence is</text>
+<text x="104" y="1470" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">copied into published Socratic and SDL snapshots.</text>
+<rect x="790" y="1315" width="620" height="216" rx="18" fill="#ffffff" stroke="#5a7182" stroke-width="2"/>
+<rect x="808" y="1329" width="148" height="32" rx="16" fill="#d3e3ed" stroke="none" stroke-width="0"/>
+<text x="826" y="1352" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">POSTGRESQL</text>
+<text x="814" y="1401" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Schema-isolated persistence</text>
+<text x="814" y="1441" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Configured database holds platform, shared_rag,</text>
+<text x="814" y="1470" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">socratic_chat, SDL, and Reflections namespaces.</text>
+<rect x="1500" y="1315" width="620" height="216" rx="18" fill="#ffffff" stroke="#5a7182" stroke-width="2"/>
+<rect x="1518" y="1329" width="198" height="32" rx="16" fill="#d3e3ed" stroke="none" stroke-width="0"/>
+<text x="1536" y="1352" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">AI PROVIDER APIS</text>
+<text x="1524" y="1401" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Tool-owned model calls</text>
+<text x="1524" y="1441" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Each active tool performs its own generation or</text>
+<text x="1524" y="1470" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">evaluation; credentials stay on the server.</text>
+<text x="1100" y="1582" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="middle" fill="#5a7182">Assignments select one tool. The platform does not automatically move a learner between tools.</text>
+</svg>

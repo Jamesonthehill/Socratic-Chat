@@ -273,6 +273,10 @@ class CanvasImportRequest(CanvasCourseRequest):
     tool: Literal["socratic", "reflections", "debate"] = "socratic"
 
 
+class CanvasDeleteRequest(CanvasCredentials):
+    course_id: int | None = Field(default=None, gt=0)
+
+
 class SelfDirectedMessageInput(StrictModel):
     content: str = Field(min_length=1, max_length=8000)
 

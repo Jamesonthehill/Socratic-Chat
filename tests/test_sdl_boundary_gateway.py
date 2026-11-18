@@ -53,3 +53,28 @@ def test_confirmed_inputs_forward_preferences_without_changing_source(setup_gate
     assert request['additional_instructions']=='Use campus examples.'
     assert 'Use campus examples.' not in request['material']
     assert result['learning_plan']=={'title':'Draft lesson'}
+
+
+def test_sdl_prerequisites_save_without_attachment_lookup(monkeypatch):
+    from types import SimpleNamespace
+    lookup=Mock(side_effect=AssertionError('SDL draft save must not require indexed attachments'))
+    monkeypatch.setattr(routes.db,'list_rag_files',lookup)
+    routes.validate_activity_documents(SimpleNamespace(tool='self-directed-learning',course_id='c1',
+        config={'starting_point':'Basic teamwork','document_ids':['stale-document']}))
+    lookup.assert_not_called()
+
+
+def test_other_tools_still_reject_cross_course_documents(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(routes.db,'list_rag_files',lambda **kwargs:[{'document_id':'course-document'}])
+    with pytest.raises(HTTPException) as caught:
+        routes.validate_activity_documents(SimpleNamespace(tool='socratic',course_id='c1',
+            config={'document_ids':['other-course-document']}))
+    assert caught.value.status_code==422
+
+
+def test_sdl_source_read_still_rejects_cross_course_documents(monkeypatch):
+    from platform_app import shared_rag
+    monkeypatch.setattr(shared_rag.db,'list_rag_files',lambda **kwargs:[{'document_id':'course-document'}])
+    with pytest.raises(HTTPException):
+        shared_rag.course_chunks('c1',['other-course-document'])

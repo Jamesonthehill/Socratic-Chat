@@ -431,6 +431,10 @@ def reflection_analysis(assignment_id: UUID, account=Depends(professor)):
 
 
 def validate_activity_documents(body):
+    # SDL drafts can save instructor inputs even when attachments need refreshing.
+    # Course-scoped source access is still enforced by shared_rag.course_chunks.
+    if body.tool == "self-directed-learning":
+        return
     selected = set(body.config.get("document_ids", []))
     if selected:
         allowed = {str(f["document_id"]) for f in db.list_rag_files(course_id=str(body.course_id)) if f.get("document_id")}

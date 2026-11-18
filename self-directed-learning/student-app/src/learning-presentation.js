@@ -5,6 +5,17 @@ export function presentTutorMessage(
   { activeQuestion, scenario } = {},
 ) {
   const questions = [];
+  const completion = content.match(
+    /^Application and interview feedback: ([\s\S]+?)\n\nIntended outcome: ([\s\S]+)\n\nLesson complete\. (Completion records participation; feedback describes the evidence of understanding\.)$/,
+  );
+  if (completion) {
+    const [, feedback, outcomes, note] = completion;
+    return {
+      text: feedback.trim(),
+      questions,
+      completion: { outcomes: uniqueContent(outcomes.split("\n")), note },
+    };
+  }
   let text = content;
   if (scenario?.trim())
     text = text.replace(`Scenario: ${scenario.trim()}\n\n`, "");

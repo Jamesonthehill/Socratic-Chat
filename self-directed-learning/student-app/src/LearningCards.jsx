@@ -60,15 +60,35 @@ export function ScenarioCard({ task, activeQuestion }) {
   );
 }
 
-export function ActiveQuestion({ question, interview, idPrefix = "sdl-active" }) {
+export function ActiveQuestion({ question, interview, number, idPrefix = "sdl-active" }) {
   return (
     <header className="sdl-active-question">
       <p className="eyebrow">
-        {interview ? "Reasoning & reflection" : "Your next step"}
+        {number ? `Question ${number} · ${interview ? "Interview" : "Application"}` : interview ? "Reasoning & reflection" : "Your next step"}
       </p>
       <h3 id={`${idPrefix}-question`}>{question.title || "Interview question"}</h3>
       <p id={`${idPrefix}-prompt`}>{question.prompt}</p>
       <small>A couple of sentences or bullets is enough.</small>
     </header>
   );
+}
+
+export function LessonProgress({ state, plan }) {
+  const stage = state.stage === "paused" ? state.resume_stage : state.stage;
+  const phases = [
+    { label: "Study", stages: ["welcome", "study_resources"], count: 1 },
+    { label: "Quiz", stages: ["diagnostic_quiz", "quiz_review"], count: state.quiz_count || plan.diagnostic_quiz?.length || 1, done: state.quiz_index || 0 },
+    { label: "Application", stages: ["application"], count: state.application_count || plan.application_sections?.length || 1, done: state.application_answers?.length || 0 },
+    ...(state.assessment_version === 2 ? [{ label: "Interview", stages: ["interview"], count: state.interview_count || 2, done: state.interview_answers?.length || 0 }] : []),
+  ];
+  const active = stage === "completed" ? phases.length : phases.findIndex(phase => phase.stages.includes(stage));
+  return <nav className="sdl-phase-progress" aria-label="Learning stages">
+    {phases.map((phase, index) => <div key={phase.label} aria-current={index === active ? "step" : undefined}>
+      <strong>{phase.label}</strong>
+      <div className="sdl-phase-segments" role="progressbar" aria-label={`${phase.label} progress`}
+        aria-valuemin={0} aria-valuemax={phase.count} aria-valuenow={index < active ? phase.count : Math.min(phase.count, phase.done || 0)}>
+        {Array.from({ length: phase.count }, (_, part) => <span key={part} data-status={index < active || part < (phase.done || 0) ? "complete" : index === active && part === (phase.done || 0) ? "current" : "upcoming"} />)}
+      </div>
+    </div>)}
+  </nav>;
 }

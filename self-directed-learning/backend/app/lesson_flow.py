@@ -548,6 +548,10 @@ def public_state(state: dict) -> dict:
     result["quiz_retry"] = state.get("quiz_retry", False)
     result["quiz_attempt_count"] = len(state.get("quiz_attempts", {}).get(plan["diagnostic_quiz"][min(state["quiz_index"], len(plan['diagnostic_quiz']) - 1)]["id"], [])) if plan.get("bounded_flow") and plan.get('diagnostic_quiz') else 0
     result["application_assessment"] = state.get("application_assessment")
+    if state['stage'] == 'completed':
+        from .completion_feedback import fallback_cards
+        result['completion_feedback'] = state.get('completion_feedback') or {
+            'version': 1, 'source': 'recorded_evidence', 'cards': fallback_cards(state, plan)}
     if structured(plan):
         result['application_answers'] = copy.deepcopy(state.get('application_answers', []))
         result['application_count'] = len(plan['application_sections'])

@@ -1,0 +1,157 @@
+{
+  "synthetic_profiles": true,
+  "assessment_feedback": "Synthetic verified assessment fixtures; not live grades",
+  "live_ai_validation": "Blocked: configured provider returned HTTP 401 invalid_api_key. Samples below exercise recorded-evidence fallback.",
+  "results": {
+    "strong": {
+      "version": 1,
+      "source": "recorded_evidence",
+      "cards": [
+        {
+          "key": "well",
+          "title": "What You Did Well",
+          "text": "On the first attempt for Sprint Goal, you selected “Negotiate scope” correctly without recorded hints. That is evidence of an independent quiz selection; the written tasks provide a separate check of your reasoning.",
+          "evidence": [
+            {
+              "id": "quiz:q1:1",
+              "quote": "Negotiate scope"
+            }
+          ]
+        },
+        {
+          "key": "improve",
+          "title": "Areas for Improvement",
+          "text": "The recorded quiz attempts contain no incorrect selections. Correct selections alone do not establish how well you can explain the underlying reasoning.",
+          "evidence": [
+            {
+              "id": "quiz:q1:1",
+              "quote": "Negotiate scope"
+            }
+          ]
+        },
+        {
+          "key": "application",
+          "title": "Application & Critical Thinking",
+          "text": "In your application response, you wrote “I would negotiate scope to protect the goal because adding work risks the agreed outcome.”. Your scope negotiation explains how added work could risk the agreed outcome; the interview applies that same goal when capacity changes.",
+          "evidence": [
+            {
+              "id": "application:1",
+              "quote": "I would negotiate scope to protect the goal because adding work risks the agreed outcome."
+            }
+          ]
+        },
+        {
+          "key": "next",
+          "title": "Recommended Next Steps",
+          "text": "Test your scope decision against a request that would change the Sprint Goal. Check your revision: Which part of your decision changes, and which part stays fixed?",
+          "evidence": [
+            {
+              "id": "application:1",
+              "quote": "I would negotiate scope to protect the goal because adding work risks the agreed outcome."
+            }
+          ]
+        }
+      ]
+    },
+    "improves": {
+      "version": 1,
+      "source": "recorded_evidence",
+      "cards": [
+        {
+          "key": "well",
+          "title": "What You Did Well",
+          "text": "For Sprint Goal, you reached the correct choice “Negotiate scope” after support or a retry. This records progress with assistance, rather than independent mastery.",
+          "evidence": [
+            {
+              "id": "quiz:q1:2",
+              "quote": "Negotiate scope"
+            }
+          ]
+        },
+        {
+          "key": "improve",
+          "title": "Areas for Improvement",
+          "text": "For Sprint Goal, your earlier choice was “Add all work”. A later correct answer shows this initial difficulty was resolved during the quiz; check it once more without the hint to confirm independence.",
+          "evidence": [
+            {
+              "id": "quiz:q1:1",
+              "quote": "Add all work"
+            }
+          ]
+        },
+        {
+          "key": "application",
+          "title": "Application & Critical Thinking",
+          "text": "In your application response, you wrote “I would negotiate scope to protect the goal because adding work risks the agreed outcome.”. Your scope negotiation explains how added work could risk the agreed outcome; the interview applies that same goal when capacity changes.",
+          "evidence": [
+            {
+              "id": "application:1",
+              "quote": "I would negotiate scope to protect the goal because adding work risks the agreed outcome."
+            }
+          ]
+        },
+        {
+          "key": "next",
+          "title": "Recommended Next Steps",
+          "text": "Test your scope decision against a request that would change the Sprint Goal. Check your revision: Which part of your decision changes, and which part stays fixed?",
+          "evidence": [
+            {
+              "id": "application:1",
+              "quote": "I would negotiate scope to protect the goal because adding work risks the agreed outcome."
+            }
+          ]
+        }
+      ]
+    },
+    "weak_application": {
+      "version": 1,
+      "source": "recorded_evidence",
+      "cards": [
+        {
+          "key": "well",
+          "title": "What You Did Well",
+          "text": "On the first attempt for Sprint Goal, you selected “Negotiate scope” correctly without recorded hints. That is evidence of an independent quiz selection; the written tasks provide a separate check of your reasoning.",
+          "evidence": [
+            {
+              "id": "quiz:q1:1",
+              "quote": "Negotiate scope"
+            }
+          ]
+        },
+        {
+          "key": "improve",
+          "title": "Areas for Improvement",
+          "text": "The recorded quiz attempts contain no incorrect selections. Correct selections alone do not establish how well you can explain the underlying reasoning.",
+          "evidence": [
+            {
+              "id": "quiz:q1:1",
+              "quote": "Negotiate scope"
+            }
+          ]
+        },
+        {
+          "key": "application",
+          "title": "Application & Critical Thinking",
+          "text": "In your application response, you wrote “Just do it.”. Your response does not connect the decision to the Sprint Goal, and the interview does not explain a change in capacity.",
+          "evidence": [
+            {
+              "id": "application:1",
+              "quote": "Just do it."
+            }
+          ]
+        },
+        {
+          "key": "next",
+          "title": "Recommended Next Steps",
+          "text": "Explain what you would defer and why if capacity fell. Check your revision: Which part of your decision changes, and which part stays fixed?",
+          "evidence": [
+            {
+              "id": "application:1",
+              "quote": "Just do it."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

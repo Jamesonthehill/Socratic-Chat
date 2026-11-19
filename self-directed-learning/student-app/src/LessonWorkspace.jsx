@@ -1,9 +1,10 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "./api";
+import CompletionFeedback from "./CompletionFeedback";
 import ResultCard, { downloadBlob } from "./ResultCard";
 import ResearchChoice from './ResearchChoice';
 import ApplicationInterview from './ApplicationInterview';
-import {ActivityProgress, ScenarioCard, ActiveQuestion} from './LearningCards';
+import {LessonProgress, ScenarioCard, ActiveQuestion} from './LearningCards';
 import {presentTutorMessage, isCourseMaterialPlaceholder} from './learning-presentation';
 import './learning-workspace.css';
 
@@ -92,7 +93,11 @@ export default function LessonWorkspace({
   const questionPositions = useRef({});
   const replyInput = useRef(null);
   useLayoutEffect(() => {
-    if (attempt?.learning_state?.bounded_flow) return;
+    if (attempt?.learning_state?.bounded_flow) {
+      const chat = messagesRef.current;
+      if (chat) chat.scrollTop = chat.scrollHeight;
+      return;
+    }
     const chat = messagesRef.current;
     if (!chat) return;
     if (anchorNextTurn.current && turnRef.current) {
@@ -259,21 +264,6 @@ export default function LessonWorkspace({
         : "adaptive_learning"
       : stage,
   );
-  const progressStage = stage === "paused" ? state?.resume_stage : stage;
-  const progressPercent = Math.round(
-    progressStage === "completed"
-      ? 100
-      : progressStage === "application" || progressStage === "interview" || progressStage === "quiz_review"
-        ? progressStage === "application" && shortAssessment
-          ? 60 + 20 * ((state.application_answers?.length || 0) / (state.application_count || 3))
-          : progressStage === "interview" && shortAssessment
-            ? 80 + 20 * ((state.interview_answers?.length || 0) / (state.interview_count || 2))
-            : 85
-        : progressStage === "diagnostic_quiz"
-          ? (shortAssessment ? 25 : 30) + Math.min(state.quiz_count || 5, state.quiz_index || 0) * ((shortAssessment ? 35 : 55) / (state.quiz_count || 5))
-          : progressStage === "study_resources"
-            ? 15
-            : 0);
   const messages = [
     ...(attempt?.messages || []),
     ...(submittedMessage ? [submittedMessage] : []),
@@ -360,6 +350,7 @@ export default function LessonWorkspace({
       <ChatMessage
         message={message}
         bounded={state?.bounded_flow}
+        completionFeedback={stage === "completed" && index === attempt.messages.findLastIndex(item => item.role === "assistant") ? state.completion_feedback : null}
         presentation={shortAssessment && message.role === 'assistant' ? presentTutorMessage(message.content, {activeQuestion: currentWritten, scenario: stage === "application" ? scenarioTask?.submission_prompt : null}) : null}
         verdict={
           message.role === "assistant"
@@ -456,33 +447,13 @@ export default function LessonWorkspace({
               Restart assignment
             </button>
           </div>
-          <div className={`workspace-grid ${state.bounded_flow ? "sdl-learning-workspace" : ""}`}>
+          <div className={`workspace-grid ${state.bounded_flow ? "sdl-learning-workspace sdl-live-workspace" : ""}`}>
             <aside>
-              {state.bounded_flow && (
-                <div className="sdl-progress">
-                  <div>
-                    <strong>Your progress</strong>
-                    <span>{progressPercent}%</span>
-                  </div>
-                  <progress
-                    aria-label="Lesson progress"
-                    max="100"
-                    value={progressPercent}
-                  />
-                </div>
+              {state.bounded_flow ? <LessonProgress state={state} plan={lesson.learning_plan} /> : (
+                <ol className="lesson-stages" aria-label="Learning stages">
+                  {activeLabels.map((label, index) => <li key={label} className={index === stageIndex ? "active" : ""} aria-current={index === stageIndex ? "step" : undefined}><span>{index + 1}</span>{label}</li>)}
+                </ol>
               )}
-              <ol className="lesson-stages" aria-label="Learning stages">
-                {activeLabels.map((label, index) => (
-                  <li
-                    key={label}
-                    className={index === stageIndex ? "active" : ""}
-                    aria-current={index === stageIndex ? "step" : undefined}
-                  >
-                    <span>{index + 1}</span>
-                    {label}
-                  </li>
-                ))}
-              </ol>
               <p className="eyebrow">Learning objectives</p>
               <div className="objectives">
                 {attempt.objective_progress.map((objective, index) => (
@@ -561,8 +532,6 @@ export default function LessonWorkspace({
               className="chat lesson-chat"
               aria-label="Lesson conversation"
             >
-              {shortAssessment && currentWritten && <ActivityProgress state={state} sections={lesson.learning_plan.application_sections || []}/>}
-              {shortAssessment && stage === 'application' && scenarioTask && <ScenarioCard task={scenarioTask} activeQuestion={currentWritten}/>}
               <div
                 ref={messagesRef}
                 onScroll={(event) => {
@@ -572,6 +541,7 @@ export default function LessonWorkspace({
                 aria-live="polite"
                 aria-relevant="additions"
               >
+              {shortAssessment && stage === 'application' && scenarioTask && <ScenarioCard task={scenarioTask} activeQuestion={currentWritten}/>}
                 {messages
                   .slice(0, turnStart ?? messages.length)
                   .map(renderMessage)}
@@ -640,6 +610,7 @@ export default function LessonWorkspace({
                           </div>
                         </div>
                       )}
+                      {stage === "completed" && !attempt.messages.some(item => item.role === "assistant") && <CompletionFeedback feedback={state.completion_feedback} />}
                       {state.bounded_flow && stage === 'completed' && (
                         state.application_interview_enabled && <ApplicationInterview key={assignmentId}
                           assignmentId={assignmentId} initial={state.application_interview}/>
@@ -904,7 +875,7 @@ export default function LessonWorkspace({
                       });
                   }}
                 >
-                  {shortAssessment && currentWritten && <ActiveQuestion question={currentWritten} interview={stage === 'interview'}/>}
+                  {shortAssessment && currentWritten && <ActiveQuestion question={currentWritten} interview={stage === 'interview'} number={(stage === 'interview' ? state.interview_answers?.length || 0 : state.application_answers?.length || 0) + 1}/>}
                   <label className={currentWritten ? "sdl-response-label" : "sr-only"} htmlFor="lesson-reply">
                     Your reply
                   </label>
@@ -957,7 +928,7 @@ export default function LessonWorkspace({
   );
 }
 
-function ChatMessage({ message, bounded, verdict, presentation }) {
+function ChatMessage({ message, bounded, verdict, presentation, completionFeedback }) {
   const student = message.role === "student";
   const completion = presentation?.completion;
   let content = presentation ? presentation.text : message.content;
@@ -981,19 +952,20 @@ function ChatMessage({ message, bounded, verdict, presentation }) {
           .replace(/You have one submission, followed by feedback\./g, "");
   }
   const paragraphs = student ? [content] : replyParagraphs(content);
-  if (!content && !completion && !presentation?.questions.length && !message.sources?.length) return null;
+  if (!content && !completion && !completionFeedback && !presentation?.questions.length && !message.sources?.length) return null;
   return (
     <div className={`sdl-message-group ${student ? "student" : "assistant"}`}>
       <span className="sdl-speaker">{student ? "You" : "Tutor"}</span>
       <div className={`sdl-message-body ${verdict === true ? 'sdl-feedback-success' : verdict === false ? 'sdl-feedback-review' : ''}`}>
       {verdict !== undefined && <strong className="sdl-feedback-label">{verdict ? 'You’re on the right track' : 'Let’s build on your reasoning'}</strong>}
-      {completion && (
+      {completion && !completionFeedback && (
         <header className="sdl-active-question">
           <p className="eyebrow">Lesson complete</p>
           <h3>Application and interview feedback</h3>
         </header>
       )}
-      {content && <article className={`message sdl-bubble ${student ? "student" : "assistant"}`}>
+      {completionFeedback && <CompletionFeedback feedback={completionFeedback} />}
+      {content && !completionFeedback && <article className={`message sdl-bubble ${student ? "student" : "assistant"}`}>
       {paragraphs.filter(Boolean).map((paragraph, index) => (
           <p key={index}>
             {[

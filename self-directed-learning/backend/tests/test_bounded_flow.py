@@ -69,6 +69,9 @@ def test_three_attempts_support_and_completion_are_persistent(client, monkeypatc
     assert final.json()['required_task_submission'] == body['content']
     assert final.json()['completed_at']
     assert final.json()['learning_state']['completion_code'].startswith('SDL-')
+    cards = final.json()['learning_state']['completion_feedback']
+    assert len(cards['cards']) == 4
+    assert client.post(f'/api/student/assignments/{aid}/start', headers=headers()).json()['learning_state']['completion_feedback'] == cards
     assert sum(q['attempts'] for q in final.json()['learning_state']['quiz_attempt_summary']) == 7
     assert len(final.json()['learning_state']['quiz_cards']) == 5
     assert 'What you got right' in final.json()['messages'][-1]['content']
@@ -78,6 +81,7 @@ def test_three_attempts_support_and_completion_are_persistent(client, monkeypatc
     assert replay.status_code == 200
     assert len(replay.json()['messages']) == len(final.json()['messages'])
     assert replay.json()['completed_at'] == final.json()['completed_at']
+    assert replay.json()['learning_state']['completion_feedback'] == cards
     assert replay.json()['learning_state']['completion_code'] == final.json()['learning_state']['completion_code']
     assert client.post(url, headers=headers(), json={**body, 'turn_id': str(uuid4())}).status_code == 409
     report = client.get(f'/api/instructor/assignments/{aid}/students/student-alex', headers=headers('instructor-demo'))

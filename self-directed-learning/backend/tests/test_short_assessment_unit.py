@@ -86,6 +86,12 @@ def test_interview_requires_two_answers_and_grades_combined_evidence(monkeypatch
     assert len(seen['evidence']['application']) == 3
     assert len(seen['evidence']['interview']) == 2
     assert 'customer' in state['application_submission']
+    saved = json.loads(json.dumps(state))
+    assert len(saved['completion_feedback']['cards']) == 4
+    assert lesson_flow.public_state(saved)['completion_feedback'] == state['completion_feedback']
+    # Old saved completions get the same four-card shape without another AI call.
+    del saved['completion_feedback']
+    assert len(lesson_flow.public_state(saved)['completion_feedback']['cards']) == 4
 
 
 def test_generation_and_assessment_retry_preserve_submitted_answers(monkeypatch):

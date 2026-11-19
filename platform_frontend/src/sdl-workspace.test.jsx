@@ -152,7 +152,9 @@ test('resumes interview questions, preserves Socratic prose, and reaches complet
  fireEvent.click(screen.getByText('Learning outcomes'));
  expect(screen.getByText('Apply the Definition of Done.')).toBeVisible();
  expect(screen.queryByLabelText('Your reply')).not.toBeInTheDocument();
- expect(screen.getByRole('progressbar',{name:'Lesson progress'})).toHaveAttribute('value','100');
+ for (const progress of screen.getAllByRole('progressbar')) {
+   expect(progress).toHaveAttribute('aria-valuenow', progress.getAttribute('aria-valuemax'));
+ }
  prompts.forEach(prompt=>expect(screen.getAllByText(prompt)).toHaveLength(1));
  mounted.unmount();
  render(<MemoryRouter><SDLWorkspace assignmentId="interview-resume"/></MemoryRouter>);

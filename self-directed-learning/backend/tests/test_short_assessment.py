@@ -67,10 +67,15 @@ def test_three_three_two_saves_resumes_and_grades_combined_evidence(client, monk
     final = client.post(url, headers=headers(), json=body)
     assert final.status_code == 200, final.text
     assert final.json()['status'] == 'completed'
+    cards = final.json()['learning_state']['completion_feedback']
+    assert len(cards['cards']) == 4
+    resumed_final = client.post(f'/api/student/assignments/{aid}/start', headers=headers()).json()
+    assert resumed_final['learning_state']['completion_feedback'] == cards
     assert 'Cancellation changes' in seen['evidence']
     assert 'A customer.' in seen['evidence']
     replay = client.post(url, headers=headers(), json=body)
     assert replay.json()['messages'] == final.json()['messages']
+    assert replay.json()['learning_state']['completion_feedback'] == cards
     assert replay.json()['completed_at'] == final.json()['completed_at']
     report = client.get(f'/api/instructor/assignments/{aid}/students/student-alex', headers=headers('instructor-demo')).json()
     assert '3/3' in report['summary']['overview']

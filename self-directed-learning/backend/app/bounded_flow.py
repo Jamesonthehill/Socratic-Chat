@@ -3,6 +3,7 @@
 The authored snapshot controls content and keys. Assistance is recorded without
 deductions; versioned snapshots select the quiz and application structure.
 """
+from .completion_feedback import generate_cards
 from .openai_client import assess_configured_response
 from uuid import uuid4
 import json
@@ -44,6 +45,7 @@ def finish_interview(state, plan):
         return state, 'All your answers are saved. Final feedback is temporarily unavailable. Select Try again to finish without answering again.', None
     state.update(stage='completed', completion_code='SDL-' + uuid4().hex.upper(), application_assessment=assessment,
                  application_submission='\n\n'.join(f"{a['title']}\n{a['prompt']}\n{a['answer']}" for a in state['application_answers']))
+    state['completion_feedback'] = generate_cards(state, plan)
     return state, (f"Application and interview feedback: {assessment['feedback']}\n\n"
                    f"Intended outcome: {plan['ending_point']}\n\nLesson complete. Completion records participation; feedback describes the evidence of understanding."), None
 
@@ -202,6 +204,7 @@ def process_turn(state, turn):
             return state, 'Feedback is temporarily unavailable. Your response is saved in this conversation; retry your submission when the grader is available.', None
         state.update(stage='completed', application_submission=turn.content, application_assessment=assessment,
                      completion_code='SDL-' + uuid4().hex.upper())
+        state['completion_feedback'] = generate_cards(state, plan)
         return state, (f"What you got right\n{assessment['what_went_well']}\n\n"
                        f"What you got wrong\n{assessment['what_was_incorrect']}\n\n"
                        f"How to improve\n{assessment['how_to_improve']}\n\n"

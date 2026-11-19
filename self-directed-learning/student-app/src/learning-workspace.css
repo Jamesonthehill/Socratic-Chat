@@ -362,3 +362,33 @@
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+
+/* Bound the live chat without changing teacher previews. */
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui .platform-sdl .sdl-live-workspace { height:calc(100dvh - 190px); min-height:420px; align-items:stretch; }
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui .platform-sdl .sdl-live-workspace > aside { min-height:0; overflow-y:auto; }
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui .platform-sdl .sdl-live-workspace .lesson-chat { height:100%; min-height:0; box-sizing:border-box; overflow:hidden; gap:12px; padding:16px; }
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui .platform-sdl .sdl-live-workspace .messages { flex:1 1 0; min-height:0; height:auto; max-height:none; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; padding:4px 12px 4px 0; }
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui .platform-sdl .sdl-live-workspace .composer { flex:0 1 auto; min-height:0; max-height:55%; overflow-y:auto; padding:12px; gap:8px; }
+.sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui .platform-sdl .sdl-live-workspace .composer textarea { min-height:64px; max-height:120px; }
+.sdl-phase-progress { display:grid; gap:18px; margin-bottom:24px; }
+.sdl-phase-progress strong { font-size:14px; color:var(--muted,#64748b); }
+.sdl-phase-progress [aria-current="step"] strong { color:var(--text); }
+.sdl-phase-segments { display:flex; gap:4px; margin-top:8px; }
+.sdl-phase-segments span { flex:1; height:8px; border-radius:2px; background:var(--line,#dbe3ef); }
+.sdl-phase-segments [data-status="complete"] { background:#2563eb; }
+.sdl-phase-segments [data-status="current"] { background:#93b4fa; box-shadow:inset 0 0 0 1px #2563eb; }
+@media (max-width:760px) { .sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui .platform-sdl .sdl-live-workspace { height:auto; min-height:0; } .sdl-teaching-ui.sdl-teaching-ui.sdl-student-ui .platform-sdl .sdl-live-workspace .lesson-chat { height:calc(100dvh - 120px); min-height:400px; } .sdl-phase-progress { grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; } }
+
+.sdl-feedback-cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.sdl-completion-feedback { min-width:0; }
+.sdl-learning-feedback { --feedback-accent:#2563eb; padding:18px; border:1px solid var(--line,#dbe3ef); border-top:3px solid var(--feedback-accent); border-radius:12px; background:var(--surface,#fff); min-width:0; }
+.sdl-learning-feedback-well { --feedback-accent:#059669; }
+.sdl-learning-feedback-improve { --feedback-accent:#b7791f; }
+.sdl-learning-feedback-application { --feedback-accent:#7c3aed; }
+.sdl-learning-feedback h4 { display:flex; align-items:center; gap:10px; margin:0 0 12px; font-size:16px; }
+.sdl-learning-feedback h4 span { color:var(--feedback-accent); }
+.sdl-learning-feedback p { font-size:14px; line-height:1.65; margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.sdl-learning-feedback details { margin-top:12px; font-size:13px; }
+.sdl-learning-feedback summary { cursor:pointer; color:var(--muted,#64748b); }
+.sdl-learning-feedback blockquote { margin:10px 0 0; padding-left:12px; border-left:2px solid var(--line,#dbe3ef); overflow-wrap:anywhere; white-space:pre-wrap; }
+@media (max-width:900px) { .sdl-feedback-cards { grid-template-columns:minmax(0,1fr); } }

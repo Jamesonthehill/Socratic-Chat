@@ -3471,6 +3471,14 @@ html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .objective-status-rejec
 .sdl-teaching-ui.sdl-teaching-ui .sdl-review-fields { border:0; padding:0; margin:12px 0 20px; min-width:0; }
 .sdl-teaching-ui.sdl-teaching-ui .sdl-review-fields legend { font-weight:700; }
 .sdl-teaching-ui.sdl-teaching-ui .sdl-review-fields .sdl-review-fields { padding-left:16px; border-left:2px solid var(--line); }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-review-content {
+  display: block;
+  min-width: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-review-content .sdl-answer-options button:disabled {
+  cursor: default;
+  opacity: 1;
+}
 .sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-chat .messages { position:relative; height:65vh; max-height:65vh; padding:24px; overflow-anchor:none; scroll-behavior:auto; }
 .sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-chat .sdl-current-turn { min-height:calc(65vh - 48px); }
 .sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-message-group { display:flex; flex-direction:column; align-items:flex-start; gap:8px; margin:18px 0; min-width:0; }

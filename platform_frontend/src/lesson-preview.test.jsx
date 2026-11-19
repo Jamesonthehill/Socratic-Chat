@@ -6,6 +6,7 @@ import LessonPreview from "./LessonPreview";
 test("shows generated questions, answer keys, practice and rubrics",()=>{
   render(<LessonPreview plan={{diagnostic_quiz:[{id:"q1",question:"What makes this measurable?",options:["A","B","C","D"],correct_index:2,explanation:"Use an observable measure."}],learning_assets:[{standard:[{prompt:"Write a measurable requirement.",rubric:"Includes a threshold."}]}]}}/>);
   expect(screen.getByText("What makes this measurable?")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Option C: C - correct" })).toBeDisabled();
   expect(screen.getByText("Correct answer")).toBeTruthy();
   expect(screen.getAllByText("Option C").length).toBeGreaterThan(0);
   expect(screen.getByText("Use an observable measure.")).toBeTruthy();

@@ -60,14 +60,14 @@ export function ScenarioCard({ task, activeQuestion }) {
   );
 }
 
-export function ActiveQuestion({ question, interview }) {
+export function ActiveQuestion({ question, interview, idPrefix = "sdl-active" }) {
   return (
     <header className="sdl-active-question">
       <p className="eyebrow">
         {interview ? "Reasoning & reflection" : "Your next step"}
       </p>
-      <h3 id="sdl-active-question">{question.title || "Interview question"}</h3>
-      <p id="sdl-active-prompt">{question.prompt}</p>
+      <h3 id={`${idPrefix}-question`}>{question.title || "Interview question"}</h3>
+      <p id={`${idPrefix}-prompt`}>{question.prompt}</p>
       <small>A couple of sentences or bullets is enough.</small>
     </header>
   );

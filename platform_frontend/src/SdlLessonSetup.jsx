@@ -125,95 +125,77 @@ export default function SdlLessonSetup({
         />
       </fieldset>
 
-      {(!value.starting_point?.trim() || !value.ending_point?.trim()) && (
-        <section
-          className="sdl-boundary-review"
-          aria-label="Suggested lesson details"
-        >
-          <h3>Let AI suggest the missing details</h3>
+      {suggestions &&
+        (!value.starting_point?.trim() || !value.ending_point?.trim()) && (
+          <section
+            className="sdl-boundary-review"
+            aria-label="Suggested lesson details"
+          >
+            <h3>Review lesson details</h3>
+            <p className="sdl-suggestion-label">
+              AI-generated suggestions · review and edit
+            </p>
 
-          <p>
-            Prior knowledge and the end goal are optional to enter. Review and
-            confirm any AI suggestions before generating your lesson.
-          </p>
+            {!value.starting_point?.trim() && (
+              <label>
+                Suggested prior knowledge
+                <textarea
+                  rows={3}
+                  maxLength={2000}
+                  disabled={disabled}
+                  value={suggestions.starting_point || ""}
+                  onChange={(e) =>
+                    onSuggestionsChange({
+                      ...suggestions,
+                      starting_point: e.target.value,
+                    })
+                  }
+                />
+              </label>
+            )}
 
-          {!suggestions ? (
+            {!value.ending_point?.trim() && (
+              <label>
+                Suggested end goal
+                <textarea
+                  rows={3}
+                  maxLength={4000}
+                  disabled={disabled}
+                  value={suggestions.ending_point || ""}
+                  onChange={(e) =>
+                    onSuggestionsChange({
+                      ...suggestions,
+                      ending_point: e.target.value,
+                    })
+                  }
+                />
+              </label>
+            )}
+
+            <button
+              type="button"
+              disabled={
+                disabled ||
+                (!value.starting_point?.trim() &&
+                  !suggestions.starting_point?.trim()) ||
+                (!value.ending_point?.trim() &&
+                  !suggestions.ending_point?.trim())
+              }
+              onClick={onConfirmSuggestions}
+            >
+              Confirm lesson details
+            </button>
+
             <button
               type="button"
               className="secondary"
               disabled={disabled || !canSuggest}
               onClick={onSuggest}
             >
-              Suggest missing details
+              Suggest again
             </button>
-          ) : (
-            <>
-              <p className="sdl-suggestion-label">
-                AI-generated suggestions · review and edit
-              </p>
-
-              {!value.starting_point?.trim() && (
-                <label>
-                  Suggested prior knowledge
-                  <textarea
-                    rows={3}
-                    maxLength={2000}
-                    disabled={disabled}
-                    value={suggestions.starting_point || ""}
-                    onChange={(e) =>
-                      onSuggestionsChange({
-                        ...suggestions,
-                        starting_point: e.target.value,
-                      })
-                    }
-                  />
-                </label>
-              )}
-
-              {!value.ending_point?.trim() && (
-                <label>
-                  Suggested end goal
-                  <textarea
-                    rows={3}
-                    maxLength={4000}
-                    disabled={disabled}
-                    value={suggestions.ending_point || ""}
-                    onChange={(e) =>
-                      onSuggestionsChange({
-                        ...suggestions,
-                        ending_point: e.target.value,
-                      })
-                    }
-                  />
-                </label>
-              )}
-
-              <button
-                type="button"
-                disabled={
-                  disabled ||
-                  (!value.starting_point?.trim() &&
-                    !suggestions.starting_point?.trim()) ||
-                  (!value.ending_point?.trim() &&
-                    !suggestions.ending_point?.trim())
-                }
-                onClick={onConfirmSuggestions}
-              >
-                Confirm lesson details
-              </button>
-
-              <button
-                type="button"
-                className="secondary"
-                disabled={disabled || !canSuggest}
-                onClick={onSuggest}
-              >
-                Suggest again
-              </button>
-            </>
-          )}
-        </section>
-      )}
+          </section>
+        )}
 
       <p className="sdl-lesson-review-note">
         Review the generated lesson before publishing.

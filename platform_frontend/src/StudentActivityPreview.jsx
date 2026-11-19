@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { date, TOOLS } from "./api";
+import { TutorMessage } from "./LessonPreview";
 
 function openingFor(item) {
   const config = item.student_config || item.config || {};
@@ -22,9 +23,9 @@ function openingFor(item) {
     question: config.milestone_prompt || config.sub_topics?.[0] || "Your reflection prompt will appear here.",
   };
   if (item.tool === "self-directed-learning") return {
-    label: "Lesson focus",
+    label: "Prerequisites",
     scenario: "",
-    question: config.prompt || config.learning_plan?.title || "Your prepared lesson will appear here.",
+    question: config.learning_plan?.prerequisite_message || config.prompt || config.learning_plan?.title || "Your prepared lesson will appear here.",
   };
   return { label: "Activity instructions", scenario: "", question: config.prompt || item.instructions || "" };
 }
@@ -33,6 +34,7 @@ export function StudentActivityPreview({ item, files = [] }) {
   const [started, setStarted] = useState(false);
   const config = item.student_config || item.config || {};
   const opening = openingFor(item);
+  const isSdl = item.tool === "self-directed-learning";
   return (
     <section id="student-activity-preview" className="student-activity-preview" aria-label="Student-view preview">
       <p className="context">Student-view preview · read only</p>
@@ -55,11 +57,19 @@ export function StudentActivityPreview({ item, files = [] }) {
         <div className="student-preview-chat">
           <h3>{TOOLS[item.tool]?.name || "Activity"}</h3>
           {started ? <>
-            <div className="student-preview-message">
+            {isSdl ? (
+              <div className="sdl-teaching-ui sdl-student-ui">
+                <div className="platform-sdl">
+                  <div className="sdl-learning-workspace sdl-review-content">
+                    <div className="lesson-chat"><TutorMessage>{opening.question}</TutorMessage></div>
+                  </div>
+                </div>
+              </div>
+            ) : <div className="student-preview-message">
               <strong>{opening.label}</strong>
               {opening.scenario && <p>{opening.scenario}</p>}
               <p>{opening.question}</p>
-            </div>
+            </div>}
             <label htmlFor="student-preview-reply">Your response</label>
             <textarea id="student-preview-reply" rows={3} disabled placeholder="Students write their response here" />
             <button type="button" className="secondary" onClick={() => setStarted(false)}>Reset preview</button>

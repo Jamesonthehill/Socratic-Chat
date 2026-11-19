@@ -1,4 +1,18 @@
-import { useState } from "react";
+import { useId, useState } from "react";
+import { ScenarioCard, ActiveQuestion } from "../../self-directed-learning/student-app/src/LearningCards";
+import "./sdl-teaching-ui.css";
+import "../../self-directed-learning/student-app/src/learning-workspace.css";
+
+export function TutorMessage({ children }) {
+  return (
+    <div className="sdl-message-group assistant">
+      <span className="sdl-speaker">Tutor</span>
+      <div className="sdl-message-body">
+        <article className="message sdl-bubble assistant"><p>{children}</p></article>
+      </div>
+    </div>
+  );
+}
 
 const label = (key) =>
   ({
@@ -154,6 +168,7 @@ function Resources({ name, items = [], editing, onChange }) {
       <h4>{name}</h4>
       {items.map((item, index) => (
         <div key={index} className="sdl-review-item">
+          {editing ? (
           <Field
             name={`Reading ${index + 1}`}
             value={{ title: item.title, url: item.url, focus: item.focus || "" }}
@@ -162,6 +177,16 @@ function Resources({ name, items = [], editing, onChange }) {
               onChange(items.map((old, i) => (i === index ? {...old, ...next} : old)))
             }
           />
+          ) : (
+            <section className="resource-card lesson-resource">
+              {item.provider && <p className="eyebrow">{item.provider}</p>}
+              <h3>{/^https?:\/\//i.test(item.url)
+                ? <a href={item.url} target="_blank" rel="noopener noreferrer">{item.title}</a>
+                : item.title}</h3>
+              {item.description && <p>{item.description}</p>}
+              {item.focus && <p><strong>Focus</strong> {item.focus}</p>}
+            </section>
+          )}
           {editing && (
             <button
               type="button"
@@ -170,11 +195,6 @@ function Resources({ name, items = [], editing, onChange }) {
             >
               Remove reading {index + 1}
             </button>
-          )}
-          {!editing && /^https:\/\//i.test(item.url) && (
-            <a href={item.url} target="_blank" rel="noopener noreferrer">
-              Open reading ↗
-            </a>
           )}
         </div>
       ))}
@@ -208,6 +228,7 @@ function Resources({ name, items = [], editing, onChange }) {
 }
 
 export default function LessonPreview({ plan, onChange, onSave }) {
+  const previewId = useId();
   const [editing, setEditing] = useState({});
   const [saving, setSaving] = useState(null);
   const [saveError, setSaveError] = useState("");
@@ -245,7 +266,7 @@ export default function LessonPreview({ plan, onChange, onSave }) {
     (editing.Study && plan.study_message === "") ? "" : plan.study_message ||
     `Let's study ${plan.topic}.\n\n${plan.topic_introduction}\n\nWorked example: ${plan.introductory_example}\n\nExplore the topic readings below. Ask for examples, or start the quiz when ready.`;
   return (
-    <section className="sdl-review" aria-label="Full SDL lesson preview">
+    <section className="sdl-review sdl-teaching-ui sdl-student-ui" aria-label="Full SDL lesson preview">
       <h3>Review activity</h3>
       <p>
         Review the student messages, readings, quiz, and application task. Use
@@ -260,12 +281,12 @@ export default function LessonPreview({ plan, onChange, onSave }) {
           "Prerequisites",
           (enabled) => (
             <>
-              <Field
+              {enabled ? <Field
                 name="Opening prerequisite message"
                 value={prerequisiteMessage}
                 editing={enabled}
                 onChange={(next) => update("prerequisite_message", next)}
-              />
+              /> : <TutorMessage>{prerequisiteMessage}</TutorMessage>}
               <details>
                 <summary>Assumptions and lesson bounds</summary>
                 {fields(
@@ -291,12 +312,12 @@ export default function LessonPreview({ plan, onChange, onSave }) {
           "Study",
           (enabled) => (
             <>
-              <Field
+              {enabled ? <Field
                 name="Study message"
                 value={studyMessage}
                 editing={enabled}
                 onChange={(next) => update("study_message", next)}
-              />
+              /> : <TutorMessage>{studyMessage}</TutorMessage>}
               <Resources
                 name="Study links"
                 items={plan.study_resources}
@@ -358,8 +379,7 @@ export default function LessonPreview({ plan, onChange, onSave }) {
             <>
               {(plan.diagnostic_quiz || []).map((question, index) => (
                 <div className="sdl-review-item" key={question.id}>
-                  <h4>Question {index + 1}</h4>
-                  <Field
+                  {enabled ? <><h4>Question {index + 1}</h4><Field
                     name="Question"
                     value={{
                       question: question.question,
@@ -385,7 +405,31 @@ export default function LessonPreview({ plan, onChange, onSave }) {
                         ),
                       )
                     }
-                  />
+                  /></> : (
+                    <section className="diagnostic-card sdl-quiz-card" aria-label={`Question ${index + 1}`}>
+                      <p className="eyebrow">Question {index + 1} of {plan.diagnostic_quiz.length}</p>
+                      <h3>{question.question}</h3>
+                      <div className="sdl-answer-options">
+                        {(question.options || []).map((option, position) => (
+                          <button
+                            key={position}
+                            type="button"
+                            disabled
+                            className={`secondary ${question.correct_index === position ? "sdl-option-correct" : ""}`}
+                            aria-label={`Option ${String.fromCharCode(65 + position)}: ${option}${question.correct_index === position ? " - correct" : ""}`}
+                          >
+                            <span aria-hidden="true">{String.fromCharCode(65 + position)}</span>
+                            {option}
+                            {question.correct_index === position && <b aria-hidden="true">✓</b>}
+                          </button>
+                        ))}
+                      </div>
+                      <Field name="Correct answer" value={question.correct_index} />
+                      <Field name="Hint" value={question.hint} />
+                      <Field name="Worked example" value={question.worked_example || plan.learning_assets?.find(asset => asset.objective_id === question.objective_id)?.worked_example} />
+                      <Field name="Explanation" value={question.explanation} />
+                    </section>
+                  )}
                   {question.material_reference && <details>
                     <summary>Source: {plan.study_resources?.find((resource) => !resource.url)?.title || "Selected course material"}</summary>
                     <p>Supporting passage from the selected material. Use it to check the answer and explanation.</p>
@@ -427,8 +471,26 @@ export default function LessonPreview({ plan, onChange, onSave }) {
         ],
         [
           "Application",
-          (enabled) => (
+          (enabled) => enabled || !plan.application_sections?.length ? (
             <><p className="help">Students answer in a text box. Ask for a written response; file uploads are not available.</p>{fields(["required_task", "application_sections", "application_rubric"], enabled)}</>
+          ) : (
+            <>
+              {plan.required_task && <ScenarioCard task={plan.required_task} />}
+              {plan.application_sections.map((question, index) => (
+                <div className="sdl-history-question" key={question.id || index}>
+                  <ActiveQuestion question={question} idPrefix={`${previewId}-application-${index}`} />
+                  <details>
+                    <summary>Assessment criteria</summary>
+                    <Field name="Reasoning criteria" value={question.reasoning_criteria} />
+                    <Field name="Objective IDs" value={question.objective_ids} />
+                  </details>
+                </div>
+              ))}
+              <details>
+                <summary>Task details and rubric</summary>
+                {fields(["required_task", "application_rubric"], false)}
+              </details>
+            </>
           ),
         ],
       ].map(([title, content]) => (
@@ -455,7 +517,13 @@ export default function LessonPreview({ plan, onChange, onSave }) {
             )}
           </header>
           {savedSection === title && <p className="help" role="status">Saved.</p>}
-          {content(!!onChange && !!editing[title])}
+          {editing[title] && onChange ? content(true) : (
+            <div className="platform-sdl">
+              <div className="sdl-learning-workspace sdl-review-content">
+                <div className="lesson-chat">{content(false)}</div>
+              </div>
+            </div>
+          )}
         </section>
       ))}
     </section>

@@ -17,6 +17,8 @@ services:
         value: https://api.groq.com/openai/v1
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
+      - key: SOCRATIC_SETUP_PROVIDER
+        value: openai
       - key: SOCRATIC_TUTOR_PROVIDER
         value: openai
       - key: SOCRATIC_TUTOR_MODEL

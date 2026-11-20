@@ -26,12 +26,23 @@ SOCRATIC_CLASSIFIER_PROVIDER = os.getenv("SOCRATIC_CLASSIFIER_PROVIDER", "").str
 SOCRATIC_SETUP_PROVIDER = os.getenv("SOCRATIC_SETUP_PROVIDER", "").strip().lower()
 SOCRATIC_FEEDBACK_PROVIDER = os.getenv("SOCRATIC_FEEDBACK_PROVIDER", "").strip().lower()
 SOCRATIC_FEEDBACK_MODEL = os.getenv("SOCRATIC_FEEDBACK_MODEL", "openai/gpt-oss-20b").strip()
+SOCRATIC_LLM_PROVIDER = os.getenv("SOCRATIC_LLM_PROVIDER", "").strip().lower()
+DEBATE_LLM_PROVIDER = os.getenv("DEBATE_LLM_PROVIDER", "").strip().lower()
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "ollama")
 OLLAMA_API_BASE_URL = os.getenv("OLLAMA_API_BASE_URL", "http://127.0.0.1:11434/v1")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b-q4_K_M")
 OLLAMA_CLASSIFIER_MODEL = os.getenv("OLLAMA_CLASSIFIER_MODEL", "").strip()
 OLLAMA_ANSWER_EVALUATION_MODEL = os.getenv("OLLAMA_ANSWER_EVALUATION_MODEL", "").strip()
 OLLAMA_GENERATION_MAX_TOKENS = int(os.getenv("OLLAMA_GENERATION_MAX_TOKENS", "600"))
+# Instructor authoring is deliberately independent of all student model roles.
+PLATFORM_AGENT_PROVIDER = os.getenv("PLATFORM_AGENT_PROVIDER", "openai").strip().lower()
+_agent_openai = PLATFORM_AGENT_PROVIDER == "openai"
+PLATFORM_AGENT_API_BASE_URL = os.getenv("PLATFORM_AGENT_BASE_URL", os.getenv("PLATFORM_AGENT_API_BASE_URL", "https://api.openai.com/v1" if _agent_openai else "http://127.0.0.1:11434/v1")).strip()
+PLATFORM_AGENT_API_KEY = os.getenv("PLATFORM_AGENT_API_KEY", OPENAI_API_KEY if _agent_openai else "ollama")
+PLATFORM_AGENT_MODEL = os.getenv("PLATFORM_AGENT_MODEL", "gpt-4.1-mini" if _agent_openai else "qwen3.5:9b-q4_K_M").strip()
+PLATFORM_AGENT_TIMEOUT_SECONDS = float(os.getenv("PLATFORM_AGENT_TIMEOUT_SECONDS", "60"))
+PLATFORM_AGENT_MAX_TOOL_TURNS = int(os.getenv("PLATFORM_AGENT_MAX_TOOL_TURNS", "6"))
+PLATFORM_AGENT_MAX_TOOL_CALLS = int(os.getenv("PLATFORM_AGENT_MAX_TOOL_CALLS", "8"))
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_API_BASE_URL = os.getenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
@@ -65,6 +76,19 @@ _pipeline_trace_file = os.getenv("PIPELINE_TRACE_FILE", "storage/pipeline-traces
 PIPELINE_TRACE_FILE = (BACKEND_DIR / _pipeline_trace_file) if _pipeline_trace_file else None
 
 
+def platform_agent_client_config() -> tuple[str, str, str, str] | None:
+    """Never fall back to a tutor provider, even when authoring is disabled."""
+    if PLATFORM_AGENT_PROVIDER not in {"openai", "ollama", "local"}:
+        raise ValueError("PLATFORM_AGENT_PROVIDER must be openai, ollama or local.")
+    if not PLATFORM_AGENT_MODEL or not PLATFORM_AGENT_API_BASE_URL:
+        return None
+    if PLATFORM_AGENT_PROVIDER == "openai":
+        if not PLATFORM_AGENT_API_KEY.strip():
+            return None
+        return "OpenAI", PLATFORM_AGENT_API_KEY, PLATFORM_AGENT_API_BASE_URL, PLATFORM_AGENT_MODEL
+    return "Ollama", PLATFORM_AGENT_API_KEY or "ollama", PLATFORM_AGENT_API_BASE_URL, PLATFORM_AGENT_MODEL
+
+
 def completion_token_parameters(provider: str, limit: int) -> dict[str, int | str]:
     """Use the output-token parameter supported by the hosted providers."""
     if provider == "Ollama":
@@ -92,7 +116,7 @@ def embedding_model_name() -> str:
 PORTFOLIO_OPENAI = ContextVar("portfolio_openai", default=False)
 
 
-def llm_client_config(role: str = "generation") -> tuple[str, str, str, str] | None:
+def llm_client_config(role: str = "generation", *, provider_override: str | None = None) -> tuple[str, str, str, str] | None:
     """Return the configured chat provider, independently of embedding settings."""
     if PORTFOLIO_OPENAI.get():
         if not OPENAI_API_KEY:
@@ -103,7 +127,7 @@ def llm_client_config(role: str = "generation") -> tuple[str, str, str, str] | N
         else SOCRATIC_CLASSIFIER_PROVIDER if role == "classifier" and SOCRATIC_CLASSIFIER_PROVIDER
         else SOCRATIC_SETUP_PROVIDER if role == "setup" and SOCRATIC_SETUP_PROVIDER
         else SOCRATIC_FEEDBACK_PROVIDER if role == "qualitative_feedback" and SOCRATIC_FEEDBACK_PROVIDER
-        else LLM_PROVIDER
+        else provider_override or SOCRATIC_LLM_PROVIDER or LLM_PROVIDER
     )
     if provider_name in {"local", "ollama"}:
         role_model = {

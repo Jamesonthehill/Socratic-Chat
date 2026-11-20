@@ -17,6 +17,7 @@ from app import auth, db, settings
 from app.pipeline_logging import reset_event_sink, set_event_sink
 from platform_app import canvas_lms, engines, store, evidence_diagram, step_check, step_metrics
 from platform_app.learning_journey import StepDifficulty
+from platform_app.copilot.schemas import CopilotRequest, CopilotResponse
 from platform_app.schemas import (
     ActionInput,
     SelfDirectedStudyInput, SelfDirectedQuizInput, SelfDirectedMessageInput, SelfDirectedTaskInput, SelfDirectedLearningTurn,
@@ -29,6 +30,8 @@ from platform_app.schemas import (
     CanvasImportRequest,
     GenerateSubtopicsInput,
     MessageInput,
+    ReflectionCopilotRequest,
+    ReflectionCopilotResponse,
     SocraticReflectionInput,
     SocraticStepCheck,
 )
@@ -281,6 +284,56 @@ def reflection_launch(assignment_id: UUID, account=Depends(user)):
 @router.post("/generate-subtopics")
 def generate_subtopics(body: GenerateSubtopicsInput, account=Depends(professor)):
     return engines.call("reflections", "POST", "/api/modules/subtopics/generate", json=body.model_dump())
+
+
+@router.post("/copilot/reflections/propose", response_model=ReflectionCopilotResponse)
+def propose_reflections(body: ReflectionCopilotRequest, account=Depends(professor)):
+    from platform_app import reflection_copilot
+
+    def authorize():
+        manage_course(body.course_id, account)
+        available = {str(file["document_id"]): file["filename"]
+                     for file in db.list_rag_files(limit=100000, course_id=str(body.course_id))
+                     if file.get("document_id")}
+        if not set(body.document_ids).issubset(available):
+            raise HTTPException(422, "Select indexed documents from this course only.")
+        return {key: available[key] for key in body.document_ids}
+
+    documents = authorize()
+    # Database reads have completed and closed before local inference starts.
+    return reflection_copilot.propose(body, documents, authorize=authorize)
+
+
+@router.post("/copilot/propose", response_model=CopilotResponse)
+def propose_assignment(body: CopilotRequest, account=Depends(professor)):
+    from platform_app.copilot import orchestrator
+    from platform_app.copilot.tools import safe_title
+
+    def authorize():
+        manage_course(body.course_id, account)
+        available = {str(file["document_id"]): file["filename"]
+                     for file in db.list_rag_files(limit=100000, course_id=str(body.course_id))
+                     if file.get("document_id")}
+        if not set(body.document_ids).issubset(available):
+            raise HTTPException(422, "Select indexed documents from this course only.")
+        return {key: available[key] for key in body.document_ids}
+
+    documents = authorize()
+    course = db.get_course(str(body.course_id))
+    if not course:
+        raise HTTPException(404, "Course not found.")
+    # Names and bounded course metadata only; no roster, responses or credentials.
+    context = {"course_id": str(body.course_id), "course_code": safe_title(course.get("course_code")),
+               "title": safe_title(course.get("title")), "description": str(course.get("description", ""))[:2000]}
+    return orchestrator.propose(body, documents, authorize=authorize, course_context=context)
+
+
+@router.get("/copilot/capabilities")
+def copilot_capabilities(course_id: UUID, account=Depends(professor)):
+    from platform_app.copilot.capabilities import list_capabilities
+
+    manage_course(course_id, account)
+    return list_capabilities()
 
 
 def canvas_result(operation):

@@ -10,6 +10,7 @@ import ActivityRail from "./ActivityRail";
 import ActivityIcon from "./ActivityIcon";
 import ActivityTutorial from "./ActivityTutorial";
 import PublishedSocraticSettings from "./PublishedSocraticSettings";
+import AssignmentCopilot, { applyAssignmentProposal } from "./AssignmentCopilot";
 import { loadCourseContext } from "./courseContext";
 import CanvasSurveyImport from "./CanvasSurveyImport";
 
@@ -789,6 +790,16 @@ export default function CreateActivity({
             <p className="help">No documents selected.</p>
           )}
         </section>
+        {!frozen && <AssignmentCopilot
+          courseId={draft.course_id} selected={selected} documents={files} draft={draft}
+          onApply={(proposal, field) => {
+            chatConfigs.current[draft.tool] = draft.config;
+            setDraft(current => applyAssignmentProposal(current, proposal, selected, field,
+              chatConfigs.current[proposal.tool] || {}));
+            setStage(2);
+            setNotice("");
+          }}
+        />}
         <section className="panel" data-activity-tutorial="activity">
           <h2>Select activity</h2>
           {publishIssue?.target === "activity" && <p className="publish-inline-error">{publishIssue.message}</p>}
@@ -867,7 +878,9 @@ export default function CreateActivity({
             ) : draft.tool === "aiducate" ? (
               <><p>Review Canvas survey responses or open your instructor analysis dashboard.</p><CanvasSurveyImport /></>
             ) : draft.tool === "reflections" ? (
-              <ReflectionConfig value={draft.config} onChange={setConfig} publishIssue={publishIssue} />
+              <>
+                <ReflectionConfig value={draft.config} onChange={setConfig} publishIssue={publishIssue} />
+              </>
             ) : draft.tool === "self-directed-learning" ? (
               <>
                 <SdlLessonSetup value={draft.config} onChange={setConfig} disabled={busy || frozen}
@@ -896,6 +909,14 @@ export default function CreateActivity({
                   />
                 </label>
                 {publishIssue?.target === "debate-scenario" && <p className="publish-inline-error">{publishIssue.message}</p>}
+                {draft.tool === "debate" && <>
+                  <label>Opening prompt<textarea rows={3} maxLength={2000}
+                    value={draft.config.opening_prompt || ""}
+                    onChange={event => setConfig({ ...draft.config, opening_prompt: event.target.value })} /></label>
+                  <label>Messages required before completion<input type="number" min={1} max={100}
+                    value={draft.config.minimum_messages ?? 3}
+                    onChange={event => setConfig({ ...draft.config, minimum_messages: Number(event.target.value) })} /></label>
+                </>}
                 <p className="help">
                   {draft.tool === "aiducate"
                     ? "AIducate now analyzes saved Reflection responses in the instructor workspace. It is not a student activity."

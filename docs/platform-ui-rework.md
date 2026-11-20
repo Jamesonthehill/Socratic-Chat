@@ -55,10 +55,12 @@ Authenticated developer API:
 
 Use the existing signed platform bearer session. Course membership and document ownership are enforced. Chunk responses omit embeddings and include `total` and `next_offset`; retrieval returns ranked evidence. Never publish the internal service token to a browser client.
 
-## Verification and remaining work
+## Instructor Assignment Copilot
 
-The frontend build and 48 frontend checks passed after the final deployment packaging pass. Five mocked platform service-boundary checks and 60 focused SDL flow/bridge/retrieval checks passed. These checks do not establish the quality of generated teaching content.
+The shared copilot supports Socratic, Reflections, SDL and Debate proposals within the normal editable assignment form. Reflections is the first vertical delivery slice, not the product scope limit. See the [platform-wide plan](../PLAN.md), [setup](../README.md#instructor-assignment-copilot), and [current verification/manual tests](assignment-copilot-verification.md).
 
-Local manual checks confirmed saved draft restoration, assignment navigation, student list/grid views, embedded SDL lesson resumption, and a live Debate reply (user verified). The configured provider subsequently passed generation and embedding probes. A user-created SDL lesson was generated/published and opened with saved state; this is not a complete automated end-to-end journey.
+The professor-only `POST /api/platform/copilot/propose` endpoint loads course context, retrieves selected indexed documents, inspects capabilities and validates configuration through the existing AssignmentInput. `GET /api/platform/copilot/capabilities?course_id=...` exposes authorized manifests. The legacy `/copilot/reflections/propose` endpoint remains compatible and shares the bounded orchestration/retrieval foundation.
 
-Reflections end-to-end service verification, real institutional Canvas launches and newly joining Canvas students receiving an already-published SDL lesson still need deployment testing. Detailed Analytics is a placeholder. SDL's final completion policy remains deferred to its workflow owner. AIducate has no engine. No production deployment, database reset or automatic merge is part of this change.
+The copilot cannot save or publish. Apply changes local form values only. Objectives are included in editable instructions so they survive draft save/reopen. Milestone CSV remains local and must be attached manually before milestone publication. SDL preview generates its lesson only through the existing instructor review control. AIducate remains manual and draft-only until its runtime is finalized.
+
+The [initial Reflections verification](reflection-copilot-verification.md) is historical; the [shared implementation verification](assignment-copilot-verification.md) records current results and remaining end-to-end checks.

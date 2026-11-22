@@ -3,11 +3,19 @@ from __future__ import annotations
 
 import os
 import secrets
+import sys
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+
+# This service can be launched directly by the combined runner, bypassing
+# platform_app.main where the legacy Socratic backend path is normally added.
+SOCRATIC_BACKEND = Path(__file__).resolve().parents[1] / "Socratic-Chat" / "backend"
+if str(SOCRATIC_BACKEND) not in sys.path:
+    sys.path.insert(0, str(SOCRATIC_BACKEND))
 
 from app.schemas import ChatMessage
 from platform_app import engines

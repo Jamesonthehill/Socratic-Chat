@@ -7,10 +7,12 @@ import os
 from pathlib import Path
 import re
 from time import monotonic
+from typing import Any
 import uuid
 
 import httpx
 from fastapi import HTTPException
+from fastapi.encoders import jsonable_encoder
 
 from app import db, rag
 from app.answer_evaluation import (
@@ -30,6 +32,67 @@ from platform_app.reflections_transport import request_reflections
 from platform_app.schemas import ReflectionConfig
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _socratic_service_base() -> str | None:
+    """Return the private Socratic engine URL for gateway processes only."""
+    if os.getenv("SOCRATIC_SERVICE_MODE", "").lower() in {"1", "true", "yes"}:
+        return None
+    value = os.getenv("SOCRATIC_URL", "").strip().rstrip("/")
+    return value or None
+
+
+def _socratic_service_headers() -> dict[str, str]:
+    token = os.environ.get("PLATFORM_SERVICE_TOKEN", "")
+    if not token:
+        raise HTTPException(503, "Configure PLATFORM_SERVICE_TOKEN before using the Socratic service.")
+    return {"X-Platform-Service": token}
+
+
+def _socratic_service_error(response: httpx.Response) -> HTTPException:
+    detail = ""
+    if response.status_code < 500:
+        try:
+            detail = str(response.json().get("detail") or "")
+        except (ValueError, AttributeError):
+            pass
+    status_code = response.status_code if 400 <= response.status_code < 500 else 502
+    return HTTPException(status_code, detail or "The Socratic service could not complete this action. Please retry.")
+
+
+def _call_socratic_service(path: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Use the isolated Socratic service when deployment config enables it."""
+    base = _socratic_service_base()
+    if base is None:
+        return None
+    try:
+        with httpx.Client(timeout=180, headers=_socratic_service_headers()) as client:
+            response = client.post(base + path, json=jsonable_encoder(payload))
+    except httpx.HTTPError as exc:
+        raise HTTPException(503, "The Socratic service is unavailable. Please retry shortly.") from exc
+    if response.is_error:
+        raise _socratic_service_error(response)
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise HTTPException(502, "The Socratic service returned an invalid response.") from exc
+
+
+async def _call_socratic_service_async(path: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    base = _socratic_service_base()
+    if base is None:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=180, headers=_socratic_service_headers()) as client:
+            response = await client.post(base + path, json=jsonable_encoder(payload))
+    except httpx.HTTPError as exc:
+        raise HTTPException(503, "The Socratic service is unavailable. Please retry shortly.") from exc
+    if response.is_error:
+        raise _socratic_service_error(response)
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise HTTPException(502, "The Socratic service returned an invalid response.") from exc
 
 
 def call(tool, method, path, **kwargs):
@@ -349,6 +412,12 @@ def start(assignment, attempt):
             opening = ""
         return {"messages": [{"role": "assistant", "content": opening or config["scenario"]}]}
     if assignment["tool"] == "socratic":
+        remote = _call_socratic_service("/internal/platform/start", {
+            "assignment": assignment,
+            "attempt": attempt,
+        })
+        if remote is not None:
+            return remote
         prompt = config.get("prompt", "").strip()
         state = {"pipeline_version": "local-socratic-v1", "phase": "teaching", "learning_topic": prompt or None}
         guided = config.get("guidance_mode", "guided" if config.get("learning_steps") else "basic") == "guided"
@@ -541,6 +610,14 @@ def _save_misconception_context(state, context, answer, resolution_status):
 
 async def public_socratic_message(content, history, engine_state, learning_topic=None):
     """Run the Socratic teaching pipeline without private course retrieval."""
+    remote = await _call_socratic_service_async("/internal/platform/public-message", {
+        "content": content,
+        "history": history,
+        "engine_state": engine_state,
+        "learning_topic": learning_topic,
+    })
+    if remote is not None:
+        return remote["result"], remote["learning_topic"]
     state = dict(engine_state or {})
     classification = await classify_message(content, history, learning_topic=learning_topic)
     topic = learning_topic or (
@@ -1004,6 +1081,13 @@ async def _socratic_reflection(assignment, attempt, reflection):
 def reflect(assignment, attempt, reflection):
     if assignment["tool"] != "socratic":
         raise HTTPException(422, "This assignment does not use a Socratic learning summary.")
+    remote = _call_socratic_service("/internal/platform/reflect", {
+        "assignment": assignment,
+        "attempt": attempt,
+        "reflection": reflection,
+    })
+    if remote is not None:
+        return remote
     return asyncio.run(_socratic_reflection(assignment, attempt, reflection))
 
 def message(
@@ -1020,6 +1104,17 @@ def message(
     if tool == "debate":
         return {"reply": asyncio.run(debate.generate_reply(cfg["scenario"], attempt["messages"], content))}
     if tool == "socratic":
+        remote = _call_socratic_service("/internal/platform/message", {
+            "assignment": assignment,
+            "attempt": attempt,
+            "content": content,
+            "request_id": request_id,
+            "clarification_index": clarification_index,
+            "concept_check_option": concept_check_option,
+            "clarification_text": clarification_text,
+        })
+        if remote is not None:
+            return remote
         return asyncio.run(
             _socratic_message(
                 assignment,
@@ -1057,6 +1152,12 @@ def complete(assignment, attempt):
     tool = assignment["tool"]
     count = sum(m["role"] == "user" for m in attempt["messages"])
     if tool == "socratic":
+        remote = _call_socratic_service("/internal/platform/complete", {
+            "assignment": assignment,
+            "attempt": attempt,
+        })
+        if remote is not None:
+            return remote
         state = attempt["engine_state"].get("socratic") or {}
         if state.get("phase") != "ready_to_submit" or not state.get("completion_summary"):
             raise HTTPException(422, "Finish the teaching sequence and write your own learning summary before submitting.")

@@ -1,20 +1,18 @@
-# Free-tier Render Blueprint deployment
+# Combined Render Blueprint deployment
 
-The root `render.yaml` provisions three **free web services**: platform,
-Reflections, and SDL. It provisions no paid instances, persistent disks, or
-Render database. The frontend is bundled into the platform.
-
-Free services cannot receive private-network requests. The gateway therefore
-calls the backends through their public HTTPS hostnames, populated automatically
-from Render's `RENDER_EXTERNAL_HOSTNAME`. The shared generated
-`PLATFORM_SERVICE_TOKEN` authenticates backend requests; SDL runs in
-platform-only mode and Reflections protects all routes except health checks.
+The root `render.yaml` provisions one starter Render web service. It bundles
+the frontend and runs the platform gateway plus private Socratic, Reflections,
+and SDL engine processes on loopback ports. It provisions no persistent disk or
+Render database. The shared `PLATFORM_SERVICE_TOKEN` authenticates internal
+engine requests, and the platform health check reports the health of all four
+processes.
 
 ## Deploy
 
 1. Push the changes to the GitHub branch Render will use.
 2. Choose **New → Blueprint**, select the repository and branch, and use root
-   `render.yaml`. Confirm all three instance plans are **Free**, with no disks.
+   `render.yaml`. Confirm the instance plan and no-disk configuration before
+   creating the Blueprint.
 3. Supply an existing free-tier PostgreSQL/pgvector `DATABASE_URL`,
    `GROQ_API_KEY`, and, if using existing OpenAI embedding features,
    `OPENAI_API_KEY` for `cluball-reflections`. The other services reference these
@@ -31,11 +29,10 @@ platform-only mode and Reflections protects all routes except health checks.
 
 ## Free-tier limits
 
-- Render provides 750 running-instance hours per workspace per month, shared by
-  these three services and any other free services. Three continuously running
-  services would exhaust that quota; idle services sleep after 15 minutes.
-- Cold starts can delay or fail the first activity request. No keep-alive jobs
-  are configured. Retry after the backend has finished waking up.
+- The configured starter instance hosts all four processes. Check Render's
+  current pricing and memory limits before deployment.
+- A process health check does not prove model-provider or document-parser
+  availability. Retry a request after a cold start has completed.
 - All local files are ephemeral, including SDL uploads, model downloads, and
   pipeline traces. PostgreSQL records persist at your external database, but
   records referencing lost local files do not make those files durable.
@@ -50,15 +47,14 @@ See https://render.com/docs/free for Render's current limits.
 
 ## Existing services and database
 
-Existing free services named `cluball-platform` and `cluball-reflections` can be
-adopted by the Blueprint. No paid resources have been created by these local
-edits. If an earlier paid Blueprint was deployed, changing this file does not
-prove those resources or disks were removed: review them in Render manually.
+Existing services can be adopted by the Blueprint. Changing this file does not
+modify live Render resources. Review the Render dashboard before replacing or
+removing an existing deployment.
 
 Database migrations still run at startup. Reconcile legacy/shared RAG table
 conflicts before deployment. Reflections needs the platform tables initialized;
 if deploying against a fresh database, retry it after the platform migration.
-Deployments are per service, not atomic.
+All child engines restart with the combined service.
 
 Validation covers the published Render JSON schema, service references, and
 free-only resource configuration. Hosted builds, memory usage, provider calls,

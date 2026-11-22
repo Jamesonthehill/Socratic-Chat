@@ -57,6 +57,8 @@ services:
         value: http://127.0.0.1:8002
       - key: SELF_DIRECTED_LEARNING_URL
         value: http://127.0.0.1:8100
+      - key: SOCRATIC_URL
+        value: http://127.0.0.1:8003
       - key: AUTH_MODE
         value: open
       - key: ALLOW_PASSWORD_LOGIN

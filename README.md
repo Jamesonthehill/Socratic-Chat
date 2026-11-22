@@ -13,16 +13,17 @@ docker compose up --build
 
 Open **http://localhost:8000**. Login and account setup use the existing Socratic authentication flow, then redirect to `/platform/`.
 
-Compose starts the public platform, private Reflections and SDL services, and uses `DOCKER_DATABASE_URL` for PostgreSQL/pgvector. Only the platform exposes a host port. The `isolated-db` profile supplies an optional local PostgreSQL service; it is not enabled by default.
+Compose starts the public platform gateway plus private Socratic, Reflections, and SDL services. The gateway keeps authentication, assignment state, and the shared frontend. Each learning engine receives token-protected internal requests and uses `DOCKER_DATABASE_URL` for PostgreSQL/pgvector. Only the platform exposes a host port. The `isolated-db` profile supplies an optional local PostgreSQL service; it is not enabled by default.
 
 ## Personal Render and domain deployment
 
-The root `render.yaml` creates the public platform plus separate Reflections and
-Self Directed Learning services and a generated internal service token. It does
-not provision a Render database. Set the same Supabase PostgreSQL `DATABASE_URL`
-privately in the Render dashboard for all three services; do not put the URL or
-password in this repository. Render shares `PLATFORM_SERVICE_TOKEN` across the
-services. In Render, create a Blueprint from this repository and enter the
+The root `render.yaml` creates the public platform and starts Socratic,
+Reflections, and Self Directed Learning as private engine processes in the
+combined container. It does not provision a Render database. Set the Supabase
+PostgreSQL `DATABASE_URL` privately in the Render dashboard; do not put the URL
+or password in this repository. The combined process shares
+`PLATFORM_SERVICE_TOKEN` across the engines. In Render, create a Blueprint from
+this repository and enter the
 prompted model-provider and LTI secrets. The personal Blueprint starts with
 open/password authentication; add `GOOGLE_CLIENT_ID` and change `AUTH_MODE` to
 `school_google` only when Google OAuth is configured. Before switching an
@@ -159,7 +160,7 @@ For Reflections, **Start assignment** (or **Resume assignment** / **View reflect
 
 ## Local development
 
-Python 3.12, Node 22+, and PostgreSQL are suitable for this workspace. The projects run in separate Python processes because both Socratic and Reflections use the package name `app`.
+Python 3.12, Node 22+, and PostgreSQL are suitable for this workspace. The gateway and each learning engine run in separate Python processes. Socratic uses a private service on port 8003, Reflections uses 8002, and SDL uses 8100.
 
 The repository-root `.python-version` pins Python 3.12 for native deployments
 such as Render. Keep the Render service root at the repository root when
@@ -237,11 +238,11 @@ REFLECTIONS_PYTHON="$PWD/reflections-app/.venv/bin/python" \
   .venv/bin/python scripts/run_local.py
 ```
 
-Open http://127.0.0.1:8000. The runner starts the gateway on 8000, Reflections on 8002, and SDL on 8100, all bound to loopback. Stopping it stops all three. Install dependencies first and use absolute paths for the optional interpreter overrides.
+Open http://127.0.0.1:8000. The runner starts the gateway on 8000, Socratic on 8003, Reflections on 8002, and SDL on 8100. All engine services bind to loopback. Stopping it stops all four. Install dependencies first and use absolute paths for the optional interpreter overrides.
 
 ### Docker Compose
 
-The Compose deployment starts the platform gateway, Reflections, and SDL using the PostgreSQL/pgvector database configured in `DOCKER_DATABASE_URL`:
+The Compose deployment starts the platform gateway, Socratic, Reflections, and SDL using the PostgreSQL/pgvector database configured in `DOCKER_DATABASE_URL`:
 
 ```bash
 docker compose -f compose.yaml up --build

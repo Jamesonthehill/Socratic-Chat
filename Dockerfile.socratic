@@ -1,0 +1,19 @@
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PYTHONPATH=/workspace/Socratic-Chat/backend:/workspace
+
+WORKDIR /workspace
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends antiword catdoc \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./
+COPY Socratic-Chat/backend/requirements.txt Socratic-Chat/backend/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY platform_app/ platform_app/
+COPY Socratic-Chat/backend/app/ Socratic-Chat/backend/app/
+
+EXPOSE 8003
+CMD ["uvicorn", "platform_app.socratic_service:app", "--host", "0.0.0.0", "--port", "8003"]

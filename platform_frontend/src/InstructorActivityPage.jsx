@@ -63,6 +63,11 @@ export default function InstructorActivityPage() {
   const config=item.config || {};
   const progressValue=value=>item.progress_unavailable ? "Not available" : value;
   const DetailShell = item.tool === 'self-directed-learning' ? 'div' : Fragment;
+  if (showPreview && item.tool === "socratic") return <>
+    <div className="activity-detail-nav"><Link className="back" to="/professor">← All assignments</Link>
+      <button type="button" className="secondary" aria-expanded="true" aria-controls="student-activity-preview" onClick={() => setShowPreview(false)}>Hide student preview</button></div>
+    <StudentActivityPreview item={item} files={files} />
+  </>;
   return <DetailShell {...(item.tool === 'self-directed-learning' ? {className:'sdl-teaching-ui sdl-instructor-ui'} : {})}>
     <div className="activity-detail-nav"><Link className="back" to="/professor">← All assignments</Link><button type="button" className="secondary" aria-expanded={showPreview} aria-controls="student-activity-preview" onClick={()=>setShowPreview(value=>!value)}>{showPreview ? "Hide student preview" : "Preview as student"}</button></div>
     <div className="page-heading"><div><p className="context">{TOOLS[item.tool]?.name || item.tool}</p><h1>{item.title}</h1></div><Badge value={item.status}/></div>

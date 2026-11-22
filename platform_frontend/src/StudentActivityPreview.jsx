@@ -1,6 +1,29 @@
-import { useState } from "react";
-import { date, TOOLS } from "./api";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { api, date, TOOLS } from "./api";
 import { TutorMessage } from "./LessonPreview";
+import { Notice } from "./ui";
+const StudentWorkspace = lazy(() => import("./StudentWorkspace"));
+
+function SocraticStudentPreview({ item }) {
+  const [preview, setPreview] = useState(null);
+  const [error, setError] = useState("");
+  const [reset, setReset] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setPreview(null); setError("");
+    api(`/platform/assignments/${item.id}/student-preview`)
+      .then(value => { if (active) setPreview(value); })
+      .catch(failure => { if (active) setError(failure.message); });
+    return () => { active = false; };
+  }, [item.id]);
+  return <section id="student-activity-preview" className="student-workspace-preview" aria-label="Student-view preview">
+    <div className="student-workspace-preview-note"><p>Student preview · Read only. No student work is saved.</p>
+      <button type="button" className="secondary compact" disabled={!preview} onClick={() => setReset(value => value + 1)}>Reset preview</button></div>
+    {error ? <Notice error={error} /> : preview
+      ? <Suspense fallback={<p role="status">Opening student workspace…</p>}><StudentWorkspace key={`${item.id}-${reset}`} preview={preview} /></Suspense>
+      : <p role="status">Opening student workspace…</p>}
+  </section>;
+}
 
 function openingFor(item) {
   const config = item.student_config || item.config || {};
@@ -35,6 +58,7 @@ export function StudentActivityPreview({ item, files = [] }) {
   const config = item.student_config || item.config || {};
   const opening = openingFor(item);
   const isSdl = item.tool === "self-directed-learning";
+  if (item.tool === "socratic") return <SocraticStudentPreview item={item} />;
   return (
     <section id="student-activity-preview" className="student-activity-preview" aria-label="Student-view preview">
       <p className="context">Student-view preview · read only</p>

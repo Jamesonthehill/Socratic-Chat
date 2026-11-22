@@ -649,7 +649,7 @@ function EvidenceDrawer({
         <span>Published assignment snapshot</span>
       </div>
       {!diagram && <div className="evidence-diagram-actions">
-        <button type="button" className="secondary compact" onClick={createDiagram} disabled={diagramBusy}>
+        <button type="button" className="secondary compact" onClick={createDiagram} disabled={diagramBusy || !assignmentId}>
           {diagramBusy ? "Making visual steps…" : "Make visual steps"}
         </button>
       </div>}
@@ -935,7 +935,7 @@ function StepDifficultyDialog({ busy, error, stepTitle, onChoose, onClose }) {
   </dialog>;
 }
 
-export default function StudentWorkspace({ user }) {
+export default function StudentWorkspace({ user, preview = null }) {
   const [difficultyOpen, setDifficultyOpen] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentComplete, setConsentComplete] = useState(false);
@@ -1074,6 +1074,12 @@ export default function StudentWorkspace({ user }) {
     setFinalFeedbackBusy(false);
     setSocraticGuideOpen(false);
     pending.current = null;
+    if (preview) {
+      setAssignment(preview.assignment);
+      setAttempt(null);
+      setLoaded(true);
+      return () => { active = false; };
+    }
     Promise.all([
       api(`/platform/assignments/${id}`),
       api(`/platform/assignments/${id}/attempt`),
@@ -1090,7 +1096,7 @@ export default function StudentWorkspace({ user }) {
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [id, preview]);
   useEffect(() => {
     if (assignment?.tool !== "socratic") return;
     let active = true;
@@ -1270,6 +1276,13 @@ export default function StudentWorkspace({ user }) {
     };
   }, [id, assignment?.tool]);
   async function perform(path, body, onResult) {
+    if (preview) {
+      if (path !== "start") return false;
+      const result = structuredClone(preview.opening);
+      setAttempt(result);
+      onResult?.(result);
+      return true;
+    }
     setBusy(true);
     setError("");
     try {
@@ -1574,9 +1587,9 @@ export default function StudentWorkspace({ user }) {
           <strong>Mission {String(activeLearningStep + 1).padStart(2, "0")} unlocked!</strong>
         </div>, document.body,
       )}
-      <Link className="back" to="/student">
+      {!preview && <Link className="back" to="/student">
         ← Dashboard
-      </Link>
+      </Link>}
       <div className="page-heading">
         <div>
           <p className="context">{tool.name}</p>
@@ -2314,7 +2327,7 @@ export default function StudentWorkspace({ user }) {
                     ref={inputRef}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    disabled={busy}
+                    disabled={busy || Boolean(preview)}
                     rows={milestone ? 7 : 3}
                     maxLength={20000}
                     placeholder={
@@ -2339,7 +2352,7 @@ export default function StudentWorkspace({ user }) {
                         ? "Submitting completes this assignment."
                         : "Enter to send · Shift + Enter for a new line"}
                     </span>
-                    <button disabled={busy || !message.trim()}>
+                    <button disabled={busy || Boolean(preview) || !message.trim()}>
                       {milestone ? "Submit reflection" : "Send message"}
                     </button>
                   </div>
@@ -2350,7 +2363,7 @@ export default function StudentWorkspace({ user }) {
         </section>
       </div>
       <EvidenceDrawer
-        assignmentId={id}
+        assignmentId={preview ? null : id}
         evidence={selectedEvidence}
         width={evidenceWidth}
         onClose={() => setSelectedEvidence(null)}

@@ -4744,6 +4744,8 @@ input[type="file"][hidden] {
 }
 .student-activity-preview h2 { margin: 4px 0 8px; }
 .student-preview-meta { display: flex; flex-wrap: wrap; gap: 10px 20px; color: var(--muted); margin: 16px 0; }
+.student-workspace-preview-note { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 16px; color: var(--muted); font-size: .85rem; }
+.student-workspace-preview-note p { margin: 0; }
 .student-preview-layout { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr); gap: 16px; }
 .student-preview-assignment,
 .student-preview-chat {

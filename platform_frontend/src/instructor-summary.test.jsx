@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import {api} from "./api";
 import InstructorActivityPage, { AnalyticsPage, progressMetrics } from "./InstructorActivityPage";
+vi.mock("./PdfMaterialPreview", () => ({default: () => <div>PDF viewer</div>}));
 vi.mock("./courseContext",()=>({cachedCourseContext:()=>null,loadCourseContext:async()=>({course_id:"course1"})}));
 vi.mock("./api",async original=>({...await original(),api:vi.fn(async path=>{
  if(path.includes("/documents"))return {files:[]};
@@ -60,4 +61,31 @@ test("draft editor reuses the loaded assignment instead of fetching it twice",as
  expect(await screen.findByLabelText("Assignment title")).toHaveValue("Saved draft");
  expect(screen.getByLabelText("Learning focus")).toHaveValue("Saved focus");
  expect(api.mock.calls.filter(([path])=>path==="/platform/assignments/draft1")).toHaveLength(1);
+});
+
+test('Socratic Preview as student opens the shared chat workspace and closes back to the instructor summary', async () => {
+ const original = api.getMockImplementation();
+ const activity = {id:'sc-preview',course_id:'course1',tool:'socratic',status:'published',title:'Inspect feedback',
+   config:{learning_steps:[{title:'Inspect evidence',goal:'Use evidence',scenario:'Students report a slow form.',question:'What should the team inspect?'}]},students:[]};
+ const preview = {assignment:{...activity,student_config:{learning_steps:activity.config.learning_steps}},opening:{id:'preview-only',status:'in_progress',
+   engine_state:{socratic:{phase:'teaching',learning_step_index:0,next_thinking_step:'What should the team inspect?'}},
+   messages:[{role:'assistant',content:'Students report a slow form.',next_thinking_step:'What should the team inspect?'}]}};
+ api.mockImplementation(async (path, options) => {
+   if(path.endsWith('/student-preview')) return preview;
+   if(path.endsWith('/materials')) return {materials:[]};
+   if(path==='/platform/assignments/sc-preview') return activity;
+   return original(path, options);
+ });
+ try {
+   render(<MemoryRouter initialEntries={['/professor/activities/sc-preview']}><Routes><Route path='/professor/activities/:id' element={<InstructorActivityPage/>}/></Routes></MemoryRouter>);
+   const user=userEvent.setup();
+   expect(await screen.findByRole('heading',{name:'At a glance'})).toBeInTheDocument();
+   await user.click(screen.getByRole('button',{name:'Preview as student'}));
+   expect(await screen.findByRole('button',{name:'Start assignment'})).toBeInTheDocument();
+   expect(screen.getByRole('heading',{name:'Your learning path'})).toBeInTheDocument();
+   expect(screen.queryByRole('heading',{name:'At a glance'})).not.toBeInTheDocument();
+   await user.click(screen.getByRole('button',{name:'Hide student preview'}));
+   expect(await screen.findByRole('heading',{name:'At a glance'})).toBeInTheDocument();
+   expect(screen.queryByRole('region',{name:'Student-view preview'})).not.toBeInTheDocument();
+ } finally { api.mockImplementation(original); }
 });

@@ -244,6 +244,29 @@ def public_attempt(attempt):
     return {k: v for k, v in attempt.items() if k != "processed_requests"} if attempt else None
 
 
+@router.get("/assignments/{assignment_id}/student-preview")
+def student_preview(assignment_id: UUID, response: Response, account=Depends(professor)):
+    """Render the real student opening without inserting or changing an attempt."""
+    response.headers["Cache-Control"] = "no-store"
+    with store.connection() as conn:
+        assignment = get_assignment(conn, assignment_id, account, manage=True)
+    if assignment["tool"] != "socratic" or assignment["status"] != "published":
+        raise HTTPException(409, "Publish a Socratic assignment before previewing it.")
+    preview_id = uuid5(NAMESPACE_URL, f"student-preview:{assignment_id}:{account['user_id']}")
+    state = engines.start(assignment, {"id": preview_id})
+    messages = state.pop("messages", [])
+    steps = ((assignment.get("snapshot") or {}).get("config") or {}).get("learning_steps") or []
+    if messages:
+        if steps and (source := socratic_step_source(assignment, steps[0])):
+            messages[0]["step_source"] = source
+        if question := state.get("socratic", {}).get("next_thinking_step"):
+            messages[0]["next_thinking_step"] = question
+    return {"assignment": public_assignment(assignment), "opening": {
+        "id": str(preview_id), "status": "in_progress", "messages": messages,
+        "engine_state": state, "result": None,
+    }}
+
+
 def recipients(conn, assignment_id, body):
     conn.execute("DELETE FROM assignment_recipients_platform WHERE assignment_id=%s", (assignment_id,))
     if body.audience == "selected":

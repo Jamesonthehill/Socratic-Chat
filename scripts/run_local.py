@@ -25,9 +25,12 @@ def main():
             raise SystemExit(f'Set {key} in .env first.')
     if not (ROOT / 'platform_frontend/dist/index.html').exists():
         raise SystemExit('Build the UI first: cd platform_frontend && npm ci && npm run build')
-    # Separate processes avoid the two projects' conflicting `app` package names.
+    # Separate processes isolate each learning engine from the common gateway.
+    platform_env = {**os.environ, 'SOCRATIC_URL': 'http://127.0.0.1:8003'}
+    socratic_env = {**os.environ, 'SOCRATIC_SERVICE_MODE': 'true'}
     configs = [
-        (ROOT, sys.executable, 'platform_app.main:app', '8000', os.environ.copy()),
+        (ROOT, sys.executable, 'platform_app.main:app', '8000', platform_env),
+        (ROOT, sys.executable, 'platform_app.socratic_service:app', '8003', socratic_env),
         (ROOT / 'reflections-app/backend', os.getenv('REFLECTIONS_PYTHON', sys.executable), 'app.main:app', '8002', {**os.environ, 'DATABASE_URL': os.environ['REFLECTIONS_DATABASE_URL']}),
         (ROOT / 'self-directed-learning/backend', os.getenv('SDL_PYTHON', sys.executable), 'app.main:app', '8100', os.environ.copy()),
     ]

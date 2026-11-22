@@ -1,7 +1,7 @@
 # Free-tier Render Blueprint deployment
 
-The root `render.yaml` provisions three **free web services**: platform,
-Reflections, and SDL. It provisions no paid instances, persistent disks, or
+The root `render.yaml` provisions four **free web services**: platform,
+Socratic, Reflections, and SDL. It provisions no paid instances, persistent disks, or
 Render database. The frontend is bundled into the platform.
 
 Free services cannot receive private-network requests. The gateway therefore
@@ -14,7 +14,7 @@ platform-only mode and Reflections protects all routes except health checks.
 
 1. Push the changes to the GitHub branch Render will use.
 2. Choose **New → Blueprint**, select the repository and branch, and use root
-   `render.yaml`. Confirm all three instance plans are **Free**, with no disks.
+   `render.yaml`. Confirm all four instance plans are **Free**, with no disks.
 3. Supply an existing free-tier PostgreSQL/pgvector `DATABASE_URL`,
    `GROQ_API_KEY`, and, if using existing OpenAI embedding features,
    `OPENAI_API_KEY` for `cluball-reflections`. The other services reference these
@@ -32,7 +32,7 @@ platform-only mode and Reflections protects all routes except health checks.
 ## Free-tier limits
 
 - Render provides 750 running-instance hours per workspace per month, shared by
-  these three services and any other free services. Three continuously running
+  these four services and any other free services. Four continuously running
   services would exhaust that quota; idle services sleep after 15 minutes.
 - Cold starts can delay or fail the first activity request. No keep-alive jobs
   are configured. Retry after the backend has finished waking up.

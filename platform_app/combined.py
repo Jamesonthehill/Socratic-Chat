@@ -11,6 +11,7 @@ from platform_app.main import app
 def combined_health():
     statuses = {"platform": True}
     for service, url in (
+        ("socratic", "http://127.0.0.1:8003/health"),
         ("reflections", "http://127.0.0.1:8002/health"),
         ("sdl", "http://127.0.0.1:8100/api/health"),
     ):

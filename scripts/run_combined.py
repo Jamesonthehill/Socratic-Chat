@@ -9,6 +9,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 REFLECTIONS_PORT = "8002"
 SDL_PORT = "8100"
+SOCRATIC_PORT = "8003"
 
 
 def main():
@@ -16,10 +17,13 @@ def main():
         **os.environ,
         "REFLECTIONS_URL": f"http://127.0.0.1:{REFLECTIONS_PORT}",
         "SELF_DIRECTED_LEARNING_URL": f"http://127.0.0.1:{SDL_PORT}",
+        "SOCRATIC_URL": f"http://127.0.0.1:{SOCRATIC_PORT}",
         "ADAPTIVE_PLATFORM_ONLY": "true",
     }
+    socratic_env = {**env, "SOCRATIC_SERVICE_MODE": "true"}
     services = [
         (sys.executable, ROOT, "platform_app.combined:app", "0.0.0.0", env.get("PORT") or "8000"),
+        (sys.executable, ROOT, "platform_app.socratic_service:app", "127.0.0.1", SOCRATIC_PORT, socratic_env),
         ("/opt/reflections/bin/python", ROOT / "reflections-app/backend", "app.main:app", "127.0.0.1", REFLECTIONS_PORT),
         ("/opt/sdl/bin/python", ROOT / "self-directed-learning/backend", "app.main:app", "127.0.0.1", SDL_PORT),
     ]
@@ -33,10 +37,11 @@ def main():
     signal.signal(signal.SIGINT, stop)
     children = []
     try:
-        for python, cwd, app, host, port in services:
+        for service in services:
+            python, cwd, app, host, port, *service_env = service
             process = subprocess.Popen(
                 [python, "-m", "uvicorn", app, "--host", host, "--port", port, "--workers", "1"],
-                cwd=cwd, env=env,
+                cwd=cwd, env=service_env[0] if service_env else env,
             )
             children.append((cwd.name, process))
         while not stopping:

@@ -11,7 +11,7 @@ from typing import Any
 from openai import BadRequestError, RateLimitError
 
 from app import db, settings
-from app.llm_client import chat_completion
+from app.llm_client import socratic_chat_completion as chat_completion
 from platform_app.schemas import SocraticStepCheck
 
 

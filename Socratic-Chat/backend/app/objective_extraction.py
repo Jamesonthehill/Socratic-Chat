@@ -10,7 +10,7 @@ from difflib import SequenceMatcher
 from typing import Any
 
 from app import db, settings
-from app.llm_client import chat_completion
+from app.llm_client import socratic_chat_completion as chat_completion
 from app.pipeline_logging import update_llm_request_snapshot, write_llm_request_snapshot
 
 

@@ -462,3 +462,30 @@ def test_continue_with_support_is_recorded_and_advances_without_mastery(monkeypa
         {"step_index": 0, "status": "continued_with_support"}]
     advanced = routes.next_socratic_step(assignment_id, account)
     assert advanced["engine_state"]["socratic"]["learning_step_index"] == 1
+
+
+def test_readiness_uses_groq_backup_when_openai_is_unavailable(monkeypatch):
+    from unittest.mock import AsyncMock
+    from app import llm_client
+
+    failure = RateLimitError('temporarily unavailable',
+        response=Response(429, request=Request('POST', 'https://api.openai.com/v1/chat/completions')),
+        body=None)
+    reply = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps({
+        'ready': True, 'observation': 'You explained why checking stock prevents an unnecessary payment',
+    })))])
+    completion = AsyncMock(side_effect=[failure, reply])
+    monkeypatch.setattr(llm_client, 'chat_completion', completion)
+    monkeypatch.setattr(step_check.settings, 'llm_client_config', lambda *_args: (
+        'OpenAI', 'test-primary', step_check.settings.OPENAI_API_BASE_URL, 'gpt-4.1-mini'))
+    monkeypatch.setattr(step_check.settings, 'GROQ_API_KEY', 'test-backup')
+    monkeypatch.setattr(step_check.settings, 'GROQ_MODEL', 'openai/gpt-oss-120b')
+    ready, observation = asyncio.run(step_check.assess_step_readiness(
+        {'goal': 'Check stock before payment'}, 'No payment if stock is missing.',
+        'Why check stock first?', [SimpleNamespace(text='Check ingredients before taking payment.')]))
+    assert ready is True
+    assert 'checking stock' in observation
+    assert completion.await_count == 2
+    assert completion.await_args_list[0].args[2]['model'] == 'gpt-4.1-mini'
+    assert completion.await_args_list[1].args[0] == 'test-backup'
+    assert completion.await_args_list[1].args[2]['model'] == 'openai/gpt-oss-120b'

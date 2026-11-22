@@ -17,7 +17,7 @@ async def chat_completion(api_key: str, base_url: str, request: dict[str, Any]) 
 
 
 async def socratic_chat_completion(api_key: str, base_url: str, request: dict[str, Any]) -> Any:
-    """Retry OpenAI tutor service failures once through the configured Groq account."""
+    """Retry OpenAI Socratic pipeline failures once through the configured Groq account."""
     from openai import APIConnectionError, APIStatusError
     from app import settings
     from app.pipeline_logging import log_event, write_llm_request_snapshot
@@ -31,7 +31,7 @@ async def socratic_chat_completion(api_key: str, base_url: str, request: dict[st
         if not openai_request or not settings.GROQ_API_KEY or not (retryable or isinstance(error, APIConnectionError)):
             raise
 
-        fallback = {**request, "model": "openai/gpt-oss-120b"}
+        fallback = {**request, "model": settings.GROQ_MODEL}
         # Groq's reasoning models use completion tokens and do not accept OpenAI's
         # verbosity and service tier parameters.
         token_limit = fallback.pop("max_tokens", None)

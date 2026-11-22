@@ -19,13 +19,13 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_API_BASE_URL = os.getenv("OPENAI_API_BASE_URL", "https://api.openai.com/v1")
 SOCRATIC_COMPLETION_MODEL = os.getenv("SOCRATIC_COMPLETION_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"
 RAG_MODEL = os.getenv("RAG_MODEL", "gpt-4.1-mini")
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").strip().lower()
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").strip().lower()
 SOCRATIC_TUTOR_PROVIDER = os.getenv("SOCRATIC_TUTOR_PROVIDER", "").strip().lower()
-SOCRATIC_TUTOR_MODEL = os.getenv("SOCRATIC_TUTOR_MODEL", "openai/gpt-oss-20b").strip()
+SOCRATIC_TUTOR_MODEL = os.getenv("SOCRATIC_TUTOR_MODEL", "openai/gpt-oss-120b" if SOCRATIC_TUTOR_PROVIDER == "groq" else "gpt-4.1-mini").strip()
 SOCRATIC_CLASSIFIER_PROVIDER = os.getenv("SOCRATIC_CLASSIFIER_PROVIDER", "").strip().lower()
 SOCRATIC_SETUP_PROVIDER = os.getenv("SOCRATIC_SETUP_PROVIDER", "").strip().lower()
 SOCRATIC_FEEDBACK_PROVIDER = os.getenv("SOCRATIC_FEEDBACK_PROVIDER", "").strip().lower()
-SOCRATIC_FEEDBACK_MODEL = os.getenv("SOCRATIC_FEEDBACK_MODEL", "openai/gpt-oss-20b").strip()
+SOCRATIC_FEEDBACK_MODEL = os.getenv("SOCRATIC_FEEDBACK_MODEL", "openai/gpt-oss-120b" if SOCRATIC_FEEDBACK_PROVIDER == "groq" else "gpt-4.1-mini").strip()
 SOCRATIC_LLM_PROVIDER = os.getenv("SOCRATIC_LLM_PROVIDER", "").strip().lower()
 DEBATE_LLM_PROVIDER = os.getenv("DEBATE_LLM_PROVIDER", "").strip().lower()
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "ollama")
@@ -154,6 +154,7 @@ def llm_client_config(role: str = "generation", *, provider_override: str | None
         "tutor": SOCRATIC_TUTOR_MODEL if SOCRATIC_TUTOR_PROVIDER == "openai" else "",
         "classifier": CLASSIFIER_MODEL,
         "evaluation": ANSWER_EVALUATION_MODEL,
+        "qualitative_feedback": SOCRATIC_FEEDBACK_MODEL if SOCRATIC_FEEDBACK_PROVIDER == "openai" else "",
     }.get(role, "")
     return "OpenAI", OPENAI_API_KEY, OPENAI_API_BASE_URL, role_model or RAG_MODEL
 

@@ -112,3 +112,47 @@ def test_prompt_instructions_are_redacted_and_only_visible_inside_the_instructor
         assert value not in response.text
     assert client.get('/api/platform/pipeline-logs', headers=roster['headers']['other_prof']).json()['traces'] == []
     assert client.get('/api/platform/pipeline-logs', headers=roster['headers']['student']).status_code == 403
+
+
+def test_instructor_can_generate_prompt_log_without_touching_student_attempts(client, roster, monkeypatch, tmp_path):
+    from app import pipeline_logging
+    from psycopg.types.json import Jsonb
+    assignment_id, _ = seed_trace(roster)
+    with store.connection() as conn:
+        conn.execute("UPDATE assignments_platform SET status='published', snapshot=%s WHERE id=%s",
+                     (Jsonb({'config': {}, 'chunks': []}), assignment_id))
+    monkeypatch.setattr(pipeline_logging.settings, 'PIPELINE_TRACE_FILE', tmp_path / 'test-traces.json')
+    monkeypatch.setattr(pipeline_logs.engines, 'start', lambda *_: {'messages': [{'role': 'assistant', 'content': 'What would you inspect?'}], 'socratic': {'phase': 'teaching'}})
+    def run(assignment, attempt, content, request_id):
+        assert attempt['instructor_preview'] is True
+        assert 'help understanding' in content
+        tokens = pipeline_logging.begin_trace('d' * 32, str(attempt['id']), diagnostic_assignment_id=str(assignment['id']))
+        try:
+            pipeline_logging.write_llm_request_snapshot('tutor-generation', 'OpenAI', {'model': 'gpt-6-luna',
+                'messages': [{'role': 'system', 'content': 'Ask one grounded Socratic question.'}]})
+        finally:
+            pipeline_logging.end_trace(tokens)
+        return {'reply': 'What information would help you decide?'}
+    monkeypatch.setattr(pipeline_logs.engines, 'message', run)
+    response = client.post('/api/platform/pipeline-logs/test', json={'assignment_id': str(assignment_id)}, headers=roster['headers']['prof'])
+    assert response.status_code == 200, response.text
+    assert response.json() == {'trace_id': 'd' * 32, 'failed': False}
+    result = client.get(f'/api/platform/pipeline-logs?assignment_id={assignment_id}', headers=roster['headers']['prof'])
+    trace = next(trace for trace in result.json()['traces'] if trace['trace_id'] == 'd' * 32)
+    assert trace['diagnostic'] is True
+    assert trace['events'][0]['prompt']['text'] == 'Ask one grounded Socratic question.'
+    assert client.get('/api/platform/pipeline-logs', headers=roster['headers']['other_prof']).json()['traces'] == []
+    with store.connection() as conn:
+        assert conn.execute('SELECT count(*) AS n FROM assignment_attempts_platform WHERE assignment_id=%s', (assignment_id,)).fetchone()['n'] == 1
+
+
+def test_diagnostic_requests_require_course_instructor_permission(client, roster, monkeypatch):
+    assignment_id, _ = seed_trace(roster)
+    def unexpected(*_):
+        raise AssertionError('Unauthorized requests must not run the tutor')
+    monkeypatch.setattr(pipeline_logs.engines, 'start', unexpected)
+    body = {'assignment_id': str(assignment_id)}
+    assert client.post('/api/platform/pipeline-logs/test', json=body).status_code == 401
+    assert client.post('/api/platform/pipeline-logs/test', json=body, headers=roster['headers']['student']).status_code == 403
+    assert client.post('/api/platform/pipeline-logs/test', json=body, headers=roster['headers']['other_prof']).status_code == 403
+    assert client.post('/api/platform/pipeline-logs/test', json=body, headers=roster['headers']['prof']).status_code == 409

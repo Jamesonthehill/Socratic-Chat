@@ -82,3 +82,31 @@ test('explains why older requests have no captured prompts', async () => {
   render(<PipelineLogs />);
   expect(await screen.findByText(/Prompt instructions were not captured for this request/)).toBeInTheDocument();
 });
+
+test('generates a separate instructor test and selects its prompt log', async () => {
+  const diagnostic = {...trace, trace_id: 'diagnostic-request', diagnostic: true, events: [{stage: '8', event: 'model_prompt', elapsed_ms: 20,
+    fields: {model: 'gpt-6-luna'}, prompt: {role: 'system', text: 'Use one focused Socratic question.', truncated: false}}]};
+  let generated = false;
+  api.mockImplementation(async (path, options) => {
+    if (path === '/platform/pipeline-logs/test') {
+      expect(options).toEqual({method: 'POST', body: {assignment_id: 'assignment-a'}});
+      generated = true; return {trace_id: diagnostic.trace_id, failed: false};
+    }
+    return {traces: generated ? [diagnostic, trace] : [trace]};
+  });
+  render(<PipelineLogs />);
+  await screen.findByRole('region', {name: 'Request details'});
+  await userEvent.click(screen.getByRole('button', {name: 'Generate test log'}));
+  const details = screen.getByRole('region', {name: 'Request details'});
+  expect(await within(details).findByText('View prompt instructions (system)')).toBeInTheDocument();
+  expect(within(details).getByText(/Instructor test using the published assignment/)).toBeInTheDocument();
+});
+
+test('shows diagnostic failure and keeps the previous logs', async () => {
+  render(<PipelineLogs />);
+  await screen.findByRole('region', {name: 'Request details'});
+  api.mockRejectedValueOnce(Error('The model service is unavailable.'));
+  await userEvent.click(screen.getByRole('button', {name: 'Generate test log'}));
+  expect(await screen.findByRole('alert')).toHaveTextContent('The model service is unavailable.');
+  expect(screen.getByRole('region', {name: 'Request details'})).toBeInTheDocument();
+});

@@ -25,7 +25,10 @@ export default function PipelineLogs() {
   const [error, setError] = useState("");
   const [updated, setUpdated] = useState(null);
   const [copied, setCopied] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testError, setTestError] = useState("");
   const refreshRef = useRef(null);
+  const testSelection = useRef(null);
   useEffect(() => {
     let active = true, pending = false;
     const refresh = async () => {
@@ -37,8 +40,11 @@ export default function PipelineLogs() {
         if (!Array.isArray(result.traces)) throw Error("The server returned an invalid log response.");
         if (active) {
           setTraces(result.traces);
-          setSelectedId(current => result.traces.some(trace => trace.trace_id === current)
-            ? current : result.traces[0]?.trace_id || "");
+          const preferred = testSelection.current && result.traces.some(trace => trace.trace_id === testSelection.current)
+            ? testSelection.current : null;
+          if (preferred) testSelection.current = null;
+          setSelectedId(current => preferred || (result.traces.some(trace => trace.trace_id === current)
+            ? current : result.traces[0]?.trace_id || ""));
           setUpdated(new Date());
           setError("");
         }
@@ -66,6 +72,18 @@ export default function PipelineLogs() {
     try { await navigator.clipboard.writeText(JSON.stringify(selected, null, 2)); setCopied("Log copied."); }
     catch { setCopied("Could not copy the log. Please try again."); }
   };
+  const generateTest = async () => {
+    if (!selected || testing) return;
+    setTesting(true); setTestError("");
+    try {
+      const result = await api("/platform/pipeline-logs/test", {method: "POST", body: {assignment_id: selected.assignment_id}});
+      testSelection.current = result.trace_id;
+      setAttentionOnly(false); setQuery("");
+      await refreshRef.current?.();
+      if (result.failed) setTestError("The test reported a pipeline error. Inspect its events below.");
+    } catch (failure) { setTestError(failure.message || "The test request could not run."); }
+    finally { setTesting(false); }
+  };
   return <div className="pipeline-logs-page">
     <header className="pipeline-logs-heading">
       <div><span className="pipeline-eyebrow">INSTRUCTOR WORKSPACE</span><h1>Pipeline logs</h1>
@@ -79,6 +97,10 @@ export default function PipelineLogs() {
     </header>
     <p className="help">Only requests from courses you teach are shown. Expand a prompt event to read the system and developer instructions. User-message payloads are excluded; emails and credentials are redacted. The server retains its latest 100 requests.</p>
     {error && <p className="notice error" role="alert">{error} {traces.length > 0 && "Showing the last available logs."}</p>}
+    <div className="pipeline-test-controls"><div><strong>Inspect prompts without switching accounts</strong>
+      <p className="help">Run one AI test on the selected assignment’s first learning step. No student work is saved.</p></div>
+      <button type="button" disabled={!selected || testing} onClick={generateTest}>{testing ? "Generating test log…" : "Generate test log"}</button></div>
+    {testError && <p className="notice error" role="alert">{testError}</p>}
     <div className="pipeline-log-filters">
       <label>Assignment<select value={assignment} onChange={event => setAssignment(event.target.value)}>
         <option value="">All assignments</option>{assignments.map(([id, title]) => <option key={id} value={id}>{title}</option>)}
@@ -96,6 +118,7 @@ export default function PipelineLogs() {
             className={`pipeline-request ${selected.trace_id === trace.trace_id ? "is-selected" : ""}`} onClick={() => { setSelectedId(trace.trace_id); setCopied(""); }}>
             <span className={`pipeline-status is-${trace.status}`}>{labels[trace.status] || trace.status}</span>
             <strong>{trace.assignment_title}</strong>
+            {trace.diagnostic && <small>Instructor test · No student work saved</small>}
             <span>{new Date(trace.started_at).toLocaleString()}</span>
             <small>{trace.step_index == null ? "Learning step not recorded" : `Learning step ${trace.step_index + 1}`} · {duration(trace.duration_ms)}</small>
             <code>{trace.trace_id.slice(0, 12)}</code>
@@ -105,6 +128,7 @@ export default function PipelineLogs() {
           <header><div><h2>{selected.assignment_title}</h2><p className="help">{selected.course_title} · {duration(selected.duration_ms)}</p></div>
             <button type="button" className="secondary" onClick={copyLog}>Copy log</button></header>
           <p className="pipeline-request-id">Request <code>{selected.trace_id}</code></p>
+          {selected.diagnostic && <p className="help">Instructor test using the published assignment. This is separate from student attempts.</p>}
           <div className="pipeline-models">{models.map(model => <span key={model}>{model}</span>)}</div>
           {!selected.events.some(event => event.prompt) && <p className="help">Prompt instructions were not captured for this request. Send a new message in the assignment to see its prompts.</p>}
           {copied && <p role="status">{copied}</p>}

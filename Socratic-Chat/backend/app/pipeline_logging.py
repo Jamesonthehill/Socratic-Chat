@@ -54,7 +54,8 @@ _SECRET_PATTERN = re.compile(
 )
 
 
-def begin_trace(trace_id: str, conversation_id: str | None = None) -> tuple[Token, Token, Token]:
+def begin_trace(trace_id: str, conversation_id: str | None = None, *,
+                diagnostic_assignment_id: str | None = None) -> tuple[Token, Token, Token]:
     with _trace_lock:
         _trace_records[trace_id] = {
             "trace_id": trace_id,
@@ -62,6 +63,8 @@ def begin_trace(trace_id: str, conversation_id: str | None = None) -> tuple[Toke
             "started_at": datetime.now(timezone.utc).isoformat(),
             "events": [],
         }
+        if diagnostic_assignment_id is not None:
+            _trace_records[trace_id]["diagnostic_assignment_id"] = str(diagnostic_assignment_id)
         _recent_traces.append(_trace_records[trace_id])
         retained_ids = {record["trace_id"] for record in _recent_traces}
         for retained_trace_id in tuple(_trace_records):

@@ -772,7 +772,9 @@ async def _socratic_message(
         )
     if state.get("phase") in {"awaiting_reflection", "ready_to_submit"}:
         raise HTTPException(409, "Write your learning summary, then submit this assignment.")
-    trace = begin_trace(uuid.uuid4().hex, str(attempt["id"]))
+    trace = begin_trace(uuid.uuid4().hex, str(attempt["id"]), **(
+        {"diagnostic_assignment_id": str(assignment["id"])} if attempt.get("instructor_preview") is True else {}
+    ))
     started = monotonic()
     try:
         topic = state.get("learning_topic")

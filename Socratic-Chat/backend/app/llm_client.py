@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 
@@ -9,7 +10,7 @@ def prepare_chat_request(request: dict[str, Any]) -> dict[str, Any]:
     if not str(prepared.get("model", "")).startswith("gpt-6-luna"):
         return prepared
     # Luna's Chat Completions tool calling requires reasoning to be disabled.
-    effort = "none" if prepared.get("tools") else prepared.get("reasoning_effort", "low")
+    effort = "none" if prepared.get("tools") else prepared.get("reasoning_effort", "medium")
     prepared["reasoning_effort"] = effort
     if effort != "none":
         for key in ("temperature", "top_p", "top_logprobs", "logprobs"):
@@ -19,7 +20,7 @@ def prepare_chat_request(request: dict[str, Any]) -> dict[str, Any]:
         prepared.setdefault("max_completion_tokens", tokens)
     if effort != "none" and "max_completion_tokens" in prepared:
         # Reasoning shares this budget with the visible/structured answer.
-        prepared["max_completion_tokens"] = max(2048, prepared["max_completion_tokens"])
+        prepared["max_completion_tokens"] = max(4096, prepared["max_completion_tokens"])
     return prepared
 
 
@@ -29,7 +30,10 @@ async def chat_completion(api_key: str, base_url: str, request: dict[str, Any]) 
 
     client = AsyncOpenAI(api_key=api_key, base_url=base_url)
     try:
-        return await client.chat.completions.create(**prepare_chat_request(request))
+        prepared = prepare_chat_request(request)
+        logging.getLogger(__name__).info("LLM request model=%s reasoning_effort=%s",
+                                        prepared.get("model"), prepared.get("reasoning_effort", "not set"))
+        return await client.chat.completions.create(**prepared)
     finally:
         close = getattr(client, "close", None)
         if close is not None:

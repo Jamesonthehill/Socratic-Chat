@@ -35,8 +35,8 @@ class LunaRequestTests(unittest.TestCase):
         original = {"model": "gpt-6-luna", "temperature": 0, "top_p": .8,
                     "max_tokens": 320, "response_format": schema}
         result = prepare_chat_request(original)
-        self.assertEqual(result["reasoning_effort"], "low")
-        self.assertGreaterEqual(result["max_completion_tokens"], 2048)
+        self.assertEqual(result["reasoning_effort"], "medium")
+        self.assertGreaterEqual(result["max_completion_tokens"], 4096)
         self.assertEqual(result["response_format"], schema)
         self.assertNotIn("temperature", result)
         self.assertNotIn("top_p", result)

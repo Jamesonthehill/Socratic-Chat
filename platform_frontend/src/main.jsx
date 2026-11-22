@@ -29,6 +29,7 @@ import InstructorActivityPage, {
 } from "./InstructorActivityPage";
 import { loadCourseContext, cachedCourseContext } from "./courseContext";
 import StudentWorkspace from "./StudentWorkspace";
+import PipelineLogs from "./PipelineLogs";
 import "./styles.css";
 
 import { Notice, Badge, GenerationStatus } from "./ui";
@@ -201,6 +202,9 @@ export function App() {
               >
                 Professor dashboard
               </Link>
+              <Link to="/professor/logs" aria-current={pathname === "/professor/logs" ? "page" : undefined}>
+                Pipeline logs
+              </Link>
               <Link
                 to="/professor/analytics"
                 aria-current={
@@ -235,6 +239,7 @@ export function App() {
               )
             }
           />
+          <Route path="/professor/logs" element={isProfessor ? <PipelineLogs /> : <Navigate to={home} replace />} />
           <Route path="/professor/reflection-analysis" element={<Navigate to={isProfessor ? { pathname: "/professor/analytics", search } : home} replace />} />
           <Route
             path="/professor/analytics"

@@ -25,6 +25,8 @@ def _model_reply(ready, observation):
 
 def test_readiness_uses_goal_latest_answer_and_evidence(monkeypatch):
     requests = []
+    events = []
+    monkeypatch.setattr(step_check, "log_event", lambda stage, event, **fields: events.append((stage, event, fields)))
 
     async def complete(_key, _url, request):
         requests.append(request)
@@ -41,6 +43,7 @@ def test_readiness_uses_goal_latest_answer_and_evidence(monkeypatch):
     assert ready is True
     assert "charge for an order" in observation
     assert requests[0]["model"] == "qwen"
+    assert events == [(7, "step_readiness_model_selected", {"provider": "Ollama", "model": "qwen"})]
     assert requests[0]["response_format"]["json_schema"]["name"] == "guided_step_readiness"
     payload = json.loads(requests[0]["messages"][1]["content"])
     assert payload["step_goal"] == STEP["goal"]

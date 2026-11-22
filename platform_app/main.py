@@ -30,6 +30,8 @@ app.include_router(objectives_router)
 from platform_app.reflection_analysis import router as reflection_analysis_router
 
 app.include_router(reflection_analysis_router)
+from platform_app.pipeline_logs import router as pipeline_logs_router
+app.include_router(pipeline_logs_router)
 app.include_router(lti_router)
 app.include_router(lti11_router)
 

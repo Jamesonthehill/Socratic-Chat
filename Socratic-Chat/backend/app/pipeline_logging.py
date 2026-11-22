@@ -75,6 +75,11 @@ def begin_trace(trace_id: str, conversation_id: str | None = None) -> tuple[Toke
 def end_trace(tokens: tuple[Token, Token, Token]) -> None:
     trace_id = _trace_id.get()
     if trace_id:
+        with _trace_lock:
+            record = _trace_records.get(trace_id)
+            if record is not None:
+                record["finished_at"] = datetime.now(timezone.utc).isoformat()
+                record["duration_ms"] = _elapsed_ms()
         _persist_trace(trace_id)
     trace_token, conversation_token, started_token = tokens
     _trace_started_at.reset(started_token)

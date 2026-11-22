@@ -7,7 +7,7 @@ import re
 
 from app import settings
 from app.llm_client import socratic_chat_completion as chat_completion
-from app.pipeline_logging import update_llm_request_snapshot, write_llm_request_snapshot
+from app.pipeline_logging import log_event, update_llm_request_snapshot, write_llm_request_snapshot
 
 
 def count_step_questions(messages: list[dict], step_started_at_message_count: int | None) -> int:
@@ -34,6 +34,7 @@ async def assess_step_readiness(step: dict, student_message: str, tutor_question
     if config is None:
         return False, ""
     provider, api_key, base_url, model = config
+    log_event(7, "step_readiness_model_selected", provider=provider, model=model)
     request = {
         "model": model,
         "temperature": 0,

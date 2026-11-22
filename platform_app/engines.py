@@ -793,7 +793,7 @@ async def _socratic_message(
             if topic_choices:
                 topic = topic_choices[clarification_index]
                 state.update({"learning_topic": topic, "stable_concept": topic, "active_concept": topic})
-        log_event(1, "assignment_chat_received", assignment_id=assignment["id"], message_chars=len(content), pipeline_version="local-socratic-v1")
+        log_event(1, "assignment_chat_received", assignment_id=assignment["id"], message_chars=len(content), step_index=step_index, pipeline_version="local-socratic-v1")
         classification = await classify_message(interpreted, history, learning_topic=topic, **scope_options)
         # A request to explain a term can interrupt a tutor question without
         # discarding that question or advancing the instructor's learning step.

@@ -183,7 +183,6 @@ export default function AiducateWorkspace() {
   const [assignmentId, setAssignmentId] = useState(() => searchParams.get("reflection") || "");
   const analysisTarget = useRef(assignmentId);
   const [analysis, setAnalysis] = useState(() => restoreAnalysis(assignmentId));
-  const [surveyAnalysis, setSurveyAnalysis] = useState(() => ready[assignmentId]?.surveys || null);
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
@@ -197,7 +196,7 @@ export default function AiducateWorkspace() {
     Promise.all([api("/courses"), api("/platform/assignments")]).then(([courseData, assignmentData]) => {
       if (!active) return;
       setCourses((courseData.courses || []).filter(course => course.membership_role === "instructor" && course.membership_status === "approved"));
-      setAssignments(assignmentData.filter(item => (item.tool === "reflections" || (item.tool === "socratic" && Object.values(item.config?.step_surveys || {}).some(record=>record.published))) && item.status === "published" && item.can_manage !== false));
+      setAssignments(assignmentData.filter(item => item.tool === "reflections" && item.status === "published" && item.can_manage !== false));
     }).catch(e => active && setError(e.message)).finally(() => active && setLoading(false));
     return () => { active = false; };
   }, []);
@@ -323,11 +322,11 @@ export default function AiducateWorkspace() {
         }
         return;
       }
-      const [overview,surveys] = await Promise.all([api(`/platform/assignments/${id}/reflection-analysis`),api(`/platform/assignments/${id}/step-survey-analysis`)]);
+      const overview = await api(`/platform/assignments/${id}/reflection-analysis`);
       if (analysisTarget.current === id) {
-        setAnalysis(overview); setSurveyAnalysis(surveys); setTab("overview");
+        setAnalysis(overview); setTab("overview");
       }
-      saveResult(id, { overview, surveys });
+      saveResult(id, { overview });
     }
     catch (e) { setError(e.message); }
     finally { setAnalyzing(false); }
@@ -369,12 +368,12 @@ export default function AiducateWorkspace() {
 
   function openCourse(id) {
     analysisTarget.current = "";
-    setCourseId(String(id)); setAssignmentId(""); setAnalysis(null); setSurveyAnalysis(null);
+    setCourseId(String(id)); setAssignmentId(""); setAnalysis(null);
     setSearchParams(id ? { course: String(id) } : {}, { replace: true });
   }
   function openAssignment(id) {
     analysisTarget.current = String(id);
-    setAssignmentId(String(id)); setAnalysis(restoreAnalysis(id)); setSurveyAnalysis(ready[id]?.surveys || null);
+    setAssignmentId(String(id)); setAnalysis(restoreAnalysis(id));
     setTab("overview");
     setSearchParams({ course: courseId, reflection: String(id) }, { replace: true });
   }
@@ -464,8 +463,8 @@ export default function AiducateWorkspace() {
       </div>
     </> : !selected ? <>
       {header(`Course workspace · ${course.course_code || "Course"}`, course.title || course.course_code, "Collect Reflection responses, open an assignment, and explore what students shared.")}
-      <section className="aid-section" aria-labelledby="aid-assignments-title"><div className="aid-section-heading"><div><h2 id="aid-assignments-title">{courseAssignments.some(item=>item.tool === "socratic") ? "Reflection assignments & step surveys" : "Reflection assignments"}</h2><p>{courseAssignments.length} reflection sets in this course. Imported CSVs are saved in this browser.</p></div><button onClick={() => beginImport()}>+ Add reflection</button></div>
-        {courseAssignments.length ? <div className="aid-assignment-list">{courseAssignments.map(item => <button className="aid-assignment-row" type="button" key={item.id} onClick={() => openAssignment(item.id)}><span><strong>{item.title}</strong><small>{item.tool === "socratic" ? "Socratic step surveys" : "BrainTutor Reflection"} · {item.completed_count || 0} completed</small></span><span className="aid-text-action">{ready[item.id] ? "Explore results →" : "Set up analysis →"}</span></button>)}</div> : <div className="aid-empty aid-reflection-empty">
+      <section className="aid-section" aria-labelledby="aid-assignments-title"><div className="aid-section-heading"><div><h2 id="aid-assignments-title">Reflection assignments</h2><p>{courseAssignments.length} reflection sets in this course. Imported CSVs are saved in this browser.</p></div><button onClick={() => beginImport()}>+ Add reflection</button></div>
+        {courseAssignments.length ? <div className="aid-assignment-list">{courseAssignments.map(item => <button className="aid-assignment-row" type="button" key={item.id} onClick={() => openAssignment(item.id)}><span><strong>{item.title}</strong><small>BrainTutor Reflection · {item.completed_count || 0} completed</small></span><span className="aid-text-action">{ready[item.id] ? "Explore results →" : "Set up analysis →"}</span></button>)}</div> : <div className="aid-empty aid-reflection-empty">
           <span className="aid-empty-icon" aria-hidden="true">✦</span>
           <h3>No reflection sets yet</h3>
           <p>Use <strong>Add reflection</strong> to import a reflection CSV for this course.</p>
@@ -480,7 +479,7 @@ export default function AiducateWorkspace() {
       )}
       {!analysis ? <div className="aid-empty aid-ready"><span className="aid-empty-icon">◌</span><h2>Ready for analysis</h2><p>Open the saved responses and participation counts for this assignment.</p><div className="aid-progress-steps"><span className="done">✓ Reflection selected</span><span>Review responses</span><span>Explore results</span></div><button type="button" onClick={() => runAnalysis()} disabled={analyzing}>{analyzing ? "Opening analysis…" : "Run analysis"}</button></div> : <>
         <div className="aid-result-banner"><div className="aid-result-status"><strong>Results ready</strong><span>Review the responses or download an HTML report.</span></div><button type="button" onClick={downloadInstructorReport} disabled={exporting || analyzing}>{exporting ? "Building report…" : "Download Instructor Report"}</button></div>
-        <div className="aid-tabs" role="tablist" aria-label="Analysis views">{[["overview", "Overview"], ["students", "Students"], ["surveys", "Step surveys"], ["details", "Reflection details"]].map(([id, label]) => <button type="button" role="tab" aria-selected={tab === id} key={id} onClick={() => setTab(id)}>{label}</button>)}</div>
+        <div className="aid-tabs" role="tablist" aria-label="Analysis views">{[["overview", "Overview"], ["students", "Students"], ["details", "Reflection details"]].map(([id, label]) => <button type="button" role="tab" aria-selected={tab === id} key={id} onClick={() => setTab(id)}>{label}</button>)}</div>
         {analysis.findings && tab === "overview" && <section className="aid-section">
           <h2>Topic analysis</h2>
           <p>{analysis.findings.filter(record => record.analysis).length} of {analysis.summary.completed} reflections analyzed. Open Reflection details for topics, resolution status, urgency, summaries, and suggested actions.</p>
@@ -491,9 +490,6 @@ export default function AiducateWorkspace() {
           <div className="aid-overview-grid"><section className="aid-section"><span className="aid-eyebrow">01 · Notice participation</span><h2>Assignment progress</h2><p>{analysis.summary.completed} of {analysis.summary.assigned} assigned students completed this Reflection.</p><div className="aid-progress-track"><div style={{width: `${analysis.summary.assigned ? Math.round(analysis.summary.completed / analysis.summary.assigned * 100) : 0}%`}}/></div><button className="aid-link" type="button" onClick={() => setTab("students")}>Review student responses →</button></section><section className="aid-section"><span className="aid-eyebrow">02 · Understand the data</span><h2>What this view shows</h2><p>Participation counts and original student messages from this Reflection assignment.</p><button className="aid-link" type="button" onClick={() => setTab("details")}>See reflection details →</button></section></div>
         </>}
         {tab === "students" && <AiducateStudentProfiles key={selected.id} analysis={analysis} />}
-        {tab === "surveys" && <section className="aid-section"><span className="aid-eyebrow">Ungraded · Student self-reports</span><h2>Step survey responses</h2><p>Responses are grouped by learning step and survey version. Confidence is self-reported and does not establish mastery.</p><Link className="button compact" to={`/professor/activities/${selected.id}/settings`}>Edit step surveys</Link>
-          {surveyAnalysis?.groups?.length ? surveyAnalysis.groups.map(group=><section className="survey-analysis-group" key={`${group.step_index}:${group.survey.version}`}><h3>Step {group.step_index+1}: {group.step_title}</h3><p><strong>{group.survey.title}</strong> · {group.responses.length} submissions · Published {new Date(group.survey.published_at).toLocaleDateString()}</p>{group.responses.map(response=><details key={response.student_id}><summary>{response.name} · View responses</summary><time>{new Date(response.submitted_at).toLocaleString()}</time>{group.survey.questions.map(question=><blockquote key={question.id}><strong>{question.prompt}</strong><p>{question.kind === "confidence" ? `${response.answers[question.id]} / 5 (self-reported)` : response.answers[question.id]}</p></blockquote>)}</details>)}</section>) : <p>No step survey responses yet. Publish a survey in assignment settings and invite students to respond.</p>}
-        </section>}
         {tab === "details" && <section className="aid-section">
           <h2>Reflection details</h2>
           {reportPreview?.analysis !== analysis ? <p role="status">Building instructor report…</p>

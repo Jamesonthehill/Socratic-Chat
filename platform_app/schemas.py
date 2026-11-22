@@ -12,8 +12,22 @@ from pydantic import (
     Field,
     SecretStr,
     StrictInt,
+    field_validator,
     model_validator,
 )
+
+
+class SelfDirectedResearchChoice(BaseModel):
+    choice: Literal['yes', 'no']
+    notice_version: str = Field(min_length=1, max_length=80)
+
+
+class ApplicationInterviewTurn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal['start', 'answer', 'stop']
+    turn_id: str = Field(min_length=1, max_length=100)
+    question_id: str | None = Field(default=None, max_length=80)
+    content: str = Field(default='', max_length=8000)
 
 
 class StrictModel(BaseModel):
@@ -65,7 +79,8 @@ class SocraticConfig(StrictModel):
     @classmethod
     def infer_legacy_guidance_mode(cls, data):
         if isinstance(data, dict):
-            data = {key: value for key, value in data.items() if key != "minimum_messages"}
+            # Discard the SDL-only plan when it appears in a Socratic draft.
+            data = {key: value for key, value in data.items() if key not in {"minimum_messages", "learning_plan"}}
             if data.get("tutor_mode") == "javis":
                 data["tutor_mode"] = "jarvis"
             if "guidance_mode" not in data:
@@ -116,13 +131,28 @@ class DebateConfig(StrictModel):
     scenario: str = Field(min_length=10, max_length=10000)
     opening_prompt: str = Field(default="", max_length=2000)
     minimum_messages: int = Field(default=3, ge=1, le=100)
+    reflection_prompt: str = Field(
+        default=(
+            "What changed or became more nuanced in your thinking, which "
+            "counterargument or tradeoff mattered most, and what would you "
+            "revise in your final position?"
+        ),
+        min_length=10,
+        max_length=2000,
+    )
 
 
 class SelfDirectedConfig(StrictModel):
+    additional_instructions: str = Field(default="", max_length=10000)
+    starting_point: str = Field(default="", max_length=2000)
+    ending_point: str = Field(default="", max_length=4000)
     custom_questions: list[str] = Field(default_factory=list, max_length=50)
     document_ids: list[str] = Field(default_factory=list, max_length=100)
     prompt: str = Field(default="", max_length=10000)
     learning_plan: dict = Field(default_factory=dict)
+    material_expansion: str = Field(default="", max_length=12000)
+    expansion_approved: bool = False
+    expansion_source_hash: str = Field(default="", max_length=64)
 
 
 class ReflectionConfig(StrictModel):
@@ -150,6 +180,90 @@ class ReflectionConfig(StrictModel):
                 raise ValueError("Historical CSV must contain name, challenge, and solution columns.")
             if not any(all((row.get(k) or "").strip() for k in ("name", "challenge", "solution")) for row in reader):
                 raise ValueError("Historical CSV must contain at least one complete row.")
+
+
+def _copilot_document_ids(values):
+    # Canonical UUID strings keep request, retrieval, and response boundaries equal.
+    return list(dict.fromkeys(str(UUID(value.strip())) for value in values))
+
+
+class ReflectionCopilotCurrentDraft(StrictModel):
+    title: str = Field(default="", max_length=200)
+    instructions: str = Field(default="", max_length=10000)
+    module_type: Literal["topic_based", "milestone_based"] = "topic_based"
+
+
+class ReflectionCopilotRequest(StrictModel):
+    course_id: UUID
+    goal: str = Field(min_length=10, max_length=2000)
+    document_ids: list[str] = Field(min_length=1, max_length=100)
+    current: ReflectionCopilotCurrentDraft = Field(default_factory=ReflectionCopilotCurrentDraft)
+
+    _normalize_ids = field_validator("document_ids")(_copilot_document_ids)
+
+
+class ReflectionCopilotEvidence(StrictModel):
+    document_id: str = Field(min_length=1, max_length=36)
+    title: str = Field(min_length=1, max_length=300)
+    excerpt: str = Field(min_length=1, max_length=1200)
+
+
+class ReflectionCopilotProposal(StrictModel):
+    title: str = Field(min_length=1, max_length=200)
+    instructions: str = Field(min_length=1, max_length=10000)
+    config: ReflectionConfig
+    rationale: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("config", mode="before")
+    @classmethod
+    def strict_config(cls, value):
+        if isinstance(value, ReflectionConfig):
+            value = value.model_dump()
+        return ReflectionConfig.model_validate(value, strict=True)
+
+    @model_validator(mode="after")
+    def validate_proposal(self):
+        self.config.document_ids = _copilot_document_ids(self.config.document_ids)
+        for field in ("required_topics", "sub_topics"):
+            cleaned, seen = [], set()
+            for item in getattr(self.config, field):
+                item = " ".join(item.split())
+                if not item or len(item) > 300:
+                    raise ValueError("Reflection topics must contain 1 to 300 characters.")
+                if item.casefold() not in seen:
+                    cleaned.append(item)
+                    seen.add(item.casefold())
+            setattr(self.config, field, cleaned)
+        if self.config.historical_data:
+            raise ValueError("Copilot proposals cannot contain historical responses.")
+        if self.config.module_type == "topic_based":
+            if not self.config.required_topics or not self.config.sub_topics:
+                raise ValueError("Propose at least one learning topic and sub-topic.")
+        elif not self.config.milestone_prompt.strip():
+            raise ValueError("Propose a milestone prompt; historical CSV is attached manually.")
+        return self
+
+
+class ReflectionCopilotResponse(StrictModel):
+    proposal: ReflectionCopilotProposal
+    evidence: list[ReflectionCopilotEvidence] = Field(min_length=1, max_length=36)
+
+
+class ListSelectedDocumentsInput(StrictModel):
+    pass
+
+
+class SearchSelectedCourseMaterialsInput(StrictModel):
+    query: str = Field(min_length=3, max_length=500)
+    limit: StrictInt = Field(default=4, ge=1, le=6)
+
+    @field_validator("query")
+    @classmethod
+    def normalize_query(cls, value):
+        value = " ".join(value.split())
+        if len(value) < 3:
+            raise ValueError("Search for at least three non-blank characters.")
+        return value
 
 
 class ActivityDraftConfig(StrictModel):
@@ -242,6 +356,10 @@ class CanvasImportRequest(CanvasCourseRequest):
     assignment_id: int = Field(gt=0)
     platform_course_id: UUID
     tool: Literal["socratic", "reflections", "debate"] = "socratic"
+
+
+class CanvasDeleteRequest(CanvasCredentials):
+    course_id: int | None = Field(default=None, gt=0)
 
 
 class SelfDirectedMessageInput(StrictModel):

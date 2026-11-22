@@ -1,0 +1,169 @@
+envVarGroups:
+  - name: cluball-personal-shared
+    envVars:
+      - key: PLATFORM_SERVICE_TOKEN
+        generateValue: true
+      - key: LLM_PROVIDER
+        value: openai
+      - key: GROQ_API_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+
+databases:
+  - name: cluball-temporary-db
+    plan: free
+    region: oregon
+    postgresMajorVersion: "17"
+
+services:
+  - type: web
+    name: cluball-platform-personal
+    runtime: docker
+    plan: free
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: uvicorn platform_app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - fromGroup: cluball-personal-shared
+      - key: SOCRATIC_LLM_PROVIDER
+        value: openai
+      - key: SOCRATIC_CLASSIFIER_PROVIDER
+        value: openai
+      - key: SOCRATIC_SETUP_PROVIDER
+        value: openai
+      - key: SOCRATIC_FEEDBACK_PROVIDER
+        value: openai
+      - key: SOCRATIC_FEEDBACK_MODEL
+        value: gpt-4.1-mini
+      - key: RAG_MODEL
+        value: gpt-4.1-mini
+      - key: CLASSIFIER_MODEL
+        value: gpt-4.1-mini
+      - key: ANSWER_EVALUATION_MODEL
+        value: gpt-4.1-mini
+      - key: SOCRATIC_TUTOR_PROVIDER
+        value: openai
+      - key: SOCRATIC_TUTOR_MODEL
+        value: gpt-4.1-mini
+      - key: GROQ_CLASSIFIER_MODEL
+        value: openai/gpt-oss-20b
+      - key: GROQ_ANSWER_EVALUATION_MODEL
+        value: openai/gpt-oss-20b
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cluball-temporary-db
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: AUTH_SESSION_SECRET
+        generateValue: true
+      - key: PLATFORM_DB_SCHEMA
+        value: platform
+      - key: SOCRATIC_DB_SCHEMA
+        value: socratic_chat
+      - key: SHARED_RAG_DB_SCHEMA
+        value: shared_rag
+      - key: REFLECTIONS_URL
+        fromService:
+          name: cluball-reflections-personal
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: SELF_DIRECTED_LEARNING_URL
+        fromService:
+          name: cluball-sdl-personal
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: AUTH_MODE
+        value: open
+      - key: ALLOW_PASSWORD_LOGIN
+        value: "true"
+      - key: ALLOWED_GOOGLE_DOMAINS
+        value: charlotte.edu
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: FRONTEND_URL
+        fromService:
+          name: cluball-platform-personal
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://jamesonthehill.com,https://www.jamesonthehill.com,https://jamesonthehill.github.io
+      - key: LTI_CANVAS_ISSUER
+        value: https://canvaslite.instructure.com
+      - key: CANVAS_API_ORIGIN
+        value: https://canvaslite.instructure.com
+      - key: LTI_PUBLIC_BASE_URL
+        fromService:
+          name: cluball-platform-personal
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: LTI11_CONSUMER_KEY
+        sync: false
+      - key: LTI11_SHARED_SECRET
+        sync: false
+      - key: EMBEDDING_PROVIDER
+        value: openai
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: EMBEDDING_DIMENSIONS
+        value: "1536"
+
+  - type: web
+    name: cluball-reflections-personal
+    runtime: docker
+    plan: free
+    branch: main
+    rootDir: reflections-app/backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - fromGroup: cluball-personal-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cluball-temporary-db
+          property: connectionString
+      - key: GROQ_API_KEY
+        sync: false
+      - key: PLATFORM_DB_SCHEMA
+        value: platform
+      - key: REFLECTIONS_DB_SCHEMA
+        value: reflections_app
+      - key: DB_STARTUP_MAX_RETRIES
+        value: "180"
+      - key: DB_STARTUP_RETRY_DELAY_SECONDS
+        value: "2"
+
+  - type: web
+    name: cluball-sdl-personal
+    runtime: docker
+    plan: free
+    branch: main
+    rootDir: adaptive-learning-app/backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - fromGroup: cluball-personal-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cluball-temporary-db
+          property: connectionString
+      - key: GROQ_API_KEY
+        sync: false
+      - key: SELF_DIRECTED_LEARNING_DB_SCHEMA
+        value: self_directed_learning
+      - key: ADAPTIVE_PLATFORM_ONLY
+        value: "true"

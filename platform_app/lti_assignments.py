@@ -33,6 +33,11 @@ def _canvas_due_at(custom):
         return None
 
 
+def _positive_canvas_id(value):
+    raw = _value(value)
+    return int(raw) if 0 < len(raw) <= 18 and raw.isascii() and raw.isdecimal() and int(raw) > 0 else None
+
+
 def provision(conn, claims, *, issuer, deployment_id, context_id, course_id, user_id, role):
     if not settings.LTI_AUTO_CREATE_ASSIGNMENTS:
         return None
@@ -42,6 +47,8 @@ def provision(conn, claims, *, issuer, deployment_id, context_id, course_id, use
     if not all(isinstance(value, dict) for value in (custom, resource, ags)):
         raise HTTPException(422, 'Canvas sent invalid assignment launch information.')
     canvas_id = _value(custom.get('canvas_assignment_id'))
+    canvas_course_id = _positive_canvas_id(custom.get('canvas_course_id'))
+    numeric_assignment_id = _positive_canvas_id(canvas_id)
     if not (canvas_id or claims.get('_assignment_launch') is True or _value(ags.get('lineitem'))):
         return None
     resource_id = _value(resource.get('id'))
@@ -63,6 +70,15 @@ def provision(conn, claims, *, issuer, deployment_id, context_id, course_id, use
             raise HTTPException(409, 'The linked assignment was moved to a different course.')
         if canvas_id and linked['canvas_assignment_id'] and canvas_id != linked['canvas_assignment_id']:
             raise HTTPException(409, 'This Canvas link is already bound to a different assignment.')
+        if numeric_assignment_id:
+            conn.execute(
+                '''INSERT INTO canvas_assignment_targets_platform
+                   (assignment_id, canvas_course_id, canvas_assignment_id, source)
+                   VALUES (%s,%s,%s,'lti') ON CONFLICT (assignment_id) DO UPDATE
+                   SET canvas_course_id=COALESCE(canvas_assignment_targets_platform.canvas_course_id, EXCLUDED.canvas_course_id)
+                   WHERE canvas_assignment_targets_platform.canvas_assignment_id=EXCLUDED.canvas_assignment_id''',
+                (linked['id'], canvas_course_id, numeric_assignment_id),
+            )
         if linked['status'] == 'archived':
             raise HTTPException(409, 'Your instructor has archived this assignment.')
         if linked['status'] in {'draft', 'published'}:
@@ -112,4 +128,11 @@ def provision(conn, claims, *, issuer, deployment_id, context_id, course_id, use
            VALUES (%s,%s,%s,%s,%s,%s)''',
         (issuer, deployment_id, context_id, resource_id, canvas_id or None, assignment_id),
     )
+    if numeric_assignment_id:
+        conn.execute(
+            '''INSERT INTO canvas_assignment_targets_platform
+               (assignment_id, canvas_course_id, canvas_assignment_id, source)
+               VALUES (%s,%s,%s,'lti')''',
+            (assignment_id, canvas_course_id, numeric_assignment_id),
+        )
     return assignment_id

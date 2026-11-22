@@ -25,7 +25,7 @@ def main():
         (sys.executable, ROOT, "platform_app.combined:app", "0.0.0.0", env.get("PORT") or "8000"),
         (sys.executable, ROOT, "platform_app.socratic_service:app", "127.0.0.1", SOCRATIC_PORT, socratic_env),
         ("/opt/reflections/bin/python", ROOT / "reflections-app/backend", "app.main:app", "127.0.0.1", REFLECTIONS_PORT),
-        ("/opt/sdl/bin/python", ROOT / "adaptive-learning-app/backend", "app.main:app", "127.0.0.1", SDL_PORT),
+        ("/opt/sdl/bin/python", ROOT / "self-directed-learning/backend", "app.main:app", "127.0.0.1", SDL_PORT),
     ]
     stopping = False
 

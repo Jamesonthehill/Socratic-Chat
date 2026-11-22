@@ -1,0 +1,3 @@
+Based on the given query and output, write a concise 2–3 line summary clearly stating what task was performed and what type of output was generated. Be specific and factual—mention the action taken and the nature of the result without unnecessary details.
+query: {query}
+output: {output}

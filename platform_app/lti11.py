@@ -166,6 +166,7 @@ def canvas_configuration():
  <blti:launch_url>{assignment_launch}</blti:launch_url>
  <blti:secure_launch_url>{assignment_launch}</blti:secure_launch_url>
  <blti:custom>
+  <lticm:property name="canvas_course_id">$Canvas.course.id</lticm:property>
   <lticm:property name="canvas_assignment_id">$Canvas.assignment.id</lticm:property>
   <lticm:property name="canvas_assignment_title">$Canvas.assignment.title</lticm:property>
   <lticm:property name="canvas_assignment_description">$Canvas.assignment.description</lticm:property>

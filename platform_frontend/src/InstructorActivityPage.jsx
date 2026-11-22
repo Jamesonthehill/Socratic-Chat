@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { api, cachedAssignmentView, pendingAssignmentDetail, date, TOOLS } from "./api";
 import { Notice, Badge } from "./ui";
@@ -6,6 +6,7 @@ import { loadCourseContext, cachedCourseContext } from "./courseContext";
 import CreateActivity from "./CreateActivity";
 import { StudentActivityPreview } from "./StudentActivityPreview";
 import AiducateWorkspace from "./AiducateWorkspace";
+import ApplicationInterviewReports from './ApplicationInterviewReports';
 
 export function progressMetrics(students = []) {
   const assigned = students.length;
@@ -30,10 +31,11 @@ export default function InstructorActivityPage() {
     return cached?.course_id===cachedAssignmentView(`/platform/assignments/${id}`)?.course_id ? cached : null;
   });
   const [files,setFiles] = useState([]);
+  const [debateReview,setDebateReview] = useState(null);
   const [error,setError] = useState("");
   useEffect(()=>{
     let active=true;
-    setItem(cachedAssignmentView(`/platform/assignments/${id}`));setFiles([]);setError("");
+    setItem(cachedAssignmentView(`/platform/assignments/${id}`));setFiles([]);setDebateReview(null);setError("");
     if(id === "new") return;
     const load=async()=>{
       const activity=await (pendingAssignmentDetail(id) || api(`/platform/assignments/${id}`));
@@ -41,6 +43,10 @@ export default function InstructorActivityPage() {
       if(String(activity.course_id)!==String(context.course_id)) throw Error("Open this activity from its Canvas course.");
       if(!active)return;
       setContext(context);setItem(activity);
+      if(activity.tool === "debate" && activity.status !== "draft") {
+        const review=await api(`/platform/assignments/${id}/debate-review`);
+        if(active)setDebateReview(review);
+      }
       if(activity.status !== "draft" && activity.config.document_ids?.length) {
         const data=await api(`/platform/courses/${activity.course_id}/documents`);
         if(active)setFiles(data.files.filter(f=>(activity.config.document_ids || []).includes(f.document_id)));
@@ -56,7 +62,8 @@ export default function InstructorActivityPage() {
   const metrics=progressMetrics(item.students);
   const config=item.config || {};
   const progressValue=value=>item.progress_unavailable ? "Not available" : value;
-  return <>
+  const DetailShell = item.tool === 'self-directed-learning' ? 'div' : Fragment;
+  return <DetailShell {...(item.tool === 'self-directed-learning' ? {className:'sdl-teaching-ui sdl-instructor-ui'} : {})}>
     <div className="activity-detail-nav"><Link className="back" to="/professor">← All assignments</Link><button type="button" className="secondary" aria-expanded={showPreview} aria-controls="student-activity-preview" onClick={()=>setShowPreview(value=>!value)}>{showPreview ? "Hide student preview" : "Preview as student"}</button></div>
     <div className="page-heading"><div><p className="context">{TOOLS[item.tool]?.name || item.tool}</p><h1>{item.title}</h1></div><Badge value={item.status}/></div>
     {showPreview && <StudentActivityPreview item={item} files={files}/>}
@@ -70,7 +77,19 @@ export default function InstructorActivityPage() {
     {config.learning_plan?.objectives?.length>0 && <><h3>Learning objectives</h3><ul>{config.learning_plan.objectives.map(o=><li key={o.id}>{o.title}</li>)}</ul></>}
     <h3>Course materials</h3>{files.length ? <ul>{files.map(f=><li key={f.file_id}>{f.filename} · {Math.ceil((f.file_size || 0)/1024)} KB</li>)}</ul> : <p className="help">No selected documents attached.</p>}</section>
 
-  </>;
+    {item.tool === 'self-directed-learning' && <ApplicationInterviewReports key={id} assignmentId={id}/>}
+    {item.tool === 'debate' && <section className="panel" aria-labelledby="debate-review-title">
+      <h2 id="debate-review-title">Student debate work</h2>
+      <p className="help">Review saved conversations and required final reflections. Debate does not assign an automatic grade.</p>
+      {!debateReview ? <p role="status">Loading student work…</p> : debateReview.students.length ?
+        <div className="debate-review-list">{debateReview.students.map(student=><details key={student.student_id}>
+          <summary><strong>{student.name || "Assigned student"}</strong> · {(student.status || student.progress || "not_started").replaceAll("_", " ")} · {student.student_turns || 0} response{student.student_turns===1?"":"s"}</summary>
+          {student.messages?.length ? <ol className="debate-review-transcript">{student.messages.map((message,index)=><li key={index}><strong>{message.role === "user" ? (student.name || "Student") : "Debate"}:</strong> {message.content}</li>)}</ol> : <p>No conversation started.</p>}
+          <h3>Final reflection</h3><p>{student.student_reflection || "Not submitted."}</p>
+          {student.completed_at && <p className="help">Completed {date(student.completed_at)}</p>}
+        </details>)}</div> : <p>No students are assigned.</p>}
+    </section>}
+  </DetailShell>;
 }
 
 export function AnalyticsPage() {

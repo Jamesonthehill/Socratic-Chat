@@ -4,7 +4,7 @@ envVarGroups:
       - key: PLATFORM_SERVICE_TOKEN
         generateValue: true
       - key: LLM_PROVIDER
-        value: groq
+        value: openai
       - key: GROQ_API_BASE_URL
         value: https://api.groq.com/openai/v1
       - key: GROQ_MODEL
@@ -14,15 +14,31 @@ services:
   - type: web
     name: cluball-platform-personal
     runtime: docker
-    plan: starter
+    plan: free
     branch: main
-    dockerfilePath: ./Dockerfile.combined
+    dockerfilePath: ./Dockerfile
     dockerContext: .
-    dockerCommand: python -m scripts.run_combined
-    healthCheckPath: /health/combined
+    dockerCommand: uvicorn platform_app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
     autoDeployTrigger: commit
     envVars:
       - fromGroup: cluball-personal-shared
+      - key: SOCRATIC_LLM_PROVIDER
+        value: openai
+      - key: SOCRATIC_CLASSIFIER_PROVIDER
+        value: openai
+      - key: SOCRATIC_SETUP_PROVIDER
+        value: openai
+      - key: SOCRATIC_FEEDBACK_PROVIDER
+        value: openai
+      - key: SOCRATIC_FEEDBACK_MODEL
+        value: gpt-4.1-mini
+      - key: RAG_MODEL
+        value: gpt-4.1-mini
+      - key: CLASSIFIER_MODEL
+        value: gpt-4.1-mini
+      - key: ANSWER_EVALUATION_MODEL
+        value: gpt-4.1-mini
       - key: SOCRATIC_TUTOR_PROVIDER
         value: openai
       - key: SOCRATIC_TUTOR_MODEL
@@ -35,14 +51,6 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
-      - key: SDL_AUTHORING_LLM_PROVIDER
-        value: openai
-      - key: OPENAI_AUTHORING_MODEL
-        value: gpt-4.1-mini
-      - key: REFLECTION_AUTHORING_LLM_PROVIDER
-        value: openai
-      - key: REFLECTION_AUTHORING_OPENAI_MODEL
-        value: gpt-4.1-mini
       - key: GROQ_API_KEY
         sync: false
       - key: AUTH_SESSION_SECRET
@@ -54,11 +62,11 @@ services:
       - key: SHARED_RAG_DB_SCHEMA
         value: shared_rag
       - key: REFLECTIONS_URL
-        value: http://127.0.0.1:8002
+        value: https://cluball-reflections-personal.onrender.com
       - key: SELF_DIRECTED_LEARNING_URL
-        value: http://127.0.0.1:8100
+        value: https://cluball-sdl-personal.onrender.com
       - key: SOCRATIC_URL
-        value: http://127.0.0.1:8003
+        value: https://cluball-socratic-personal.onrender.com
       - key: AUTH_MODE
         value: open
       - key: ALLOW_PASSWORD_LOGIN
@@ -91,6 +99,63 @@ services:
         value: "1536"
 
   - type: web
+    name: cluball-socratic-personal
+    runtime: docker
+    plan: free
+    branch: main
+    dockerfilePath: ./Dockerfile.socratic
+    dockerContext: .
+    dockerCommand: uvicorn platform_app.socratic_service:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - fromGroup: cluball-personal-shared
+      - key: DATABASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: PLATFORM_DB_SCHEMA
+        value: platform
+      - key: SOCRATIC_DB_SCHEMA
+        value: socratic_chat
+      - key: SHARED_RAG_DB_SCHEMA
+        value: shared_rag
+      - key: SOCRATIC_SERVICE_MODE
+        value: "true"
+      - key: SOCRATIC_LLM_PROVIDER
+        value: openai
+      - key: SOCRATIC_CLASSIFIER_PROVIDER
+        value: openai
+      - key: SOCRATIC_SETUP_PROVIDER
+        value: openai
+      - key: SOCRATIC_FEEDBACK_PROVIDER
+        value: openai
+      - key: SOCRATIC_FEEDBACK_MODEL
+        value: gpt-4.1-mini
+      - key: RAG_MODEL
+        value: gpt-4.1-mini
+      - key: CLASSIFIER_MODEL
+        value: gpt-4.1-mini
+      - key: ANSWER_EVALUATION_MODEL
+        value: gpt-4.1-mini
+      - key: SOCRATIC_TUTOR_PROVIDER
+        value: openai
+      - key: SOCRATIC_TUTOR_MODEL
+        value: gpt-4.1-mini
+      - key: GROQ_CLASSIFIER_MODEL
+        value: openai/gpt-oss-20b
+      - key: GROQ_ANSWER_EVALUATION_MODEL
+        value: openai/gpt-oss-20b
+      - key: EMBEDDING_PROVIDER
+        value: openai
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: EMBEDDING_DIMENSIONS
+        value: "1536"
+
+  - type: web
     name: cluball-reflections-personal
     runtime: docker
     plan: free
@@ -105,12 +170,6 @@ services:
       - fromGroup: cluball-personal-shared
       - key: DATABASE_URL
         sync: false
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: REFLECTION_AUTHORING_LLM_PROVIDER
-        value: openai
-      - key: REFLECTION_AUTHORING_OPENAI_MODEL
-        value: gpt-4.1-mini
       - key: GROQ_API_KEY
         sync: false
       - key: PLATFORM_DB_SCHEMA
@@ -127,7 +186,7 @@ services:
     runtime: docker
     plan: free
     branch: main
-    rootDir: adaptive-learning-app/backend
+    rootDir: self-directed-learning/backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
     dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
@@ -137,12 +196,6 @@ services:
       - fromGroup: cluball-personal-shared
       - key: DATABASE_URL
         sync: false
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: SDL_AUTHORING_LLM_PROVIDER
-        value: openai
-      - key: OPENAI_AUTHORING_MODEL
-        value: gpt-4.1-mini
       - key: GROQ_API_KEY
         sync: false
       - key: SELF_DIRECTED_LEARNING_DB_SCHEMA

@@ -132,3 +132,27 @@ def test_canvas_description_rejects_unsafe_links_and_ignores_scripts():
     assert "javascript:" not in result
     assert "[\\[Guide\\]](https://example.org/docs)" in result
     assert "secret" not in result
+
+
+def test_delete_uses_exact_assignment_endpoint_and_never_puts_token_in_url():
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={"id": 42})
+
+    with mock_client(handler) as client:
+        canvas_lms.delete_assignment(7, 42, "instructor-token", client=client)
+
+    assert requests[0].method == "DELETE"
+    assert requests[0].url.path == "/api/v1/courses/7/assignments/42"
+    assert requests[0].headers["Authorization"] == "Bearer instructor-token"
+    assert "instructor-token" not in str(requests[0].url)
+
+
+def test_delete_reports_missing_canvas_permission():
+    with mock_client(lambda request: httpx.Response(403)) as client:
+        with pytest.raises(canvas_lms.CanvasAPIError) as caught:
+            canvas_lms.delete_assignment(7, 42, "student-token", client=client)
+    assert caught.value.status_code == 403
+    assert "permission to delete" in caught.value.detail

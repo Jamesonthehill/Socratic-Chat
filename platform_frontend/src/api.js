@@ -130,12 +130,18 @@ export async function streamApi(path, body, onStatus) {
   if (result === undefined) throw new Error("The tutor connection ended before the reply was ready. Please retry.");
   return result;
 }
+export const ACTIVITY_TYPES = [
+  "socratic",
+  "reflections",
+  "self-directed-learning",
+  "debate",
+  "aiducate",
+];
 export const TOOLS = {
   socratic: {
     name: "Socratic Chat",
     short: "SC",
     mode: "Guide",
-    step: "01",
     description:
       "Guide students through questions grounded in your course materials.",
     color: "#4f5ee8",
@@ -144,7 +150,6 @@ export const TOOLS = {
     name: "Reflections",
     short: "RF",
     mode: "Reflect",
-    step: "02",
     description:
       "Create structured moments for students to connect ideas and reflect.",
     color: "#8b5cc7",
@@ -153,7 +158,6 @@ export const TOOLS = {
     name: "Student Agent Bot",
     short: "SA",
     mode: "Practice",
-    step: "03",
     description:
       "Turn course concepts into guided practice and active learning.",
     color: "#138b80",
@@ -162,7 +166,6 @@ export const TOOLS = {
     name: "Debate",
     short: "DB",
     mode: "Challenge",
-    step: "04",
     description:
       "Help students build and defend arguments through focused AI challenges.",
     color: "#d15b39",
@@ -171,7 +174,6 @@ export const TOOLS = {
     name: "Self Directed Learning",
     short: "SDL",
     mode: "Explore",
-    step: "05",
     description: "Guide students through an adaptive learning activity.",
     color: "#138b80",
   },
@@ -179,7 +181,6 @@ export const TOOLS = {
     name: "AIducate",
     short: "AI",
     mode: "Create",
-    step: "06",
     description: "Analyze saved Reflection responses in the instructor workspace.",
     color: "#b34e80",
   },

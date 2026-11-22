@@ -16,15 +16,22 @@ from psycopg.types.json import Jsonb
 from app import auth, db, settings
 from app.pipeline_logging import reset_event_sink, set_event_sink
 from platform_app import canvas_lms, engines, store, evidence_diagram, step_check, step_metrics
+from platform_app.learning_journey import StepDifficulty
+from platform_app.copilot.schemas import CopilotRequest, CopilotResponse
 from platform_app.schemas import (
     ActionInput,
     SelfDirectedStudyInput, SelfDirectedQuizInput, SelfDirectedMessageInput, SelfDirectedTaskInput, SelfDirectedLearningTurn,
+    SelfDirectedResearchChoice,
+    ApplicationInterviewTurn,
     AssignmentInput,
     CanvasCourseRequest,
     CanvasCredentials,
+    CanvasDeleteRequest,
     CanvasImportRequest,
     GenerateSubtopicsInput,
     MessageInput,
+    ReflectionCopilotRequest,
+    ReflectionCopilotResponse,
     SocraticReflectionInput,
     SocraticStepCheck,
 )
@@ -69,10 +76,10 @@ class PublishedSocraticSettingsInput(BaseModel):
 
 
 def user(request: Request):
-    scheme, _, token = request.headers.get("authorization", "").partition(" ")
-    if scheme.lower() != "bearer" or not token:
+    session = auth.request_session(request)
+    if not session:
         raise HTTPException(401, "Please sign in.")
-    uid = auth.verify_session(token)["sub"]
+    uid = session["sub"]
     account = db.get_user_by_id(uid)
     if not account:
         raise HTTPException(401, "Account not found.")
@@ -80,7 +87,7 @@ def user(request: Request):
         raise HTTPException(403, "Complete account setup first.")
     if settings.REQUIRE_GITHUB_ACCOUNT and not db.user_has_github(uid):
         raise HTTPException(403, "Connect your GitHub account first.")
-    return account
+    return auth.account_for_session(account, session)
 
 
 def professor(account=Depends(user)):
@@ -153,7 +160,10 @@ def public_assignment(item, manage=False):
         if item["tool"] == "reflections":
             result["student_config"] = {k: cfg[k] for k in ("module_type", "milestone_prompt")}
         elif item["tool"] == "debate":
-            result["student_config"] = {k: cfg[k] for k in ("scenario", "minimum_messages")}
+            result["student_config"] = {
+                **{k: cfg[k] for k in ("scenario", "minimum_messages")},
+                "reflection_required": True,
+            }
         elif item["tool"] == "socratic":
             guided = cfg.get("guidance_mode", "guided" if cfg.get("learning_steps") else "basic") == "guided"
             result["student_config"] = {
@@ -276,6 +286,56 @@ def generate_subtopics(body: GenerateSubtopicsInput, account=Depends(professor))
     return engines.call("reflections", "POST", "/api/modules/subtopics/generate", json=body.model_dump())
 
 
+@router.post("/copilot/reflections/propose", response_model=ReflectionCopilotResponse)
+def propose_reflections(body: ReflectionCopilotRequest, account=Depends(professor)):
+    from platform_app import reflection_copilot
+
+    def authorize():
+        manage_course(body.course_id, account)
+        available = {str(file["document_id"]): file["filename"]
+                     for file in db.list_rag_files(limit=100000, course_id=str(body.course_id))
+                     if file.get("document_id")}
+        if not set(body.document_ids).issubset(available):
+            raise HTTPException(422, "Select indexed documents from this course only.")
+        return {key: available[key] for key in body.document_ids}
+
+    documents = authorize()
+    # Database reads have completed and closed before local inference starts.
+    return reflection_copilot.propose(body, documents, authorize=authorize)
+
+
+@router.post("/copilot/propose", response_model=CopilotResponse)
+def propose_assignment(body: CopilotRequest, account=Depends(professor)):
+    from platform_app.copilot import orchestrator
+    from platform_app.copilot.tools import safe_title
+
+    def authorize():
+        manage_course(body.course_id, account)
+        available = {str(file["document_id"]): file["filename"]
+                     for file in db.list_rag_files(limit=100000, course_id=str(body.course_id))
+                     if file.get("document_id")}
+        if not set(body.document_ids).issubset(available):
+            raise HTTPException(422, "Select indexed documents from this course only.")
+        return {key: available[key] for key in body.document_ids}
+
+    documents = authorize()
+    course = db.get_course(str(body.course_id))
+    if not course:
+        raise HTTPException(404, "Course not found.")
+    # Names and bounded course metadata only; no roster, responses or credentials.
+    context = {"course_id": str(body.course_id), "course_code": safe_title(course.get("course_code")),
+               "title": safe_title(course.get("title")), "description": str(course.get("description", ""))[:2000]}
+    return orchestrator.propose(body, documents, authorize=authorize, course_context=context)
+
+
+@router.get("/copilot/capabilities")
+def copilot_capabilities(course_id: UUID, account=Depends(professor)):
+    from platform_app.copilot.capabilities import list_capabilities
+
+    manage_course(course_id, account)
+    return list_capabilities()
+
+
 def canvas_result(operation):
     try:
         return operation()
@@ -325,18 +385,31 @@ def import_canvas_assignment(body: CanvasImportRequest, account=Depends(professo
             )[:10000].strip(),
             "minimum_messages": 3,
         }
-    return create_assignment(
-        AssignmentInput(
-            course_id=body.platform_course_id,
-            tool=body.tool,
-            title=canvas_assignment["name"][:200],
-            instructions=instructions,
-            due_at=canvas_assignment.get("due_at"),
-            audience="course",
-            config=config,
-        ),
-        account,
+    draft = AssignmentInput(
+        course_id=body.platform_course_id,
+        tool=body.tool,
+        title=canvas_assignment["name"][:200],
+        instructions=instructions,
+        due_at=canvas_assignment.get("due_at"),
+        audience="course",
+        config=config,
     )
+    validate_activity_documents(draft)
+    with store.connection() as conn:
+        conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))',
+                     (f'canvas-import:{body.course_id}:{body.assignment_id}',))
+        if conn.execute('''SELECT 1 FROM canvas_assignment_targets_platform
+                           WHERE canvas_course_id=%s AND canvas_assignment_id=%s''',
+                        (body.course_id, body.assignment_id)).fetchone():
+            raise HTTPException(409, 'This Canvas assignment is already linked to BrainTutor.')
+        created = _insert_assignment(conn, draft, account)
+        conn.execute(
+            '''INSERT INTO canvas_assignment_targets_platform
+               (assignment_id, canvas_course_id, canvas_assignment_id, source)
+               VALUES (%s,%s,%s,'import')''',
+            (created['id'], body.course_id, body.assignment_id),
+        )
+    return created
 
 
 @router.get("/assignments")
@@ -348,12 +421,14 @@ def assignments(course_id: UUID | None = None, account=Depends(user)):
     with store.connection() as conn:
         if is_prof:
             rows = conn.execute("""SELECT a.*, c.title AS course_title, c.course_code,
+                t.canvas_course_id, t.canvas_assignment_id,
                 (SELECT count(*) FROM assignment_recipients_platform WHERE assignment_id=a.id) AS recipient_count,
                 (SELECT count(*) FROM assignment_attempts_platform WHERE assignment_id=a.id AND status='completed') AS completed_count
                 , EXISTS(SELECT 1 FROM course_memberships_platform m
                     WHERE m.course_id=a.course_id AND m.user_id=%s
                     AND m.course_role='instructor' AND m.status='approved') AS can_manage
                 FROM assignments_platform a JOIN courses_platform c ON c.id=a.course_id
+                LEFT JOIN canvas_assignment_targets_platform t ON t.assignment_id=a.id
                 ORDER BY a.created_at DESC""", (account["user_id"],)).fetchall()
         else:
             rows = conn.execute("""SELECT a.*, c.title AS course_title, c.course_code,
@@ -427,7 +502,50 @@ def reflection_analysis(assignment_id: UUID, account=Depends(professor)):
     }
 
 
+@router.get("/assignments/{assignment_id}/debate-review")
+def debate_review(assignment_id: UUID, account=Depends(professor)):
+    """Return Debate progress and saved work only to an instructor for this course."""
+    with store.connection() as conn:
+        assignment = get_assignment(conn, assignment_id, account, manage=True)
+        if assignment["tool"] != "debate":
+            raise HTTPException(422, "Choose a Debate assignment to review.")
+        rows = conn.execute("""SELECT u.id AS student_id, u.display_name, u.username,
+                t.status, t.messages, t.engine_state, t.result, t.completed_at
+            FROM assignment_recipients_platform r
+            JOIN users_platform u ON u.id=r.student_id
+            LEFT JOIN assignment_attempts_platform t
+                ON t.assignment_id=r.assignment_id AND t.student_id=r.student_id
+            WHERE r.assignment_id=%s ORDER BY u.display_name, u.username""",
+            (assignment_id,)).fetchall()
+    students = []
+    for row in rows:
+        state = (row["engine_state"] or {}).get("debate") or {}
+        students.append({
+            "student_id": row["student_id"],
+            "name": row["display_name"] or row["username"],
+            "status": row["status"] or "not_started",
+            "stage": state.get("stage") or "not_started",
+            "student_turns": int(state.get("student_turns") or 0),
+            "messages": row["messages"] or [],
+            "student_reflection": state.get("student_reflection") or (row["result"] or {}).get("student_reflection"),
+            "completed_at": row["completed_at"],
+        })
+    return {
+        "assignment": {"id": assignment["id"], "title": assignment["title"], "course_id": assignment["course_id"]},
+        "summary": {
+            "assigned": len(students),
+            "started": sum(student["status"] != "not_started" for student in students),
+            "completed": sum(student["status"] == "completed" for student in students),
+        },
+        "students": students,
+    }
+
+
 def validate_activity_documents(body):
+    # SDL drafts can save instructor inputs even when attachments need refreshing.
+    # Course-scoped source access is still enforced by shared_rag.course_chunks.
+    if body.tool == "self-directed-learning":
+        return
     selected = set(body.config.get("document_ids", []))
     if selected:
         allowed = {str(f["document_id"]) for f in db.list_rag_files(course_id=str(body.course_id)) if f.get("document_id")}
@@ -435,17 +553,21 @@ def validate_activity_documents(body):
             raise HTTPException(422, "Select indexed documents from this course only.")
 
 
+def _insert_assignment(conn, body, account):
+    assignment_id = uuid4()
+    row = conn.execute("""INSERT INTO assignments_platform(id, course_id, creator_id, tool, title, instructions, due_at, audience, config)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""", (assignment_id, body.course_id, account["user_id"], body.tool,
+        body.title, body.instructions, body.due_at, body.audience, Jsonb(body.config))).fetchone()
+    recipients(conn, assignment_id, body)
+    return public_assignment(row, True)
+
+
 @router.post("/assignments", status_code=201)
 def create_assignment(body: AssignmentInput, account=Depends(professor)):
     manage_course(body.course_id, account)
     validate_activity_documents(body)
-    assignment_id = uuid4()
     with store.connection() as conn:
-        row = conn.execute("""INSERT INTO assignments_platform(id, course_id, creator_id, tool, title, instructions, due_at, audience, config)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""", (assignment_id, body.course_id, account["user_id"], body.tool,
-            body.title, body.instructions, body.due_at, body.audience, Jsonb(body.config))).fetchone()
-        recipients(conn, assignment_id, body)
-    return public_assignment(row, True)
+        return _insert_assignment(conn, body, account)
 
 
 @router.get("/assignments/{assignment_id}/material-reference")
@@ -658,6 +780,48 @@ def archive(assignment_id: UUID, account=Depends(professor)):
     return {"status": "archived"}
 
 
+@router.post("/assignments/{assignment_id}/delete-in-canvas")
+def delete_in_canvas(assignment_id: UUID, body: CanvasDeleteRequest, account=Depends(professor)):
+    """Remove the exact linked Canvas assignment, then archive its local record."""
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account, manage=True, lock=True)
+        if item['status'] == 'archived':
+            raise HTTPException(409, 'This BrainTutor assignment is already archived.')
+        target = conn.execute(
+            '''SELECT canvas_course_id, canvas_assignment_id
+               FROM canvas_assignment_targets_platform WHERE assignment_id=%s''',
+            (assignment_id,),
+        ).fetchone()
+        if not target:
+            raise HTTPException(409, 'This assignment has no verified Canvas assignment ID.')
+        known_course = target['canvas_course_id']
+        if known_course and body.course_id and known_course != body.course_id:
+            raise HTTPException(422, 'The Canvas course ID does not match this assignment link.')
+        canvas_course_id = known_course or body.course_id
+        if not canvas_course_id:
+            raise HTTPException(422, 'Enter the Canvas course ID for this older assignment link.')
+        token = body.access_token.get_secret_value()
+        canvas_item = canvas_result(lambda: canvas_lms.get_assignment(
+            canvas_course_id, target['canvas_assignment_id'], token,
+        ))
+        if (canvas_item['id'] != str(target['canvas_assignment_id'])
+                or canvas_item.get('course_id', str(canvas_course_id)) != str(canvas_course_id)):
+            raise HTTPException(409, 'Canvas returned a different assignment or course; nothing was deleted.')
+        canvas_result(lambda: canvas_lms.delete_assignment(
+            canvas_course_id, target['canvas_assignment_id'], token,
+        ))
+        conn.execute(
+            "UPDATE assignments_platform SET status='archived', updated_at=now() WHERE id=%s",
+            (assignment_id,),
+        )
+        if not known_course:
+            conn.execute(
+                'UPDATE canvas_assignment_targets_platform SET canvas_course_id=%s WHERE assignment_id=%s',
+                (canvas_course_id, assignment_id),
+            )
+    return {'status': 'archived', 'canvas_deleted': True}
+
+
 @router.post("/assignments/{assignment_id}/duplicate", status_code=201)
 def duplicate(assignment_id: UUID, account=Depends(professor)):
     with store.connection() as conn:
@@ -762,7 +926,7 @@ def learning_journey(assignment_id: UUID, account=Depends(user)):
 
 class StepDifficultyInput(BaseModel):
     step_index: int = Field(ge=0)
-    difficulty: Literal["easy", "moderate", "hard", "skipped"]
+    difficulty: StepDifficulty
 
 
 @router.post("/assignments/{assignment_id}/step-difficulty")
@@ -807,12 +971,14 @@ def next_socratic_step(assignment_id: UUID, account=Depends(user)):
         index += 1
         step = steps[index]
         previous_step_state = dict(state)
+        # Legacy attempts begin measurement at the first tracked interaction.
         step_metrics.track(previous_step_state)
         state.update({
             "learning_step_index": index,
             "learning_topic": step["title"],
             "step_started_at_message_count": len(attempt["messages"]) + 1,
         })
+        step_metrics.track(state, previous=previous_step_state)
         state.pop("stable_concept", None)
         state.pop("active_concept", None)
         state.pop("step_check", None)
@@ -828,7 +994,6 @@ def next_socratic_step(assignment_id: UUID, account=Depends(user)):
         elif not question.endswith("?"):
             question = f"{question.rstrip('.!')}?"
         state["next_thinking_step"] = question
-        step_metrics.track(state, previous=previous_step_state)
         attempt["engine_state"]["socratic"] = state
         attempt["messages"].append({
             "role": "assistant",
@@ -1087,22 +1252,26 @@ async def message_stream(assignment_id: UUID, body: MessageInput, account=Depend
 def socratic_reflection(assignment_id: UUID, body: SocraticReflectionInput, account=Depends(user)):
     reflection = body.summary.strip()
     if not reflection:
-        raise HTTPException(422, "Write your own learning summary first.")
+        raise HTTPException(422, "Write your own final reflection first.")
     with store.locked_attempt(assignment_id, account["user_id"]) as (conn, attempt):
         assignment = get_assignment(conn, assignment_id, account)
         if not attempt or (attempt["status"] == "completed" and not body.regenerate_feedback):
-            raise HTTPException(409, "Start an unfinished Socratic assignment first.")
-        if assignment["tool"] != "socratic":
-            raise HTTPException(422, "This assignment does not use a Socratic learning summary.")
+            raise HTTPException(409, "Start an unfinished assignment first.")
+        if assignment["tool"] not in {"socratic", "debate"}:
+            raise HTTPException(422, "This assignment does not use a final learning summary.")
+        if assignment["tool"] == "debate" and body.regenerate_feedback:
+            raise HTTPException(422, "Debate reflections cannot regenerate feedback.")
         config = ((assignment.get("snapshot") or {}).get("config") or {})
         steps = config.get("learning_steps") or []
-        state = (attempt.get("engine_state") or {}).get("socratic") or {}
-        if not body.regenerate_feedback and steps and int(state.get("learning_step_index") or 0) == len(steps) - 1:
+        state_key = "debate" if assignment["tool"] == "debate" else "socratic"
+        state = (attempt.get("engine_state") or {}).get(state_key) or {}
+        if assignment["tool"] == "socratic" and not body.regenerate_feedback and steps and int(state.get("learning_step_index") or 0) == len(steps) - 1:
             minimum_questions = int(config.get("minimum_step_questions") or 1)
             if step_question_count(attempt["messages"], state.get("step_started_at_message_count")) < minimum_questions:
                 raise HTTPException(409, f"Discuss at least {minimum_questions} tutor question(s) in the final step before summarizing.")
         rid = str(body.request_id)
-        if rid in attempt["processed_requests"] or (state.get("completion_summary") and not body.regenerate_feedback):
+        already_saved = state.get("student_reflection") if assignment["tool"] == "debate" else state.get("completion_summary")
+        if rid in attempt["processed_requests"] or (already_saved and not body.regenerate_feedback):
             return public_attempt(attempt)
         target = attempt
         if body.regenerate_feedback:
@@ -1229,6 +1398,32 @@ def self_directed_assignments(account=Depends(student)):
 def self_directed_learning_turn(assignment_id: str, body: SelfDirectedLearningTurn, account=Depends(student)):
     student_id = self_directed_identity(account)
     return engines.self_directed_call(student_id, "POST", f"/api/student/assignments/{assignment_id}/learning-turn", json=body.model_dump())
+
+
+@router.post('/self-directed/assignments/{assignment_id}/research-choice')
+def self_directed_research_choice(assignment_id: str, body: SelfDirectedResearchChoice, account=Depends(student)):
+    student_id = self_directed_identity(account)
+    return engines.self_directed_call(student_id, 'POST', f'/api/student/assignments/{assignment_id}/research-choice', json=body.model_dump())
+
+
+@router.post('/self-directed/assignments/{assignment_id}/application-interview')
+def self_directed_application_interview(assignment_id: str, body: ApplicationInterviewTurn, account=Depends(student)):
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account)
+        if item['tool'] != 'self-directed-learning':
+            raise HTTPException(404, 'SDL assignment not found.')
+    student_id = self_directed_identity(account)
+    return engines.self_directed_call(student_id, 'POST', f'/api/student/assignments/{assignment_id}/application-interview', json=body.model_dump())
+
+
+@router.get('/assignments/{assignment_id}/application-interviews')
+def instructor_application_interviews(assignment_id: str, account=Depends(professor)):
+    with store.connection() as conn:
+        item = get_assignment(conn, assignment_id, account, manage=True)
+        if item['tool'] != 'self-directed-learning':
+            raise HTTPException(404, 'SDL assignment not found.')
+    from platform_app.shared_rag import pipeline
+    return pipeline('GET', f'/internal/platform/lessons/{assignment_id}/application-interviews')
 
 
 

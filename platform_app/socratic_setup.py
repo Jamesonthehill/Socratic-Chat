@@ -11,7 +11,7 @@ from typing import Any
 from openai import BadRequestError, RateLimitError
 
 from app import db, settings
-from app.llm_client import chat_completion
+from app.llm_client import socratic_chat_completion as chat_completion
 from platform_app.schemas import SocraticStepCheck
 
 
@@ -157,26 +157,29 @@ def validate_draft(raw: str, allowed_chunk_ids: set[str], source_text: str = "",
     ):
         raise ValueError("The model returned an incomplete or ungrounded setup. Generate again.")
     validated_steps = []
-    for step in steps:
+    for step_number, step in enumerate(steps, start=1):
         if not isinstance(step, dict):
-            raise ValueError("A learning step is incomplete.")
+            raise ValueError(f"Step {step_number} is incomplete.")
         title = step.get("title")
         goal = step.get("goal")
         scenario = step.get("scenario", "")
         question = step.get("question", "")
         quote = step.get("evidence_quote")
         chunk_id = str(step.get("source_chunk_id") or "")
-        if (
-            not isinstance(title, str) or not 3 <= len(title.strip()) <= 120
-            or not isinstance(goal, str) or not 8 <= len(goal.strip()) <= 500
-            or not isinstance(scenario, str) or len(scenario.strip()) > 700
-            or not isinstance(question, str) or len(question.strip()) > 500
-            or (question.strip() and not question.strip().endswith("?"))
-            or not isinstance(quote, str)
-            or chunk_id not in allowed_chunk_ids
-            or chunk_id not in source_by_chunk
-        ):
-            raise ValueError("A learning step is not grounded in its cited passage.")
+        if not isinstance(title, str) or not 3 <= len(title.strip()) <= 120:
+            raise ValueError(f"Step {step_number} needs a title of 3 to 120 characters.")
+        if not isinstance(goal, str) or not 8 <= len(goal.strip()) <= 500:
+            raise ValueError(f"Step {step_number} needs a learning goal of 8 to 500 characters.")
+        if not isinstance(scenario, str) or len(scenario.strip()) > 700:
+            raise ValueError(f"Step {step_number} needs scenario text of at most 700 characters.")
+        if not isinstance(question, str) or len(question.strip()) > 500:
+            raise ValueError(f"Step {step_number} needs question text of at most 500 characters.")
+        if question.strip() and not question.strip().endswith("?"):
+            raise ValueError(f"Step {step_number}'s question must end with a question mark.")
+        if not isinstance(quote, str):
+            raise ValueError(f"Step {step_number} did not return an evidence quote as text.")
+        if chunk_id not in allowed_chunk_ids or chunk_id not in source_by_chunk:
+            raise ValueError(f"Step {step_number} cites a passage outside the selected source excerpts.")
         verified_quote = grounded_excerpt(source_by_chunk[chunk_id], quote, title, goal)
         checks = step.get("checks", [])
         if not isinstance(checks, list) or len(checks) not in (0, 1, 2):
@@ -324,6 +327,7 @@ async def generate_setup(files: list[dict[str, Any]], title: str, canvas_instruc
         raise RuntimeError("Configure a generation model before drafting Socratic settings.")
     provider, api_key, base_url, model = config
     evidence, chunk_ids, source_files_by_chunk = selected_evidence(files)
+    citation_schema = {"type": "string", "enum": sorted(chunk_ids)}
     schema = {
         "type": "object", "properties": {
             "opening_prompt": {"type": "string"},
@@ -332,12 +336,12 @@ async def generate_setup(files: list[dict[str, Any]], title: str, canvas_instruc
                 "type": "object", "properties": {
                     "title": {"type": "string"}, "goal": {"type": "string"},
                     "scenario": {"type": "string", "minLength": 12}, "question": {"type": "string", "minLength": 10},
-                    "evidence_quote": {"type": "string"}, "source_chunk_id": {"type": "string"},
+                    "evidence_quote": {"type": "string"}, "source_chunk_id": citation_schema,
                 },
                 "required": ["title", "goal", "scenario", "question", "evidence_quote", "source_chunk_id"],
                 "additionalProperties": False,
             }},
-            "source_chunk_ids": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "string"}},
+            "source_chunk_ids": {"type": "array", "minItems": 1, "maxItems": 8, "items": citation_schema},
         },
         "required": ["opening_prompt", "student_instructions", "learning_steps", "source_chunk_ids"],
         "additionalProperties": False,
@@ -354,20 +358,24 @@ async def generate_setup(files: list[dict[str, Any]], title: str, canvas_instruc
                 "copied from its supporting indexed passage, and that quote's "
                 "chunk ID. Cover the meaningful phases without repeating a trivial detail or inventing a task. "
                 "These are an editable learning path, not a rigid script or a completed solution. "
-                "For each scenario field, describe the relevant situation, example, requirement, or problem "
-                "actually present in that step's cited passage. Explain the document's topic in plain language "
-                "before asking the student to reason about it. If the source has its own example, use that example "
-                "and preserve its actors, facts, and limits. If the source states only a general principle, "
-                "summarize that principle and the documented assignment task; do not invent people, events, "
-                "quantities, a new scenario, or a metaphor to fill the gap. "
-                "Keep each scenario concise but give enough document context to understand the question. "
+                "Write each scenario as a concrete moment the student can picture. Give the student a role, "
+                "show what just happened, and end with a decision, trade-off, or disagreement they need to resolve. "
+                "Prefer a worked example from the selected material and preserve its actors, facts, and limits. "
+                "When the cited passage explains only a principle, apply it in a clearly hypothetical situation "
+                "within the documented assignment context. The situation may add plausible events or choices, "
+                "but course claims and assignment requirements must be supported by the cited passage. "
+                "For a document about a campus app, for example, a team might receive unexpected feedback on "
+                "mobile signup, discover a problem near the end of a Sprint, or disagree about which feature "
+                "would help students most. Use these as patterns for decision points, not as facts or required topics. "
+                "Use plain language and keep each scenario between 12 and 700 characters. "
                 "The question should ask about one meaningful choice, cause, or consequence connected to the "
                 "cited passage and the step goal. Do not answer the question in the scenario, ask students to "
                 "recite an exact phrase you just supplied, or require an unintroduced page. "
-                "Later steps should follow the document's order or assignment workflow, rather than continuing "
-                "an invented story. Each question must end in a question mark. Never use generic repeats such "
-                "as 'What would you try first?'. Write a short opening prompt grounded in the first step's "
-                "document context, not a new metaphor or a page-lookup. Student instructions must say what students "
+                "When the material supports a shared project, keep that setting across steps and introduce a new "
+                "decision for each learning goal. Follow the document's order or assignment workflow. Each question "
+                "must end in a question mark. Never use generic repeats such as 'What would you try first?'. "
+                "Write a short opening prompt that puts the student into the first scenario and points to their "
+                "first decision. Skip broad introductions to the whole course. Student instructions must say what students "
                 "will do in this chat. Address the student as 'you'; the AI is the tutor, never the student. Preserve "
                 "any explicit Canvas submission requirements. Never invent a file, "
                 "deadline, grading rule, or submission requirement. If no submission requirement is stated, do not "
@@ -410,7 +418,8 @@ async def generate_setup(files: list[dict[str, Any]], title: str, canvas_instruc
             if attempt == 0:
                 request["messages"].append({"role": "system", "content": (
                     "The draft did not pass source-grounding or student-role checks. Regenerate it using "
-                    "only the selected passages; copy every step's evidence quote exactly from its cited chunk."
+                    f"only the selected passages. Validation issue: {exc} "
+                    "Copy every step's evidence quote exactly from its cited chunk."
                 )})
             continue
         if brief_steps or explanatory_steps:
@@ -424,9 +433,9 @@ async def generate_setup(files: list[dict[str, Any]], title: str, canvas_instruc
                 request["messages"].append({"role": "system", "content": (
                     f"Revise scenes for steps {', '.join(map(str, sorted(set(brief_steps + explanatory_steps))))}. "
                     "Some lack document context or answer the question before the student can reason about it. "
-                    "Regenerate the draft using the cited passages' actual topics and examples. Explain the "
-                    "relevant material plainly, then ask one question it supports. Do not add a new scenario "
-                    "or metaphor, and do not give the answer in the scenario field."
+                    "Regenerate those scenes around a concrete event and an unresolved choice. Use a documented "
+                    "example or a clearly hypothetical situation applying the cited principle. Keep the course "
+                    "facts grounded and leave the answer for the student to reason through."
                 )})
                 continue
         else:

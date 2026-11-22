@@ -243,6 +243,7 @@ def _require_authority(request: Request, highest_level: int) -> dict[str, object
     user = db.get_user_by_id(user_id)
     if user is None:
         raise HTTPException(status_code=401, detail="Account was not found.")
+    user = auth.account_for_session(user, auth.request_session(request))
     if int(user.get("authority_level", 2)) > highest_level:
         role = "administrator" if highest_level == 0 else "instructor"
         raise HTTPException(status_code=403, detail=f"This action requires {role} permission.")
@@ -254,8 +255,9 @@ def _require_course_access(request: Request, course_id: str, manage: bool = Fals
     user = db.get_user_by_id(user_id)
     if user is None:
         raise HTTPException(status_code=401, detail="Account was not found.")
+    user = auth.account_for_session(user, auth.request_session(request))
     allowed = (
-        db.user_manages_course(course_id, user_id)
+        int(user["authority_level"]) <= 1 and db.user_manages_course(course_id, user_id)
         if manage
         else db.user_can_access_course(course_id, user_id)
     )
@@ -444,7 +446,8 @@ async def login(payload: LoginRequest) -> AuthResponse:
 @app.post("/api/auth/session/refresh", response_model=SessionRefreshResponse)
 async def refresh_session(request: Request) -> SessionRefreshResponse:
     user_id = _session_user_id(request)
-    access_token, expires_in_seconds = auth.issue_session(user_id)
+    session = auth.request_session(request) or {}
+    access_token, expires_in_seconds = auth.issue_session(user_id, canvas_course_id=session.get("canvas_course_id"))
     return SessionRefreshResponse(access_token=access_token, expires_in_seconds=expires_in_seconds)
 
 
@@ -472,7 +475,7 @@ async def current_user(request: Request) -> CurrentUserResponse:
     user = db.get_user_by_id(user_id)
     if user is None:
         raise HTTPException(status_code=401, detail="Account was not found.")
-    return CurrentUserResponse(user=user)
+    return CurrentUserResponse(user=auth.account_for_session(user, auth.request_session(request)))
 
 
 @app.get("/api/admin/instructor-requests", response_model=list[UserProfile])

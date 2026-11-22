@@ -259,9 +259,41 @@ def get_assignment(
     )
     return {
         "id": str(assignment["id"]),
+        "course_id": str(assignment.get("course_id") or course_id),
         "name": str(assignment.get("name") or f"Assignment {assignment['id']}"),
         "description": description_with_links(assignment.get("description")),
         "due_at": assignment.get("due_at"),
         "html_url": assignment.get("html_url"),
         "points_possible": assignment.get("points_possible"),
     }
+
+
+def delete_assignment(
+    course_id: int,
+    assignment_id: int,
+    access_token: str,
+    *,
+    client: httpx.Client | None = None,
+) -> None:
+    """Delete one verified Canvas assignment with an instructor's API token."""
+    url = f"{settings.CANVAS_API_ORIGIN}/api/v1/courses/{course_id}/assignments/{assignment_id}"
+    _validate_canvas_url(url)
+    owned_client = client is None
+    active_client = client or httpx.Client(timeout=10.0, follow_redirects=False)
+    try:
+        try:
+            response = active_client.delete(
+                url,
+                headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+            )
+        except httpx.TimeoutException as error:
+            raise CanvasAPIError(504, "Canvas did not respond before the request timed out. Check Canvas before retrying.") from error
+        except httpx.HTTPError as error:
+            raise CanvasAPIError(502, "Canvas could not be reached. Check Canvas before retrying.") from error
+        if response.status_code == 403:
+            raise CanvasAPIError(403, "This Canvas token does not have permission to delete assignments in the course.")
+        if not response.is_success:
+            raise _request_error(response)
+    finally:
+        if owned_client:
+            active_client.close()

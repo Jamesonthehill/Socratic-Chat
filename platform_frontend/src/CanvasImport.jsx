@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, TOOLS } from "./api";
+import { api, ACTIVITY_TYPES, TOOLS } from "./api";
 import { Notice } from "./ui";
 
 export default function CanvasImport({
@@ -107,9 +107,9 @@ export default function CanvasImport({
             value={selectedTool}
             onChange={(event) => setSelectedTool(event.target.value)}
           >
-            {Object.entries(TOOLS).map(([id, tool]) => (
+            {ACTIVITY_TYPES.map((id) => (
               <option key={id} value={id}>
-                {tool.name}
+                {TOOLS[id].name}
               </option>
             ))}
           </select>

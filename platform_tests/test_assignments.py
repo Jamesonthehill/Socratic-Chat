@@ -163,7 +163,12 @@ def test_socratic_snapshot_survives_material_changes(client, roster, monkeypatch
 
 def test_cross_course_documents_rejected(client, roster, monkeypatch):
     monkeypatch.setattr(engines.db, 'list_rag_files', lambda **kw:[{'document_id':'owned'}])
-    item,_=draft(client,roster,config={'document_ids':['someone-elses-doc']})
+    item, body = draft(client,roster,config={'document_ids':['owned']})
+    payload = {**body, 'config': {'document_ids': ['someone-elses-doc']}}
+    # Current authorization rejects cross-course materials at draft time already.
+    assert client.post('/api/platform/assignments', headers=roster['headers']['prof'], json=payload).status_code == 422
+    assert client.put(f"/api/platform/assignments/{item['id']}", headers=roster['headers']['prof'], json=payload).status_code == 422
+    monkeypatch.setattr(engines.db, 'list_rag_files', lambda **kw: [])
     assert client.post(f"/api/platform/assignments/{item['id']}/publish",headers=roster['headers']['prof']).status_code==422
 
 
@@ -199,7 +204,8 @@ def test_whole_course_assignment_can_publish_without_students(client, roster, mo
 def test_invalid_recipient_rolls_back_draft(client,roster):
     res=client.post('/api/platform/assignments',headers=roster['headers']['prof'],json={'course_id':roster['course'],'tool':'socratic','title':'bad','audience':'selected','recipient_ids':[str(uuid4())]})
     assert res.status_code==422
-    assert client.get('/api/platform/assignments',headers=roster['headers']['prof']).json()==[]
+    # The professor catalog is global; earlier fixtures may own other courses.
+    assert client.get('/api/platform/assignments',params={'course_id':roster['course']},headers=roster['headers']['prof']).json()==[]
 
 
 def test_failed_publish_does_not_expose_draft(client,roster,monkeypatch):
@@ -233,6 +239,16 @@ def test_routes_to_correct_engine_and_resumes(client,roster,monkeypatch):
     before=len(calls)
     client.post(path+'/start',headers=h)
     assert len(calls)==before
+
+
+def test_retired_student_agent_cannot_start_an_engine(client, roster, monkeypatch):
+    item, _ = draft(client, roster, tool='student-agent')
+    publish(client, roster, item, monkeypatch)
+    def unexpected(*args, **kwargs):
+        raise AssertionError('Retired Student Agent must not make service calls')
+    monkeypatch.setattr(engines, 'call', unexpected)
+    response = client.post(f"/api/platform/assignments/{item['id']}/start", headers=roster['headers']['student'])
+    assert response.status_code == 404
 
 
 def test_start_race_creates_one_attempt(client,roster,monkeypatch):

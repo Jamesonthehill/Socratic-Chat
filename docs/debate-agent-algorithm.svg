@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1910" viewBox="0 0 1800 1910" role="img" aria-labelledby="title desc">
+<title id="title">Debate (Dialect) Agent — Algorithm</title>
+<desc id="desc">Native platform activity • one response at a time</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#587184"/></marker></defs>
+<rect width="1800" height="1910" fill="#fbfcfd"/>
+<rect width="1800" height="145" fill="#e8f0f6"/>
+<text x="900.0" y="64" font-family="Arial, Helvetica, sans-serif" font-size="40" font-weight="700" text-anchor="middle" fill="#1b3348">Debate (Dialect) Agent — Algorithm</text>
+<text x="900.0" y="106" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="middle" fill="#1b3348">Native platform activity • one response at a time</text>
+<text x="900.0" y="170" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="middle" fill="#587184">The two response modes are selected inside one model call, not by separate services.</text>
+<rect x="420" y="200" width="960" height="120" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="212" width="263" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="233" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">INSTRUCTOR + PLATFORM</text>
+<text x="447" y="275" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Publish the debate</text>
+<text x="447" y="299" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Freeze scenario, optional opening prompt, and minimum reply count.</text>
+<path d="M900 320 V347" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="420" y="355" width="960" height="112" rx="17" fill="#edf3ee" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="367" width="241" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="388" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">PLATFORM CONTROLLER</text>
+<text x="447" y="430" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Start the attempt</text>
+<text x="447" y="454" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Show the instructor’s opening prompt or scenario.</text>
+<path d="M900 467 V495" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="420" y="502" width="960" height="112" rx="17" fill="#ffffff" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="514" width="150" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="535" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">LEARNER</text>
+<text x="447" y="577" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">State and defend a position</text>
+<text x="447" y="601" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">Send a claim, reason, follow-up, or request for help.</text>
+<path d="M900 614 V642" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="420" y="649" width="960" height="134" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="661" width="263" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="682" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">DEBATE RESPONSE MODEL</text>
+<text x="447" y="724" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Read scenario and recent exchange</text>
+<text x="447" y="748" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">The prompt includes the scenario, student message, and</text>
+<text x="447" y="771" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">up to twelve prior conversation turns.</text>
+<path d="M900 783 V810" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M900 812 L1210 870 L900 928 L590 870 Z" fill="#ffffff" stroke="#587184" stroke-width="2.5"/>
+<text x="900" y="862" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#1b3348">Usable claim and</text>
+<text x="900" y="890" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#1b3348">reason?</text>
+<path d="M590 870 H455 V925" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M1210 870 H1345 V925" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="460" y="851" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="start" fill="#587184">Yes</text>
+<text x="1325" y="851" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="start" fill="#587184">No / asks for help</text>
+<rect x="95" y="935" width="740" height="170" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="117" y="947" width="263" height="30" rx="15" fill="#cfdfeb"/>
+<text x="134" y="968" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">DEVIL’S ADVOCATE MODE</text>
+<text x="122" y="1010" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Challenge one reasoning gap</text>
+<text x="122" y="1034" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">Choose a consequential assumption,</text>
+<text x="122" y="1057" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">counterargument, stakeholder effect,</text>
+<text x="122" y="1080" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">tradeoff, evidence gap, or causal step.</text>
+<rect x="965" y="935" width="740" height="170" rx="17" fill="#eaf2f7" stroke="#587184" stroke-width="2"/>
+<rect x="987" y="947" width="230" height="30" rx="15" fill="#cfdfeb"/>
+<text x="1004" y="968" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">STUDENT GUIDE MODE</text>
+<text x="992" y="1010" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Scaffold one next step</text>
+<text x="992" y="1034" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">When stuck or missing a usable argument,</text>
+<text x="992" y="1057" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">offer brief help without supplying the</text>
+<text x="992" y="1080" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start" fill="#1b3348">student’s finished position.</text>
+<path d="M465 1105 V1155 H900 M1335 1105 V1155 H900" fill="none" stroke="#587184" stroke-width="3.4"/>
+<path d="M900 1155 V1190" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="420" y="1197" width="960" height="130" rx="17" fill="#edf3ee" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="1209" width="241" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="1230" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">PLATFORM CONTROLLER</text>
+<text x="447" y="1272" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Save and show the model response</text>
+<text x="447" y="1296" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">The model prompt requests one focused question and avoids</text>
+<text x="447" y="1319" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">repeating objections; the controller persists the turn.</text>
+<path d="M900 1327 V1355" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M900 1357 L1210 1415 L900 1473 L590 1415 Z" fill="#ffffff" stroke="#587184" stroke-width="2.5"/>
+<text x="900" y="1407" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#1b3348">Minimum student</text>
+<text x="900" y="1435" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#1b3348">replies reached?</text>
+<path d="M590 1415 H45 V558 H410" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)" stroke-dasharray="9 7"/>
+<text x="465" y="1395" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="start" fill="#587184">No • continue</text>
+<path d="M900 1473 V1510" fill="none" stroke="#587184" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="420" y="1517" width="960" height="115" rx="17" fill="#edf3ee" stroke="#587184" stroke-width="2"/>
+<rect x="442" y="1529" width="252" height="30" rx="15" fill="#cfdfeb"/>
+<text x="459" y="1550" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="start" fill="#1b3348">LEARNER + CONTROLLER</text>
+<text x="447" y="1592" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#1b3348">Submit when ready</text>
+<text x="447" y="1616" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start" fill="#1b3348">The learner completes the attempt after the required reply count.</text>
+<rect x="100" y="1700" width="1600" height="152" rx="20" fill="#fff3e5" stroke="#587184" stroke-width="2"/>
+<text x="140" y="1742" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" text-anchor="start" fill="#1b3348">CURRENT IMPLEMENTATION NOTE</text>
+<text x="140" y="1780" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="400" text-anchor="start" fill="#1b3348">Optional document chunks are frozen at publication, but the active message path</text>
+<text x="140" y="1812" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="400" text-anchor="start" fill="#1b3348">returns before its retrieval branch. Debate replies currently use scenario and history.</text>
+</svg>

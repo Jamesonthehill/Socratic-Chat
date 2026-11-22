@@ -33,7 +33,7 @@ def _session_secret() -> bytes:
     return settings.AUTH_SESSION_SECRET.encode("utf-8")
 
 
-def issue_session(user_id: str) -> tuple[str, int]:
+def issue_session(user_id: str, *, canvas_course_id: str | None = None) -> tuple[str, int]:
     now = int(time.time())
     expires_in_seconds = max(1, settings.AUTH_SESSION_MINUTES) * 60
     payload = {
@@ -42,6 +42,8 @@ def issue_session(user_id: str) -> tuple[str, int]:
         "iat": now,
         "exp": now + expires_in_seconds,
     }
+    if canvas_course_id is not None:
+        payload["canvas_course_id"] = canvas_course_id
     encoded_payload = _encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
     signature = hmac.new(_session_secret(), encoded_payload.encode("ascii"), hashlib.sha256).digest()
     return f"{encoded_payload}.{_encode(signature)}", expires_in_seconds
@@ -73,11 +75,33 @@ def verify_session(token: str) -> dict[str, Any]:
     return payload
 
 
-def current_user_id(request: Request, required: bool = True) -> str | None:
+def request_session(request: Request) -> dict[str, Any] | None:
     authorization = request.headers.get("authorization", "")
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() == "bearer" and token:
-        return str(verify_session(token)["sub"])
+        return verify_session(token)
+    return None
+
+
+def account_for_session(account: dict[str, Any], session: dict[str, Any] | None) -> dict[str, Any]:
+    course_id = (session or {}).get("canvas_course_id")
+    if not course_id:
+        return account
+
+    from app import db
+
+    membership = db.get_course_membership(course_id, str(account["user_id"]))
+    if not membership or membership["status"] != "approved":
+        raise HTTPException(status_code=403, detail="Your Canvas course access is no longer approved.")
+    if membership["course_role"] == "student":
+        return {**account, "authority_level": 2, "role": "student"}
+    return account
+
+
+def current_user_id(request: Request, required: bool = True) -> str | None:
+    session = request_session(request)
+    if session:
+        return str(session["sub"])
 
     # Backward compatibility is available only while the app is not in its
     # restricted school-account mode.

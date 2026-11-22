@@ -8,7 +8,7 @@ from typing import Any
 
 from app import settings
 from app.keyword_scope import keyword_scope_instruction
-from app.llm_client import chat_completion
+from app.llm_client import socratic_chat_completion as chat_completion
 from app.pipeline_logging import (
     debug_preview,
     log_event,

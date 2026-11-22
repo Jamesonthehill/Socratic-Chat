@@ -80,6 +80,7 @@ def _provision_launch(
     email = str(claims.get("email") or "").strip().lower()
     display_name = str(claims.get("name") or claims.get("given_name") or "Canvas user").strip()
     authority_level = 1 if role == "instructor" else 2
+    assignment_error = None
 
     with store.connection() as conn:
         # Serialize first-time identity/course creation across workers. Row locks
@@ -208,16 +209,18 @@ def _provision_launch(
                 (issuer, deployment_id, context_id, course_id),
             )
 
+        lost_instructor_role = role == "student" and bool(conn.execute(
+            """SELECT 1 FROM course_memberships_platform
+               WHERE course_id=%s AND user_id=%s AND course_role='instructor'""",
+            (course_id, user_id),
+        ).fetchone())
         conn.execute(
             """
             INSERT INTO course_memberships_platform
                 (id, course_id, user_id, course_role, status, reviewed_at, reviewed_by)
             VALUES (%s, %s, %s, %s, 'approved', NOW(), %s)
             ON CONFLICT (course_id, user_id) DO UPDATE
-            SET course_role = CASE
-                    WHEN EXCLUDED.course_role = 'instructor' THEN 'instructor'
-                    ELSE course_memberships_platform.course_role
-                END,
+            SET course_role = EXCLUDED.course_role,
                 status = 'approved',
                 reviewed_at = NOW(),
                 reviewed_by = EXCLUDED.reviewed_by,
@@ -225,10 +228,27 @@ def _provision_launch(
             """,
             (str(uuid4()), course_id, user_id, role, user_id),
         )
-        assignment_id = lti_assignments.provision(
-            conn, claims, issuer=issuer, deployment_id=deployment_id,
-            context_id=context_id, course_id=course_id, user_id=user_id, role=role,
-        )
+        if lost_instructor_role:
+            conn.execute(
+                """UPDATE users_platform SET authority_level=2
+                   WHERE id=%s AND authority_level=1 AND NOT EXISTS (
+                       SELECT 1 FROM course_memberships_platform
+                       WHERE user_id=%s AND course_role='instructor' AND status='approved'
+                   )""",
+                (user_id, user_id),
+            )
+        assignment_id = None
+        try:
+            with conn.transaction():
+                assignment_id = lti_assignments.provision(
+                    conn, claims, issuer=issuer, deployment_id=deployment_id,
+                    context_id=context_id, course_id=course_id, user_id=user_id, role=role,
+                )
+        except HTTPException as exc:
+            if not lost_instructor_role:
+                raise
+            # An unavailable assignment must not undo a verified instructor downgrade.
+            assignment_error = exc
         if role == "student":
             conn.execute(
                 """
@@ -241,18 +261,21 @@ def _provision_launch(
                 (user_id, course_id),
             )
 
-        code = secrets.token_urlsafe(32)
-        conn.execute(
-            "DELETE FROM lti_login_codes_platform WHERE expires_at < NOW() - INTERVAL '1 day'"
-        )
-        conn.execute(
-            """
-            INSERT INTO lti_login_codes_platform
-                (code_hash, user_id, course_id, assignment_id, launch_role, expires_at)
-            VALUES (%s, %s, %s, %s, %s, NOW() + INTERVAL '5 minutes')
-            """,
-            (hashlib.sha256(code.encode()).hexdigest(), user_id, course_id, assignment_id, role),
-        )
+        if assignment_error is None:
+            code = secrets.token_urlsafe(32)
+            conn.execute(
+                "DELETE FROM lti_login_codes_platform WHERE expires_at < NOW() - INTERVAL '1 day'"
+            )
+            conn.execute(
+                """
+                INSERT INTO lti_login_codes_platform
+                    (code_hash, user_id, course_id, assignment_id, launch_role, expires_at)
+                VALUES (%s, %s, %s, %s, %s, NOW() + INTERVAL '5 minutes')
+                """,
+                (hashlib.sha256(code.encode()).hexdigest(), user_id, course_id, assignment_id, role),
+            )
+    if assignment_error is not None:
+        raise assignment_error
     return code, course_id
 
 
@@ -279,8 +302,10 @@ def lti_exchange(payload: LTIExchangeRequest):
     account = db.get_user_by_id(str(row["user_id"]))
     if not account:
         raise HTTPException(status_code=401, detail="Canvas account was not found.")
-    access_token, expires_in_seconds = auth.issue_session(str(row["user_id"]))
-    role = row["launch_role"] or ("instructor" if int(account["authority_level"]) <= 1 else "student")
+    canvas_course_id = str(row["course_id"]) if row["launch_role"] else None
+    account = auth.account_for_session(account, {"canvas_course_id": canvas_course_id})
+    access_token, expires_in_seconds = auth.issue_session(str(row["user_id"]), canvas_course_id=canvas_course_id)
+    role = "instructor" if int(account["authority_level"]) <= 1 else "student"
     assignment_id = row["assignment_id"]
     course_query = urlencode({"course": str(row["course_id"])})
     if assignment_id:

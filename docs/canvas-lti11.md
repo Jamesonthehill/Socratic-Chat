@@ -118,6 +118,7 @@ above in the Canvas assignment or add these **Custom Fields** in the tool's Canv
 configuration (do not replace the consumer key or shared secret):
 
 ```text
+canvas_course_id=$Canvas.course.id
 canvas_assignment_id=$Canvas.assignment.id
 canvas_assignment_title=$Canvas.assignment.title
 canvas_assignment_description=$Canvas.assignment.description
@@ -132,6 +133,24 @@ Content-Item/Deep Linking selection are separate features.
 
 Navigation links alone do not create activities. Setting
 `LTI_AUTO_CREATE_ASSIGNMENTS=false` restores the course-only launch flow.
+
+## Delete a linked assignment in Canvas
+
+From the professor assignment list, choose **Delete in Canvas** on a linked
+assignment. Enter an instructor Canvas API token and type `DELETE`. For an older
+link without a saved Canvas course ID, enter the numeric course ID from the
+Canvas course URL. The token is used for this request and is not stored.
+The Canvas account must have the **Assignments and Quizzes - delete** permission
+for that course.
+
+BrainTutor checks instructor access and the exact saved Canvas assignment ID,
+reads that assignment through the configured Canvas API origin, then calls
+Canvas's assignment DELETE endpoint. Only after Canvas reports success does
+BrainTutor archive its assignment. Its student attempts remain in PostgreSQL.
+If Canvas rejects deletion, BrainTutor leaves the assignment active. If a
+network timeout occurs, check Canvas before retrying because Canvas may have
+completed the request without returning a response. Assignments without a
+verified Canvas assignment ID do not offer this action.
 
 Course links are scoped to the consumer registration. Existing manually created
 courses are not silently relinked. Changing the consumer key or configured Canvas

@@ -74,7 +74,7 @@ services:
       - model-cache:/root/.cache/huggingface
 
   self-directed-learning:
-    build: ./adaptive-learning-app/backend
+    build: ./self-directed-learning/backend
     env_file: .env
     environment:
       DATABASE_URL: ${DOCKER_DATABASE_URL:?Set DOCKER_DATABASE_URL in .env}

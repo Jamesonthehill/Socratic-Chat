@@ -11,11 +11,10 @@ def test_publish_reflection_excludes_platform_metadata(monkeypatch, step_surveys
     config = ReflectionConfig(
         required_topics=["Design"],
         sub_topics=["Requirements"],
-        document_ids=[str(uuid4())],
-        step_surveys=step_surveys,
         expected_depth="applied",
         custom_notes="Discuss one concrete example.",
     ).model_dump()
+    config.update(document_ids=[str(uuid4())], step_surveys=step_surveys)
     assignment = {
         "id": str(uuid4()),
         "course_id": str(uuid4()),
@@ -35,6 +34,7 @@ def test_publish_reflection_excludes_platform_metadata(monkeypatch, step_surveys
     assert (tool, method, path) == (
         "reflections", "PUT", f"/internal/platform/modules/{assignment['id']}"
     )
+    assert payload["course_id"] == assignment["course_id"]
     assert payload["config"] == {
         "module_type": "topic_based",
         "required_topics": ["Design"],

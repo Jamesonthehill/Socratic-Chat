@@ -17,13 +17,12 @@ Compose starts the public platform gateway plus private Socratic, Reflections, a
 
 ## Personal Render and domain deployment
 
-The root `render.yaml` creates the public platform and starts Socratic,
-Reflections, and Self Directed Learning as private engine processes in the
-combined container. It does not provision a Render database. Set the Supabase
-PostgreSQL `DATABASE_URL` privately in the Render dashboard; do not put the URL
-or password in this repository. The combined process shares
-`PLATFORM_SERVICE_TOKEN` across the engines. In Render, create a Blueprint from
-this repository and enter the
+The root `render.yaml` creates the public platform plus separate Socratic,
+Reflections, and Self Directed Learning services and a generated internal service token. It does
+not provision a Render database. Set the same Supabase PostgreSQL `DATABASE_URL`
+privately in the Render dashboard for all four services; do not put the URL or
+password in this repository. Render shares `PLATFORM_SERVICE_TOKEN` across the
+services. In Render, create a Blueprint from this repository and enter the
 prompted model-provider and LTI secrets. The personal Blueprint starts with
 open/password authentication; add `GOOGLE_CLIENT_ID` and change `AUTH_MODE` to
 `school_google` only when Google OAuth is configured. Before switching an
@@ -37,6 +36,67 @@ workflow is intentionally manual so an unavailable Render service cannot replace
 the working site.
 
 Set a valid provider key for embeddings, lesson generation and live replies. Reflections may download its existing embedding model on the first milestone request. See the [setup guide](docs/platform-ui-rework.md) before applying the shared RAG migration to an existing deployment.
+
+## Instructor Assignment Copilot
+
+The copilot is shared across **Socratic Chat**, **Reflections**, **Self Directed Learning** and **Debate**. Reflections was the first implementation slice; the [platform-wide plan](PLAN.md) remains the product scope. AIducate stays unavailable until its runtime contract is finalized.
+
+Select indexed course materials and describe a learning outcome in **Assignment Copilot**. Leave the activity unselected to receive a recommendation, or select an activity to constrain the proposal. **Prepare proposal** previews the activity, objectives, settings, rationale, warnings and retrieved excerpts. Apply the complete proposal or individual fields, request a revision, or dismiss it. Applied values remain editable; saving and publishing use the existing instructor controls. Milestone CSV stays in the form and is never transmitted or overwritten. SDL lesson, diagnostic and practice generation still requires **Review activity**.
+
+OpenAI is the default provider (`gpt-4.1-mini`). Set `OPENAI_API_KEY` on the
+server, or a dedicated `PLATFORM_AGENT_API_KEY`. When migrating, remove old
+`PLATFORM_AGENT_BASE_URL`, `PLATFORM_AGENT_API_BASE_URL`, `PLATFORM_AGENT_API_KEY`
+and `PLATFORM_AGENT_MODEL` overrides and set `PLATFORM_AGENT_PROVIDER=openai`.
+Restart the gateway. No local model server or tunnel is required. Instructor
+requests and selected course excerpts go to the configured provider.
+
+For optional local hosting, install [Ollama](https://docs.ollama.com/quickstart), then run:
+
+```sh
+OLLAMA_CONTEXT_LENGTH=16384 ollama serve
+# In another terminal (downloads the model on first use):
+ollama pull qwen3.5:9b-q4_K_M
+```
+
+The shared capability registry needs a larger context than a 4,096-token server
+default. Use at least 16,384 tokens for this workflow. If Ollama already runs as
+an app/service, create an alias that reuses the installed Qwen weights:
+
+```sh
+ollama create courselab-copilot -f scripts/ollama-copilot.Modelfile
+```
+
+Then set `PLATFORM_AGENT_MODEL=courselab-copilot` instead of the base tag below.
+This is Ollama's documented [model context configuration](https://docs.ollama.com/api/openai-compatibility#setting-the-local-context-size);
+the OpenAI-compatible request cannot set context size itself.
+
+Set these values in the gateway's private `.env` and restart the gateway:
+
+```dotenv
+PLATFORM_AGENT_PROVIDER=ollama
+PLATFORM_AGENT_BASE_URL=http://127.0.0.1:11434/v1
+PLATFORM_AGENT_API_KEY=ollama
+PLATFORM_AGENT_MODEL=qwen3.5:9b-q4_K_M
+PLATFORM_AGENT_TIMEOUT_SECONDS=60
+PLATFORM_AGENT_MAX_TOOL_TURNS=6
+PLATFORM_AGENT_MAX_TOOL_CALLS=8
+```
+
+For a Docker gateway with Ollama on the host, use
+`http://host.docker.internal:11434/v1` for host access.
+The model must support tool calling through Ollama's
+[OpenAI-compatible API](https://docs.ollama.com/api/openai-compatibility).
+Set the model or base URL to an empty value to disable authoring. An unavailable
+or slow model produces an error in the panel; manual configuration remains
+available. Failures never automatically switch providers.
+
+`PLATFORM_AGENT_BASE_URL` takes precedence over the legacy `PLATFORM_AGENT_API_BASE_URL` alias. Authoring settings are independent of student providers. Optional `SOCRATIC_LLM_PROVIDER`, `REFLECTIONS_TUTOR_LLM_PROVIDER` (and planner/evaluator equivalents), `SDL_LLM_PROVIDER` and `DEBATE_LLM_PROVIDER` overrides let each engine choose its own supported provider. Empty overrides preserve existing defaults and legacy Reflections role settings. SDL currently supports its existing OpenAI/Groq/demo modes. Student conversations may use external providers. Material search uses the
+existing shared RAG service and embedding provider; local authoring inference
+does not make the entire retrieval pipeline offline. A hosted gateway needs a
+reachable institution-hosted compatible endpoint, not a localhost URL pointing
+to an instructor's computer. This change does not provision Ollama on Render.
+
+See [verification and manual steps](docs/assignment-copilot-verification.md) for current evidence, remaining gates, and the review/apply/save flow.
 
 ## Socratic questioning pipeline
 
@@ -100,8 +160,10 @@ to your Canvas account. Set `CANVAS_API_ORIGIN` to the same Canvas origin used b
    date, and assigned chatbot, configure the selected learning experience, choose
    recipients, and publish.
 
-The connector is read-only and is restricted to
-`${CANVAS_API_ORIGIN}/api/v1`. The access token is held in browser
+Canvas import uses read-only requests and is restricted to
+`${CANVAS_API_ORIGIN}/api/v1`. The separate **Delete in Canvas** action
+requires an explicit instructor confirmation and uses Canvas's assignment
+deletion endpoint. The access token is held in browser
 memory only for the current page and sent to the ClubALL backend only for the
 requested Canvas operation. It is not written to PostgreSQL, browser storage,
 application logs, assignment configuration, or source files. Importing copies a
@@ -151,7 +213,7 @@ access. Due dates are informational; late work remains allowed.
 The student dashboard stacks **New**, **In progress**, **Completed**, and **All assignments** sections. Icon-only controls switch between cards and the compact list, remembering the browser's preference. Students open the instructor-assigned chat without choosing its configuration.
 
 - Socratic uses the selected, frozen course chunks and its existing questioning pipeline.
-- Debate uses the configured scenario and live AI provider; completion requires the configured message count.
+- Debate uses the configured scenario and live AI provider, optional frozen course evidence, staged argument challenges, and a required final reflection before submission.
 - SDL opens inside the platform and resumes the existing adaptive lesson, including study, diagnostic questions, practice and reflection. Its workflow remains owned by the SDL service; it does not use the common Debate attempt table.
 - Reflections retains its existing student UI and private backend adapter.
 - AIducate supports draft storage only.
@@ -268,7 +330,7 @@ platform_app/             Shared assignment API, authorization, engine adapters
 platform_frontend/       Shared React UI and separate tool configuration screens
 Socratic-Chat/            Existing identity, courses, documents, RAG engine
 reflections-app/          Existing reflection graphs, analytics and recommendations
-adaptive-learning-app/   SDL engine, shared ingestion pipeline and embedded lesson UI
+self-directed-learning/   SDL engine, shared ingestion pipeline and embedded lesson UI
 scripts/                 Local runner, role bootstrap, database initialization
 platform_tests/          Assignment integration tests
 compose.yaml             One public origin and private learning services

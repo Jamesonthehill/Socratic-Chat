@@ -21,6 +21,8 @@ export const defaults = {
     scenario: "",
     opening_prompt: "",
     minimum_messages: 3,
+    reflection_prompt:
+      "What changed or became more nuanced in your thinking, which counterargument or tradeoff mattered most, and what would you revise in your final position?",
   },
   reflections: {
     module_type: "topic_based",

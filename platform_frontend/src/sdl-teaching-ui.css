@@ -1,0 +1,3549 @@
+/* UI reference: sdl-teaching-preview @ f65d290. Every selector is SDL-scoped; animations are namespaced. */
+.sdl-teaching-ui.sdl-teaching-ui .create-activity-button {
+  min-height: 56px;
+  padding: 16px 26px;
+  font-size: 17px;
+  gap: 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .create-activity-button > span {
+  font-size: 25px;
+  line-height: 1;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-material-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-material-heading h3 {
+  margin: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-document-list {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 14px;
+  margin-bottom: 24px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-document-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-document-list .check {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 0;
+  margin: 0;
+  border-bottom: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-document-list .check > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-document-list .check > small {
+  white-space: nowrap;
+  color: var(--muted);
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-document-delete {
+  flex: 0 0 auto;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-selected-list {
+  list-style: none;
+  padding: 0;
+  max-height: 200px;
+  overflow: auto;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-selected-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+  gap: 16px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-rail {
+  position: relative;
+  margin: 0 -3px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-rail .card-rail-track {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+  padding: 5px 3px 16px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-rail .card-rail-track::-webkit-scrollbar {
+  display: none;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-rail .card-rail-item {
+  flex: 0 0 calc((100% - 64px) / 4.15);
+  min-width: 205px;
+  scroll-snap-align: start;
+  display: flex;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-choice {
+  width: 100%;
+  min-height: 280px;
+  text-align: left;
+  align-items: flex-start;
+  gap: 0;
+  padding: 22px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-choice .tool-card-topline {
+  width: 100%;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-choice .tool-mode {
+  margin: 22px 0 8px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-choice strong {
+  font-family: Manrope, sans-serif;
+  font-size: 19px;
+  line-height: 1.4;
+  margin-bottom: 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-choice .activity-choice-description {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.55;
+  font-weight: 400;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-choice.is-selected {
+  border-color: var(--tool-color);
+  outline: 2px solid var(--tool-color);
+  outline-offset: 2px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--tool-color) 14%, transparent);
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-choice.is-selected::before {
+  opacity: 1;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-rail .card-rail-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--brand-indigo);
+  color: var(--surface);
+  border: 2px solid var(--surface);
+  box-shadow: 0 3px 10px #17203b25;
+  z-index: 2;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-rail .card-rail-arrow svg {
+  width: 17px;
+  height: 17px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-rail .card-rail-arrow.previous {
+  left: -12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-rail .card-rail-arrow.next {
+  right: -12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-rail .card-rail-arrow:hover {
+  transform: translateY(-50%);
+  filter: brightness(1.08);
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-rail .card-rail-track:focus-visible {
+  outline: 2px solid var(--brand-indigo);
+  outline-offset: 3px;
+  border-radius: 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-summary {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 14px 24px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-summary dt {
+  color: var(--muted);
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-summary dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sdl-teaching-ui.sdl-teaching-ui {
+  color-scheme: light;
+  font-family: "DM Sans", sans-serif;
+  color: #23354b;
+  background: var(--page);
+  font-synthesis: none;
+  --page: #f5f6fb;
+  --surface: #fff;
+  --surface-subtle: #f2f3f9;
+  --field-ink: #1d2742;
+  --ink: #17203b;
+  --line: #dfe2ed;
+  --muted: #65708a;
+  --accent: #4f5ee8;
+  --tool-color: #4f5ee8;
+  --brand-indigo: #4f46e5;
+  --brand-teal: #0f9185;
+  --shadow-soft: 0 16px 45px rgba(33, 42, 75, 0.08);
+}
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui {
+  color-scheme: dark;
+  color: #d8e4f0;
+  --page: #0c1020;
+  --surface: #151a2d;
+  --surface-subtle: #1c2238;
+  --field-ink: #e4e8f5;
+  --ink: #f0f2fb;
+  --line: #303750;
+  --muted: #a3acc2;
+  --accent: #9da6ff;
+  --tool-color: #9da6ff;
+  --brand-indigo: #9da6ff;
+  --brand-teal: #55d5c7;
+  --shadow-soft: 0 18px 50px rgba(0, 0, 0, 0.22);
+}
+.sdl-teaching-ui.sdl-teaching-ui * {
+  box-sizing: border-box;
+}
+.sdl-teaching-ui.sdl-teaching-ui {
+  margin: 0;
+  background: var(--page);
+  color: inherit;
+}
+.sdl-teaching-ui.sdl-teaching-ui button,
+.sdl-teaching-ui.sdl-teaching-ui input,
+.sdl-teaching-ui.sdl-teaching-ui textarea,
+.sdl-teaching-ui.sdl-teaching-ui select {
+  font: inherit;
+}
+.sdl-teaching-ui.sdl-teaching-ui a {
+  color: var(--accent);
+  text-underline-offset: 3px;
+}
+.sdl-teaching-ui.sdl-teaching-ui button,
+.sdl-teaching-ui.sdl-teaching-ui .button {
+  border: 1px solid transparent;
+  background: var(--brand-indigo);
+  color: #fff;
+  border-radius: 11px;
+  box-shadow: 0 6px 16px
+    color-mix(in srgb, var(--brand-indigo) 18%, transparent);
+  padding: 11px 18px;
+  font-weight: 650;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  line-height: 1.35;
+}
+.sdl-teaching-ui.sdl-teaching-ui button:hover,
+.sdl-teaching-ui.sdl-teaching-ui .button:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+.sdl-teaching-ui.sdl-teaching-ui button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sdl-teaching-ui.sdl-teaching-ui button.secondary,
+.sdl-teaching-ui.sdl-teaching-ui .button.secondary {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
+  box-shadow: none;
+}
+.sdl-teaching-ui.sdl-teaching-ui button.quiet {
+  background: transparent;
+  color: var(--ink);
+  padding: 9px 10px;
+  box-shadow: none;
+}
+.sdl-teaching-ui.sdl-teaching-ui .compact {
+  font-size: 14px;
+  padding: 9px 13px;
+}
+.sdl-teaching-ui.sdl-teaching-ui a:focus-visible,
+.sdl-teaching-ui.sdl-teaching-ui button:focus-visible,
+.sdl-teaching-ui.sdl-teaching-ui input:focus-visible,
+.sdl-teaching-ui.sdl-teaching-ui select:focus-visible,
+.sdl-teaching-ui.sdl-teaching-ui textarea:focus-visible,
+.sdl-teaching-ui.sdl-teaching-ui summary:focus-visible {
+  outline: 3px solid #508fcb;
+  outline-offset: 3px;
+}
+.sdl-teaching-ui.sdl-teaching-ui h1,
+.sdl-teaching-ui.sdl-teaching-ui h2,
+.sdl-teaching-ui.sdl-teaching-ui h3,
+.sdl-teaching-ui.sdl-teaching-ui p {
+  margin-top: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui h1,
+.sdl-teaching-ui.sdl-teaching-ui h2,
+.sdl-teaching-ui.sdl-teaching-ui h3 {
+  color: var(--ink);
+  font-family: "Manrope", sans-serif;
+}
+.sdl-teaching-ui.sdl-teaching-ui h1 {
+  font-size: clamp(28px, 3vw, 40px);
+  font-weight: 700;
+  line-height: 1.17;
+  letter-spacing: -1.1px;
+  margin-bottom: 14px;
+}
+.sdl-teaching-ui.sdl-teaching-ui h2 {
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.3px;
+}
+.sdl-teaching-ui.sdl-teaching-ui h3 {
+  font-size: 17px;
+  font-weight: 600;
+}
+.sdl-teaching-ui.sdl-teaching-ui p {
+  line-height: 1.6;
+  max-width: 76ch;
+}
+.sdl-teaching-ui.sdl-teaching-ui small,
+.sdl-teaching-ui.sdl-teaching-ui .help,
+.sdl-teaching-ui.sdl-teaching-ui .subtle {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.sdl-teaching-ui.sdl-teaching-ui .help {
+  display: block;
+  margin: 8px 0 16px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .site-header {
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  min-height: 82px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 36px;
+  padding: 14px max(24px, calc((100vw - 1240px) / 2));
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(18px);
+}
+.sdl-teaching-ui.sdl-teaching-ui .brand {
+  text-decoration: none;
+  color: var(--ink);
+}
+.sdl-teaching-ui.sdl-teaching-ui .brand-lockup {
+  align-items: center;
+  display: inline-flex;
+  gap: 11px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .brand-mark {
+  background: linear-gradient(
+    145deg,
+    var(--brand-indigo),
+    #6675f1 58%,
+    var(--brand-teal)
+  );
+  border-radius: 13px;
+  box-shadow: 0 8px 20px
+    color-mix(in srgb, var(--brand-indigo) 24%, transparent);
+  color: white;
+  height: 42px;
+  padding: 8px;
+  width: 42px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .brand-mark path {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+}
+.sdl-teaching-ui.sdl-teaching-ui .brand-mark circle {
+  fill: currentColor;
+}
+.sdl-teaching-ui.sdl-teaching-ui .brand-name {
+  color: var(--ink);
+  font-family: "Manrope", sans-serif;
+  font-size: 21px;
+  font-weight: 750;
+  letter-spacing: -0.7px;
+  line-height: 1;
+}
+.sdl-teaching-ui.sdl-teaching-ui .brand-name > span {
+  color: var(--brand-indigo);
+}
+.sdl-teaching-ui.sdl-teaching-ui .brand-name small {
+  display: block;
+  font-family: "DM Sans", sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  margin-top: 5px;
+  text-transform: uppercase;
+}
+.sdl-teaching-ui.sdl-teaching-ui .site-header nav {
+  display: flex;
+  gap: 25px;
+  flex: 1;
+  align-items: center;
+  font-size: 14px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .site-header nav a {
+  text-decoration: none;
+  color: var(--muted);
+}
+.sdl-teaching-ui.sdl-teaching-ui .site-header nav a:hover {
+  text-decoration: underline;
+}
+.sdl-teaching-ui.sdl-teaching-ui .identity {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  font-size: 13px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-theme-picker {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-theme-picker > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-theme-picker select {
+  margin: 0;
+  min-width: 92px;
+  padding: 7px 28px 7px 9px;
+  width: auto;
+}
+.sdl-teaching-ui.sdl-teaching-ui .identity > span {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sdl-teaching-ui.sdl-teaching-ui .main {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 54px 24px 80px;
+  min-height: calc(100vh - 160px);
+}
+.sdl-teaching-ui.sdl-teaching-ui .evidence-workspace-open .main {
+  max-width: none;
+}
+.sdl-teaching-ui.sdl-teaching-ui .page-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 25px;
+  margin-bottom: 28px;
+  position: relative;
+}
+.sdl-teaching-ui.sdl-teaching-ui .page-heading::after {
+  background: linear-gradient(90deg, var(--brand-indigo), var(--brand-teal));
+  border-radius: 999px;
+  bottom: -17px;
+  content: "";
+  height: 3px;
+  left: 0;
+  opacity: 0.2;
+  position: absolute;
+  width: 58px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .page-heading p:last-child {
+  color: var(--muted);
+  margin-bottom: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-session-identity {
+  font-size: 14px;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-session-identity strong {
+  color: var(--ink);
+}
+.sdl-teaching-ui.sdl-teaching-ui .context {
+  color: var(--brand-indigo);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+}
+.sdl-teaching-ui.sdl-teaching-ui .learning-path {
+  background:
+    radial-gradient(
+      circle at 92% 0%,
+      color-mix(in srgb, var(--brand-teal) 10%, transparent),
+      transparent 34%
+    ),
+    radial-gradient(
+      circle at 0% 100%,
+      color-mix(in srgb, var(--brand-indigo) 10%, transparent),
+      transparent 34%
+    ),
+    var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: var(--shadow-soft);
+  margin: 26px 0 48px;
+  overflow: hidden;
+  padding: 32px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .learning-path-heading {
+  align-items: end;
+  display: flex;
+  gap: 30px;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .learning-path-heading h2 {
+  font-size: 24px;
+  margin: 5px 0 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .learning-path-heading p {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .eyebrow {
+  color: var(--brand-indigo);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+.sdl-teaching-ui.sdl-teaching-ui .tool-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .tool-card {
+  background: color-mix(in srgb, var(--surface) 94%, var(--tool-color));
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  min-height: 296px;
+  overflow: hidden;
+  padding: 22px;
+  position: relative;
+  text-decoration: none;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s,
+    transform 0.2s;
+}
+.sdl-teaching-ui.sdl-teaching-ui .tool-card::before {
+  background: var(--tool-color);
+  content: "";
+  height: 3px;
+  inset: 0 0 auto;
+  opacity: 0;
+  position: absolute;
+  transition: opacity 0.2s;
+}
+.sdl-teaching-ui.sdl-teaching-ui .tool-card:hover {
+  border-color: color-mix(in srgb, var(--tool-color) 42%, var(--line));
+  box-shadow: 0 16px 36px color-mix(in srgb, var(--tool-color) 11%, transparent);
+  transform: translateY(-5px);
+}
+.sdl-teaching-ui.sdl-teaching-ui .tool-card:hover::before {
+  opacity: 1;
+}
+.sdl-teaching-ui.sdl-teaching-ui .tool-card-topline {
+  align-items: start;
+  display: flex;
+  justify-content: space-between;
+}
+.sdl-teaching-ui.sdl-teaching-ui .tool-mark {
+  align-items: center;
+  background: color-mix(in srgb, var(--tool-color) 11%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--tool-color) 18%, var(--line));
+  border-radius: 13px;
+  color: var(--tool-color);
+  display: flex;
+  height: 48px;
+  justify-content: center;
+  min-width: 48px;
+  width: 48px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .tool-mark svg {
+  fill: none;
+  height: 27px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+  width: 27px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .tool-step {
+  color: color-mix(in srgb, var(--tool-color) 72%, var(--muted));
+  font-family: "Manrope", sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .tool-mode {
+  color: var(--tool-color);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  margin: 25px 0 7px;
+  text-transform: uppercase;
+}
+.sdl-teaching-ui.sdl-teaching-ui .tool-card h3 {
+  font-size: 20px;
+  margin-bottom: 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .tool-card p {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.55;
+  margin-bottom: 20px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .tool-action {
+  align-items: center;
+  display: flex;
+  color: var(--tool-color);
+  font-size: 13px;
+  font-weight: 700;
+  gap: 8px;
+  margin-top: auto;
+}
+.sdl-teaching-ui.sdl-teaching-ui .tool-action span {
+  font-size: 18px;
+  transition: transform 0.2s;
+}
+.sdl-teaching-ui.sdl-teaching-ui .tool-card:hover .tool-action span {
+  transform: translateX(4px);
+}
+.sdl-teaching-ui.sdl-teaching-ui .section {
+  margin-top: 42px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .section-heading h2 {
+  margin: 0;
+  font-size: 21px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .filters {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+.sdl-teaching-ui.sdl-teaching-ui .filters select {
+  width: auto;
+  min-width: 135px;
+  font-size: 13px;
+  padding: 10px 34px 10px 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-list {
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: var(--surface);
+  overflow: hidden;
+  box-shadow: var(--shadow-soft);
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 21px 23px;
+  border-bottom: 1px solid var(--line);
+  transition: background 160ms ease;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-row:hover {
+  background: color-mix(in srgb, var(--surface) 95%, var(--brand-indigo));
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-row:last-child {
+  border: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-name {
+  flex: 1;
+  min-width: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-name h3 {
+  font-size: 16px;
+  margin: 6px 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-name h3 a {
+  color: var(--ink);
+  text-decoration: none;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-name h3 a:hover {
+  text-decoration: underline;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-state {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  min-width: 105px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .badge {
+  display: inline-flex;
+  white-space: nowrap;
+  align-items: center;
+  background: #eaf0f7;
+  color: #4d647e;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 999px;
+  width: fit-content;
+}
+.sdl-teaching-ui.sdl-teaching-ui .badge.approved,
+.sdl-teaching-ui.sdl-teaching-ui .badge.published,
+.sdl-teaching-ui.sdl-teaching-ui .badge.completed {
+  background: #e4f3ec;
+  color: #216644;
+}
+.sdl-teaching-ui.sdl-teaching-ui .badge.in_progress {
+  background: #e6effb;
+  color: #275c9d;
+}
+.sdl-teaching-ui.sdl-teaching-ui .badge.draft {
+  background: #f5eedc;
+  color: #785f25;
+}
+.sdl-teaching-ui.sdl-teaching-ui .badge.archived {
+  background: #edeef0;
+  color: #646d78;
+}
+.sdl-teaching-ui.sdl-teaching-ui .badge.pending {
+  background: #fff2cf;
+  color: #765b16;
+}
+.sdl-teaching-ui.sdl-teaching-ui .badge.rejected {
+  background: #fbe8e8;
+  color: #963e3e;
+}
+.sdl-teaching-ui.sdl-teaching-ui .badge.available {
+  background: #edf1f5;
+  color: #566b80;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-course-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .dashboard-refresh {
+  border: 1px solid transparent;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    color 150ms ease,
+    transform 150ms ease;
+}
+.sdl-teaching-ui.sdl-teaching-ui .dashboard-refresh:hover {
+  background: #e8f1fa;
+  border-color: #8eacca;
+  box-shadow: 0 4px 12px #183d6817;
+  color: #174f89;
+  filter: none;
+  transform: translateY(-1px);
+}
+.sdl-teaching-ui.sdl-teaching-ui .dashboard-refresh:active {
+  box-shadow: none;
+  transform: translateY(0);
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-course-card {
+  align-self: start;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+  transition:
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-course-card.is-expanded {
+  border-color: color-mix(in srgb, var(--brand-indigo) 24%, var(--line));
+  box-shadow: 0 20px 48px
+    color-mix(in srgb, var(--brand-indigo) 12%, transparent);
+  grid-column: 1 / -1;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-course-summary {
+  padding: 26px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-course-topline,
+.sdl-teaching-ui.sdl-teaching-ui .student-course-meta,
+.sdl-teaching-ui.sdl-teaching-ui .student-course-actions,
+.sdl-teaching-ui.sdl-teaching-ui .course-assignment-heading {
+  align-items: center;
+  display: flex;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-course-topline {
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-course-card .course-code {
+  color: var(--brand-indigo);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-course-card h3 {
+  font-size: 19px;
+  margin-bottom: 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-course-card p {
+  color: var(--muted);
+  font-size: 14px;
+  margin-bottom: 18px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-course-meta {
+  color: var(--muted);
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 7px 16px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-course-actions {
+  border-top: 1px solid var(--line);
+  justify-content: flex-end;
+  margin-top: 20px;
+  padding-top: 18px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-course-actions button > span {
+  font-size: 18px;
+  line-height: 1;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-assignment-panel {
+  background: color-mix(
+    in srgb,
+    var(--surface-subtle) 82%,
+    var(--brand-indigo)
+  );
+  border-top: 1px solid var(--line);
+  padding: 24px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-assignment-heading {
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-assignment-heading span {
+  color: var(--accent);
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-assignment-heading h3 {
+  font-size: 18px;
+  margin: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-assignment-panel .assignment-list {
+  box-shadow: 0 5px 18px #183d6808;
+}
+.sdl-teaching-ui.sdl-teaching-ui .empty {
+  padding: 48px 28px;
+  border: 1px dashed color-mix(in srgb, var(--brand-indigo) 28%, var(--line));
+  border-radius: 17px;
+  text-align: center;
+  background:
+    radial-gradient(
+      circle at 50% 0%,
+      color-mix(in srgb, var(--brand-indigo) 8%, transparent),
+      transparent 52%
+    ),
+    var(--surface);
+}
+.sdl-teaching-ui.sdl-teaching-ui .empty p {
+  margin: 0 auto;
+  color: var(--muted);
+}
+.sdl-teaching-ui.sdl-teaching-ui .empty h3 {
+  margin-bottom: 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .back {
+  align-items: center;
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 650;
+  gap: 6px;
+  text-decoration: none;
+  margin-bottom: 26px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .back:hover {
+  text-decoration: underline;
+}
+.sdl-teaching-ui.sdl-teaching-ui .create-controls {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .create-controls label {
+  margin: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .create-controls select {
+  max-width: 260px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .panel {
+  padding: 29px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  box-shadow: var(--shadow-soft);
+  margin-bottom: 22px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .panel h2 {
+  font-size: 19px;
+  padding-bottom: 17px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 23px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .editor-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 22px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .editor-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .editor-fieldset:disabled input,
+.sdl-teaching-ui.sdl-teaching-ui .editor-fieldset:disabled textarea,
+.sdl-teaching-ui.sdl-teaching-ui .editor-fieldset:disabled select {
+  color: #50637c;
+  background: #f5f7fa;
+  opacity: 1;
+}
+.sdl-teaching-ui.sdl-teaching-ui label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 19px;
+}
+.sdl-teaching-ui.sdl-teaching-ui input:not([type="checkbox"]),
+.sdl-teaching-ui.sdl-teaching-ui select,
+.sdl-teaching-ui.sdl-teaching-ui textarea {
+  display: block;
+  background: var(--surface);
+  color: var(--field-ink);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 11px 13px;
+  width: 100%;
+  margin-top: 7px;
+  font-size: 14px;
+  line-height: 1.5;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+.sdl-teaching-ui.sdl-teaching-ui input:not([type="checkbox"]):focus,
+.sdl-teaching-ui.sdl-teaching-ui select:focus,
+.sdl-teaching-ui.sdl-teaching-ui textarea:focus {
+  border-color: var(--brand-indigo);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-indigo) 13%, transparent);
+  outline: none;
+}
+.sdl-teaching-ui.sdl-teaching-ui textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-weight: 400;
+  margin-bottom: 13px;
+  line-height: 1.5;
+}
+.sdl-teaching-ui.sdl-teaching-ui .check input {
+  margin-top: 4px;
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .check small {
+  display: block;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-options {
+  max-height: 280px;
+  overflow: auto;
+  margin: 18px 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .form-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .form-columns > div {
+  min-width: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .editor-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  padding: 5px 0 20px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .notice {
+  background: color-mix(in srgb, var(--brand-indigo) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--brand-indigo) 18%, var(--line));
+  border-left: 4px solid var(--brand-indigo);
+  border-radius: 11px;
+  padding: 14px 17px;
+  margin: 16px 0 22px;
+  line-height: 1.6;
+  font-size: 14px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .notice.error {
+  background: #fff0ef;
+  color: #9b2928;
+  border-color: #c64a48;
+}
+.sdl-teaching-ui.sdl-teaching-ui .file-input {
+  padding: 14px 16px;
+  border: 1px dashed #a8bdd4;
+  border-radius: 12px;
+  margin-top: 15px;
+  background: color-mix(
+    in srgb,
+    var(--surface-subtle) 92%,
+    var(--brand-indigo)
+  );
+}
+.sdl-teaching-ui.sdl-teaching-ui .file-input input {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .topic-tools {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.sdl-teaching-ui.sdl-teaching-ui .topic-tools .file-input {
+  margin: 0;
+  flex: 1;
+}
+.sdl-teaching-ui.sdl-teaching-ui .generate-row {
+  display: flex;
+  gap: 15px;
+  align-items: flex-end;
+  margin: 23px 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .generate-row label {
+  flex: 1;
+  margin: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .topic-editor {
+  border-top: 1px solid var(--line);
+  padding-top: 25px;
+  margin-top: 25px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .stage-row {
+  display: grid;
+  grid-template-columns: 1fr 2fr auto;
+  gap: 12px;
+  align-items: center;
+}
+.sdl-teaching-ui.sdl-teaching-ui .table-wrap {
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  box-shadow: var(--shadow-soft);
+}
+.sdl-teaching-ui.sdl-teaching-ui table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+}
+.sdl-teaching-ui.sdl-teaching-ui th {
+  padding: 17px 20px;
+  background: var(--surface-subtle);
+  font-weight: 600;
+  color: #4c6380;
+}
+.sdl-teaching-ui.sdl-teaching-ui td {
+  padding: 17px 20px;
+  border-top: 1px solid var(--line);
+}
+.sdl-teaching-ui.sdl-teaching-ui pre {
+  font-size: 12px;
+  white-space: pre-wrap;
+  max-width: 380px;
+  overflow-wrap: anywhere;
+}
+.sdl-teaching-ui.sdl-teaching-ui summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+.sdl-teaching-ui.sdl-teaching-ui .workspace-grid {
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+  gap: 26px;
+  align-items: start;
+  transition: margin-right 180ms ease;
+}
+.sdl-teaching-ui.sdl-teaching-ui .workspace-grid.evidence-open,
+.sdl-teaching-ui.sdl-teaching-ui .workspace-grid.chat-expanded,
+.sdl-teaching-ui.sdl-teaching-ui .workspace-grid.concept-check-active {
+  grid-template-columns: minmax(0, 1fr);
+}
+.sdl-teaching-ui.sdl-teaching-ui .workspace-grid.evidence-open {
+  margin-right: calc(var(--evidence-drawer-width) + 24px);
+}
+.sdl-teaching-ui.sdl-teaching-ui .workspace-grid.evidence-open .assignment-info,
+.sdl-teaching-ui.sdl-teaching-ui .workspace-grid.chat-expanded .assignment-info,
+.sdl-teaching-ui.sdl-teaching-ui .workspace-grid.concept-check-active .assignment-info {
+  display: none;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-info {
+  font-size: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-soft);
+  padding: 22px;
+  position: sticky;
+  top: 106px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-info h2 {
+  font-size: 18px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-info h3 {
+  margin-top: 27px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-info .prose {
+  color: #4d6078;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-keyword-glossary {
+  border-top: 1px solid var(--line);
+  margin-top: 22px;
+  padding-top: 4px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-keyword-glossary h3 {
+  margin: 18px 0 4px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-keyword-glossary dl {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0 22px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-keyword-glossary dl > div {
+  background: color-mix(in srgb, var(--surface) 94%, var(--brand-indigo));
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 11px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-keyword-glossary dt {
+  color: var(--ink);
+  font-weight: 750;
+  line-height: 1.3;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-keyword-glossary dd {
+  color: var(--muted);
+  line-height: 1.45;
+  margin: 5px 0 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .resources {
+  padding-left: 20px;
+  line-height: 1.8;
+}
+.sdl-teaching-ui.sdl-teaching-ui .saved-note {
+  border-top: 1px solid var(--line);
+  padding-top: 23px;
+  margin-top: 26px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .chat-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 19px;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+.sdl-teaching-ui.sdl-teaching-ui .chat-heading {
+  display: flex;
+  gap: 16px;
+  background: color-mix(in srgb, var(--surface) 96%, var(--brand-indigo));
+  padding: 20px 24px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+.sdl-teaching-ui.sdl-teaching-ui .chat-heading h2 {
+  font-size: 18px;
+  margin: 0 0 4px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .chat-heading p {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .chat-expand-control {
+  margin-left: auto;
+  flex: 0 0 38px;
+  height: 38px;
+  padding: 9px;
+  width: 38px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .chat-expand-control svg {
+  fill: none;
+  height: 18px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+  width: 18px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .start-state {
+  text-align: center;
+  padding: 70px 35px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .start-state p {
+  color: var(--muted);
+  margin-bottom: 25px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .messages {
+  padding: 28px 28px 12px;
+  max-height: 60vh;
+  min-height: 220px;
+  overflow: auto;
+  scroll-behavior: smooth;
+}
+.sdl-teaching-ui.sdl-teaching-ui .workspace-grid.evidence-open .messages,
+.sdl-teaching-ui.sdl-teaching-ui .workspace-grid.chat-expanded .messages {
+  max-height: 72vh;
+  min-height: 420px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .message {
+  max-width: 93%;
+  margin-bottom: 26px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .message.user {
+  margin-left: auto;
+  background: color-mix(in srgb, var(--brand-indigo) 9%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--brand-indigo) 20%, var(--line));
+  border-radius: 16px 16px 4px 16px;
+  padding: 18px 20px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .message-author {
+  font-size: 12px;
+  font-weight: 600;
+  color: #56708d;
+  display: block;
+  margin-bottom: 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .prose {
+  font-size: 15px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.sdl-teaching-ui.sdl-teaching-ui .prose p:last-child {
+  margin-bottom: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .prose ul,
+.sdl-teaching-ui.sdl-teaching-ui .prose ol {
+  padding-left: 23px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .prose pre {
+  max-width: 100%;
+  padding: 14px;
+  background: #f2f5f9;
+}
+.sdl-teaching-ui.sdl-teaching-ui .prose code {
+  font-size: 13px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .working {
+  font-size: 14px;
+  color: var(--muted);
+}
+.sdl-teaching-ui.sdl-teaching-ui .socratic-thinking-message {
+  align-items: center;
+  align-self: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 8px 20px #1d416d0d;
+  color: var(--muted);
+  display: flex;
+  gap: 12px;
+  min-width: min(275px, 92%);
+  padding: 12px 14px;
+  width: fit-content;
+}
+.sdl-teaching-ui.sdl-teaching-ui .thinking-mark {
+  display: grid;
+  flex: 0 0 44px;
+  height: 44px;
+  place-items: center;
+  width: 44px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .thinking-mark svg {
+  height: 44px;
+  overflow: visible;
+  width: 44px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .thinking-orbit-track {
+  fill: none;
+  stroke: #d5e1ed;
+  stroke-dasharray: 2.5 4.5;
+  stroke-width: 1.25;
+}
+.sdl-teaching-ui.sdl-teaching-ui .thinking-orbit-particles {
+  animation: sdl-teaching-thinking-orbit 1.8s cubic-bezier(0.55, 0.08, 0.42, 0.92) infinite;
+  transform-origin: 22px 22px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .thinking-particle-primary {
+  fill: var(--accent);
+  filter: drop-shadow(0 2px 3px #285f9c59);
+}
+.sdl-teaching-ui.sdl-teaching-ui .thinking-particle-secondary {
+  fill: #299c92;
+  filter: drop-shadow(0 2px 3px #299c9252);
+}
+.sdl-teaching-ui.sdl-teaching-ui .thinking-mark-center {
+  fill: var(--ink);
+  filter: drop-shadow(0 5px 7px #183d6833);
+}
+.sdl-teaching-ui.sdl-teaching-ui .thinking-mark-stage {
+  fill: none;
+  stroke: #fff;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+.sdl-teaching-ui.sdl-teaching-ui .thinking-copy {
+  display: grid;
+  gap: 2px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .thinking-copy strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .thinking-status {
+  animation: sdl-teaching-thinking-status-breathe 1.4s ease-in-out infinite;
+  color: var(--muted);
+  font-size: 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .thinking-elapsed {
+  color: #167b73;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+@keyframes sdl-teaching-thinking-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes sdl-teaching-thinking-status-breathe {
+  0%,
+  100% {
+    opacity: 0.58;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sdl-teaching-ui.sdl-teaching-ui .thinking-orbit-particles,
+  .sdl-teaching-ui.sdl-teaching-ui .thinking-status {
+    animation: none;
+  }
+}
+.sdl-teaching-ui.sdl-teaching-ui .socratic-message-card {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  max-width: 92%;
+  overflow: hidden;
+  padding: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .socratic-message-card.assistant {
+  background: var(--surface);
+  box-shadow: 0 12px 32px
+    color-mix(in srgb, var(--brand-indigo) 9%, transparent);
+}
+.sdl-teaching-ui.sdl-teaching-ui .socratic-message-card.user {
+  border-color: #b6c9ea;
+  border-radius: 16px;
+  max-width: 82%;
+  padding: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .message-card-header {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  min-height: 50px;
+  padding: 10px 15px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .message-card-identity,
+.sdl-teaching-ui.sdl-teaching-ui .message-card-meta {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .message-avatar {
+  align-items: center;
+  background: linear-gradient(145deg, var(--brand-indigo), var(--brand-teal));
+  border-radius: 8px;
+  color: #fff;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 700;
+  height: 29px;
+  justify-content: center;
+  width: 29px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .socratic-message-card.user .message-avatar {
+  background: #4e58d9;
+  border-radius: 50%;
+}
+.sdl-teaching-ui.sdl-teaching-ui .message-card-identity > strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .message-card-meta {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.sdl-teaching-ui.sdl-teaching-ui .score-badge {
+  background: #ebe9ff;
+  border-radius: 999px;
+  color: #4b3dc0;
+  font-size: 11px;
+  padding: 4px 8px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .message-card-body {
+  padding: 20px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .message-lead {
+  margin-bottom: 16px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .message-thinking-step {
+  background: color-mix(in srgb, var(--brand-teal) 9%, var(--surface));
+  border-left: 4px solid var(--brand-teal);
+  border-radius: 11px;
+  padding: 17px 19px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .message-thinking-step > span {
+  color: #167b73;
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.35;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+.sdl-teaching-ui.sdl-teaching-ui .message-thinking-step p {
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.58;
+  margin: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .message-evidence {
+  background: #f0f2f9;
+  border-radius: 10px;
+  margin: 0 20px 17px;
+  padding: 13px 15px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .message-evidence > strong {
+  color: var(--ink);
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+.sdl-teaching-ui.sdl-teaching-ui .message-evidence > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sdl-teaching-ui.sdl-teaching-ui button.evidence-chip {
+  background: var(--surface);
+  border-color: var(--line);
+  border-radius: 999px;
+  color: #4b3dc0;
+  font-size: 12px;
+  line-height: 1.35;
+  padding: 7px 11px;
+}
+.sdl-teaching-ui.sdl-teaching-ui button.evidence-chip[aria-pressed="true"] {
+  background: #e9f1fa;
+  border-color: var(--accent);
+}
+.sdl-teaching-ui.sdl-teaching-ui .evidence-drawer {
+  animation: sdl-teaching-evidence-drawer-enter 220ms ease-out both;
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  bottom: 0;
+  box-shadow: -18px 0 45px #183d6826;
+  max-width: 100%;
+  overflow-y: auto;
+  padding: 0 26px 30px;
+  position: fixed;
+  right: 0;
+  top: 0;
+  width: var(--evidence-drawer-width);
+  z-index: 100;
+}
+.sdl-teaching-ui.sdl-teaching-ui .evidence-drawer-resizer {
+  bottom: 0;
+  cursor: col-resize;
+  left: -6px;
+  position: absolute;
+  top: 0;
+  touch-action: none;
+  width: 12px;
+  z-index: 3;
+}
+.sdl-teaching-ui.sdl-teaching-ui .evidence-drawer-resizer::after {
+  background: #a7b9ca;
+  border-radius: 999px;
+  content: "";
+  height: 52px;
+  left: 5px;
+  opacity: 0;
+  position: absolute;
+  top: calc(50% - 26px);
+  transition:
+    opacity 150ms ease,
+    background 150ms ease;
+  width: 3px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .evidence-drawer-resizer:hover::after,
+.sdl-teaching-ui.sdl-teaching-ui .evidence-drawer-resizer:focus-visible::after,
+.sdl-teaching-ui.sdl-teaching-ui .is-resizing-evidence .evidence-drawer-resizer::after {
+  background: var(--accent);
+  opacity: 1;
+}
+.sdl-teaching-ui.sdl-teaching-ui .evidence-drawer-resizer:focus-visible {
+  outline: 3px solid #508fcb;
+  outline-offset: -3px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .is-resizing-evidence {
+  cursor: col-resize;
+  user-select: none;
+}
+.sdl-teaching-ui.sdl-teaching-ui .evidence-drawer-header {
+  align-items: flex-start;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  padding: 26px 0 20px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.sdl-teaching-ui.sdl-teaching-ui .evidence-drawer-header span,
+.sdl-teaching-ui.sdl-teaching-ui .evidence-drawer-passage > span {
+  color: #167b73;
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+.sdl-teaching-ui.sdl-teaching-ui .evidence-drawer-header h2 {
+  font-size: 18px;
+  line-height: 1.4;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.sdl-teaching-ui.sdl-teaching-ui button.evidence-drawer-close {
+  border-radius: 50%;
+  flex: 0 0 38px;
+  font-size: 24px;
+  height: 38px;
+  line-height: 1;
+  padding: 0;
+  width: 38px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .evidence-drawer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 20px 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .evidence-drawer-meta span {
+  background: #eef3f8;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 9px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .evidence-drawer-passage {
+  background: #f5f8fb;
+  border-left: 4px solid #299c92;
+  border-radius: 6px;
+  padding: 20px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .evidence-drawer-passage p {
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.75;
+  margin: 0;
+  white-space: pre-wrap;
+}
+.sdl-teaching-ui.sdl-teaching-ui .evidence-drawer-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 18px 2px 0;
+}
+@keyframes sdl-teaching-evidence-drawer-enter {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.sdl-teaching-ui.sdl-teaching-ui .suggested-responses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 26px 14px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .suggested-responses.is-busy {
+  opacity: 0.55;
+}
+.sdl-teaching-ui.sdl-teaching-ui .suggestion-chip {
+  background: var(--surface);
+  border-color: var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 12px;
+  padding: 8px 13px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check {
+  margin: 0 24px 20px;
+  padding: 20px;
+  border: 1px solid color-mix(in srgb, var(--brand-indigo) 34%, var(--line));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 93%, var(--brand-indigo));
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check-active .concept-check {
+  margin: 32px clamp(24px, 5vw, 72px) 40px;
+  padding: clamp(24px, 4vw, 48px);
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check-heading .context {
+  margin: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check-hint {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check legend {
+  width: 100%;
+  margin-bottom: 12px;
+  font-weight: 700;
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check-active .concept-check legend {
+  margin-bottom: 22px;
+  font-size: clamp(1.2rem, 2vw, 1.65rem);
+  line-height: 1.35;
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check-options {
+  display: grid;
+  gap: 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check-active .concept-check-options {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check-active .concept-check-option {
+  min-height: 112px;
+  padding: 18px;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check-option.is-selected {
+  border-color: var(--brand-indigo);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-indigo) 18%, transparent);
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check-option input {
+  margin-top: 3px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check-reason {
+  margin-top: 18px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check-active .concept-check-reason {
+  margin-top: 28px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check-reason textarea {
+  width: 100%;
+  margin: 8px 0 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .concept-check-reason .help {
+  margin: 4px 0 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .composer {
+  background: color-mix(in srgb, var(--surface) 96%, var(--brand-indigo));
+  padding: 20px 24px;
+  border-top: 1px solid var(--line);
+}
+.sdl-teaching-ui.sdl-teaching-ui .composer textarea {
+  margin: 0;
+  min-height: 96px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .composer > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+  gap: 14px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .composer .help {
+  margin: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .source-list {
+  margin: 0 26px 20px;
+  font-size: 13px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .source-list div {
+  padding-top: 15px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .tutor-controls {
+  padding: 12px 25px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+}
+.sdl-teaching-ui.sdl-teaching-ui .tutor-controls > div {
+  width: 100%;
+}
+.sdl-teaching-ui.sdl-teaching-ui .tutor-controls > div > button {
+  margin: 0 8px 8px 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .result {
+  padding: 27px;
+  background: #f0f8f4;
+  border-top: 1px solid #c7dfd2;
+}
+.sdl-teaching-ui.sdl-teaching-ui .result h2 {
+  color: #246347;
+}
+.sdl-teaching-ui.sdl-teaching-ui .result p {
+  font-size: 14px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .result-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 30px;
+  margin: 22px 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .result-stats span {
+  font-size: 13px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .result-stats strong {
+  display: block;
+  font-size: 25px;
+  margin-top: 6px;
+  color: #246347;
+}
+.sdl-teaching-ui.sdl-teaching-ui .related {
+  padding: 15px;
+  background: var(--surface);
+  border-radius: 7px;
+  margin-bottom: 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .related p {
+  margin: 0 0 8px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .loading {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  justify-content: center;
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 32px 24px;
+  text-align: center;
+}
+.sdl-teaching-ui.sdl-teaching-ui .loading .notice {
+  margin: 0;
+  max-width: 360px;
+  text-align: left;
+  width: 100%;
+}
+.sdl-teaching-ui.sdl-teaching-ui .loading p {
+  margin-inline: auto;
+}
+.sdl-teaching-ui.sdl-teaching-ui footer {
+  border-top: 1px solid var(--line);
+  padding: 22px max(24px, calc((100vw - 1192px) / 2));
+  font-size: 13px;
+  font-weight: 600;
+  color: #647c96;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sdl-teaching-ui.sdl-teaching-ui footer span {
+  font-weight: 400;
+}
+.sdl-teaching-ui.sdl-teaching-ui footer .brand-mark {
+  border-radius: 8px;
+  height: 28px;
+  padding: 5px;
+  width: 28px;
+}
+.sdl-teaching-ui.sdl-teaching-ui footer .brand-name {
+  font-size: 15px;
+}
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .tool-mark,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .badge,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui th,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .message.user,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .message-evidence,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .evidence-drawer-meta span {
+  background: var(--surface-subtle);
+  color: var(--ink);
+}
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .badge.approved,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .badge.published,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .badge.completed,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .message-thinking-step,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .result {
+  background: #142f2d;
+  color: #9dd9c7;
+}
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .badge.draft,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .badge.pending {
+  background: #352e1d;
+  color: #e8ce82;
+}
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .badge.rejected,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .notice.error {
+  background: #3a2024;
+  color: #ffb4b4;
+}
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .badge.in_progress,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .notice,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui button.evidence-chip[aria-pressed="true"] {
+  background: #172e48;
+  color: #b8d9ff;
+}
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .editor-fieldset:disabled input,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .editor-fieldset:disabled textarea,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .editor-fieldset:disabled select,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .file-input,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .prose pre,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .evidence-drawer-passage {
+  background: var(--surface-subtle);
+  color: var(--muted);
+}
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .dashboard-refresh:hover {
+  background: #1a3047;
+  border-color: #557a9e;
+  color: #b8d9ff;
+}
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .score-badge {
+  background: #2a2850;
+  color: #c9c4ff;
+}
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui button.evidence-chip {
+  color: #bdb9ff;
+}
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .result h2,
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .result-stats strong {
+  color: #9dd9c7;
+}
+@media (max-width: 1000px) {
+  .sdl-teaching-ui.sdl-teaching-ui .site-header {
+    gap: 20px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .identity > span {
+    display: none;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .page-heading {
+    align-items: flex-start;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .create-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .workspace-grid {
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 23px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .tool-card {
+    min-height: 280px;
+    padding: 20px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .tool-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .learning-path {
+    padding: 26px;
+  }
+}
+@media (max-width: 760px) {
+  .sdl-teaching-ui.sdl-teaching-ui .site-header {
+    flex-wrap: wrap;
+    padding: 17px 20px;
+    gap: 17px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .site-header nav {
+    order: 3;
+    flex-basis: 100%;
+    gap: 24px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .identity {
+    margin-left: auto;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .main {
+    padding: 30px 18px 50px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .tool-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .tool-card {
+    min-height: 0;
+    padding: 21px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .tool-mode {
+    margin-top: 20px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .tool-card p {
+    margin-bottom: 18px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .learning-path {
+    border-radius: 18px;
+    margin: 20px -4px 38px;
+    padding: 21px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .learning-path-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .learning-path-heading h2 {
+    font-size: 21px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .page-heading {
+    flex-direction: column;
+    gap: 20px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .filters {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .filters select {
+    min-width: 0;
+    flex: 1;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .assignment-row {
+    flex-wrap: wrap;
+    padding: 19px 16px;
+    gap: 13px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .assignment-name {
+    flex-basis: calc(100% - 60px);
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .assignment-state {
+    align-items: flex-start;
+    flex: 1;
+    margin-left: 57px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .assignment-state small {
+    font-size: 11px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .assignment-row > .button {
+    padding: 9px 11px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .editor-grid,
+  .sdl-teaching-ui.sdl-teaching-ui .form-columns {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .panel {
+    padding: 22px 18px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .workspace-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .workspace-grid.evidence-open {
+    margin-right: 0;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .assignment-info {
+    position: static;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .assignment-info .saved-note {
+    margin-top: 15px;
+    padding-top: 15px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .chat-heading {
+    padding: 18px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .messages {
+    padding: 20px 18px 8px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .workspace-grid.evidence-open .messages,
+  .sdl-teaching-ui.sdl-teaching-ui .workspace-grid.chat-expanded .messages {
+    min-height: 320px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .composer {
+    padding: 18px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .composer .help {
+    font-size: 11px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .message {
+    max-width: 100%;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .message.user {
+    max-width: 95%;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .evidence-drawer {
+    width: 100%;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .evidence-drawer-resizer {
+    display: none;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .editor-actions {
+    flex-wrap: wrap;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .topic-tools,
+  .sdl-teaching-ui.sdl-teaching-ui .generate-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .stage-row {
+    grid-template-columns: 1fr;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .student-course-grid {
+    grid-template-columns: 1fr;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .stage-row label {
+    margin: 0;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .stage-row {
+    padding: 15px;
+    border: 1px solid var(--line);
+    margin-bottom: 13px;
+    border-radius: 6px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .stage-row button {
+    justify-self: end;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .create-controls {
+    width: 100%;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .create-controls select {
+    max-width: none;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui footer {
+    gap: 15px;
+    font-size: 11px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .result-stats {
+    gap: 20px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sdl-teaching-ui.sdl-teaching-ui * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .evidence-drawer {
+    animation: none;
+  }
+}
+
+.sdl-teaching-ui.sdl-teaching-ui input[type="file"][hidden] {
+  display: none;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-choice.tool-card {
+  justify-content: flex-start;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .assignment-row {
+  position: relative;
+  cursor: pointer;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-row .assignment-name h3 a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-row > .button {
+  position: relative;
+  z-index: 1;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-row:focus-within {
+  outline: 2px solid var(--brand-indigo);
+  outline-offset: 2px;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .activity-detail-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-detail-nav .back {
+  margin: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-description {
+  white-space: pre-wrap;
+  line-height: 1.65;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-kpi {
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  padding: 22px;
+  background: var(--surface-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-kpi span {
+  color: var(--muted);
+  font-size: 14px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-kpi strong {
+  font-family: Manrope, sans-serif;
+  font-size: 28px;
+  color: var(--ink);
+}
+.sdl-teaching-ui.sdl-teaching-ui .site-header nav a[aria-current="page"] {
+  color: var(--brand-indigo);
+  font-weight: 700;
+}
+@media (max-width: 760px) {
+  .sdl-teaching-ui.sdl-teaching-ui .activity-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .activity-glance-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 17px;
+  margin-bottom: 23px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-glance-heading h2 {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .assignment-toolbar {
+  width: 100%;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-toolbar .filters {
+  margin-right: auto;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-toolbar .assignment-create {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-toolbar .assignment-refresh {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: var(--surface);
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-toolbar .assignment-refresh:hover {
+  color: var(--brand-indigo);
+  border-color: var(--brand-indigo);
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .activity-title-date-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 20px;
+  align-items: start;
+}
+.sdl-teaching-ui.sdl-teaching-ui .activity-title-date-row input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+@media (max-width: 640px) {
+  .sdl-teaching-ui.sdl-teaching-ui .activity-title-date-row {
+    grid-template-columns: 1fr;
+  }
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .workspace-grid > aside {
+  padding: 24px;
+  border: 1px solid var(--border, #ddd);
+  border-radius: 16px;
+  background: var(--surface, white);
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-stages {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-stages li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-stages li span {
+  border-radius: 50%;
+  padding: 4px 9px;
+  background: var(--border, #eee);
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-stages .active {
+  color: var(--accent, #4f5ee8);
+  font-weight: 700;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .objectives {
+  display: grid;
+  gap: 16px;
+  margin: 16px 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .objective {
+  display: flex;
+  gap: 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .objective small,
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .placement span,
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-readings a,
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .learning-choices small {
+  display: block;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-readings a {
+  margin: 16px 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .learning-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .diagnostic-card {
+  padding: 20px;
+  border: 1px solid var(--border, #ddd);
+  border-radius: 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .quiz-question label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl input[type="radio"] {
+  width: auto;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .resource-card {
+  display: block;
+  padding: 16px;
+  margin: 12px 0;
+  border: 1px solid var(--border, #ddd);
+  border-radius: 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .message .avatar {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .message.student {
+  margin-left: auto;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .composer textarea {
+  width: 100%;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-assignment-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-assignment-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-assignment-tabs > button {
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 8px 8px 0 0;
+  padding: 14px 16px;
+  font-size: 16px;
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-assignment-tabs > button.active {
+  color: var(--brand-indigo);
+  border-bottom-color: var(--brand-indigo);
+  background: color-mix(in srgb, var(--surface) 94%, var(--brand-indigo));
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-assignment-count {
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: var(--surface-subtle);
+  font-size: 13px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-view-switch {
+  display: flex;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 4px;
+  background: var(--surface);
+  margin-left: auto;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-view-switch button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-view-switch button.active {
+  background: var(--brand-indigo);
+  color: white;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-view-switch svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+  box-shadow: none;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-cards .assignment-row,
+.sdl-teaching-ui.sdl-teaching-ui .assignment-cards .assignment-row:last-child {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-top: 4px solid var(--tool-color);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  min-height: 265px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-cards .assignment-row:hover {
+  background: color-mix(in srgb, var(--surface) 97%, var(--tool-color));
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-cards .assignment-name {
+  width: 100%;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-cards .assignment-name h3 {
+  font-size: 19px;
+  line-height: 1.45;
+  margin: 10px 0;
+  overflow-wrap: anywhere;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-cards .assignment-state {
+  align-items: flex-start;
+  align-self: flex-start;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-cards .assignment-row > .button {
+  align-self: stretch;
+  margin-top: auto;
+  text-align: center;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-card-description {
+  color: var(--muted);
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 10px 0 18px;
+}
+@media (max-width: 1000px) {
+  .sdl-teaching-ui.sdl-teaching-ui .assignment-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .sdl-teaching-ui.sdl-teaching-ui .assignment-cards {
+    grid-template-columns: 1fr;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .student-assignment-tabs {
+    overflow: auto;
+    max-width: 100%;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .student-assignment-tabs button {
+    white-space: nowrap;
+  }
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-view-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 18px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-view-toolbar .assignment-view-switch {
+  margin: 0;
+  padding: 3px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-view-toolbar .assignment-view-switch button {
+  width: 34px;
+  height: 32px;
+  padding: 8px;
+  justify-content: center;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-progress-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 28px;
+  margin-bottom: 34px;
+  padding: 22px 26px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-progress-count {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-progress-count span {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-progress-count strong {
+  color: var(--ink);
+  font-size: 28px;
+  line-height: 1;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-progress-track {
+  grid-column: 1 / -1;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand-indigo);
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-assignment-group {
+  margin: 0 0 32px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--line);
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-assignment-group:last-of-type {
+  border-bottom: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-assignment-group h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 22px;
+  margin: 0 0 20px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-group-empty {
+  color: var(--muted);
+  padding: 12px 0;
+}
+@media (max-width: 640px) {
+  .sdl-teaching-ui.sdl-teaching-ui .student-progress-summary {
+    gap: 14px;
+    padding: 20px;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .student-progress-count {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 12px;
+  align-items: end;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .composer textarea {
+  grid-column: 1;
+  width: 100%;
+  min-height: 70px;
+  height: 70px;
+  max-height: 180px;
+  resize: vertical;
+  box-sizing: border-box;
+  margin: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .composer > button {
+  grid-column: 2;
+  grid-row: 1;
+  width: auto;
+  min-width: 80px;
+  min-height: 44px;
+  margin: 0;
+  align-self: end;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .composer > small {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+/* Assignment previews use a native modal for keyboard focus and Escape. */
+.sdl-teaching-ui.sdl-teaching-ui .assignment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-details {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: var(--shadow-soft);
+  padding: 0;
+  width: min(680px, calc(100% - 32px));
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-details::backdrop {
+  background: rgb(12 16 32 / 55%);
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-details-content {
+  padding: clamp(20px, 4vw, 32px);
+  overflow-wrap: anywhere;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-details header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  justify-content: space-between;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-details header button {
+  flex-shrink: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-details h2 {
+  font-size: 24px;
+  margin: 8px 0 20px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-details h3 {
+  font-size: 16px;
+  margin: 0 0 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-details-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 20px;
+  padding: 20px;
+  margin: 0;
+  border-radius: 12px;
+  background: var(--surface-subtle);
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-details dt {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-details dd {
+  margin: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-details section {
+  padding-top: 24px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-details-text {
+  white-space: pre-wrap;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-details footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .assignment-details-panel {
+  width: 100%;
+}
+.sdl-teaching-ui.sdl-teaching-ui .chatbot-picker {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 24px 0 0;
+  padding: 24px 0 0;
+  min-width: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .chatbot-picker legend {
+  float: left;
+  font-family: "Manrope", sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  padding: 0;
+  margin-bottom: 8px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .chatbot-picker > p {
+  clear: both;
+}
+.sdl-teaching-ui.sdl-teaching-ui .chatbot-choice {
+  cursor: pointer;
+  margin: 0;
+  min-height: 270px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .chatbot-choice input[type="radio"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .chatbot-choice:focus-within {
+  outline: 3px solid var(--tool-color);
+  outline-offset: 3px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .chatbot-choice.is-selected {
+  border-color: var(--tool-color);
+  box-shadow: 0 0 0 1px var(--tool-color);
+}
+.sdl-teaching-ui.sdl-teaching-ui .chatbot-choice.is-selected::before {
+  opacity: 1;
+}
+.sdl-teaching-ui.sdl-teaching-ui .chatbot-choice:has(input:disabled) {
+  cursor: default;
+}
+.sdl-teaching-ui.sdl-teaching-ui .chatbot-choice:has(input:disabled):hover {
+  transform: none;
+}
+.sdl-teaching-ui.sdl-teaching-ui .chatbot-choice-title {
+  font-family: "Manrope", sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  margin-bottom: 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .chatbot-choice-description {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+  margin-bottom: 20px;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .socratic-learning-summary {
+  margin: 24px 0;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--brand-teal);
+  border-radius: 16px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.sdl-teaching-ui.sdl-teaching-ui .socratic-learning-summary h2 {
+  margin-bottom: 20px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .socratic-learning-summary h3 {
+  font-size: 15px;
+  margin: 20px 0 8px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .student-reflection-text {
+  white-space: pre-wrap;
+}
+.sdl-teaching-ui.sdl-teaching-ui .learning-reflection-form {
+  display: block;
+}
+.sdl-teaching-ui.sdl-teaching-ui .learning-reflection-form textarea {
+  width: 100%;
+  margin-bottom: 14px;
+}
+
+/* Course documents and objective review, following local-socratic-chat. */
+.sdl-teaching-ui.sdl-teaching-ui .objective-section-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-toggle-button {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 0.72rem;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui #courseObjectivesContent[hidden] {
+  display: none;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui #courseObjectivesContent > p {
+  margin-top: 0;
+  color: var(--muted);
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-row {
+  padding: 0;
+  border-left-width: 4px;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-row-draft {
+  border-left-color: #d9911b;
+  background: color-mix(in srgb, #d9911b 7%, var(--surface-subtle));
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-row-approved {
+  border-left-color: #198754;
+  background: color-mix(in srgb, #198754 7%, var(--surface-subtle));
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-row-rejected {
+  border-left-color: #c2414b;
+  background: color-mix(in srgb, #c2414b 7%, var(--surface-subtle));
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 13px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-summary::-webkit-details-marker {
+  display: none;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-summary::before {
+  content: "+";
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  color: var(--muted);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-row[open] .objective-summary::before {
+  content: "−";
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-summary-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-summary-copy strong {
+  color: var(--ink);
+  font-size: 0.88rem;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-summary-copy span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-summary-meta {
+  display: flex;
+  grid-column: 1;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-review-body {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-title-input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-field {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-field textarea {
+  width: 100%;
+  resize: vertical;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-status {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-status-draft {
+  border: 1px solid color-mix(in srgb, #d9911b 45%, transparent);
+  background: color-mix(in srgb, #d9911b 16%, transparent);
+  color: #8a5807;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-status-approved {
+  border: 1px solid color-mix(in srgb, #198754 45%, transparent);
+  background: color-mix(in srgb, #198754 16%, transparent);
+  color: #11663e;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-status-rejected {
+  border: 1px solid color-mix(in srgb, #c2414b 45%, transparent);
+  background: color-mix(in srgb, #c2414b 15%, transparent);
+  color: #9d2631;
+}
+
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .objective-status-draft {
+  color: #f6c86f;
+}
+
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .objective-status-approved {
+  color: #74d5a5;
+}
+
+html[data-theme="dark"] .sdl-teaching-ui.sdl-teaching-ui .objective-status-rejected {
+  color: #f49aa2;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-planning-details {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-planning-details h4 {
+  margin: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 0.76rem;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-planning-details dl {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.35fr) minmax(0, 1fr);
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-planning-details dt,
+.sdl-teaching-ui.sdl-teaching-ui .objective-planning-details dd {
+  margin: 0;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-planning-details dt {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-planning-details dd {
+  border-left: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-planning-details dt:nth-last-of-type(1),
+.sdl-teaching-ui.sdl-teaching-ui .objective-planning-details dd:last-child {
+  border-bottom: 0;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .course-learning-manager {
+  display: grid;
+  gap: 18px;
+  margin: 24px 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-learning-manager .panel {
+  margin: 0;
+  min-width: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-learning-manager .panel h2 {
+  margin: 0 0 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-document-upload {
+  display: flex;
+  align-items: end;
+  gap: 14px;
+  margin: 18px 0;
+  flex-wrap: wrap;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-document-upload label {
+  flex: 1 1 260px;
+  margin: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-document-list,
+.sdl-teaching-ui.sdl-teaching-ui .objective-list {
+  display: grid;
+  gap: 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-document-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-document-row > div:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-document-row .help {
+  display: block;
+  margin: 4px 0 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-document-actions,
+.sdl-teaching-ui.sdl-teaching-ui .management-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-count {
+  color: var(--muted);
+  font-size: 13px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-row {
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-row-draft {
+  border-left-color: #d9911b;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-row-approved {
+  border-left-color: #198754;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-row-rejected {
+  border-left-color: #c2414b;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-review-body label {
+  margin: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-planning-details > summary {
+  padding: 12px;
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 650;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-planning-fields {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-actions .approve-button {
+  background: #167d4a;
+  color: #fff;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-actions .reject-button {
+  background: #b33140;
+  color: #fff;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-empty {
+  padding: 18px;
+  border: 1px dashed var(--line);
+  border-radius: 9px;
+  color: var(--muted);
+  text-align: center;
+}
+@media (max-width: 640px) {
+  .sdl-teaching-ui.sdl-teaching-ui .course-document-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .course-document-actions {
+    justify-content: flex-end;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .management-card-heading {
+    align-items: flex-start;
+  }
+  .sdl-teaching-ui.sdl-teaching-ui .objective-planning-details dl {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Keep the two management sections within the Socratic settings card. */
+.sdl-teaching-ui.sdl-teaching-ui .course-learning-manager.is-embedded {
+  margin: 0;
+  gap: 24px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .socratic-conversation-settings + .course-learning-manager.is-embedded {
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+  padding-top: 24px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .socratic-conversation-settings > h3 {
+  margin-top: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-learning-manager.is-embedded > section {
+  min-width: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-learning-manager.keywords-only .assignment-keywords {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-learning-manager.is-embedded > section > h3 {
+  font-size: 18px;
+  margin-top: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .course-learning-manager.is-embedded .learning-objectives-card {
+  border-top: 1px solid var(--line);
+  padding-top: 24px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-assignment-selected {
+  font-weight: 700;
+  color: var(--brand-teal);
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-keywords {
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-keywords legend {
+  font-weight: 650;
+  padding: 0 4px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-keyword-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-keyword-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 6px 5px 12px;
+  background: var(--panel, #fff);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-keyword-chip span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-keyword-chip .keyword-remove {
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  width: 30px;
+  min-height: 30px;
+  padding: 0;
+  border-radius: 6px;
+  color: #b33140;
+  background: transparent;
+  border: 1px solid var(--line);
+  font-size: 20px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-keyword-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-keyword-entry input {
+  min-width: 0;
+  flex: 1;
+}
+.sdl-teaching-ui.sdl-teaching-ui .objective-keyword-entry .keyword-add {
+  flex: 0 0 42px;
+  min-height: 42px;
+  padding: 0;
+  font-size: 22px;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .objective-keyword-entry .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .assignment-keywords {
+  margin-top: 22px;
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-keyword-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 64px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  background: var(--panel, #fff);
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-keyword-bar input {
+  flex: 1 1 220px;
+  width: auto;
+  min-width: 120px;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-keyword-bar .keyword-add {
+  padding: 0;
+  flex: 0 0 40px;
+  min-height: 40px;
+  font-size: 22px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .assignment-keyword-bar .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-suggestions {
+  margin-top: 14px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-suggestions summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-suggestion-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-suggestion-list button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  text-align: left;
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .keyword-approval-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  margin-top: 16px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-bucket {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-bucket-optional {
+  background: #f7f8fc;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-bucket-approved {
+  border-color: #9bcbb0;
+  background: #f1faf5;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-bucket-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-bucket-heading h4 {
+  margin: 0;
+  font-size: 16px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-optional-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-optional-heading .keyword-generation {
+  min-height: 34px;
+  padding: 7px 10px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-bucket-heading > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-candidate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 250px;
+  overflow-y: auto;
+  margin: 8px 0 14px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-candidate-row {
+  display: flex;
+  align-items: stretch;
+  gap: 7px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-candidate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  border-radius: 8px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-candidate-row .keyword-candidate {
+  flex: 1;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-dismiss {
+  flex: 0 0 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel, #fff);
+  color: #b33140;
+  font-size: 22px;
+  cursor: pointer;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-dismiss:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-candidate span:first-child {
+  overflow-wrap: anywhere;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-optional-entry {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-optional-entry input {
+  flex: 1;
+  min-width: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-optional-entry .keyword-add {
+  flex: 0 0 42px;
+  padding: 0;
+  font-size: 22px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-optional-entry .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-approved-list {
+  display: flex;
+  align-content: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 140px;
+  padding: 8px 0 18px;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-approved-list .objective-keyword-chip {
+  align-self: flex-start;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-bucket .confirm-keywords {
+  margin-top: auto;
+  background: #187b4a;
+  color: #fff;
+}
+.sdl-teaching-ui.sdl-teaching-ui .keyword-prepared {
+  color: #12693e;
+  font-size: 13px;
+  line-height: 1.5;
+}
+@media (max-width: 720px) {
+  .sdl-teaching-ui.sdl-teaching-ui .keyword-approval-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.sdl-teaching-ui.sdl-teaching-ui .reflection-help {
+  display: inline-block;
+  position: relative;
+  margin-left: 0.3rem;
+  cursor: help;
+  vertical-align: baseline;
+}
+.sdl-teaching-ui.sdl-teaching-ui .reflection-help-content {
+  display: none;
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 0.4rem);
+  left: 0;
+  width: min(18rem, 65vw);
+  padding: 0.65rem 0.8rem;
+  border-radius: 0.5rem;
+  background: #182b43;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 400;
+  line-height: 1.5;
+  box-shadow: 0 4px 16px #0003;
+}
+.sdl-teaching-ui.sdl-teaching-ui .reflection-help:hover .reflection-help-content,
+.sdl-teaching-ui.sdl-teaching-ui .reflection-help:focus .reflection-help-content {
+  display: block;
+}
+.sdl-teaching-ui.sdl-teaching-ui .reflection-help:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* SDL chat preserves reading position and distinguishes student messages. */
+.sdl-teaching-ui.sdl-teaching-ui .lesson-chat .messages, .sdl-teaching-ui.sdl-teaching-ui .lesson-chat .messages * { overflow-anchor:none; scroll-behavior:auto; }
+.sdl-teaching-ui.sdl-teaching-ui .lesson-chat .message.student { margin-left:auto; }
+.sdl-teaching-ui.sdl-teaching-ui .lesson-chat .message.student p, .sdl-teaching-ui.sdl-teaching-ui .lesson-chat .message.student .avatar { background:#2563eb; color:white; }
+/* SDL instructor review */
+.sdl-teaching-ui.sdl-teaching-ui .sdl-review-section { border:1px solid var(--line); border-radius:16px; padding:24px; margin:20px 0; }
+.sdl-teaching-ui.sdl-teaching-ui .sdl-review-section > header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; }
+.sdl-teaching-ui.sdl-teaching-ui .sdl-review-section h3, .sdl-teaching-ui.sdl-teaching-ui .sdl-review-section h4 { margin:0 0 12px; }
+.sdl-teaching-ui.sdl-teaching-ui .sdl-review-section label { display:grid; gap:8px; margin:14px 0; }
+.sdl-teaching-ui.sdl-teaching-ui .sdl-review-section textarea { width:100%; box-sizing:border-box; resize:vertical; }
+.sdl-teaching-ui.sdl-teaching-ui .sdl-review-value { margin:14px 0; }
+.sdl-teaching-ui.sdl-teaching-ui .sdl-review-value p { white-space:pre-wrap; overflow-wrap:anywhere; margin:6px 0; }
+.sdl-teaching-ui.sdl-teaching-ui .sdl-review-item + .sdl-review-item { border-top:1px solid var(--line); padding-top:20px; margin-top:20px; }
+.sdl-teaching-ui.sdl-teaching-ui .sdl-review-fields { border:0; padding:0; margin:12px 0 20px; min-width:0; }
+.sdl-teaching-ui.sdl-teaching-ui .sdl-review-fields legend { font-weight:700; }
+.sdl-teaching-ui.sdl-teaching-ui .sdl-review-fields .sdl-review-fields { padding-left:16px; border-left:2px solid var(--line); }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-review-content {
+  display: block;
+  min-width: 0;
+}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-review-content .sdl-answer-options button:disabled {
+  cursor: default;
+  opacity: 1;
+}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-chat .messages { position:relative; height:65vh; max-height:65vh; padding:24px; overflow-anchor:none; scroll-behavior:auto; }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-chat .sdl-current-turn { min-height:calc(65vh - 48px); }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-message-group { display:flex; flex-direction:column; align-items:flex-start; gap:8px; margin:18px 0; min-width:0; }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-message-group.student { align-items:flex-end; }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-speaker { font-size:12px; font-weight:650; color:var(--muted); margin:0 6px; }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-message-group.student .sdl-speaker { color:#2563eb; }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-chat .message.sdl-bubble { display:block; width:fit-content; max-width:min(88%,720px); margin:0; padding:14px 18px; border:1px solid var(--line); border-radius:18px 18px 18px 5px; background:var(--surface-alt,#f3f4f6); color:var(--text); box-sizing:border-box; overflow-wrap:anywhere; }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-chat .message.sdl-bubble.student { margin-left:auto; background:#2563eb; border-color:#2563eb; color:#fff; border-radius:18px 18px 5px 18px; }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-chat .message.sdl-bubble p { margin:0; background:transparent; color:inherit; white-space:pre-wrap; line-height:1.65; }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-chat .message.thinking { display:flex; align-items:center; gap:12px; min-height:52px; margin:12px 0 18px; }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .thinking-dots { display:inline-flex; gap:5px; }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .thinking-dots span { display:block; height:6px; width:6px; border-radius:50%; background:currentColor; animation:sdl-teaching-sdl-think 1.2s ease-in-out infinite; }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .thinking-dots span:nth-child(2) { animation-delay:.2s; }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .thinking-dots span:nth-child(3) { animation-delay:.4s; }
+@keyframes sdl-teaching-sdl-think { 0%,70%,100% {opacity:.25; transform:translateY(0)} 35% {opacity:1; transform:translateY(-3px)} }
+@media (prefers-reduced-motion:reduce) { .sdl-teaching-ui.sdl-teaching-ui .platform-sdl .thinking-dots span {animation:none; opacity:.6;} }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-progress { margin-bottom:20px; }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-progress > div { display:flex; justify-content:space-between; gap:16px; margin-bottom:10px; font-size:14px; }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-progress progress { width:100%; height:8px; border:0; border-radius:8px; accent-color:#2563eb; }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-completion-code { display:grid; justify-items:start; gap:14px; padding:20px; margin-top:20px; border:1px solid var(--line); border-radius:16px; }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-completion-code code { white-space:normal; overflow-wrap:anywhere; user-select:all; }
+@media (max-width:640px) { .sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-chat .messages {padding:16px;} .sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-chat .message.sdl-bubble {max-width:94%;} .sdl-teaching-ui.sdl-teaching-ui .sdl-review-section {padding:16px;} }
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-answer-options {display:grid; gap:10px; margin:20px 0;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-answer-options button {display:flex; justify-content:flex-start; align-items:center; gap:12px; width:100%; text-align:left; white-space:normal; padding:12px 16px;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-answer-options button > span {display:grid; place-items:center; flex:none; width:28px; height:28px; border:1px solid var(--line); border-radius:8px;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-quiz-card h3 {white-space:pre-wrap; line-height:1.5;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-chat .sdl-message-group .message.thinking {margin:0;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-progress progress {appearance:none; -webkit-appearance:none; background:var(--line,#e5e7eb); overflow:hidden;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-progress progress::-webkit-progress-bar {background:var(--line,#e5e7eb); border-radius:8px;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-progress progress::-webkit-progress-value {background:#2563eb; border-radius:8px;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-progress progress::-moz-progress-bar {background:#2563eb; border-radius:8px;}
+/* Student quiz cards retain the question and give feedback with text and color. */
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-quiz-card {margin:18px 0;padding:16px;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-quiz-card h3 {margin:8px 0 12px;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-quiz-card > label {display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-quiz-card > label .help {display:inline;margin:0;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-quiz-card > label select {width:auto;margin:0 0 0 auto;padding:6px 10px;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-quiz-card .sdl-answer-options {gap:6px;margin:12px 0;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-quiz-card .sdl-answer-options button {padding:8px 12px;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-answer-options button.sdl-option-selected {background:#e5e7eb;color:#374151;border-color:#9ca3af;opacity:1;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-answer-options button.sdl-option-correct {background:#ecfdf5;color:#065f46;border-color:#059669;opacity:1;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-answer-options button.sdl-option-incorrect {background:#fef2f2;color:#991b1b;border-color:#dc2626;opacity:1;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-answer-options button b {margin-left:auto;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-chat .message.sdl-bubble.sdl-correct {background:#ecfdf5;color:#065f46;border-color:#059669;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .lesson-chat .message.sdl-bubble.sdl-incorrect {background:#fef2f2;color:#991b1b;border-color:#dc2626;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-course-downloads {display:grid;gap:12px;padding:18px;margin:16px 0;border:1px solid var(--line);border-radius:12px;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-course-downloads p {margin:0;}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-result-dialog {width:min(640px,calc(100vw - 32px));max-height:90vh;overflow:auto;border:1px solid #dbe3ee;border-radius:20px;padding:24px;box-sizing:border-box;background:#f8fafc;color:#111827;}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-result-dialog::backdrop {background:#0f172a99;}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-result-controls {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:end;margin-bottom:20px;}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-result-controls label {display:grid;gap:8px;margin:0;min-width:0;}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-result-controls input {margin:0;height:44px;box-sizing:border-box;}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-result-controls > button {margin:0;height:44px;white-space:nowrap;box-sizing:border-box;}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-research-choice {padding:20px;margin:20px 0;border:1px solid var(--line);border-radius:16px;background:var(--surface);}
+.sdl-teaching-ui.sdl-teaching-ui .platform-sdl .sdl-research-choice .learning-choices {display:flex;gap:12px;flex-wrap:wrap;}
+@media(max-width:480px){.sdl-teaching-ui.sdl-teaching-ui .sdl-result-controls {grid-template-columns:1fr;}.sdl-teaching-ui.sdl-teaching-ui .sdl-result-controls > button {width:100%;}}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-result-card {background:white;border:1px solid #dbe3ee;border-top:6px solid #2563eb;border-radius:16px;padding:24px;}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-result-card h2 {font-size:24px;margin:12px 0;line-height:1.35;overflow-wrap:anywhere;}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-result-card h3 {font-size:18px;color:#516078;margin:12px 0 20px;}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-result-card dl {display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0;}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-result-card dl > div {background:#eff6ff;padding:16px;border-radius:12px;}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-result-card dt {font-size:13px;color:#516078;}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-result-card dd {margin:8px 0 0;font-size:28px;font-weight:700;}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-result-card ul {display:grid;gap:10px;list-style:none;padding:0;margin:20px 0;}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-result-card li {display:flex;justify-content:space-between;gap:16px;font-size:14px;}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-result-card code {display:block;overflow-wrap:anywhere;white-space:normal;margin:10px 0;font-size:14px;}
+.sdl-teaching-ui.sdl-teaching-ui .sdl-result-actions {display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;}
+@media(max-width:480px){.sdl-teaching-ui.sdl-teaching-ui .sdl-result-dialog {padding:16px;}.sdl-teaching-ui.sdl-teaching-ui .sdl-result-card{padding:16px;}.sdl-teaching-ui.sdl-teaching-ui .sdl-result-card dl{grid-template-columns:1fr;}}

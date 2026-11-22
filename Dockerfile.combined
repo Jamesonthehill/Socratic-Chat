@@ -4,7 +4,7 @@ COPY platform_frontend/package*.json ./
 RUN npm ci
 COPY platform_frontend/ ./
 COPY reflections-app/frontend/src/ /build/reflections-app/frontend/src/
-COPY adaptive-learning-app/student-app/src/ /build/adaptive-learning-app/student-app/src/
+COPY self-directed-learning/student-app/src/ /build/self-directed-learning/student-app/src/
 RUN npm run build
 
 FROM python:3.12-slim
@@ -23,7 +23,7 @@ COPY Socratic-Chat/frontend/ Socratic-Chat/frontend/
 COPY --from=frontend /build/platform_frontend/dist/ platform_frontend/dist/
 RUN mkdir -p Socratic-Chat/backend/storage Socratic-Chat/backend/data/raw_docs
 COPY reflections-app/backend/requirements.txt /tmp/reflections-requirements.txt
-COPY adaptive-learning-app/backend/requirements.txt /tmp/sdl-requirements.txt
+COPY self-directed-learning/backend/requirements.txt /tmp/sdl-requirements.txt
 RUN python -m venv /opt/reflections && python -m venv /opt/sdl \
     && for env in /opt/reflections /opt/sdl; do \
          "$env/bin/pip" install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu || exit 1; \
@@ -32,8 +32,8 @@ RUN python -m venv /opt/reflections && python -m venv /opt/sdl \
     && /opt/sdl/bin/pip install --no-cache-dir torchvision --index-url https://download.pytorch.org/whl/cpu \
     && /opt/sdl/bin/pip install --no-cache-dir -r /tmp/sdl-requirements.txt
 COPY reflections-app/backend/app/ reflections-app/backend/app/
-COPY adaptive-learning-app/backend/app/ adaptive-learning-app/backend/app/
-COPY adaptive-learning-app/backend/lessons/ adaptive-learning-app/backend/lessons/
+COPY self-directed-learning/backend/app/ self-directed-learning/backend/app/
+COPY self-directed-learning/backend/lessons/ self-directed-learning/backend/lessons/
 ENV PYTHONUNBUFFERED=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 STOPSIGNAL SIGTERM
 CMD ["python", "-m", "scripts.run_combined"]

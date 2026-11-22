@@ -8,7 +8,7 @@ from time import monotonic
 from typing import Any
 
 from app import db, settings
-from app.llm_client import chat_completion
+from app.llm_client import socratic_chat_completion as chat_completion
 from app.pipeline_logging import (
     log_event,
     log_exception,

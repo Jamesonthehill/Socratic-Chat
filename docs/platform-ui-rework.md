@@ -14,7 +14,7 @@ docker compose up --build
 
 Open `http://localhost:8000`. The platform connects to private SDL and Reflections services. The SDL service uses `ADAPTIVE_PLATFORM_ONLY=true`; its API requires the platform service token. Do not expose that service's port publicly.
 
-For native development, install root `requirements.txt` in the platform environment and `adaptive-learning-app/backend/requirements.txt` in a separate SDL environment. Build `platform_frontend` with `npm ci && npm run build`. Start the gateway with `python -m uvicorn platform_app.main:app --host 127.0.0.1 --port 8000` from the repository root. Start SDL with `python -m uvicorn app.main:app --host 127.0.0.1 --port 8100` from `adaptive-learning-app/backend`, supplying the same database and service token and setting `ADAPTIVE_PLATFORM_ONLY=true`. Reflections retains its separate environment and service setup.
+For native development, install root `requirements.txt` in the platform environment and `self-directed-learning/backend/requirements.txt` in a separate SDL environment. Build `platform_frontend` with `npm ci && npm run build`. Start the gateway with `python -m uvicorn platform_app.main:app --host 127.0.0.1 --port 8000` from the repository root. Start SDL with `python -m uvicorn app.main:app --host 127.0.0.1 --port 8100` from `self-directed-learning/backend`, supplying the same database and service token and setting `ADAPTIVE_PLATFORM_ONLY=true`. Reflections retains its separate environment and service setup.
 
 ## Course and identity context
 
@@ -35,7 +35,7 @@ The existing authentication and Canvas launch exchange remain in use. Canvas sup
 | Socratic | Existing pipeline; publishing snapshots selected shared document chunks. |
 | Reflections | Existing external service adapter and original student UI. Shared document IDs are platform metadata; the Reflections owner must integrate retrieval if desired. |
 | SDL | Preparation, publication, recipient identity, saved lesson state and progress use the SDL service. |
-| Debate | Native scenario-based provider adapter and common student conversation. Uploaded documents are not automatically inserted into Debate replies. |
+| Debate | Native staged conversation and required final reflection. Published assignments can optionally retrieve relevant passages from their frozen, instructor-selected document snapshot; scenario-only Debate remains supported. |
 | AIducate | Draft storage only; publishing reports that its backend is missing. |
 
 No chat-specific Socratic or Reflections engine source is redesigned. Student Agent is absent from the new choices and lists; this change does not erase historical assignments or their stored data.
@@ -55,10 +55,12 @@ Authenticated developer API:
 
 Use the existing signed platform bearer session. Course membership and document ownership are enforced. Chunk responses omit embeddings and include `total` and `next_offset`; retrieval returns ranked evidence. Never publish the internal service token to a browser client.
 
-## Verification and remaining work
+## Instructor Assignment Copilot
 
-The frontend build and 48 frontend checks passed after the final deployment packaging pass. Five mocked platform service-boundary checks and 60 focused SDL flow/bridge/retrieval checks passed. These checks do not establish the quality of generated teaching content.
+The shared copilot supports Socratic, Reflections, SDL and Debate proposals within the normal editable assignment form. Reflections is the first vertical delivery slice, not the product scope limit. See the [platform-wide plan](../PLAN.md), [setup](../README.md#instructor-assignment-copilot), and [current verification/manual tests](assignment-copilot-verification.md).
 
-Local manual checks confirmed saved draft restoration, assignment navigation, student list/grid views, embedded SDL lesson resumption, and a live Debate reply (user verified). The configured provider subsequently passed generation and embedding probes. A user-created SDL lesson was generated/published and opened with saved state; this is not a complete automated end-to-end journey.
+The professor-only `POST /api/platform/copilot/propose` endpoint loads course context, retrieves selected indexed documents, inspects capabilities and validates configuration through the existing AssignmentInput. `GET /api/platform/copilot/capabilities?course_id=...` exposes authorized manifests. The legacy `/copilot/reflections/propose` endpoint remains compatible and shares the bounded orchestration/retrieval foundation.
 
-Reflections end-to-end service verification, real institutional Canvas launches and newly joining Canvas students receiving an already-published SDL lesson still need deployment testing. Detailed Analytics is a placeholder. SDL's final completion policy remains deferred to its workflow owner. AIducate has no engine. No production deployment, database reset or automatic merge is part of this change.
+The copilot cannot save or publish. Apply changes local form values only. Objectives are included in editable instructions so they survive draft save/reopen. Milestone CSV remains local and must be attached manually before milestone publication. SDL preview generates its lesson only through the existing instructor review control. AIducate remains manual and draft-only until its runtime is finalized.
+
+The [initial Reflections verification](reflection-copilot-verification.md) is historical; the [shared implementation verification](assignment-copilot-verification.md) records current results and remaining end-to-end checks.

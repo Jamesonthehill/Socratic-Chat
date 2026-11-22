@@ -141,7 +141,7 @@ test("CSV import requires explicit response selection and displays cleaning warn
   expect(screen.getByText("001")).toBeInTheDocument();
 });
 
-test("new navigation tab is adjacent to professor dashboard and hidden from students", async () => {
+test("analytics navigation follows the professor dashboard and is hidden from students", async () => {
   const original = api.getMockImplementation();
   api.mockImplementation(async (path, options) =>
     path === "/auth/me"
@@ -166,10 +166,8 @@ test("new navigation tab is adjacent to professor dashboard and hidden from stud
     within(navigation)
       .getAllByRole("link")
       .map((link) => link.textContent),
-  ).toEqual(["Professor dashboard", "Reflection analysis", "AIducate"]);
-  expect(
-    screen.getByRole("link", { name: "Reflection analysis" }),
-  ).toHaveAttribute("aria-current", "page");
+  ).toEqual(["Professor dashboard", "AIducate"]);
+  await waitFor(() => expect(screen.getByRole("link", { name: "AIducate" })).toHaveAttribute("aria-current", "page"));
   professor.unmount();
   api.mockImplementation(async (path) => {
     if (path === "/auth/me")
@@ -208,7 +206,8 @@ test("exports escape untrusted HTML and spreadsheet formulas", () => {
       analysis: annotation,
     },
   ]);
-  expect(html).not.toContain("<script>");
+  expect(html).not.toContain("<script>alert(1)</script>");
+  expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
   expect(html).not.toContain("<img");
   expect(html).toContain("&lt;img");
   expect(csvExport([["=HYPERLINK(1)", 'a"b', "safe"]])).toBe(
@@ -216,37 +215,15 @@ test("exports escape untrusted HTML and spreadsheet formulas", () => {
   );
 });
 
-test("loaded reflections survive navigating to the dashboard and back", async () => {
-  const user = userEvent.setup();
+test("legacy reflection-analysis links redirect to the current analytics dashboard", async () => {
   const original = api.getMockImplementation();
   api.mockImplementation(async (path, options) => {
-    if (path === "/auth/me")
-      return {
-        user: {
-          authority_level: 1,
-          onboarding_complete: true,
-          username: "Professor",
-        },
-      };
-    if (path === "/courses") return { courses: [] };
+    if (path === "/auth/me") return {user: {authority_level: 1, onboarding_complete: true, username: "Professor"}};
+    if (path === "/courses") return {courses: []};
     return original(path, options);
   });
-  render(
-    <MemoryRouter initialEntries={["/professor/reflection-analysis"]}>
-      <App />
-    </MemoryRouter>,
-  );
-  await screen.findByRole("option", { name: /CS101 — Week 1/ });
-  await user.selectOptions(
-    screen.getByLabelText("CourseLab assignment"),
-    "assignment",
-  );
-  await user.click(screen.getByRole("button", { name: "Load assignment" }));
-  await screen.findByText("1 reflections loaded. 0 analyzed.");
-  await user.click(screen.getByRole("link", { name: "Professor dashboard" }));
-  expect(
-    screen.queryByRole("heading", { name: "Reflection analysis" }),
-  ).not.toBeInTheDocument();
-  await user.click(screen.getByRole("link", { name: "Reflection analysis" }));
-  expect(screen.getByText("1 reflections loaded. 0 analyzed.")).toBeVisible();
+  render(<MemoryRouter initialEntries={["/professor/reflection-analysis"]}><App /></MemoryRouter>);
+  expect(await screen.findByRole("heading", {name: "Dashboard"})).toBeInTheDocument();
+  expect(screen.getByRole("link", {name: "AIducate"})).toHaveAttribute("aria-current", "page");
+  expect(screen.queryByLabelText("CourseLab assignment")).not.toBeInTheDocument();
 });

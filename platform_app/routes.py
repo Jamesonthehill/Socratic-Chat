@@ -76,10 +76,10 @@ class PublishedSocraticSettingsInput(BaseModel):
 
 
 def user(request: Request):
-    scheme, _, token = request.headers.get("authorization", "").partition(" ")
-    if scheme.lower() != "bearer" or not token:
+    session = auth.request_session(request)
+    if not session:
         raise HTTPException(401, "Please sign in.")
-    uid = auth.verify_session(token)["sub"]
+    uid = session["sub"]
     account = db.get_user_by_id(uid)
     if not account:
         raise HTTPException(401, "Account not found.")
@@ -87,7 +87,7 @@ def user(request: Request):
         raise HTTPException(403, "Complete account setup first.")
     if settings.REQUIRE_GITHUB_ACCOUNT and not db.user_has_github(uid):
         raise HTTPException(403, "Connect your GitHub account first.")
-    return account
+    return auth.account_for_session(account, session)
 
 
 def professor(account=Depends(user)):

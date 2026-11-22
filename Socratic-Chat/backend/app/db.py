@@ -1596,8 +1596,13 @@ def delete_course(instructor_id: str, course_id: str) -> dict[str, object] | Non
         with conn.cursor() as cur:
             cur.execute(
                 """
-                DELETE FROM courses
+                DELETE FROM courses_platform AS course
                 WHERE id = %s AND instructor_id = %s
+                  AND EXISTS (
+                      SELECT 1 FROM course_memberships_platform manager
+                      WHERE manager.course_id = course.id AND manager.user_id = course.instructor_id
+                        AND manager.course_role = 'instructor' AND manager.status = 'approved'
+                  )
                 RETURNING id::text, course_code, title
                 """,
                 (course_id, instructor_id),
@@ -1822,6 +1827,11 @@ def list_pending_course_requests(instructor_id: str, course_id: str | None = Non
                 JOIN courses_platform c ON c.id = cm.course_id
                 JOIN users_platform u ON u.id = cm.user_id
                 WHERE c.instructor_id = %s
+                  AND EXISTS (
+                      SELECT 1 FROM course_memberships_platform manager
+                      WHERE manager.course_id = c.id AND manager.user_id = c.instructor_id
+                        AND manager.course_role = 'instructor' AND manager.status = 'approved'
+                  )
                   AND cm.course_role = 'student'
                   AND cm.status = 'pending'
                   {course_filter}
@@ -1852,6 +1862,11 @@ def list_approved_course_students(instructor_id: str, course_id: str) -> list[di
                 JOIN courses_platform c ON c.id = cm.course_id
                 JOIN users_platform u ON u.id = cm.user_id
                 WHERE c.instructor_id = %s
+                  AND EXISTS (
+                      SELECT 1 FROM course_memberships_platform manager
+                      WHERE manager.course_id = c.id AND manager.user_id = c.instructor_id
+                        AND manager.course_role = 'instructor' AND manager.status = 'approved'
+                  )
                   AND cm.course_id = %s
                   AND cm.course_role = 'student'
                   AND cm.status = 'approved'
@@ -1875,6 +1890,11 @@ def remove_course_student(instructor_id: str, membership_id: str) -> dict[str, o
                   AND cm.course_id = c.id
                   AND cm.user_id = u.id
                   AND c.instructor_id = %s
+                  AND EXISTS (
+                      SELECT 1 FROM course_memberships_platform manager
+                      WHERE manager.course_id = c.id AND manager.user_id = c.instructor_id
+                        AND manager.course_role = 'instructor' AND manager.status = 'approved'
+                  )
                   AND cm.course_role = 'student'
                   AND cm.status = 'approved'
                 RETURNING
@@ -1919,6 +1939,11 @@ def review_course_request(
                 WHERE cm.id = %s
                   AND cm.course_id = c.id
                   AND c.instructor_id = %s
+                  AND EXISTS (
+                      SELECT 1 FROM course_memberships_platform manager
+                      WHERE manager.course_id = c.id AND manager.user_id = c.instructor_id
+                        AND manager.course_role = 'instructor' AND manager.status = 'approved'
+                  )
                   AND cm.course_role = 'student'
                 RETURNING cm.course_id::text, cm.user_id::text
                 """,

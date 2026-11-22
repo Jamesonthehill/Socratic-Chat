@@ -123,6 +123,56 @@ def test_student_first_rolls_back_account(client, configured_lti11):
         assert not conn.execute("SELECT 1 FROM lti_identities_platform WHERE subject=%s", (subject,)).fetchone()
 
 
+def test_canvas_role_change_updates_dashboard_and_existing_sessions(client, configured_lti11):
+    params = {"context_id": str(uuid4()), "user_id": str(uuid4())}
+    instructor = exchange(client, launch(client, params))
+    assignment_id = str(uuid4())
+    with store.connection() as conn:
+        conn.execute("""INSERT INTO assignments_platform
+            (id, course_id, creator_id, tool, title, audience, status, config, snapshot)
+            VALUES (%s,%s,%s,'socratic','Published practice','course','published','{}','{}')""",
+            (assignment_id, instructor["course_id"], instructor["user"]["user_id"]))
+    student = exchange(client, launch(client, {**params, "roles": "Learner"}))
+    assert student["user"]["user_id"] == instructor["user"]["user_id"]
+    assert student["user"]["role"] == "student"
+    assert student["redirect_path"].startswith("/platform/student?course=")
+    headers = {"Authorization": "Bearer " + instructor["access_token"]}
+    assert client.get("/api/auth/me", headers=headers).json()["user"]["role"] == "student"
+    assert client.get(f"/api/platform/assignments/{assignment_id}", headers={
+        "Authorization": "Bearer " + student["access_token"],
+    }).status_code == 200
+    assert client.post("/api/platform/assignments", headers=headers, json={
+        "course_id": instructor["course_id"], "tool": "debate", "title": "Debate exercise",
+    }).status_code == 403
+    assert client.delete(f"/api/courses/{instructor['course_id']}", headers=headers).status_code == 403
+    restored = exchange(client, launch(client, params))
+    assert restored["user"]["role"] == "instructor"
+
+
+def test_canvas_role_is_independent_per_course_and_survives_refresh(client, configured_lti11):
+    subject = str(uuid4())
+    first = {"context_id": str(uuid4()), "user_id": subject}
+    exchange(client, launch(client, first))
+    second = exchange(client, launch(client, {"context_id": str(uuid4()), "user_id": subject}))
+    student = exchange(client, launch(client, {**first, "roles": "Learner"}))
+
+    assert student["user"]["role"] == "student"
+    assert client.get("/api/auth/me", headers={
+        "Authorization": "Bearer " + second["access_token"],
+    }).json()["user"]["role"] == "instructor"
+    refreshed = client.post("/api/auth/session/refresh", headers={
+        "Authorization": "Bearer " + student["access_token"],
+    })
+    assert refreshed.status_code == 200
+    assert client.get("/api/auth/me", headers={
+        "Authorization": "Bearer " + refreshed.json()["access_token"],
+    }).json()["user"]["role"] == "student"
+    response = client.delete(f"/api/courses/{student['course_id']}", headers={
+        "Authorization": "Bearer " + second["access_token"],
+    })
+    assert response.status_code == 404
+
+
 @pytest.mark.parametrize("kwargs", [
     {"secret": "wrong"}, {"key": "wrong"}, {"timestamp": 1},
     {"timestamp": 4102444800}, {"url": "https://attacker.example/api/lti/1.1/launch"},

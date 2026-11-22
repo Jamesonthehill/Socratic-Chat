@@ -115,6 +115,15 @@ def test_student_cannot_create_assignment_in_existing_course(client, configured_
         assert not conn.execute('SELECT 1 FROM lti_identities_platform WHERE subject=%s', (subject,)).fetchone()
 
 
+def test_unavailable_assignment_does_not_undo_canvas_role_change(client, configured_lti11):
+    params = {'context_id': str(uuid4()), 'user_id': str(uuid4())}
+    teacher = exchange(client, assignment_launch(client, params))
+    response = assignment_launch(client, {**params, 'roles': 'Learner'})
+    assert response.status_code == 409
+    headers = {'Authorization': 'Bearer ' + teacher['access_token']}
+    assert client.get('/api/auth/me', headers=headers).json()['user']['role'] == 'student'
+
+
 def test_assignment_ids_are_scoped_to_course_and_registration(client, configured_lti11, monkeypatch):
     context = str(uuid4())
     params = {'context_id': context, 'resource_link_id': 'same-link', 'custom_canvas_assignment_id': '9'}

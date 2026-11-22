@@ -190,7 +190,11 @@ async def pipeline_traces(request: Request, response: Response, limit: int = 25)
         _current_user_id(request)
     response.headers["Cache-Control"] = "no-store"
     try:
-        return {"traces": recent_traces(limit)}
+        traces = recent_traces(limit)
+        # Prompt instructions require the instructor API's course membership checks.
+        return {"traces": [{**trace, "events": [{**event, "fields": {
+            key: value for key, value in (event.get("fields") or {}).items() if key != "prompt_text"
+        }} for event in trace.get("events", [])]} for trace in traces]}
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
 

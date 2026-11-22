@@ -65,3 +65,20 @@ test("empty state explains how to create traces", async () => {
   expect(await screen.findByText("No assignment logs yet")).toBeInTheDocument();
   expect(screen.getByText(/Send a message in a Socratic assignment/)).toBeInTheDocument();
 });
+
+test('shows expandable prompt instructions with preserved lines and a truncation notice', async () => {
+  api.mockResolvedValue({traces: [{...trace, events: [{stage: '7', event: 'model_prompt', elapsed_ms: 50,
+    fields: {phase: 'step-readiness', model: 'gpt-6-luna'},
+    prompt: {role: 'system', text: 'Judge the student’s reasoning.\nAsk one focused follow-up question.', truncated: true}}]}]});
+  render(<PipelineLogs />);
+  const toggle = await screen.findByText('View prompt instructions (system)');
+  await userEvent.click(toggle);
+  expect(toggle.closest('details')).toHaveAttribute('open');
+  expect(toggle.closest('details').querySelector('pre').textContent).toBe('Judge the student’s reasoning.\nAsk one focused follow-up question.');
+  expect(screen.getByText(/exceeded the log limit/)).toBeInTheDocument();
+});
+
+test('explains why older requests have no captured prompts', async () => {
+  render(<PipelineLogs />);
+  expect(await screen.findByText(/Prompt instructions were not captured for this request/)).toBeInTheDocument();
+});

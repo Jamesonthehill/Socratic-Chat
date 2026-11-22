@@ -47,7 +47,9 @@ _trace_lock = RLock()
 
 _EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _SECRET_PATTERN = re.compile(
-    r"\b(?:sk-[A-Za-z0-9_-]{8,}|(?:api[_-]?key|access[_-]?token|authorization)\s*[:=]\s*\S+)",
+    r"\b(?:sk-[A-Za-z0-9_-]{8,}|gsk_[A-Za-z0-9_-]{8,}|Bearer\s+[A-Za-z0-9._~-]+|"
+    r"(?:api[_-]?key|access[_-]?token|authorization|password|database_url)[\"']?\s*[:=]\s*"
+    r"(?:\"[^\"]*\"|'[^']*'|(?:Bearer\s+)?[^\s\"',}]+))",
     re.IGNORECASE,
 )
 
@@ -142,7 +144,8 @@ def log_event(stage: int | str, event: str, *, level: int = logging.INFO, **fiel
         "elapsed_ms": _elapsed_ms(),
         **fields,
     }
-    LOGGER.log(level, " ".join(f"{key}={_field(value)}" for key, value in values.items()))
+    # Instruction bodies are available only through the course-scoped instructor API.
+    LOGGER.log(level, " ".join(f"{key}={_field(value)}" for key, value in values.items() if key != "prompt_text"))
     with _trace_lock:
         trace_record = _trace_records.get(trace_id)
         if trace_record is not None:
@@ -157,11 +160,11 @@ def log_event(stage: int | str, event: str, *, level: int = logging.INFO, **fiel
             _persist_trace(trace_id)
     sink = _event_sink.get()
     if sink is not None:
-        sink(event, fields)
+        sink(event, {key: value for key, value in fields.items() if key != "prompt_text"})
 
 
 def _safe_trace_fields(fields: dict[str, Any]) -> dict[str, Any]:
-    """Keep the trace viewer useful without retaining full prompt or answer text."""
+    """Keep diagnostic fields; instruction bodies must be redacted before logging."""
     safe: dict[str, Any] = {}
     for key, value in fields.items():
         if key in {"preview", "path"}:
@@ -338,9 +341,33 @@ def debug_preview(label: str, value: str, *, max_chars: int = 240, **fields: Any
     )
 
 
+PROMPT_TEXT_LIMIT = 32000
+
+
+def redacted_prompt_text(value: str) -> str:
+    """Preserve instruction formatting while removing emails and credential values."""
+    cleaned = _EMAIL_PATTERN.sub("[redacted-email]", value)
+    cleaned = _SECRET_PATTERN.sub("[redacted-secret]", cleaned)
+    return cleaned[:PROMPT_TEXT_LIMIT]
+
+
 def write_llm_request_snapshot(phase: str, provider: str, request: dict[str, Any]) -> str | None:
     """Save the exact local LLM request for inspection when explicitly enabled."""
     trace_id = _trace_id.get()
+    if trace_id:
+        stage = {"classifier": 4, "qualitative-feedback": 6, "step-readiness": 7,
+                 "tutor-generation": 8, "learning-completion": 8,
+                 "conversation-transition": 8}.get(phase, "prompt")
+        for message in request.get("messages", []):
+            if not isinstance(message, dict) or message.get("role") not in {"system", "developer"}:
+                continue
+            content = message.get("content")
+            if not isinstance(content, str) or not content.strip():
+                continue
+            log_event(stage, "model_prompt", phase=phase, provider=provider,
+                      model=request.get("model"), prompt_role=message["role"],
+                      prompt_text=redacted_prompt_text(content),
+                      prompt_truncated=len(content) > PROMPT_TEXT_LIMIT)
     if not settings.LOG_FULL_PROMPTS or not trace_id or not settings.PIPELINE_PROMPT_DIR:
         return None
 

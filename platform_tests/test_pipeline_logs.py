@@ -86,3 +86,29 @@ def test_unlinked_public_and_malformed_traces_are_not_exposed(client, roster, mo
     monkeypatch.setattr(pipeline_logs, 'recent_traces', lambda *_: [public, malformed])
     response = client.get('/api/platform/pipeline-logs', headers=roster['headers']['prof'])
     assert response.json()['traces'] == []
+
+
+def test_prompt_instructions_are_redacted_and_only_visible_inside_the_instructors_course(client, roster, monkeypatch):
+    _, trace = seed_trace(roster)
+    trace['events'].extend([
+        {'stage': 7, 'event': 'model_prompt', 'elapsed_ms': 20, 'fields': {
+            'phase': 'step-readiness', 'prompt_role': 'system',
+            'prompt_text': 'Use grounded evidence.\nAsk one question. api_key="private secret" teacher@example.edu',
+            'prompt_truncated': False}},
+        {'stage': 7, 'event': 'model_prompt', 'elapsed_ms': 21, 'fields': {
+            'prompt_role': 'user', 'prompt_text': 'PRIVATE STUDENT INPUT'}},
+        {'stage': 7, 'event': 'unrelated_event', 'elapsed_ms': 22, 'fields': {
+            'prompt_role': 'system', 'prompt_text': 'UNAPPROVED PROMPT FIELD'}},
+    ])
+    monkeypatch.setattr(pipeline_logs, 'recent_traces', lambda *_: [trace])
+    response = client.get('/api/platform/pipeline-logs', headers=roster['headers']['prof'])
+    assert response.status_code == 200
+    events = response.json()['traces'][0]['events']
+    assert events[2]['prompt']['text'].startswith('Use grounded evidence.\nAsk one question.')
+    assert '[redacted-secret]' in events[2]['prompt']['text']
+    assert '[redacted-email]' in events[2]['prompt']['text']
+    assert 'prompt' not in events[3] and 'prompt' not in events[4]
+    for value in ('private secret', 'teacher@example.edu', 'PRIVATE STUDENT INPUT', 'UNAPPROVED PROMPT FIELD'):
+        assert value not in response.text
+    assert client.get('/api/platform/pipeline-logs', headers=roster['headers']['other_prof']).json()['traces'] == []
+    assert client.get('/api/platform/pipeline-logs', headers=roster['headers']['student']).status_code == 403

@@ -120,6 +120,47 @@ class PipelineLoggingTests(unittest.TestCase):
         self.assertNotIn("student@example.edu", output)
         self.assertNotIn("secret-value", output)
 
+    def test_instruction_capture_excludes_user_payload_and_does_not_require_full_debug_logging(self):
+        request = {"model": "gpt-6-luna", "messages": [
+            {"role": "system", "content": 'Judge reasoning.\nContact teacher@example.edu. api_key="private value"'},
+            {"role": "developer", "content": "Ask one question. Authorization: Bearer private-token"},
+            {"role": "user", "content": "PRIVATE STUDENT MESSAGE"},
+            {"role": "assistant", "content": "PRIVATE TUTOR REPLY"},
+        ]}
+        delivered = []
+        tokens = pipeline_logging.begin_trace("instruction-capture", "assignment-attempt")
+        sink = pipeline_logging.set_event_sink(lambda event, fields: delivered.append(fields))
+        try:
+            with patch.object(pipeline_logging.settings, "LOG_FULL_PROMPTS", False), self.assertLogs("app.pipeline", level="INFO") as console:
+                self.assertIsNone(pipeline_logging.write_llm_request_snapshot("step-readiness", "OpenAI", request))
+            events = pipeline_logging.recent_traces(1)[0]["events"]
+            self.assertEqual(len(events), 2)
+            self.assertEqual(events[0]["stage"], 7)
+            self.assertEqual(events[0]["fields"]["prompt_role"], "system")
+            self.assertIn("Judge reasoning.\n", events[0]["fields"]["prompt_text"])
+            self.assertIn("[redacted-secret]", events[1]["fields"]["prompt_text"])
+            output = self.trace_file.read_text()
+            for secret in ("PRIVATE STUDENT MESSAGE", "PRIVATE TUTOR REPLY", "teacher@example.edu", "private value", "private-token"):
+                self.assertNotIn(secret, output)
+            self.assertNotIn("Judge reasoning", "\n".join(console.output))
+            self.assertTrue(all("prompt_text" not in fields for fields in delivered))
+        finally:
+            pipeline_logging.reset_event_sink(sink)
+            pipeline_logging.end_trace(tokens)
+
+    def test_instruction_capture_is_bounded_and_ignores_non_instruction_roles(self):
+        tokens = pipeline_logging.begin_trace("bounded-instructions", "attempt")
+        try:
+            pipeline_logging.write_llm_request_snapshot("classifier", "OpenAI", {"messages": [
+                {"role": "system", "content": "A" * 40000}, {"role": "tool", "content": "PRIVATE TOOL CONTENT"},
+            ]})
+            event = pipeline_logging.recent_traces(1)[0]["events"][0]
+            self.assertEqual(len(event["fields"]["prompt_text"]), 32000)
+            self.assertTrue(event["fields"]["prompt_truncated"])
+            self.assertNotIn("PRIVATE TOOL CONTENT", self.trace_file.read_text())
+        finally:
+            pipeline_logging.end_trace(tokens)
+
     def test_full_prompt_snapshot_preserves_exact_request_locally(self) -> None:
         request = {
             "model": "openai/gpt-oss-120b",

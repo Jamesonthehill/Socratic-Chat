@@ -45,6 +45,19 @@ class PipelineDiagnosticsTests(unittest.TestCase):
         self.assertEqual(response.json(), {"deleted": 1})
         self.assertEqual(self.client.get("/api/debug/pipeline/traces").json(), {"traces": []})
 
+    def test_unscoped_debug_endpoint_does_not_expose_instruction_bodies(self):
+        tokens = pipeline_logging.begin_trace("course-instructions", "assignment-attempt")
+        try:
+            pipeline_logging.write_llm_request_snapshot("classifier", "OpenAI", {
+                "messages": [{"role": "system", "content": "COURSE-SCOPED PROMPT INSTRUCTIONS"}],
+            })
+        finally:
+            pipeline_logging.end_trace(tokens)
+        response = self.client.get("/api/debug/pipeline/traces")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("COURSE-SCOPED PROMPT INSTRUCTIONS", response.text)
+        self.assertNotIn("prompt_text", response.text)
+
     def test_disabled_diagnostics_remain_unavailable(self) -> None:
         with patch.object(settings, "DEBUG_PIPELINE_LOGS", False):
             for method in ("get", "delete"):

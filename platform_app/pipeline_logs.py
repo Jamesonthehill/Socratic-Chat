@@ -3,19 +3,19 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
-from app.pipeline_logging import recent_traces, redacted_preview
+from app.pipeline_logging import recent_traces, redacted_preview, redacted_prompt_text
 from platform_app import store
 from platform_app.routes import professor
 
 router = APIRouter(prefix='/api/platform', tags=['pipeline-logs'])
 
-# No arbitrary provider payloads, prompts, student text, or filesystem paths.
+# No arbitrary provider payloads, user messages, credentials, or filesystem paths.
 VISIBLE_FIELDS = frozenset('''provider model primary_provider primary_model error_type
 status_code provider_error_code fallback message_role route dialogue_status
 conversation_action assessment_candidate ready step_index questions retrieval_type
  top_k chunks sources candidates selected queries latency_ms phase mode example_type
 critical_misconception response_chars prompt_chars messages message_chars questions_count
-pipeline_version source valid'''.split())
+pipeline_version source valid prompt_role prompt_truncated'''.split())
 
 
 def safe_event(event):
@@ -27,12 +27,18 @@ def safe_event(event):
             fields[key] = redacted_preview(value, max_chars=160)
         elif value is None or isinstance(value, (bool, int, float)):
             fields[key] = value
-    return {
+    result = {
         'stage': redacted_preview(str(event.get('stage', '')), max_chars=20),
         'event': redacted_preview(str(event.get('event', '')), max_chars=100),
         'elapsed_ms': event.get('elapsed_ms', 0),
         'fields': fields,
     }
+    raw = event.get('fields') or {}
+    if (event.get('event') == 'model_prompt' and raw.get('prompt_role') in {'system', 'developer'}
+            and isinstance(raw.get('prompt_text'), str)):
+        result['prompt'] = {'role': raw['prompt_role'], 'text': redacted_prompt_text(raw['prompt_text']),
+                            'truncated': bool(raw.get('prompt_truncated'))}
+    return result
 
 
 @router.get('/pipeline-logs')

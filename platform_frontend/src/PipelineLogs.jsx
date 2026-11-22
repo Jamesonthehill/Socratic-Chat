@@ -77,7 +77,7 @@ export default function PipelineLogs() {
         </button>
       </div>
     </header>
-    <p className="help">Only requests from courses you teach are shown. Raw messages, full prompts, and API keys are excluded. The server retains its latest 100 requests.</p>
+    <p className="help">Only requests from courses you teach are shown. Expand a prompt event to read the system and developer instructions. User-message payloads are excluded; emails and credentials are redacted. The server retains its latest 100 requests.</p>
     {error && <p className="notice error" role="alert">{error} {traces.length > 0 && "Showing the last available logs."}</p>}
     <div className="pipeline-log-filters">
       <label>Assignment<select value={assignment} onChange={event => setAssignment(event.target.value)}>
@@ -106,13 +106,18 @@ export default function PipelineLogs() {
             <button type="button" className="secondary" onClick={copyLog}>Copy log</button></header>
           <p className="pipeline-request-id">Request <code>{selected.trace_id}</code></p>
           <div className="pipeline-models">{models.map(model => <span key={model}>{model}</span>)}</div>
+          {!selected.events.some(event => event.prompt) && <p className="help">Prompt instructions were not captured for this request. Send a new message in the assignment to see its prompts.</p>}
           {copied && <p role="status">{copied}</p>}
           {selected.status === "attention" && <p className="notice">A pipeline stage reported an error. Check the events below for the failed stage and any fallback.</p>}
           <ol className="pipeline-event-list" aria-label="Pipeline events">
-            {selected.events.map((event, index) => <li key={`${index}-${event.event}`} className={isError(event) ? "has-error" : ""}>
+            {selected.events.map((event, index) => <li key={`${selected.trace_id}-${index}-${event.event}`} className={isError(event) ? "has-error" : ""}>
               <div className="pipeline-event-heading"><span className="pipeline-stage">{STAGES[event.stage] || `Stage ${event.stage}`}</span><time>+{duration(event.elapsed_ms)}</time></div>
               <strong className="pipeline-event-name">{event.event.replaceAll("_", " ")}</strong>
               <div className="pipeline-event-fields">{Object.entries(event.fields || {}).map(([key, value]) => <span key={key}><span>{key.replaceAll("_", " ")}</span><code>{String(value)}</code></span>)}</div>
+              {event.prompt && <details className="pipeline-prompt"><summary>View prompt instructions ({event.prompt.role})</summary>
+                <pre>{event.prompt.text}</pre>
+                {event.prompt.truncated && <p className="help">This instruction exceeded the log limit; showing the first 32,000 characters.</p>}
+              </details>}
             </li>)}
           </ol>
         </section>

@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { api } from "./api";
+import { GenerationStatus, afterNextPaint } from "./ui";
 
 export default function ReflectionCopilot({
   courseId,
@@ -13,6 +14,9 @@ export default function ReflectionCopilot({
   const [goal, setGoal] = useState("");
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const applyingLock = useRef(false);
+  const working = busy || applying;
   const [error, setError] = useState("");
   const [applied, setApplied] = useState(false);
   const requestId = useRef(0);
@@ -76,8 +80,26 @@ export default function ReflectionCopilot({
       if (requestId.current === attempt) setBusy(false);
     }
   };
+  const apply = async () => {
+    if (applyingLock.current) return;
+    applyingLock.current = true;
+    const attempt = requestId.current;
+    setApplying(true);
+    setError("");
+    try {
+      await afterNextPaint();
+      if (requestId.current !== attempt) return;
+      await onApply(result.proposal);
+      setApplied(true);
+    } catch (failure) {
+      setError(failure.message || "The proposal could not be applied. Please try again.");
+    } finally {
+      applyingLock.current = false;
+      setApplying(false);
+    }
+  };
   return (
-    <section className="activity-copilot" aria-labelledby={headingId}>
+    <section className="activity-copilot" aria-labelledby={headingId} aria-busy={working}>
       <h3 id={headingId}>Assignment Copilot</h3>
       <p className="help" id={helpId}>
         Prepare a Reflections proposal from your selected materials with the
@@ -106,17 +128,16 @@ export default function ReflectionCopilot({
       <button
         type="button"
         className="secondary"
-        disabled={busy || !ready}
+        disabled={working || !ready}
         onClick={prepare}
       >
         {busy ? "Preparing proposal…" : "Prepare proposal"}
       </button>
-      {busy && (
-        <p role="status">
-          Reading selected materials and preparing a proposal. You can keep
-          editing the form.
-        </p>
-      )}
+      {working && <GenerationStatus
+        title={applying ? "Applying proposal" : "Preparing proposal"}
+        message={applying ? "Updating your reflection settings…" : "Reading selected materials and preparing a proposal…"}
+        fullScreen showElapsed={!applying}
+      />}
       {error && (
         <p className="notice error" role="alert">
           {error} You can continue configuring Reflections manually.
@@ -194,17 +215,15 @@ export default function ReflectionCopilot({
           <div className="activity-copilot-actions">
             <button
               type="button"
-              disabled={stale || busy || applied}
-              onClick={() => {
-                onApply(result.proposal);
-                setApplied(true);
-              }}
+              disabled={stale || working || applied}
+              onClick={apply}
             >
               Apply proposal
             </button>
             <button
               type="button"
               className="quiet"
+              disabled={working}
               onClick={() => {
                 setResult(null);
                 setApplied(false);

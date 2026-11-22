@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { api, TOOLS } from "./api";
+import { GenerationStatus, afterNextPaint } from "./ui";
 
 const withObjectives = (instructions, objectives) =>
   objectives?.length
@@ -62,6 +63,9 @@ export default function AssignmentCopilot({
   const [revision, setRevision] = useState("");
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const applyingLock = useRef(false);
+  const working = busy || applying;
   const [error, setError] = useState("");
   const [applied, setApplied] = useState(false);
   const [appliedFields, setAppliedFields] = useState([]);
@@ -138,15 +142,28 @@ export default function AssignmentCopilot({
       if (sequence.current === attempt) setBusy(false);
     }
   };
-  const apply = (field) => {
-    if (field && appliedFields.includes(field)) return;
-    onApply(result.proposal, field);
-    if (!field) setApplied(true);
-    else setAppliedFields((current) => [...current, field]);
+  const apply = async (field) => {
+    if (applyingLock.current || (field && appliedFields.includes(field))) return;
+    applyingLock.current = true;
+    const attempt = sequence.current;
+    setApplying(true);
+    setError("");
+    try {
+      await afterNextPaint();
+      if (sequence.current !== attempt) return;
+      await onApply(result.proposal, field);
+      if (!field) setApplied(true);
+      else setAppliedFields((current) => [...current, field]);
+    } catch (failure) {
+      setError(failure.message || "The proposal could not be applied. Please try again.");
+    } finally {
+      applyingLock.current = false;
+      setApplying(false);
+    }
   };
   const proposal = result?.proposal;
   return (
-    <section className="panel activity-copilot" aria-labelledby={headingId}>
+    <section className="panel activity-copilot" aria-labelledby={headingId} aria-busy={working}>
       <h3 id={headingId}>Assignment Copilot</h3>
       <p className="help">
         Describe the learning outcome and select course materials. The
@@ -181,17 +198,16 @@ export default function AssignmentCopilot({
       <button
         type="button"
         className="secondary"
-        disabled={busy || !ready}
+        disabled={working || !ready}
         onClick={prepare}
       >
         {busy ? "Preparing proposal…" : "Prepare proposal"}
       </button>
-      {busy && (
-        <p role="status">
-          Reading selected materials and preparing a proposal. You can keep
-          editing the form.
-        </p>
-      )}
+      {working && <GenerationStatus
+        title={applying ? "Applying proposal" : "Preparing proposal"}
+        message={applying ? "Updating your activity settings…" : "Reading selected materials and preparing a proposal…"}
+        fullScreen showElapsed={!applying}
+      />}
       {error && (
         <p className="notice error" role="alert">
           {error} You can continue configuring the assignment manually.
@@ -266,7 +282,7 @@ export default function AssignmentCopilot({
           <div className="activity-copilot-actions">
             <button
               type="button"
-              disabled={busy || stale || applied}
+              disabled={working || stale || applied}
               onClick={() => apply()}
             >
               Apply proposal
@@ -282,7 +298,7 @@ export default function AssignmentCopilot({
                 className="secondary"
                 key={field}
                 disabled={
-                  busy || stale || applied || appliedFields.includes(field)
+                  working || stale || applied || appliedFields.includes(field)
                 }
                 onClick={() => apply(field)}
               >
@@ -292,6 +308,7 @@ export default function AssignmentCopilot({
             <button
               type="button"
               className="quiet"
+              disabled={working}
               onClick={() => {
                 sequence.current += 1;
                 setResult(null);
@@ -316,7 +333,7 @@ export default function AssignmentCopilot({
           <button
             type="button"
             className="secondary"
-            disabled={busy || !ready || !revision.trim()}
+            disabled={working || !ready || !revision.trim()}
             onClick={prepare}
           >
             Revise proposal

@@ -465,9 +465,9 @@ test("Reflections copilot applies locally, invalidates review, and preserves mil
   expect(JSON.stringify(prepare)).not.toContain("historical_data");
   expect(JSON.stringify(prepare)).not.toContain(csv);
   await user.click(screen.getByRole("button", { name: "Apply proposal" }));
-  expect(screen.getByLabelText("Assignment title")).toHaveValue(
+  await waitFor(() => expect(screen.getByLabelText("Assignment title")).toHaveValue(
     "Proposed milestone",
-  );
+  ));
   expect(screen.getByLabelText("Description")).toHaveValue(
     "Reflect on the challenge and solution.\n\nLearning objectives:\n- Explain verification",
   );
@@ -570,7 +570,7 @@ test("topic proposal populates editable pedagogical controls without saving", as
   await user.click(
     await screen.findByRole("button", { name: "Apply proposal" }),
   );
-  expect(screen.getByLabelText(/Learning topics/)).toHaveValue("Testability");
+  await waitFor(() => expect(screen.getByLabelText(/Learning topics/)).toHaveValue("Testability"));
   expect(screen.getByLabelText(/Sub-topics to explore/)).toHaveValue(
     "Explain verification",
   );

@@ -16,6 +16,11 @@ export function Badge({ value }) {
   return <span className={`badge ${value}`}>{label(value)}</span>;
 }
 
+// Allow a loading overlay to paint before a synchronous form update starts.
+export const afterNextPaint = () => new Promise(resolve => {
+  requestAnimationFrame(() => requestAnimationFrame(resolve));
+});
+
 export function GenerationStatus({ title = "BrainTutor", message, elapsedSeconds, ariaLabel, messageCard = false, fullScreen = false, atomLogo = false, showElapsed = true }) {
   const [localSeconds, setLocalSeconds] = useState(0);
   useEffect(() => {

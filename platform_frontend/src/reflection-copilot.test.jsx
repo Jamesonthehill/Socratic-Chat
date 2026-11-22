@@ -105,7 +105,7 @@ test("sends only safe fields and previews evidence before applying", async () =>
   expect(screen.getByText(proposal.rationale)).toBeInTheDocument();
   expect(onApply).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole("button", { name: "Apply proposal" }));
-  expect(onApply).toHaveBeenCalledExactlyOnceWith(proposal);
+  await waitFor(() => expect(onApply).toHaveBeenCalledExactlyOnceWith(proposal));
   expect(api).toHaveBeenCalledTimes(1);
   expect(screen.getByRole("status")).toHaveTextContent("Proposal applied");
 });

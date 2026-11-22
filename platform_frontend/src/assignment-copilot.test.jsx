@@ -75,7 +75,7 @@ test("automatic recommendation previews choice, objectives, configuration and re
   expect(body.request_id).toMatch(/^[0-9a-f-]{36}$/);
   expect(JSON.stringify(body)).not.toContain("config");
   await userEvent.click(screen.getByRole("button", { name: "Apply proposal" }));
-  expect(base.onApply).toHaveBeenCalledExactlyOnceWith(proposal, undefined);
+  await waitFor(() => expect(base.onApply).toHaveBeenCalledExactlyOnceWith(proposal, undefined));
   expect(api).toHaveBeenCalledTimes(1);
 });
 
@@ -91,7 +91,7 @@ test.each([
     screen.getByRole("button", { name: "Prepare proposal" }),
   );
   await userEvent.click(await screen.findByRole("button", { name }));
-  expect(base.onApply).toHaveBeenCalledWith(proposal, field);
+  await waitFor(() => expect(base.onApply).toHaveBeenCalledWith(proposal, field));
   expect(api).toHaveBeenCalledTimes(1);
 });
 
@@ -180,4 +180,54 @@ test("local application preserves document selection, milestone CSV and unrelate
   expect(
     applyAssignmentProposal(current, proposal, ["d1"], "config").title,
   ).toBe(current.title);
+});
+
+test("preparing displays a full-page loading state and clears it after a failure", async () => {
+  let reject;
+  api.mockReturnValue(new Promise((_, no) => { reject = no; }));
+  render(<AssignmentCopilot {...base} />);
+  goal();
+  await userEvent.click(screen.getByRole("button", { name: "Prepare proposal" }));
+  expect(screen.getByRole("status", { name: /Preparing proposal:/ })).toHaveClass("generation-overlay");
+  expect(screen.getByRole("button", { name: "Preparing proposal…" })).toBeDisabled();
+  reject(Error("Please retry preparation."));
+  await screen.findByRole("alert");
+  expect(screen.queryByRole("status", { name: /Preparing proposal:/ })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Prepare proposal" })).toBeEnabled();
+});
+
+test("applying shows loading until the form update finishes and prevents duplicate applies", async () => {
+  let finish;
+  base.onApply.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  render(<AssignmentCopilot {...base} />);
+  goal();
+  await userEvent.click(screen.getByRole("button", { name: "Prepare proposal" }));
+  const button = await screen.findByRole("button", { name: "Apply proposal" });
+  await userEvent.click(button);
+  expect(screen.getByRole("status", { name: /Applying proposal:/ })).toHaveClass("generation-overlay");
+  expect(button).toBeDisabled();
+  await waitFor(() => expect(base.onApply).toHaveBeenCalledTimes(1));
+  await userEvent.click(button);
+  expect(base.onApply).toHaveBeenCalledTimes(1);
+  finish();
+  await screen.findByText(/Proposal applied\. Review/);
+  expect(screen.queryByRole("status", { name: /Applying proposal:/ })).not.toBeInTheDocument();
+});
+
+test("applying a generated proposal preserves the Canvas due date", () => {
+  const draft = { ...base.draft, due: "2026-12-02T10:30", due_at: "2026-12-02T15:30:00Z" };
+  const updated = applyAssignmentProposal(draft, proposal, ["d1"]);
+  expect(updated.due).toBe(draft.due);
+  expect(updated.due_at).toBe(draft.due_at);
+});
+
+test("an apply failure clears loading and allows another attempt", async () => {
+  base.onApply.mockRejectedValueOnce(Error("Form update failed."));
+  render(<AssignmentCopilot {...base} />);
+  goal();
+  await userEvent.click(screen.getByRole("button", { name: "Prepare proposal" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Apply proposal" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Form update failed.");
+  expect(screen.queryByRole("status", { name: /Applying proposal:/ })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Apply proposal" })).toBeEnabled();
 });

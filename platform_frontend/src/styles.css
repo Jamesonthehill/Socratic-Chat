@@ -6439,24 +6439,41 @@ html[data-theme="dark"] .learning-step-review .learning-review-header h3 { color
 @keyframes journey-bar-reveal { from { opacity: 0; transform: scaleX(.9); } to { opacity: 1; transform: scaleX(1); } }
 @media (prefers-reduced-motion: reduce) { .journey-chart-bar > div { animation: none; transition: none; } }
 
-/* Saved, evidence-backed progress within each Socratic mission. */
-.mission-objective-progress { margin-top: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
-.mission-objective-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
-.mission-objective-heading b { color: #5546dc; font-size: 1.15rem; }
-.mission-objective-track { height: 9px; margin-top: .65rem; border-radius: 99px; background: #e8e7f3; overflow: hidden; }
-.mission-objective-track > div { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #6455ee, #36a99b); transition: width .45s ease; }
-.mission-objective-progress p { font-size: .78rem; margin: .5rem 0 .8rem; }
-.student-learning-path .mission-objective-progress ul { display: grid; gap: .6rem; list-style: none; padding: 0; margin: 0; }
-.student-learning-path .mission-objective-progress li { display: flex; gap: .5rem; padding: 0; background: none; border: none; box-shadow: none; font-size: .82rem; }
-.mission-objective-progress .is-demonstrated > span { color: #138575; font-weight: 700; }
-@media (prefers-reduced-motion: reduce) { .mission-objective-track > div { transition: none; } }
-.student-learning-path .mission-objective-progress.is-compact { margin: 10px 0 0; padding: 10px 12px; border: 0; border-left: 2px solid var(--accent); border-radius: 7px; background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
-.mission-objective-progress.is-compact .mission-objective-heading { font-size: .76rem; }
-.mission-objective-progress.is-compact .mission-objective-heading b { font-size: .8rem; }
-.mission-objective-progress.is-compact .mission-objective-track { margin-top: 6px; height: 7px; }
-.mission-objective-progress.is-compact details { margin-top: 6px; border: none; padding: 0; background: none; }
-.mission-objective-progress.is-compact summary { color: var(--muted); font-size: .73rem; cursor: pointer; padding: 0; }
-.mission-objective-progress.is-compact ul { margin-top: 10px; }
+/* Game-inspired mission meter: objective coverage, never a grade. */
+.mission-game-gauge { --gauge-violet: #7457ed; --gauge-cyan: #40c8c0; position: relative; isolation: isolate; margin-top: 14px; padding: 16px 18px 12px; border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line)); border-radius: 13px; background: radial-gradient(ellipse at 100% 0%, #aa87ff15, transparent 65%), var(--surface); box-shadow: inset 0 1px 0 #ffffff65, 0 3px 12px #5143b207; }
+.student-learning-path .mission-game-gauge.is-compact { margin: 12px 0 0; padding: 13px 15px 10px; }
+.mission-game-gauge .mission-objective-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mission-gauge-identity { display: flex; gap: 10px; align-items: center; }
+.mission-game-gauge .mission-gauge-identity strong { display: block; font-size: .67rem; font-weight: 750; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+.student-learning-path .mission-game-gauge span.mission-gauge-state, .mission-game-gauge .mission-gauge-state { display: block; margin: 3px 0 0; color: var(--ink); font-size: .83rem; font-weight: 700; line-height: 1.3; }
+.mission-gauge-emblem { display: grid; place-items: center; width: 34px; height: 38px; border-radius: 11px; background: linear-gradient(150deg, #ebe6ff, #d9dcff); color: #6850ce; box-shadow: inset 0 1px 0 #fff, 0 2px 5px #6f50e015; flex-shrink: 0; }
+.mission-gauge-emblem svg { width: 22px; height: 25px; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.mission-game-gauge .mission-gauge-percent { display: flex; align-items: baseline; gap: 2px; color: #6950d2; font-size: 1.75rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.05em; }
+.mission-gauge-percent small { font-size: .72rem; letter-spacing: 0; margin-left: 1px; opacity: .8; }
+.mission-gauge-runway { position: relative; margin: 13px 0 24px; }
+.mission-game-gauge .mission-objective-track { height: 13px; padding: 2px; overflow: hidden; border-radius: 6px; background: #282642; border: 1px solid #393456; box-shadow: inset 0 2px 4px #0006, 0 1px 0 #fff6; position: relative; }
+.mission-game-gauge .mission-gauge-fill { height: 100%; position: relative; overflow: hidden; border-radius: 3px; background: linear-gradient(90deg, #8b5cf6 0%, #8179ed 45%, #39cdbd 100%); box-shadow: 0 0 10px #64d8d080, inset 0 1px 0 #ffffff90; transition: width 700ms cubic-bezier(.2,.7,.25,1); }
+.mission-gauge-fill::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(115deg, #ffffff18 0px, #ffffff18 6px, transparent 6px, transparent 12px); }
+.mission-gauge-sweep { position: absolute; z-index: 1; inset: 0; background: linear-gradient(100deg, transparent 20%, #ffffff75 50%, transparent 80%); animation: mission-gauge-shine 950ms ease-out both; pointer-events: none; }
+.mission-gauge-divisions { display: grid; position: absolute; inset: 0; pointer-events: none; }
+.mission-gauge-divisions i:not(:last-child) { border-right: 3px solid #282642; }
+.mission-gauge-milestones { position: absolute; left: 0; right: 0; top: 16px; height: 14px; }
+.student-learning-path .mission-game-gauge .mission-gauge-milestones span, .mission-game-gauge .mission-gauge-milestones span { position: absolute; display: grid; place-items: center; margin: 0; width: 12px; height: 12px; transform: translateX(-100%); background: color-mix(in srgb, var(--muted) 12%, var(--surface)); color: var(--muted); border-radius: 4px; font-size: 9px; line-height: 1; }
+.student-learning-path .mission-game-gauge .mission-gauge-milestones span.is-earned, .mission-game-gauge .mission-gauge-milestones span.is-earned { background: #c9f0e7; color: #147562; }
+.mission-game-gauge.is-complete { border-color: #cdb36b77; background: radial-gradient(ellipse at 100% 0%, #ffde791c, transparent 70%), var(--surface); }
+.mission-game-gauge.is-complete .mission-gauge-emblem { color: #9b6b16; background: linear-gradient(145deg, #fff0b6, #f2d891); animation: mission-clear-glint 1100ms ease-out 1; }
+.mission-game-gauge.is-complete .mission-gauge-percent { color: #9b6b16; }
+.mission-game-gauge.is-complete .mission-gauge-fill { background: linear-gradient(90deg, #a48bef, #5ccebc 65%, #efcf79); }
+.mission-game-gauge details { margin-top: 3px; border: 0; background: none; padding: 0; }
+.mission-game-gauge summary, .mission-game-gauge p { color: var(--muted); font-size: .73rem; margin: 0; padding: 0; }
+.mission-game-gauge summary { cursor: pointer; }
+.student-learning-path .mission-game-gauge ul, .mission-game-gauge ul { display: grid; gap: 8px; list-style: none; padding: 0; margin: 10px 0 0; }
+.student-learning-path .mission-game-gauge li, .mission-game-gauge li { display: flex; gap: 7px; padding: 0; background: none; border: none; box-shadow: none; font-size: .79rem; }
+.mission-game-gauge .is-demonstrated > span { color: #138575; font-weight: 700; }
+@keyframes mission-gauge-shine { from { transform: translateX(-100%); opacity: 0; } 15% { opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
+@keyframes mission-clear-glint { 0%, 100% { box-shadow: 0 0 0 0 #e5bc4400; } 35% { box-shadow: 0 0 0 6px #e5bc4420, 0 0 16px #e5bc4435; } }
+@media (prefers-reduced-motion: reduce) { .mission-game-gauge *, .mission-game-gauge *::after { animation: none !important; transition: none !important; } }
+@media (max-width: 480px) { .student-learning-path .mission-game-gauge.is-compact { padding: 11px; } .mission-gauge-emblem { width: 28px; height: 32px; } .mission-gauge-identity { gap: 7px; } .mission-game-gauge .mission-gauge-percent { font-size: 1.5rem; } }
 
 .mission-objectives-editor { margin: 18px 0; }
 .mission-objectives-editor-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }

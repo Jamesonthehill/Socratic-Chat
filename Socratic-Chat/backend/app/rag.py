@@ -1078,6 +1078,9 @@ async def generate_answer(
                     "Do not quiz or demand proof again for an already demonstrated objective. You may briefly connect "
                     "prior understanding to a new objective, or explain a met objective if the student asks. "
                     "The mission progress is evidence coverage, not a grade or a claim of mastery. "
+                    "The saved objective ledger is authoritative: while ANY objective remains unmet, NEVER say "
+                    "the learner can continue, move to another mission, finish, or summarize. Ask one focused "
+                    "question addressing the remaining objective instead. Only the application grants completion. "
                 )
             teaching_instruction += (
                 " The instructor's current guided step is context for this conversation:\n"
@@ -1094,9 +1097,10 @@ async def generate_answer(
                 "ask another yes/no comprehension check, introduce a new concept, or move to another step. "
                 "Do not claim the learner has mastered the step based on their confirmation. "
                 "When the learner attempts to answer your current question, do not end on feedback alone. "
-                "After responding to their reasoning, either ask one new application question grounded in the "
-                "selected passage or, if this step's reasoning is complete, invite them to continue to the next step "
-                "in lead_in. Do not repeat the question they just answered. A direct explanation request or a "
+                + ("After responding to their reasoning, ask one new question addressing an unmet objective, grounded in the selected passage. "
+                 if active_learning_step.get("objectives") else
+                 "After responding to their reasoning, either ask one new application question grounded in the selected passage or, if this step's reasoning is complete, invite them to continue to the next step in lead_in. ")
+                + "Do not repeat the question they just answered. A direct explanation request or a "
                 "request to pause may still end without a question."
             )
         if re.search(r"\bdifferent, simple hypothetical example\b", question, re.I):
@@ -1414,6 +1418,12 @@ async def generate_answer(
                         "next_question empty. Never ask them to repeat a fact you just supplied."
                     )},
                 ]}
+                if active_learning_step.get("objectives"):
+                    repair_request["messages"].append({"role": "system", "content": (
+                        "This mission still has unmet objectives in its saved progress. Do not invite continuation "
+                        "or decide that the learner has done enough. Keep useful feedback and ask ONE question "
+                        "about an unmet objective. Only the application can declare the mission complete."
+                    )})
                 repaired_off_target = False
                 try:
                     repaired = await chat_completion(api_key, base_url, repair_request)

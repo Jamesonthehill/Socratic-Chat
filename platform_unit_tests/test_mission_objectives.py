@@ -197,3 +197,55 @@ def test_generated_setup_requests_and_preserves_actionable_objectives(monkeypatc
     assert 'objectives' in schema['required']
     assert schema['properties']['objectives']['minItems']==2
     assert 'observable objectives' in calls[0]['messages'][0]['content']
+
+
+def test_short_contextual_answer_can_use_the_current_mission_conversation(monkeypatch):
+    calls = model(monkeypatch, [])
+    history = [{'role':'assistant','content':'The team expected the form to work well. What did user feedback suggest about that expectation?'},
+               {'role':'user','content':'The interface should be easier so students can sign up.'}]
+    quote = 'probably the interface should be easier than current signup form?'
+    monkeypatch.setattr(missions,'socratic_chat_completion',mock_reply([
+        {'index':0,'answer_index':2,'quote':quote,'reason':'In context, the student recognizes feedback challenges the assumption that the form worked well.'}
+    ]))
+    state={}
+    progress=asyncio.run(missions.assess_objectives(state,STEP,0,quote,history[0]['content'],[SOURCE],step_history=history))
+    assert '0' in progress['met']
+
+
+def test_old_student_evidence_can_be_recovered_but_tutor_words_cannot(monkeypatch):
+    model(monkeypatch, [])
+    history=[{'role':'user','content':ANSWER}, {'role':'assistant','content':'The machine should refund coins if the order cannot be made.'}]
+    monkeypatch.setattr(missions,'socratic_chat_completion',mock_reply([
+        {**award(0),'answer_index':0},
+        {'index':1,'answer_index':1,'quote':history[1]['content'],'reason':'Tutor explained it.'}
+    ]))
+    state={}
+    progress=asyncio.run(missions.assess_objectives(state,STEP,0,'That means the stock was insufficient.','',[SOURCE],step_history=history))
+    assert list(progress['met'])==['0']
+
+
+@pytest.mark.parametrize('sentence',[
+    'You can continue to the next step when you are ready.',
+    "You're ready to continue to the next mission.",
+    'All objectives have been demonstrated.',
+    'Mission cleared!',
+    'This is a good stopping point for this step.',
+])
+def test_unfinished_mission_cannot_claim_completion(sentence):
+    step={**STEP,'remaining_objectives':['Explain in your own words how inspection reveals a problem with an earlier assumption.']}
+    reply=missions.guide_unfinished_mission('You noticed the form was difficult. '+sentence,step)
+    assert sentence not in reply
+    assert 'You noticed the form was difficult.' in reply
+    assert reply.endswith('How would you explain how inspection reveals a problem with an earlier assumption using this scenario?')
+    assert missions.guide_unfinished_mission('What did the feedback reveal?',step)=='What did the feedback reveal?'
+
+
+def test_engine_cannot_offer_continuation_at_fifty_percent(monkeypatch):
+    assignment,attempt=engine_fixture(monkeypatch,[award()])
+    async def reply(*_a,**_k):
+        return "You're saying the form should be easier. You can continue to the next step when you're ready."
+    monkeypatch.setattr(engines.rag,'generate_answer',reply)
+    result=asyncio.run(engines._socratic_message(assignment,attempt,ANSWER))
+    assert len(result['socratic']['objective_progress']['0']['met'])==1
+    assert 'continue to the next step' not in result['reply']
+    assert result['socratic']['next_thinking_step']

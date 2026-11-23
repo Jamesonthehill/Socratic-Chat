@@ -931,7 +931,7 @@ async def _socratic_message(
         )
         generation_history = [] if general_example_choice else history
         objective_mode = bool(active_step and mission_objectives.objectives_for(active_step))
-        if (objective_mode and sources and classification.message_role == "student_answer"
+        if (objective_mode and sources and classification.message_role in {"student_answer", "confirmation_request", "follow_up", "understanding_claim"}
                 and not state.get("learning_detour") and not pending and not pending_misconception):
             latest_question = next((
                 str(message.get("next_thinking_step") or _next_thinking_step(str(message.get("content") or ""))).strip()
@@ -940,6 +940,7 @@ async def _socratic_message(
             try:
                 await mission_objectives.assess_objectives(
                     state, active_step, step_index, content, latest_question, sources, evaluation,
+                    step_history=attempt["messages"][max(0, int(state.get("step_started_at_message_count") or 1) - 1):][-40:],
                 )
             except Exception as error:
                 log_exception(7, "mission_objectives_failed", error)
@@ -1012,6 +1013,8 @@ async def _socratic_message(
             misconception_context=misconception_context,
             return_misconception_status=bool(pending_misconception), **scope_options)
         answer, resolution_status = generated if isinstance(generated, tuple) else (generated, None)
+        if objective_mode and not state.get("learning_detour"):
+            answer = mission_objectives.guide_unfinished_mission(answer, active_step)
         _save_misconception_context(state, misconception_context, answer, resolution_status)
         result = _socratic_result(answer, sources, state, classification)
         if should_show_concept_check:

@@ -245,8 +245,8 @@ class SocraticSetupTests(unittest.TestCase):
             "opening_prompt": "Imagine the sandwich machine asks for a size. What would you choose?",
             "student_instructions": "Discuss the menu choices and submit the code through Canvas.",
             "learning_steps": [
-                {"title": "Choose a size", "goal": "Explain how the user selects a size.", "scenario": "The machine asks a customer to choose a sandwich size.", "question": "Which size would you choose, and why?", "evidence_quote": "Choose a sandwich size.", "source_chunk_id": "chunk-1"},
-                {"title": "Submit the code", "goal": "Explain what code you will submit.", "scenario": "After working through the machine, you prepare its code for submission.", "question": "How would you prepare the code for submission?", "evidence_quote": "Submit the code through Canvas.", "source_chunk_id": "chunk-1"},
+                {"objectives": ["Explain the difference between the available sizes.", "Justify how the machine should handle the selected size."], "title": "Choose a size", "goal": "Explain how the user selects a size.", "scenario": "The machine asks a customer to choose a sandwich size.", "question": "Which size would you choose, and why?", "evidence_quote": "Choose a sandwich size.", "source_chunk_id": "chunk-1"},
+                {"objectives": ["Explain the required submission contents.", "Justify the checks needed before submission."], "title": "Submit the code", "goal": "Explain what code you will submit.", "scenario": "After working through the machine, you prepare its code for submission.", "question": "How would you prepare the code for submission?", "evidence_quote": "Submit the code through Canvas.", "source_chunk_id": "chunk-1"},
             ],
             "source_chunk_ids": ["chunk-1"],
         }
@@ -331,11 +331,11 @@ class SocraticSetupTests(unittest.TestCase):
             "student_instructions": "You will discuss the review and plan a response.",
             "minimum_messages": 2,
             "learning_steps": [
-                {"title": "Review feedback", "goal": "Explain what the reviewer found.",
+                {"objectives": ["Explain the problem revealed by reviewer feedback.", "Justify a response to the reported problem."], "title": "Review feedback", "goal": "Explain what the reviewer found.",
                  "scenario": "A teammate notices an empty-list crash.",
                  "question": "How should you respond to this review?",
                  "evidence_quote": "A teammate reviews the code before merging", "source_chunk_id": "chunk-1"},
-                {"title": "Plan a test", "goal": "Choose an edge-case test.",
+                {"objectives": ["Identify the edge case a test should cover.", "Explain how the test detects the reported problem."], "title": "Plan a test", "goal": "Choose an edge-case test.",
                  "scenario": "The same team prepares another test.",
                  "question": "Which input should the team test next?",
                  "evidence_quote": "an empty list crashes the function", "source_chunk_id": "chunk-1"},
@@ -384,14 +384,14 @@ class SocraticSetupTests(unittest.TestCase):
                  "for populated lists, but the reviewer found that it crashes on an empty list. The code has "
                  "not been merged yet, and both of you want to understand what went wrong before editing it. "
                  "You can inspect the feedback and decide what needs attention first.")
-        brief = {"title": "Plan a test", "goal": "Choose an edge-case test.",
+        brief = {"objectives": ["Identify the edge case a test should cover.", "Explain how the test detects the reported problem."], "title": "Plan a test", "goal": "Choose an edge-case test.",
                  "scenario": "The same team prepares another test.",
                  "question": "Which input should the team test next?",
                  "evidence_quote": "an empty list crashes the function", "source_chunk_id": "chunk-1"}
         payload = {"opening_prompt": "A teammate reviews your change. What would you check first?",
                    "student_instructions": "You will discuss the review and plan a response.",
                    "minimum_messages": 2, "source_chunk_ids": ["chunk-1"],
-                   "learning_steps": [{"title": "Review feedback", "goal": "Explain what the reviewer found.",
+                   "learning_steps": [{"objectives": ["Explain the problem revealed by reviewer feedback.", "Justify a response to the reported problem."], "title": "Review feedback", "goal": "Explain what the reviewer found.",
                                        "scenario": first, "question": "How should you respond to this review?",
                                        "evidence_quote": "A teammate reviews the code before merging",
                                        "source_chunk_id": "chunk-1"}, brief]}
@@ -431,7 +431,7 @@ class SocraticSetupTests(unittest.TestCase):
             "student_instructions": "You will act as a tutor helping me.",
             "minimum_messages": 3,
             "learning_steps": [
-                {"title": "Choose a size", "goal": "Explain how you choose a size.", "evidence_quote": "Choose a sandwich size.", "source_chunk_id": "chunk-1"},
+                {"objectives": ["Explain the difference between the available sizes.", "Justify how the machine should handle the selected size."], "title": "Choose a size", "goal": "Explain how you choose a size.", "evidence_quote": "Choose a sandwich size.", "source_chunk_id": "chunk-1"},
                 {"title": "Discuss the size", "goal": "Explain why that size fits.", "evidence_quote": "Choose a sandwich size.", "source_chunk_id": "chunk-1"},
             ],
             "source_chunk_ids": ["chunk-1"],

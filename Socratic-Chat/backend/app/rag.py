@@ -1070,6 +1070,15 @@ async def generate_answer(
                     ("scenario", "Current example"), ("question", "Opening question"),
                 )
             )
+            if active_learning_step.get("objectives"):
+                step_context += "\nUnmet objectives: " + json.dumps(active_learning_step.get("remaining_objectives", active_learning_step["objectives"]))
+                step_context += "\nAlready demonstrated objectives: " + json.dumps(active_learning_step.get("met_objectives", []))
+                teaching_instruction += (
+                    " Choose the next question to address ONE unmet objective, connected to the learner's latest reasoning. "
+                    "Do not quiz or demand proof again for an already demonstrated objective. You may briefly connect "
+                    "prior understanding to a new objective, or explain a met objective if the student asks. "
+                    "The mission progress is evidence coverage, not a grade or a claim of mastery. "
+                )
             teaching_instruction += (
                 " The instructor's current guided step is context for this conversation:\n"
                 f"<current_learning_step>\n{step_context}\n</current_learning_step>\n"

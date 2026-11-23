@@ -27,7 +27,7 @@ from app.classifier import MessageClassification, classify_message, is_contextua
 from app.pipeline_logging import begin_trace, debug_preview, end_trace, log_event, log_exception
 from app.schemas import ChatMessage, Source
 from app.term_resolution import resolve_term, TOKEN_PATTERN
-from platform_app import debate, step_check
+from platform_app import debate, step_check, mission_objectives
 from platform_app.reflections_transport import request_reflections
 from platform_app.schemas import ReflectionConfig
 
@@ -930,7 +930,34 @@ async def _socratic_message(
             if pending and not pending.get("topic_choices") else interpreted
         )
         generation_history = [] if general_example_choice else history
-        if (active_step and sources and classification.message_role == "student_answer"
+        objective_mode = bool(active_step and mission_objectives.objectives_for(active_step))
+        if (objective_mode and sources and classification.message_role == "student_answer"
+                and not state.get("learning_detour") and not pending and not pending_misconception):
+            latest_question = next((
+                str(message.get("next_thinking_step") or _next_thinking_step(str(message.get("content") or ""))).strip()
+                for message in reversed(attempt["messages"]) if message.get("role") == "assistant"
+            ), active_step.get("question", ""))
+            try:
+                await mission_objectives.assess_objectives(
+                    state, active_step, step_index, content, latest_question, sources, evaluation,
+                )
+            except Exception as error:
+                log_exception(7, "mission_objectives_failed", error)
+            if mission_objectives.is_complete(state, active_step, step_index):
+                state["step_readiness"] = {"step_index": step_index, "ready": True,
+                    "observation": "Your answers have demonstrated each objective for this mission."}
+                next_action = ("Finish the conversation and summarize" if step_index == len(guided_steps) - 1
+                               else "Continue to the next step")
+                return _socratic_result(
+                    f"Your answers have demonstrated each objective for this mission. {next_action} when you're ready, or ask me anything you'd like to revisit.",
+                    sources, state, classification,
+                )
+        if objective_mode:
+            progress = mission_objectives.progress_for(state, active_step, step_index)
+            active_step = {**active_step,
+                "remaining_objectives": [objective for i, objective in enumerate(progress["objectives"]) if str(i) not in progress["met"]],
+                "met_objectives": [objective for i, objective in enumerate(progress["objectives"]) if str(i) in progress["met"]]}
+        if (active_step and not objective_mode and sources and classification.message_role == "student_answer"
                 and not state.get("learning_detour")
                 and not pending and not pending_misconception and not state.get("step_readiness")):
             minimum_questions = int((snapshot.get("config") or {}).get("minimum_step_questions") or 1)

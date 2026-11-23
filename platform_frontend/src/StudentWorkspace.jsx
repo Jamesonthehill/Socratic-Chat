@@ -7,6 +7,7 @@ import Markdown from "react-markdown";
 import PdfMaterialPreview from "./PdfMaterialPreview";
 import { api, date, session, streamApi, TOOLS } from "./api";
 import { Badge, GenerationStatus, Notice } from "./ui";
+import MissionObjectiveProgress from "./MissionObjectiveProgress";
 
 const SOCRATIC_TOUR_STEPS = [
   { selector: '[data-socratic-tour="materials"]', title: "Read the course materials", detail: "View or download the instructor-selected documents before you begin. You can return to them during the chat." },
@@ -1540,10 +1541,16 @@ export default function StudentWorkspace({ user, preview = null }) {
   const stepReady = socratic.step_readiness?.step_index === activeLearningStep && socratic.step_readiness?.ready === true;
   const minimumStepQuestions = assignment.student_config?.minimum_step_questions ?? 1;
   const stepQuestionCount = currentStepQuestionCount(attempt?.messages, socratic.step_started_at_message_count);
+  const missionObjectives = assignment.student_config?.learning_steps?.[activeLearningStep]?.objectives || [];
+  const savedObjectives = socratic.objective_progress?.[String(activeLearningStep)];
+  const objectiveMode = missionObjectives.length > 0;
+  const objectivesMet = objectiveMode && JSON.stringify(savedObjectives?.objectives) === JSON.stringify(missionObjectives)
+    && missionObjectives.every((_, index) => savedObjectives?.met?.[String(index)]?.quote && savedObjectives?.met?.[String(index)]?.reason);
+  const missionCanContinue = objectiveMode ? objectivesMet : stepReady && stepQuestionCount >= minimumStepQuestions;
   const stepActionDisabled = busy || socratic.phase !== "teaching" ||
     Boolean(socratic.pending_clarification || socratic.concept_check) ||
-    !hasDiscussedCurrentStep || stepQuestionCount < minimumStepQuestions;
-  const showStepAction = !learningDetour && stepReady && stepQuestionCount >= minimumStepQuestions &&
+    !hasDiscussedCurrentStep || (objectiveMode ? !objectivesMet : stepQuestionCount < minimumStepQuestions);
+  const showStepAction = !learningDetour && missionCanContinue &&
     hasDiscussedCurrentStep && !completed && !showLearningSummary && socratic.phase === "teaching" &&
     !busy && !socratic.pending_clarification && !socratic.concept_check;
   const continueFromStep = () => setDifficultyOpen(true);
@@ -1688,15 +1695,8 @@ export default function StudentWorkspace({ user, preview = null }) {
                             </div>
                             <span className="student-step-goal">{step.goal}</span>
                           </>}
-                          {current && <span className="student-step-objective">{stepReady
-                            ? "Ready to continue when you are."
-                            : !hasDiscussedCurrentStep
-                            ? "Start the conversation to explore this mission."
-                            : stepActionDisabled
-                              ? "Keep discussing this example with your tutor."
-                              : activeLearningStep < learningStepCount - 1
-                                ? "Ready to continue to the next mission."
-                                : "Ready to finish and summarize."}</span>}
+                          {(current || completed) && <MissionObjectiveProgress compact objectives={step.objectives}
+                            saved={socratic.objective_progress?.[String(index)]} mission={index + 1} />}
                         </li>
                       );
                     })}

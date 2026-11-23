@@ -171,7 +171,7 @@ export function SocraticConfig({
               setExpandedStep(stepCount);
               onChange({ ...value, guidance_mode: "guided", learning_steps: [
                 ...(value.learning_steps || []),
-                { title: "", goal: "", scenario: "", question: "", evidence_quote: "", source_chunk_id: "", source_file: "", checks: [] },
+                { title: "", goal: "", objectives: [], scenario: "", question: "", evidence_quote: "", source_chunk_id: "", source_file: "", checks: [] },
               ] });
             }}>Add blank step</button>}
           <p className="help">Scan the path below. Select a step to edit its details, or drag a row or use the arrows to change the order. Students can still ask related questions at any point.</p>
@@ -249,6 +249,12 @@ export function SocraticConfig({
               {isExpanded && <div id={`${openingPromptId}-step-${index}`} className="socratic-step-editor">
                 <label>Step title<input value={step.title} disabled={frozen} onChange={(event) => updateStep("title", event.target.value)} /></label>
                 <label>What the student should reason about<textarea rows={2} value={step.goal} disabled={frozen} onChange={(event) => updateStep("goal", event.target.value)} /></label>
+                <label>Mission objectives (one per line)
+                  <textarea rows={4} value={(step.objectives || []).join("\n")} disabled={frozen}
+                    onChange={(event) => updateStep("objectives", event.target.value.split("\n"))}
+                    placeholder={"Explain what evidence would justify a change.\nConnect that change to the team's goal."} />
+                </label>
+                <p className="help">Use 2–4 distinct objectives students can demonstrate through reasoning. Each objective needs 8–300 characters; up to 6 are allowed. Progress is saved as students demonstrate them.</p>
                 <label>{index === 0 ? "First source context students will see" : "Source context students will see"}
                   <textarea rows={5} maxLength={700} value={step.scenario || ""} disabled={frozen}
                     onChange={(event) => updateStep("scenario", event.target.value)}
@@ -267,7 +273,7 @@ export function SocraticConfig({
           <input type="number" min={1} max={10}
             value={value.minimum_step_questions ?? 2}
             onChange={(event) => change("minimum_step_questions", Number(event.target.value))} />
-          <small className="help">The first question in each step counts. Repeating the same question does not. Students can continue after discussing this many questions and reaching a stopping point.</small>
+          <small className="help">The first question in each step counts. Repeating the same question does not. For missions without objectives, students continue after this minimum and a readiness check. Missions with objectives can finish as soon as every objective is demonstrated, without extra questions.</small>
         </label>}
         </section>
       )}

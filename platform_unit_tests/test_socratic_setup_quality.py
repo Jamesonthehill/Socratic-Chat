@@ -11,6 +11,7 @@ def test_setup_retries_when_a_scene_explains_the_answer(monkeypatch):
     base_step = {
         "title": "Review feedback",
         "goal": "Decide how the team responds to user feedback.",
+        "objectives": ["Explain what new information the feedback provides.", "Justify how the team should adapt its plan."],
         "question": "What should the team do with the feedback?",
         "evidence_quote": "The team reviews feedback and adapts its plan.",
         "source_chunk_id": "source-1",

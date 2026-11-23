@@ -721,7 +721,7 @@ test("student follows a generated Socratic path one step at a time", async () =>
   expect(screen.getByText("Choose a size").closest("li")).toHaveAttribute("aria-current", "step");
   expect(screen.getByText("Current step")).toBeInTheDocument();
   expect(within(screen.getByText("Choose a size").closest("li")).getByText("Mission 01")).toBeInTheDocument();
-  expect(within(screen.getByText("Choose a size").closest("li")).getByText("Ready to continue when you are.")).toBeInTheDocument();
+  expect(within(screen.getByText("Choose a size").closest("li")).getByRole("progressbar", {name: "Mission 1 objective progress"})).toBeInTheDocument();
   const lockedMission = within(screen.getByRole("list", { name: "Learning path steps" })).getByText("Mission 02").closest("li");
   expect(lockedMission).toHaveClass("is-locked");
   expect(within(lockedMission).getByRole("img", { name: "Locked until the previous step is complete" })).toBeInTheDocument();
@@ -1883,4 +1883,25 @@ test("professor dashboard opens published Socratic settings beside View", async 
   await userEvent.setup().click(edit);
   expect(await screen.findByRole("heading", { name: "Edit published Socratic settings" })).toBeInTheDocument();
   expect(screen.getByLabelText("Tutor questions before continuing")).toHaveValue(2);
+});
+
+test.each([1, 2])('mission objectives restore %i demonstrated targets and control continuation independently of question minimum', async (count) => {
+  const objectives = ['Explain why ingredients are checked before payment.', 'Justify rejecting an unavailable order without taking coins.'];
+  const learning_steps = [{title:'Check supplies',goal:'Explain the resource check.',objectives}, {title:'Payment',goal:'Explain payment.'}];
+  const evidence={quote:'Avoid charging for unavailable food.',reason:'Explains the consequence.'};
+  const met=count===1?{'0':evidence}:{'0':evidence,'1':evidence};
+  const discussed={...attempt,messages:[
+    {role:'assistant',content:'Why check stock first?',next_thinking_step:'Why check stock first?'},
+    {role:'user',content:'Check stock first so we do not charge for food we cannot make.'}],
+    engine_state:{socratic:{phase:'teaching',learning_step_index:0,step_started_at_message_count:1,
+      objective_progress:{'0':{objectives,met}},step_readiness:{step_index:0,ready:true}}}};
+  mockApi('student',{
+    '/api/platform/assignments/assignment-1':{...assignment,student_config:{minimum_step_questions:10,learning_steps}},
+    '/api/platform/assignments/assignment-1/attempt':discussed,
+  });
+  open('/student/assignments/assignment-1');
+  const bar=await screen.findByRole('progressbar',{name:'Mission 1 objective progress'});
+  expect(bar).toHaveAttribute('aria-valuenow',count===1?'50':'100');
+  if(count===1) expect(screen.queryByRole('button',{name:'Continue to next step'})).not.toBeInTheDocument();
+  else expect(await screen.findByRole('button',{name:'Continue to next step'})).toBeEnabled();
 });

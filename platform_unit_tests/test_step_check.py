@@ -249,7 +249,7 @@ def test_setup_no_longer_generates_step_quizzes(monkeypatch):
         "[chunk_id=source] A documented example.", {"source"}, {"source": "lesson.pdf"},
     ))
     monkeypatch.setattr(socratic_setup, "validate_draft", lambda *_args: {
-        "learning_steps": [{"title": "First step", "scenario": "A detailed example introduces the step.",
+        "learning_steps": [{"title": "First step", "objectives": ["Explain the documented choice.", "Justify the next action in the example."], "scenario": "A detailed example introduces the step.",
                             "question": "What should happen next?"}],
     })
     monkeypatch.setattr(socratic_setup, "brief_step_indices", lambda *_args: [])

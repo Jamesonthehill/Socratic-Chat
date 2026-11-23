@@ -6438,3 +6438,22 @@ html[data-theme="dark"] .learning-step-review .learning-review-header h3 { color
 .journey-chart-waiting { margin-top: 8px; font-size: 11px; color: #66768a; }
 @keyframes journey-bar-reveal { from { opacity: 0; transform: scaleX(.9); } to { opacity: 1; transform: scaleX(1); } }
 @media (prefers-reduced-motion: reduce) { .journey-chart-bar > div { animation: none; transition: none; } }
+
+/* Saved, evidence-backed progress within each Socratic mission. */
+.mission-objective-progress { margin-top: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.mission-objective-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
+.mission-objective-heading b { color: #5546dc; font-size: 1.15rem; }
+.mission-objective-track { height: 9px; margin-top: .65rem; border-radius: 99px; background: #e8e7f3; overflow: hidden; }
+.mission-objective-track > div { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #6455ee, #36a99b); transition: width .45s ease; }
+.mission-objective-progress p { font-size: .78rem; margin: .5rem 0 .8rem; }
+.student-learning-path .mission-objective-progress ul { display: grid; gap: .6rem; list-style: none; padding: 0; margin: 0; }
+.student-learning-path .mission-objective-progress li { display: flex; gap: .5rem; padding: 0; background: none; border: none; box-shadow: none; font-size: .82rem; }
+.mission-objective-progress .is-demonstrated > span { color: #138575; font-weight: 700; }
+@media (prefers-reduced-motion: reduce) { .mission-objective-track > div { transition: none; } }
+.student-learning-path .mission-objective-progress.is-compact { margin: 10px 0 0; padding: 10px 12px; border: 0; border-left: 2px solid var(--accent); border-radius: 7px; background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.mission-objective-progress.is-compact .mission-objective-heading { font-size: .76rem; }
+.mission-objective-progress.is-compact .mission-objective-heading b { font-size: .8rem; }
+.mission-objective-progress.is-compact .mission-objective-track { margin-top: 6px; height: 7px; }
+.mission-objective-progress.is-compact details { margin-top: 6px; border: none; padding: 0; background: none; }
+.mission-objective-progress.is-compact summary { color: var(--muted); font-size: .73rem; cursor: pointer; padding: 0; }
+.mission-objective-progress.is-compact ul { margin-top: 10px; }

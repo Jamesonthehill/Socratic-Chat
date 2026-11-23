@@ -56,6 +56,16 @@ class PublishedStepChecksInput(BaseModel):
 
 
 class PublishedStepSettings(BaseModel):
+    objectives: list[str] | None = Field(default=None, max_length=6)
+
+    @field_validator("objectives")
+    @classmethod
+    def validate_objectives(cls, value):
+        if value is None:
+            return None
+        from platform_app.schemas import SocraticLearningStep
+        return SocraticLearningStep.validate_objectives(value)
+
     title: str = Field(min_length=3, max_length=120)
     goal: str = Field(min_length=8, max_length=500)
     scenario: str = Field(default="", max_length=700)
@@ -139,6 +149,16 @@ def socratic_step_source(item, step):
     }
 
 
+def require_mission_objectives(state, steps, index):
+    from platform_app import mission_objectives
+    step = steps[index] if 0 <= index < len(steps) else {}
+    if not mission_objectives.objectives_for(step):
+        return False
+    if not mission_objectives.is_complete(state, step, index):
+        raise HTTPException(409, "Discuss the remaining mission objectives with your tutor before continuing.")
+    return True
+
+
 def step_question_count(messages, step_started_at_message_count):
     """Count distinct tutor questions shown in the current guided step."""
     return step_check.count_step_questions(messages, step_started_at_message_count)
@@ -173,7 +193,7 @@ def public_assignment(item, manage=False):
                 "learning_path_time_limit_seconds": cfg.get("learning_path_minutes", 7) * 60 if guided else None,
                 "learning_steps": [
                     {
-                        "title": step["title"], "goal": step["goal"],
+                        "title": step["title"], "goal": step["goal"], "objectives": step.get("objectives", []),
                         "source_file": step.get("source_file", ""),
                         "source": socratic_step_source(item, step),
                     }
@@ -732,7 +752,7 @@ def update_published_socratic_settings(assignment_id: UUID, body: PublishedSocra
             raise HTTPException(409, "This assignment has no published Socratic learning path.")
         if len(body.learning_steps) != len(saved_steps):
             raise HTTPException(422, "Keep the published learning path's step count and sources.")
-        edited_steps = [{**saved, **edited.model_dump()} for saved, edited in zip(saved_steps, body.learning_steps)]
+        edited_steps = [{**saved, **edited.model_dump(exclude_none=True)} for saved, edited in zip(saved_steps, body.learning_steps)]
         updates = {"prompt": body.prompt,
                    "tutor_mode": body.tutor_mode,
                    "minimum_step_questions": body.minimum_step_questions,
@@ -989,7 +1009,8 @@ def next_socratic_step(assignment_id: UUID, account=Depends(user)):
         if not any(message.get("role") == "user" for message in attempt["messages"][since:]):
             raise HTTPException(409, "Discuss this step with the tutor before continuing.")
         minimum_questions = int(config.get("minimum_step_questions") or 1)
-        if step_question_count(attempt["messages"], since) < minimum_questions:
+        objective_mode = require_mission_objectives(state, steps, index)
+        if not objective_mode and step_question_count(attempt["messages"], since) < minimum_questions:
             raise HTTPException(409, f"Discuss at least {minimum_questions} tutor question(s) in this step before continuing.")
         index += 1
         step = steps[index]
@@ -1290,7 +1311,8 @@ def socratic_reflection(assignment_id: UUID, body: SocraticReflectionInput, acco
         state = (attempt.get("engine_state") or {}).get(state_key) or {}
         if assignment["tool"] == "socratic" and not body.regenerate_feedback and steps and int(state.get("learning_step_index") or 0) == len(steps) - 1:
             minimum_questions = int(config.get("minimum_step_questions") or 1)
-            if step_question_count(attempt["messages"], state.get("step_started_at_message_count")) < minimum_questions:
+            objective_mode = require_mission_objectives(state, steps, len(steps) - 1)
+            if not objective_mode and step_question_count(attempt["messages"], state.get("step_started_at_message_count")) < minimum_questions:
                 raise HTTPException(409, f"Discuss at least {minimum_questions} tutor question(s) in the final step before summarizing.")
         rid = str(body.request_id)
         already_saved = state.get("student_reflection") if assignment["tool"] == "debate" else state.get("completion_summary")

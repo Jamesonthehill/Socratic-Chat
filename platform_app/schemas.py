@@ -53,6 +53,17 @@ class SocraticStepCheck(StrictModel):
 class SocraticLearningStep(StrictModel):
     title: str = Field(min_length=3, max_length=120)
     goal: str = Field(min_length=8, max_length=500)
+    objectives: list[str] = Field(default_factory=list, max_length=6)
+
+    @field_validator("objectives")
+    @classmethod
+    def validate_objectives(cls, values):
+        cleaned = [value.strip() for value in values if value.strip()]
+        if any(not 8 <= len(value) <= 300 for value in cleaned):
+            raise ValueError("Each mission objective needs 8 to 300 characters.")
+        if len({value.casefold() for value in cleaned}) != len(cleaned):
+            raise ValueError("Mission objectives must be distinct.")
+        return cleaned
     scenario: str = Field(default="", max_length=700)
     question: str = Field(default="", max_length=500)
     evidence_quote: str = Field(default="", max_length=350)

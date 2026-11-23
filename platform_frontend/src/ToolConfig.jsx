@@ -116,7 +116,7 @@ export function SocraticConfig({
         <legend>Tutor style</legend>
         <label>
           <input type="radio" name="tutor-mode" checked={["jarvis", "javis"].includes(value.tutor_mode)} disabled={frozen} onChange={() => change("tutor_mode", "jarvis")} />
-          <span><strong>Jarvis</strong><small>A friendly, casual tutor who uses slang.</small></span>
+          <span><strong>Jarvis</strong><small>A friendly tutor who speaks naturally, like a conversation.</small></span>
         </label>
         <label>
           <input type="radio" name="tutor-mode" checked={(value.tutor_mode || "socrates") === "socrates"} disabled={frozen} onChange={() => change("tutor_mode", "socrates")} />

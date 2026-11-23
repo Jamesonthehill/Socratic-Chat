@@ -1266,8 +1266,10 @@ async def generate_answer(
     ]
     if tutor_mode:
         messages.append({"role": "system", "content": (
-            "Use the Jarvis tutor style. Speak like a friendly classmate with casual contractions and light, "
-            "natural slang. Keep explanations clear, respectful, and accurate."
+            "Use the Jarvis tutor style. Speak like a friendly classmate in natural, spoken sentences, "
+            "as if talking directly to the learner. Use everyday words, short sentences, and natural contractions. "
+            "Avoid slang, formal essay language, and textbook-style prose. "
+            "Keep explanations clear, respectful, and accurate."
             if tutor_mode in {"jarvis", "javis"} else
             "Use the Socrates tutor style. Use formal, professional language with precise explanations. "
             "Avoid slang and casual expressions."

@@ -65,7 +65,7 @@ export default function PublishedSocraticSettings({ assignment, onSaved }) {
         <label>Tutor style
           <select value={form.tutor_mode} onChange={(event) => setForm((current) => ({ ...current, tutor_mode: event.target.value }))}>
             <option value="socrates">Socrates — formal</option>
-            <option value="jarvis">Jarvis — friendly with slang</option>
+            <option value="jarvis">Jarvis — friendly and conversational</option>
           </select>
         </label>
         <label>Student instructions

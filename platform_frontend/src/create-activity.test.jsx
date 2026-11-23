@@ -38,7 +38,7 @@ test("professor can save edited settings on a published Socratic assignment", as
   api.mockResolvedValueOnce({ ...published, instructions: "Read and discuss the source." });
   render(<PublishedSocraticSettings assignment={published} onSaved={saved} />);
   expect(screen.getByRole("combobox", { name: "Tutor style" })).toHaveValue("jarvis");
-  expect(screen.getByRole("option", { name: "Jarvis — friendly with slang" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "Jarvis — friendly and conversational" })).toBeInTheDocument();
   await userEvent.setup().clear(screen.getByRole("textbox", { name: "Student instructions" }));
   await userEvent.setup().type(screen.getByRole("textbox", { name: "Student instructions" }), "Read and discuss the source.");
   await userEvent.setup().clear(screen.getByRole("spinbutton", { name: "Tutor questions before continuing" }));

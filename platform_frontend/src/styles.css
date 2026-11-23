@@ -6457,3 +6457,20 @@ html[data-theme="dark"] .learning-step-review .learning-review-header h3 { color
 .mission-objective-progress.is-compact details { margin-top: 6px; border: none; padding: 0; background: none; }
 .mission-objective-progress.is-compact summary { color: var(--muted); font-size: .73rem; cursor: pointer; padding: 0; }
 .mission-objective-progress.is-compact ul { margin-top: 10px; }
+
+.mission-objectives-editor { margin: 18px 0; }
+.mission-objectives-editor-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.mission-objectives-editor-heading > span { font-size: .76rem; color: var(--muted); }
+.mission-objectives-editor .help { margin: 5px 0 10px; }
+.mission-objectives-editor table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 0 0 8px; }
+.mission-objectives-editor thead { background: var(--surface-subtle); }
+.mission-objectives-editor th, .mission-objectives-editor td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.mission-objectives-editor thead th { font-size: .75rem; color: var(--muted); font-weight: 600; }
+.mission-objectives-editor th:first-child { width: 40px; }
+.mission-objectives-editor th:last-child { width: 72px; }
+.mission-objectives-editor tbody th { color: var(--accent); font-size: .8rem; padding-top: 17px; }
+.mission-objectives-editor td textarea { width: 100%; margin: 0; border: 1px solid transparent; border-radius: 4px; padding: 5px 6px; background: transparent; font: inherit; line-height: 1.6; min-height: 64px; resize: vertical; }
+.mission-objectives-editor td textarea:hover:not(:disabled) { border-color: var(--line); }
+.mission-objectives-editor td textarea:focus { border-color: var(--accent); background: var(--surface); }
+.mission-objectives-editor td button { margin-top: 2px; font-size: .75rem; padding: 5px 0; }
+@media (max-width: 520px) { .mission-objectives-editor th:first-child { width: 26px; } .mission-objectives-editor th:last-child { width: 55px; } .mission-objectives-editor th, .mission-objectives-editor td { padding: 8px 4px; } }

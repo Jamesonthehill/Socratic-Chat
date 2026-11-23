@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { api } from "./api";
 import { GenerationStatus, Notice } from "./ui";
 import CourseLearningMaterials from "./CourseLearningMaterials";
+import MissionObjectivesEditor from "./MissionObjectivesEditor";
 
 export const defaults = {
   socratic: {
@@ -249,12 +250,8 @@ export function SocraticConfig({
               {isExpanded && <div id={`${openingPromptId}-step-${index}`} className="socratic-step-editor">
                 <label>Step title<input value={step.title} disabled={frozen} onChange={(event) => updateStep("title", event.target.value)} /></label>
                 <label>What the student should reason about<textarea rows={2} value={step.goal} disabled={frozen} onChange={(event) => updateStep("goal", event.target.value)} /></label>
-                <label>Mission objectives (one per line)
-                  <textarea rows={4} value={(step.objectives || []).join("\n")} disabled={frozen}
-                    onChange={(event) => updateStep("objectives", event.target.value.split("\n"))}
-                    placeholder={"Explain what evidence would justify a change.\nConnect that change to the team's goal."} />
-                </label>
-                <p className="help">Use 2–4 distinct objectives students can demonstrate through reasoning. Each objective needs 8–300 characters; up to 6 are allowed. Progress is saved as students demonstrate them.</p>
+                <MissionObjectivesEditor objectives={step.objectives} disabled={frozen}
+                  onChange={(objectives) => updateStep("objectives", objectives)} />
                 <label>{index === 0 ? "First source context students will see" : "Source context students will see"}
                   <textarea rows={5} maxLength={700} value={step.scenario || ""} disabled={frozen}
                     onChange={(event) => updateStep("scenario", event.target.value)}

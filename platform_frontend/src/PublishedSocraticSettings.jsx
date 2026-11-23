@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "./api";
 import { Notice } from "./ui";
+import MissionObjectivesEditor from "./MissionObjectivesEditor";
 
 export default function PublishedSocraticSettings({ assignment, onSaved }) {
   const config = assignment.config || {};
@@ -85,8 +86,8 @@ export default function PublishedSocraticSettings({ assignment, onSaved }) {
           <summary>{index + 1}. {step.title}</summary>
           <label>Step title<input required minLength={3} maxLength={120} value={step.title} onChange={(event) => updateStep(index, "title", event.target.value)} /></label>
           <label>Learning goal<textarea required minLength={8} maxLength={500} rows={2} value={step.goal} onChange={(event) => updateStep(index, "goal", event.target.value)} /></label>
-          <label>Mission objectives (one per line)<textarea rows={4} value={(step.objectives || []).join("\n")}
-            onChange={(event) => updateStep(index, "objectives", event.target.value.split("\n"))} /></label>
+          <MissionObjectivesEditor objectives={step.objectives} disabled={busy}
+            onChange={(objectives) => updateStep(index, "objectives", objectives)} />
           <p className="help">Changing objectives resets their demonstrated progress for this mission. Previous chat messages remain saved.</p>
           <label>Source context students will see<textarea maxLength={700} rows={4} value={step.scenario} onChange={(event) => updateStep(index, "scenario", event.target.value)} /></label>
           <label>Question for this step<textarea maxLength={500} rows={2} value={step.question} onChange={(event) => updateStep(index, "question", event.target.value)} /></label>

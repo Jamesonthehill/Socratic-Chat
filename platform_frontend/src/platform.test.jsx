@@ -746,7 +746,8 @@ test("student follows a generated Socratic path one step at a time", async () =>
   expect(within(screen.getByText("Choose a size").closest("li")).getByRole("img", { name: "Completed step" }).querySelector(".student-star-medal")).toBeInTheDocument();
   expect(within(within(screen.getByRole("list", { name: "Learning path steps" })).getByText("Check ingredients").closest("li")).queryByRole("img", { name: "Completed step" })).not.toBeInTheDocument();
   expect(screen.getByRole("progressbar", { name: "Learning path progress" })).toHaveAttribute("aria-valuenow", "1");
-  expect(screen.getByRole("status", { name: "Step complete" })).toHaveTextContent("Stage complete!");
+  expect(screen.queryByRole("status", { name: "Step complete" })).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole("status", { name: "Step complete" })).toHaveTextContent("Stage complete!"), { timeout: 2200 });
   await waitFor(() => expect(screen.getByRole("progressbar", { name: "Learning path progress" }).querySelectorAll(".student-learning-star.is-earned")).toHaveLength(1), { timeout: 3200 });
   await waitFor(() => expect(within(screen.getByRole("list", { name: "Learning path steps" })).getByText("Check ingredients").closest("li")).toHaveClass("is-unlocking"), { timeout: 1600 });
   expect(screen.getByRole("status", { name: "Mission unlocked" })).toHaveTextContent("Mission 02 unlocked!");

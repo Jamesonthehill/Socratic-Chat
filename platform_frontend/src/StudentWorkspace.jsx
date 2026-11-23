@@ -419,6 +419,8 @@ function StepPadlock() {
   );
 }
 
+// Let the 700ms mission gauge fill finish, then leave a moment to read it.
+const GAUGE_BEFORE_STAR_MS = 1600;
 const STAR_FLIGHT_MS = 2400;
 const STAR_POP_MS = 1000;
 const STEP_UNLOCK_MS = 1900;
@@ -450,25 +452,31 @@ function LearningPathProgress({ completed, total, stage, started }) {
       setDisplayedCompleted(completed);
       return;
     }
-    const destination = starRefs.current[displayedCompleted]?.getBoundingClientRect();
-    if (!destination) {
-      setDisplayedCompleted(completed);
-      return;
-    }
-    const centerX = window.innerWidth / 2;
-    const centerY = window.innerHeight / 2;
-    setFlyingStar({
-      dx: destination.left + destination.width / 2 - centerX,
-      dy: destination.top + destination.height / 2 - centerY,
-    });
-    setAdvancing(true);
-    const timer = window.setTimeout(() => {
-      setJustEarnedIndex(displayedCompleted);
-      setDisplayedCompleted((value) => value + 1);
-      setFlyingStar(null);
-      setAdvancing(false);
-    }, STAR_FLIGHT_MS);
-    return () => window.clearTimeout(timer);
+    let flightTimer;
+    const gaugeTimer = window.setTimeout(() => {
+      const destination = starRefs.current[displayedCompleted]?.getBoundingClientRect();
+      if (!destination) {
+        setDisplayedCompleted(completed);
+        return;
+      }
+      const centerX = window.innerWidth / 2;
+      const centerY = window.innerHeight / 2;
+      setFlyingStar({
+        dx: destination.left + destination.width / 2 - centerX,
+        dy: destination.top + destination.height / 2 - centerY,
+      });
+      setAdvancing(true);
+      flightTimer = window.setTimeout(() => {
+        setJustEarnedIndex(displayedCompleted);
+        setDisplayedCompleted((value) => value + 1);
+        setFlyingStar(null);
+        setAdvancing(false);
+      }, STAR_FLIGHT_MS);
+    }, GAUGE_BEFORE_STAR_MS);
+    return () => {
+      window.clearTimeout(gaugeTimer);
+      window.clearTimeout(flightTimer);
+    };
   }, [completed, displayedCompleted]);
 
   return (
@@ -1013,7 +1021,7 @@ export default function StudentWorkspace({ user, preview = null }) {
       const button = submitButtonRef.current;
       const stars = document.querySelectorAll(".student-learning-progress .student-learning-star");
       if (!button || !stars.length) return;
-      if (Array.from(stars).some((star) => !star.classList.contains("is-earned")) && waited < STAR_FLIGHT_MS + STAR_POP_MS + 200) {
+      if (Array.from(stars).some((star) => !star.classList.contains("is-earned")) && waited < GAUGE_BEFORE_STAR_MS + STAR_FLIGHT_MS + STAR_POP_MS + 200) {
         waited += 100;
         waitTimer = window.setTimeout(gatherStars, 100);
         return;
@@ -1044,7 +1052,7 @@ export default function StudentWorkspace({ user, preview = null }) {
   useEffect(() => {
     if (unlockingStepIndex === null) return undefined;
     const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-    const waitForStar = reducedMotion ? 0 : STAR_FLIGHT_MS + STAR_POP_MS + 100;
+    const waitForStar = reducedMotion ? 0 : GAUGE_BEFORE_STAR_MS + STAR_FLIGHT_MS + STAR_POP_MS + 100;
     const releaseTimer = window.setTimeout(() => setUnlockPhase("releasing"), waitForStar);
     const finishTimer = window.setTimeout(() => {
       setUnlockPhase(null);

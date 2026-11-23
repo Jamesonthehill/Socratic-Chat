@@ -41,13 +41,12 @@ test("professor can save edited settings on a published Socratic assignment", as
   expect(screen.getByRole("option", { name: "Jarvis — friendly and conversational" })).toBeInTheDocument();
   await userEvent.setup().clear(screen.getByRole("textbox", { name: "Student instructions" }));
   await userEvent.setup().type(screen.getByRole("textbox", { name: "Student instructions" }), "Read and discuss the source.");
-  await userEvent.setup().clear(screen.getByRole("spinbutton", { name: "Tutor questions before continuing" }));
-  await userEvent.setup().type(screen.getByRole("spinbutton", { name: "Tutor questions before continuing" }), "3");
+  expect(screen.queryByRole("spinbutton", { name: "Tutor questions before continuing" })).not.toBeInTheDocument();
   await userEvent.setup().click(screen.getByRole("button", { name: "Save published settings" }));
   await waitFor(() => expect(saved).toHaveBeenCalled());
   expect(screen.getByRole("status")).toHaveTextContent("Published settings saved");
   expect(api).toHaveBeenCalledWith("/platform/assignments/published-1/socratic-settings", expect.objectContaining({
-    method: "PATCH", body: expect.objectContaining({ tutor_mode: "jarvis", instructions: "Read and discuss the source.", minimum_step_questions: 3 }),
+    method: "PATCH", body: expect.objectContaining({ tutor_mode: "jarvis", instructions: "Read and discuss the source.", minimum_step_questions: 1 }),
   }));
 });
 

@@ -76,11 +76,6 @@ export default function PublishedSocraticSettings({ assignment, onSaved }) {
           <textarea rows={3} maxLength={10000} value={form.prompt} onChange={(event) => setForm((current) => ({ ...current, prompt: event.target.value }))} />
           <small className="help">A revised opening appears when a student starts a new conversation. It does not rewrite messages already sent.</small>
         </label>
-        <div className="published-socratic-settings-counts">
-          <label>Tutor questions before continuing
-            <input type="number" min={1} max={10} value={form.minimum_step_questions} onChange={(event) => setForm((current) => ({ ...current, minimum_step_questions: Number(event.target.value) }))} />
-          </label>
-        </div>
         <h3>Learning steps</h3>
         {form.learning_steps.map((step, index) => <details key={index} className="published-socratic-step">
           <summary>{index + 1}. {step.title}</summary>

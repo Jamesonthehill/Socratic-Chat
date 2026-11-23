@@ -265,13 +265,7 @@ export function SocraticConfig({
           })}
           </ol>
         </section>}
-        {guidanceMode === "guided" && <label>
-          Tutor questions before continuing
-          <input type="number" min={1} max={10}
-            value={value.minimum_step_questions ?? 2}
-            onChange={(event) => change("minimum_step_questions", Number(event.target.value))} />
-          <small className="help">The first question in each step counts. Repeating the same question does not. For missions without objectives, students continue after this minimum and a readiness check. Missions with objectives can finish as soon as every objective is demonstrated, without extra questions.</small>
-        </label>}
+
         </section>
       )}
       {!hideMaterials &&

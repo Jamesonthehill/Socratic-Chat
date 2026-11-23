@@ -1013,7 +1013,6 @@ export default function CreateActivity({
                   <dl className="activity-review-facts">
                     <div><dt>Teaching scope</dt><dd>Entire selected assignment materials</dd></div>
                     <div><dt>Tutor guidance</dt><dd>{guidedReview ? "Guided learning path" : "Basic conversation"}</dd></div>
-                    {guidedReview && <div><dt>Tutor questions before continuing</dt><dd>{draft.config.minimum_step_questions ?? 2}</dd></div>}
                   </dl>
                   <section className="activity-review-opening">
                     <h3>Opening question</h3>

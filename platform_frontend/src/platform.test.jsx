@@ -1882,7 +1882,7 @@ test("professor dashboard opens published Socratic settings beside View", async 
   expect(screen.getAllByRole("link", { name: "View" })).toHaveLength(1);
   await userEvent.setup().click(edit);
   expect(await screen.findByRole("heading", { name: "Edit published Socratic settings" })).toBeInTheDocument();
-  expect(screen.getByLabelText("Tutor questions before continuing")).toHaveValue(2);
+  expect(screen.queryByLabelText("Tutor questions before continuing")).not.toBeInTheDocument();
 });
 
 test.each([1, 2])('mission objectives restore %i demonstrated targets and control continuation independently of question minimum', async (count) => {

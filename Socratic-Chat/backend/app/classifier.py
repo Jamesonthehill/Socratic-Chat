@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from time import monotonic
 from typing import Any
 
@@ -71,6 +71,15 @@ CLASSIFICATION_SCHEMA: dict[str, Any] = {
     "type": "object",  # The model response must be a JSON object, not prose.
     "properties": {
         "message_role": {"type": "string", "enum": sorted(MESSAGE_ROLES)},
+        "humor": {
+            "type": "object", "properties": {
+                "detected": {"type": "boolean"},
+                "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+                "evidence": {"type": "string", "maxLength": 280},
+                "interpretation": {"type": "string", "maxLength": 280},
+            }, "required": ["detected", "confidence", "evidence", "interpretation"],
+            "additionalProperties": False,
+        },
         "target_concepts": {
             "type": "array",  # A comparison can have more than one concept.
             "items": {"type": "string", "maxLength": 100},  # Bound each concept label.
@@ -86,7 +95,7 @@ CLASSIFICATION_SCHEMA: dict[str, Any] = {
     # Requiring all fields makes missing model judgments a validation error
     # instead of allowing an accidental default route or score.
     "required": [
-        "message_role", "target_concepts",
+        "message_role", "target_concepts", "humor",
         "retrieval_query", "retrieval_subqueries", "operational_request", "subtopic_request",
     ],
     "additionalProperties": False,  # Reject unrecognized model-created fields.
@@ -253,6 +262,27 @@ def is_contextual_meaning_request(
 
 
 @dataclass(frozen=True)
+class HumorObservation:
+    """Tentative observation about this message, never a student trait or learning score."""
+    detected: bool = False
+    confidence: str = "low"
+    evidence: str = ""
+    interpretation: str = ""
+
+
+def validated_humor(value: object, message: str) -> HumorObservation:
+    if not isinstance(value, dict) or value.get("detected") is not True:
+        return HumorObservation()
+    confidence, evidence, interpretation = (value.get(key) for key in ("confidence", "evidence", "interpretation"))
+    if (not isinstance(confidence, str) or confidence not in {"low", "medium", "high"}
+            or not isinstance(evidence, str) or not evidence.strip() or len(evidence) > 280
+            or not isinstance(interpretation, str) or not interpretation.strip() or len(interpretation) > 280
+            or evidence not in message):
+        return HumorObservation()
+    return HumorObservation(True, confidence, evidence, interpretation.strip())
+
+
+@dataclass(frozen=True)
 class MessageClassification:
     """Validated interpretation used to route retrieval and Socratic teaching."""
 
@@ -275,6 +305,7 @@ class MessageClassification:
     operational_request: str = "none"  # Course/application metadata lookup, if any.
     understanding_level: str = "unknown"  # Legacy DB field; the pre-retrieval classifier no longer estimates mastery.
     source: str = "rules"  # Whether labels came from rules or the model.
+    humor: HumorObservation = field(default_factory=HumorObservation)
 
     question_type: str = "unclear"  # Legacy route compatibility only.
     conversation_state: str = "new_concept"  # Legacy route compatibility only.
@@ -321,6 +352,7 @@ def _classification_from_observation(
     subtopic_request: bool = False,
     confidence: float = 0.8,
     source: str = "llm",
+    humor: HumorObservation | None = None,
 ) -> MessageClassification:
     """Turn one semantic observation into one internally consistent policy decision."""
     role = message_role if message_role in MESSAGE_ROLES else "learning_question"
@@ -346,6 +378,7 @@ def _classification_from_observation(
         operational_request=operational_request,
         understanding_level="unknown",
         source=source,
+        humor=humor or HumorObservation(),
     )
 
 
@@ -637,6 +670,7 @@ def _validated_llm_classification(
         subtopic_request=payload.get("subtopic_request") is True,
         confidence=0.8,
         source="llm",
+        humor=validated_humor(payload.get("humor"), message),
     )
 
 
@@ -699,6 +733,17 @@ async def _classify_with_llm(
         )
     log_event(4, "classifier_llm_started", provider=provider, model=model)
     started = monotonic()
+    system_prompt += (
+        " Also return humor as an observation of the latest message only: detected, confidence (low, medium, high), "
+        "evidence (an exact substring from the latest student message, up to 280 characters), and interpretation "
+        "(a brief tentative description, up to 280 characters). Recognize possible jokes, playful exaggeration, "
+        "or sarcasm in context; an emoji alone does not prove humor. Do not label the student's personality, "
+        "motivation, honesty, understanding, or correctness from humor. A humorous answer may contain valid "
+        "reasoning and remains student_answer when it attempts to answer the tutor. Treat quoted jokes as quoted "
+        "material rather than assuming the student endorses them. When uncertain use low confidence; when humor "
+        "is absent use detected=false, confidence=low, evidence='', interpretation=''. These observations do not "
+        "choose a teaching action or change learning-evidence eligibility."
+    )
     response_format: dict[str, Any] = {
         "type": "json_schema",
         "json_schema": {
@@ -755,6 +800,7 @@ async def _classify_with_llm(
             "retrieval_query": classification.rewritten_query,
             "retrieval_subqueries": list(classification.retrieval_subqueries),
             "operational_request": classification.operational_request,
+            "humor": asdict(classification.humor),
         },
         "python_policy": {
             "route": classification.route,
@@ -811,7 +857,7 @@ async def classify_message(
             rewritten_query=result.rewritten_query or fallback.rewritten_query,
             retrieval_subqueries=result.retrieval_subqueries,
             source=result.source,
-        ), keyword_scope_match=result.keyword_scope_match, subtopic_request=result.subtopic_request)
+        ), keyword_scope_match=result.keyword_scope_match, subtopic_request=result.subtopic_request, humor=result.humor)
     if (
         result.needs_clarification
         and fallback.message_role == "learning_question"
@@ -830,7 +876,7 @@ async def classify_message(
             rewritten_query=result.rewritten_query or fallback.rewritten_query,
             retrieval_subqueries=result.retrieval_subqueries,
             source=result.source,
-        ), keyword_scope_match=result.keyword_scope_match, subtopic_request=result.subtopic_request)
+        ), keyword_scope_match=result.keyword_scope_match, subtopic_request=result.subtopic_request, humor=result.humor)
     # Explicit surface evidence and the preceding tutor turn resolve the few
     # roles that must never be turned into a generic clarification.  This is a
     # normalization of the single observation, not a second intent system.
@@ -853,5 +899,5 @@ async def classify_message(
             retrieval_subqueries=result.retrieval_subqueries,
             operational_request=result.operational_request,
             source=result.source,
-        ), keyword_scope_match=result.keyword_scope_match, subtopic_request=result.subtopic_request)
+        ), keyword_scope_match=result.keyword_scope_match, subtopic_request=result.subtopic_request, humor=result.humor)
     return result

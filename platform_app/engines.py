@@ -1,6 +1,6 @@
 """Adapters to existing learning engines. No client controls engine/session identity."""
 import asyncio
-from dataclasses import replace
+from dataclasses import asdict, replace
 import hashlib
 import json
 import os
@@ -847,6 +847,9 @@ async def _socratic_message(
             "target_concepts": list(classification.target_concepts), "retrieval_query": classification.rewritten_query,
         }
         log_event(4, "message_classification_completed", **state["classification"])
+        state["classification"]["humor"] = asdict(classification.humor)
+        log_event(4, "message_humor_observed", humor_detected=classification.humor.detected,
+                  humor_confidence=classification.humor.confidence)
         if classification.conversation_action in {"soft_close", "complete"}:
             state.pop("learning_detour", None)
             state.pop("pending_misconception", None)

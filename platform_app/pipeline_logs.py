@@ -16,7 +16,7 @@ status_code provider_error_code fallback message_role route dialogue_status
 conversation_action assessment_candidate ready step_index questions retrieval_type
  top_k chunks sources candidates selected queries latency_ms phase mode example_type
 critical_misconception response_chars prompt_chars messages message_chars questions_count
-pipeline_version source valid prompt_role prompt_truncated'''.split())
+pipeline_version source valid prompt_role prompt_truncated humor_detected humor_confidence'''.split())
 
 
 def safe_event(event):

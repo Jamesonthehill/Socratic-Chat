@@ -1144,7 +1144,9 @@ def apply_state(attempt, state, content=None):
         attempt["messages"] = state.pop("messages")
     else:
         if content:
-            attempt["messages"].append({"role": "user", "content": content})
+            humor = ((state.get("socratic") or {}).get("classification") or {}).get("humor")
+            attempt["messages"].append({"role": "user", "content": content,
+                                        **({"humor": humor} if isinstance(humor, dict) and humor.get("detected") is True else {})})
         if state.get("reply"):
             next_question = (state.get("socratic") or {}).get("next_thinking_step")
             attempt["messages"].append({

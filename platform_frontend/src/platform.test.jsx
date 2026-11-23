@@ -713,7 +713,7 @@ test("student follows a generated Socratic path one step at a time", async () =>
   expect(document.querySelector(".student-course-materials")).toBeInTheDocument();
   expect(document.querySelector(".student-course-materials").compareDocumentPosition(document.querySelector(".student-learning-path")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.getByText("2 steps")).toBeInTheDocument();
-  expect(screen.getByText("0%")).toBeInTheDocument();
+  expect(screen.getByText("0 of 2 mission stars earned")).toBeInTheDocument();
   expect(screen.getByRole("list", { name: "Learning path steps" })).toHaveAttribute("tabindex", "0");
   expect(screen.getByText("Choose a size")).toBeInTheDocument();
   expect(screen.queryByText("Check ingredients")).not.toBeInTheDocument();
@@ -760,8 +760,8 @@ test("student follows a generated Socratic path one step at a time", async () =>
   expect(document.querySelector(".socratic-message-card.assistant.is-new-reply .message-avatar")).toHaveTextContent("S");
   expect(document.querySelectorAll(".socratic-message-card.assistant.is-current-reply")).toHaveLength(1);
   expect(screen.queryByRole("status", { name: "Step complete" })).not.toBeInTheDocument();
-  expect(screen.getByText("50%")).toBeInTheDocument();
-  expect(screen.getByText("1 of 2 steps complete · Stage 2 of 2")).toBeInTheDocument();
+  expect(screen.getByText("Mission 2 of 2")).toBeInTheDocument();
+  expect(screen.getByText("1 of 2 mission stars earned")).toBeInTheDocument();
   expect(screen.getAllByRole("region", { name: "Your next thinking step" }).at(-1)).toHaveTextContent("What should it check before asking for coins?");
   expect(fetch.mock.calls.some(([url]) => url.endsWith("/next-step"))).toBe(true);
 }, 8000);
@@ -900,7 +900,7 @@ test("last guided step offers the summary action in the learning path", async ()
   expect(screen.getByText("Final step complete · Summarize your learning")).toBeInTheDocument();
   expect(within(screen.getByText("Check ingredients").closest("li")).getByRole("img", { name: "Completed step" }).querySelector(".student-star-medal")).toBeInTheDocument();
   expect(screen.getByRole("progressbar", { name: "Learning path progress" })).toHaveAttribute("aria-valuenow", "2");
-  expect(screen.getByText("2 of 2 steps complete")).toBeInTheDocument();
+  expect(screen.getByText("2 of 2 mission stars earned")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Finish conversation and summarize" })).not.toBeInTheDocument();
 });
 
@@ -1902,6 +1902,8 @@ test.each([1, 2])('mission objectives restore %i demonstrated targets and contro
   open('/student/assignments/assignment-1');
   const bar=await screen.findByRole('progressbar',{name:'Mission 1 objective progress'});
   expect(bar).toHaveAttribute('aria-valuenow',count===1?'50':'100');
+  expect(screen.getByRole('progressbar',{name:'Learning path progress'})).toHaveAttribute('aria-valuenow',count===1?'0':'1');
+  expect(screen.getByText(`${count===1?0:1} of 2 mission stars earned`)).toBeInTheDocument();
   if(count===1) expect(screen.queryByRole('button',{name:'Continue to next step'})).not.toBeInTheDocument();
   else expect(await screen.findByRole('button',{name:'Continue to next step'})).toBeEnabled();
 });

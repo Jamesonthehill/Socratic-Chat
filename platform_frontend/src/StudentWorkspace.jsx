@@ -430,7 +430,6 @@ function LearningPathProgress({ completed, total, stage, started }) {
   const [flyingStar, setFlyingStar] = useState(null);
   const [advancing, setAdvancing] = useState(false);
   const [justEarnedIndex, setJustEarnedIndex] = useState(null);
-  const percentage = Math.round(completed / total * 100);
 
   useEffect(() => {
     if (justEarnedIndex === null) return undefined;
@@ -475,8 +474,8 @@ function LearningPathProgress({ completed, total, stage, started }) {
   return (
     <div className={`student-learning-progress${advancing ? " is-advancing" : ""}`}>
       <div className="student-learning-progress-heading">
-        <p>{completed} of {total} steps complete{started && completed < total ? ` · Stage ${stage} of ${total}` : ""}</p>
-        <strong aria-live="polite">{percentage}%</strong>
+        <p aria-live="polite">{completed} of {total} mission stars earned</p>
+        <strong>{started ? `Mission ${stage} of ${total}` : `${total} mission${total === 1 ? "" : "s"}`}</strong>
       </div>
       <div className="student-learning-stars" role="progressbar" aria-label="Learning path progress" aria-valuemin={0} aria-valuemax={total} aria-valuenow={completed} aria-valuetext={`${completed} of ${total} stars earned`} style={{ "--star-columns": Math.min(total, 10) }}>
         {Array.from({ length: total }, (_, index) => (
@@ -1568,7 +1567,7 @@ export default function StudentWorkspace({ user, preview = null }) {
   const finalLearningStepFinished = Boolean(attempt && learningStepCount && activeLearningStep === learningStepCount - 1 && (
     showLearningSummary || attempt.status === "completed" || ["awaiting_reflection", "ready_to_submit"].includes(socratic.phase)
   ));
-  const completedLearningSteps = attempt ? Math.min(learningStepCount, activeLearningStep + Number(finalLearningStepFinished)) : 0;
+  const completedLearningSteps = attempt ? Math.min(learningStepCount, activeLearningStep + Number(finalLearningStepFinished || objectivesMet)) : 0;
   const socraticTourSteps = SOCRATIC_TOUR_STEPS.filter((step) =>
     (!conceptCheck || step.demo) &&
     (learningStepCount || (step.selector !== '[data-socratic-tour="learning-path"]' && step.demo !== "continue"))
